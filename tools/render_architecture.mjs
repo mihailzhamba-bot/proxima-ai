@@ -7,6 +7,7 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const sourceDir = join(root, 'docs', 'architecture');
 const outputDir = join(root, 'build', 'architecture');
 const executable = join(root, 'node_modules', '.bin', 'mmdc');
+const ciPuppeteerConfig = join(root, 'tools', 'puppeteer.ci.json');
 const sources = readdirSync(sourceDir).filter((name) => name.endsWith('.mmd')).sort();
 
 if (sources.length !== 4) {
@@ -17,15 +18,19 @@ mkdirSync(outputDir, { recursive: true });
 for (const source of sources) {
   const stem = basename(source, '.mmd');
   for (const format of ['svg', 'pdf']) {
+    const arguments_ = [
+      '--input', join(sourceDir, source),
+      '--output', join(outputDir, `${stem}.${format}`),
+      '--backgroundColor', 'transparent',
+      '--theme', 'neutral',
+      '--quiet',
+    ];
+    if (process.env.CI === 'true') {
+      arguments_.push('--puppeteerConfigFile', ciPuppeteerConfig);
+    }
     const result = spawnSync(
       executable,
-      [
-        '--input', join(sourceDir, source),
-        '--output', join(outputDir, `${stem}.${format}`),
-        '--backgroundColor', 'transparent',
-        '--theme', 'neutral',
-        '--quiet',
-      ],
+      arguments_,
       { cwd: root, encoding: 'utf-8' },
     );
     if (result.status !== 0) {

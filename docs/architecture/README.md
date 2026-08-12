@@ -8,4 +8,6 @@
 
 `make architecture` рендерит каждый `.mmd` в SVG и PDF внутри `build/architecture/`. Build outputs не хранятся в Git: источником истины остаются Mermaid-файлы.
 
+На ephemeral GitHub-hosted runner Chromium запускается с CI-only `tools/puppeteer.ci.json`, потому что AppArmor runner запрещает user namespaces. Локальный render использует стандартный Chromium sandbox.
+
 Сплошная стрелка означает реализуемый M1 path. Пунктир означает supporting, blocked или deferred path. Torgstat в M1 существует только как supporting-source contract и не имеет browser/session entrypoint.
