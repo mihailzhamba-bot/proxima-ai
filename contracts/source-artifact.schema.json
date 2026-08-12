@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proxima.local/contracts/source-artifact/v1",
+  "title": "SourceArtifactV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_id",
+    "tenant_id",
+    "source",
+    "dataset",
+    "content_sha256",
+    "period",
+    "data_as_of",
+    "retrieved_at",
+    "parser_version",
+    "source_schema_version",
+    "provenance",
+    "locator"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "artifact_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{7,127}$" },
+    "tenant_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{2,63}$" },
+    "source": {
+      "enum": [
+        "official_wb_manual",
+        "official_wb_statistics",
+        "official_wb_analytics",
+        "official_wb_finance",
+        "torgstat_supporting"
+      ]
+    },
+    "dataset": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$" },
+    "content_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "timezone"],
+      "properties": {
+        "from": { "type": "string", "format": "date" },
+        "to": { "type": "string", "format": "date" },
+        "timezone": { "const": "Europe/Moscow" }
+      }
+    },
+    "data_as_of": { "type": "string", "format": "date-time" },
+    "retrieved_at": { "type": "string", "format": "date-time" },
+    "parser_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "source_schema_version": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["acquisition_attempt_id", "retrieval_mode"],
+      "properties": {
+        "acquisition_attempt_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{7,127}$" },
+        "retrieval_mode": { "enum": ["manual_export", "official_read_api", "supporting_import"] }
+      }
+    },
+    "locator": { "type": "string", "pattern": "^artifact://sha256/[0-9a-f]{64}$" }
+  }
+}

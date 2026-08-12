@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proxima.local/contracts/acquisition-attempt/v1",
+  "title": "AcquisitionAttemptV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "attempt_id",
+    "tenant_id",
+    "source",
+    "dataset",
+    "status",
+    "started_at",
+    "artifact_ids",
+    "pagination"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "attempt_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{7,127}$" },
+    "tenant_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{2,63}$" },
+    "source": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$" },
+    "dataset": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$" },
+    "status": {
+      "enum": ["running", "succeeded", "blocked", "failed", "partial", "schema_drift", "conflict", "stale"]
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "completed_at": { "type": ["string", "null"], "format": "date-time" },
+    "reason_code": { "type": ["string", "null"], "pattern": "^[A-Z][A-Z0-9_]{2,63}$" },
+    "retry_of": { "type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9._:-]{7,127}$" },
+    "artifact_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{7,127}$" }
+    },
+    "pagination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "page_count"],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "page_count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "succeeded" } } },
+      "then": {
+        "required": ["completed_at"],
+        "properties": {
+          "completed_at": { "type": "string" },
+          "pagination": { "properties": { "complete": { "const": true } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "enum": ["blocked", "failed", "partial", "schema_drift", "conflict", "stale"] } } },
+      "then": { "required": ["completed_at", "reason_code"] }
+    }
+  ]
+}

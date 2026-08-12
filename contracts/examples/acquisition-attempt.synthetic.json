@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "attempt_id": "attempt:synthetic:001",
+  "tenant_id": "synthetic_tenant",
+  "source": "official_wb_manual",
+  "dataset": "orders",
+  "status": "succeeded",
+  "started_at": "2026-08-12T04:00:00Z",
+  "completed_at": "2026-08-12T04:00:01Z",
+  "reason_code": null,
+  "retry_of": null,
+  "artifact_ids": ["artifact:synthetic:001"],
+  "pagination": { "complete": true, "page_count": 1 }
+}

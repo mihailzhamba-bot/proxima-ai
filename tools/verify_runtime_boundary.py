@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+COLLECTOR = ROOT / "services" / "collector"
+CONTROL_PLANE = ROOT / "services" / "control-plane"
+BANNED_DEPENDENCIES = {"playwright", "playwright-core", "puppeteer", "puppeteer-core"}
+BANNED_RUNTIME_PATTERNS = {
+    "torgstat": re.compile(r"torgstat", re.IGNORECASE),
+    "browser session": re.compile(r"browsercontext|launchpersistentcontext|live[_-]?session", re.IGNORECASE),
+    "browser runtime": re.compile(r"from\s+['\"](?:playwright|puppeteer)|require\(['\"](?:playwright|puppeteer)", re.IGNORECASE),
+}
+
+
+def production_files() -> list[Path]:
+    roots = [COLLECTOR / "src", CONTROL_PLANE / "src"]
+    return sorted(
+        path
+        for source_root in roots
+        for path in source_root.rglob("*")
+        if path.is_file() and path.suffix in {".ts", ".js", ".py"}
+    )
+
+
+def verify() -> None:
+    manifest = json.loads((COLLECTOR / "package.json").read_text(encoding="utf-8"))
+    runtime_dependencies = set(manifest.get("dependencies", {})) | set(manifest.get("optionalDependencies", {}))
+    forbidden = sorted(runtime_dependencies & BANNED_DEPENDENCIES)
+    if forbidden:
+        raise ValueError(f"browser dependency in collector runtime: {', '.join(forbidden)}")
+
+    violations: list[str] = []
+    for path in production_files():
+        content = path.read_text(encoding="utf-8")
+        for label, pattern in BANNED_RUNTIME_PATTERNS.items():
+            if pattern.search(content):
+                violations.append(f"{path.relative_to(ROOT)}: {label}")
+
+    compose = (ROOT / "infra" / "compose.yaml").read_text(encoding="utf-8")
+    if re.search(r"TORGSTAT|LIVE[_-]?SESSION", compose, re.IGNORECASE):
+        violations.append("infra/compose.yaml: forbidden live adapter flag")
+    if re.search(r"(?:ports:|0\.0\.0\.0)", compose):
+        violations.append("infra/compose.yaml: public port binding")
+    if "postgres:16" not in compose or "internal: true" not in compose:
+        violations.append("infra/compose.yaml: PostgreSQL 16 private boundary missing")
+
+    exports = manifest.get("exports", {})
+    if not isinstance(exports, dict) or "import" not in exports:
+        violations.append("services/collector/package.json: built import export missing")
+    else:
+        target = COLLECTOR / str(exports["import"]).removeprefix("./")
+        if not target.is_file():
+            violations.append("services/collector/package.json: built import target missing")
+
+    if violations:
+        raise ValueError("runtime boundary violations:\n" + "\n".join(sorted(violations)))
+
+
+if __name__ == "__main__":
+    verify()
+    print("runtime boundary verification passed")

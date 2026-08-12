@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "artifact_id": "artifact:synthetic:001",
+  "tenant_id": "synthetic_tenant",
+  "source": "official_wb_manual",
+  "dataset": "orders",
+  "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "period": { "from": "2026-08-11", "to": "2026-08-11", "timezone": "Europe/Moscow" },
+  "data_as_of": "2026-08-11T21:00:00Z",
+  "retrieved_at": "2026-08-12T04:00:00Z",
+  "parser_version": "1.0.0",
+  "source_schema_version": "synthetic-v1",
+  "provenance": { "acquisition_attempt_id": "attempt:synthetic:001", "retrieval_mode": "manual_export" },
+  "locator": "artifact://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

@@ -30,3 +30,18 @@ def test_source_path_rejects_parent_traversal() -> None:
     provenance = load_tool("verify_provenance")
     with pytest.raises(ValueError, match="unsafe source path"):
         provenance.safe_source_path("../dirty-secret")
+
+
+def test_cross_language_contracts_accept_only_fail_closed_examples() -> None:
+    contracts = load_tool("verify_contracts")
+    contracts.verify()
+
+
+def test_runtime_boundary_has_no_live_torgstat_path() -> None:
+    boundary = load_tool("verify_runtime_boundary")
+    boundary.verify()
+
+
+def test_secret_scanner_patterns_are_live() -> None:
+    scanner = load_tool("secret_scan")
+    scanner.self_test()

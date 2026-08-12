@@ -1,0 +1,34 @@
+flowchart TB
+  MIKE[Mike via VPN or SSH tunnel]
+  TG[Telegram API]
+  S3[S3-compatible off-site storage]
+
+  subgraph VPS[One private VPS - Docker Compose]
+    NET[Internal Docker network]
+    SCHED[TypeScript scheduler and worker]
+    PG[(PostgreSQL 16)]
+    HEALTH[Python Data Health on localhost]
+    BACKUP[Restic backup job]
+    RAW[(Private raw and manifest volumes)]
+    SECRETS[Docker secret files]
+
+    SCHED --> PG
+    SCHED --> RAW
+    HEALTH -->|read-only role| PG
+    BACKUP --> PG
+    BACKUP --> RAW
+    SECRETS --> SCHED
+    SECRETS --> PG
+    SECRETS --> BACKUP
+    NET --- SCHED
+    NET --- PG
+    NET --- HEALTH
+  end
+
+  MIKE -->|private tunnel only| HEALTH
+  SCHED -->|sanitized status only| TG
+  BACKUP -->|encrypted repository| S3
+
+  PUBLIC[Public inbound traffic]
+  PUBLIC -. blocked .-> PG
+  PUBLIC -. blocked .-> HEALTH

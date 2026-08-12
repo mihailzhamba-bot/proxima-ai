@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proxima.local/contracts/domain-release/v1",
+  "title": "DomainReleaseV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "release_id",
+    "tenant_id",
+    "domain",
+    "status",
+    "attempt_ids",
+    "artifact_ids",
+    "atomic"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "release_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{7,127}$" },
+    "tenant_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{2,63}$" },
+    "domain": { "enum": ["operational", "inventory", "financial"] },
+    "status": { "enum": ["candidate", "published", "rejected"] },
+    "attempt_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
+    "artifact_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
+    "previous_release_id": { "type": ["string", "null"] },
+    "published_at": { "type": ["string", "null"], "format": "date-time" },
+    "rejection_reasons": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" } },
+    "atomic": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "published" } } },
+      "then": {
+        "required": ["published_at"],
+        "properties": {
+          "published_at": { "type": "string" },
+          "atomic": { "const": true },
+          "rejection_reasons": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "rejected" } } },
+      "then": {
+        "required": ["rejection_reasons"],
+        "properties": { "rejection_reasons": { "minItems": 1 } }
+      }
+    }
+  ]
+}

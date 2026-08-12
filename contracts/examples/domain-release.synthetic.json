@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "release_id": "release:synthetic:001",
+  "tenant_id": "synthetic_tenant",
+  "domain": "operational",
+  "status": "published",
+  "attempt_ids": ["attempt:synthetic:001"],
+  "artifact_ids": ["artifact:synthetic:001"],
+  "previous_release_id": null,
+  "published_at": "2026-08-12T04:00:02Z",
+  "rejection_reasons": [],
+  "atomic": true
+}

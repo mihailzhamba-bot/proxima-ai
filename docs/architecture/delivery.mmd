@@ -1,0 +1,21 @@
+flowchart LR
+  A[Phase contract] --> B[Small vertical plan]
+  B --> C[Implementation commit]
+  C --> D[Root make verify]
+  D -->|fail| F[Fix commit]
+  F --> D
+  D -->|pass| R[Independent cross-model review]
+  R -->|blocker or warning| F
+  R -->|0 blocker and 0 warning| E[Evidence record]
+  E --> G{Mike GO required?}
+  G -->|No| N[Next slice]
+  G -->|Yes and GO| N
+  G -->|Pending or STOP| H[Hold last-known-good]
+
+  subgraph Gates[Explicit Mike gates]
+    AG[Architecture GO - accepted 2026-08-12]
+    DG[Data GO - pending]
+    LG[Live Deploy GO - pending]
+  end
+
+  E --> Gates
