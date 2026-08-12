@@ -65,7 +65,7 @@
 | A1 | TS codegen из JSON Schema (сейчас схемы валидирует только Python) | Phase 2 | json-schema-to-typescript в verify-цепочку |
 | B6 | Additive-only доктрина миграций | Phase 3 CONTEXT | Записать при планировании Phase 3 |
 | C9 | ADR: точные WB endpoints + наблюдаемые RPS limits | Phase 4 planning | Первый артефакт планирования Phase 4; заполнить из API-ноги data spike |
-| D11 | Rotation policy WB токенов: владелец + cadence + фактический expiry | до Phase 4 | Mike ротирует вручную по календарному напоминанию |
+| D11 | Rotation policy WB токенов: владелец + cadence | до Phase 4 | Expiry наблюдён: токены живут ~180 дней (тестовый истекает 2027-02-01). Mike ротирует вручную по календарному напоминанию < 180 дней; на Phase 4 выпустить 3 токена с раздельными scope |
 | C10 | Правило при mismatch manifest vs raw bytes | Phase 2 CONTEXT | Байты = истина; mismatch = quarantine + alert, pointer не двигается |
 | D13 | Физическое место Restic encryption key вне VPS | Phase 7 | Password manager Mike + бумажная копия |
 | E14 | RTO/RPO числа; где крутится isolated restore test | Phase 7 | RPO 24h из дневного цикла; RTO задать после замера на реальном объёме |
@@ -74,7 +74,7 @@
 
 ### Blockers
 
-- Phase 2 slice: официальная XLSX-выгрузка из кабинета и WB READ tokens отсутствуют на машине - передаёт Mike (см. DATA-SPIKE F4). Планирование Phase 2 не блокировано.
+- Phase 2 slice: официальная XLSX-выгрузка из кабинета WB отсутствует - передаёт Mike (см. DATA-SPIKE F4). API-нога закрыта тестовым токеном Амировой 2026-08-12; боевой токен кабинета Богатовой нужен к Phase 4. Планирование Phase 2 не блокировано.
 - First approved data release remains blocked on Phase 8 Data GO evidence.
 - Live deployment remains blocked on separate Live Deploy GO.
 
