@@ -5,6 +5,7 @@ import copy
 import importlib.util
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -13,13 +14,17 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def load_tool(name: str):
-    path = ROOT / "tools" / f"{name}.py"
+def load_module(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def load_tool(name: str):
+    return load_module(ROOT / "tools" / f"{name}.py", name)
 
 
 def test_migration_checksum_rejects_changed_content() -> None:
@@ -78,3 +83,70 @@ def test_secret_scanner_reads_staged_blob_when_worktree_is_safe(tmp_path: Path) 
     result = scanner.findings(repository)
 
     assert result == ["index:probe.txt:1: openai-key"]
+
+
+def test_vps_contract_is_fail_closed() -> None:
+    vps = load_tool("verify_vps_contract")
+    vps.verify()
+
+
+def monitor_samples(monitor, count: int, *, cpu: float, memory: float, disk: float, minute_offset: int = 0):
+    return [
+        monitor.MetricSnapshot(f"2026-08-12T00:{minute + minute_offset:02d}:00+00:00", cpu, memory, disk)
+        for minute in range(count)
+    ]
+
+
+def test_host_monitor_requires_sustained_cpu_and_memory_pressure() -> None:
+    monitor = load_module(ROOT / "infra" / "monitoring" / "host_monitor.py", "host_monitor")
+    contract = json.loads((ROOT / "infra" / "vps-contract.json").read_text(encoding="utf-8"))
+    thresholds = monitor.Thresholds.from_contract(contract)
+    samples = monitor_samples(monitor, monitor.required_samples(contract), cpu=71.0, memory=19.0, disk=10.0)
+
+    alerts = monitor.classify(samples, thresholds, contract["monitoring"]["sustained_seconds"], contract["monitoring"]["interval_seconds"])
+
+    assert {(alert.metric, alert.severity) for alert in alerts} == {
+        ("cpu_percent", "warning"),
+        ("memory_available_percent", "warning"),
+    }
+    short_history = samples[:-1]
+    assert monitor.classify(short_history, thresholds, contract["monitoring"]["sustained_seconds"], contract["monitoring"]["interval_seconds"]) == []
+
+
+def test_host_monitor_thresholds_are_strict() -> None:
+    monitor = load_module(ROOT / "infra" / "monitoring" / "host_monitor.py", "host_monitor_strict_thresholds")
+    contract = json.loads((ROOT / "infra" / "vps-contract.json").read_text(encoding="utf-8"))
+    thresholds = monitor.Thresholds.from_contract(contract)
+    samples = monitor_samples(monitor, monitor.required_samples(contract), cpu=70.0, memory=20.0, disk=70.0)
+
+    assert monitor.classify(samples, thresholds, contract["monitoring"]["sustained_seconds"], contract["monitoring"]["interval_seconds"]) == []
+    disk_at_resize_threshold = monitor.MetricSnapshot("2026-08-12T00:00:00+00:00", 70.0, 20.0, 80.0)
+    alerts = monitor.classify([disk_at_resize_threshold], thresholds, contract["monitoring"]["sustained_seconds"], contract["monitoring"]["interval_seconds"])
+    assert {(alert.metric, alert.severity) for alert in alerts} == {("disk_used_percent", "warning")}
+
+
+def test_host_monitor_does_not_join_pressure_across_timer_gap() -> None:
+    monitor = load_module(ROOT / "infra" / "monitoring" / "host_monitor.py", "host_monitor_timer_gap")
+    contract = json.loads((ROOT / "infra" / "vps-contract.json").read_text(encoding="utf-8"))
+    thresholds = monitor.Thresholds.from_contract(contract)
+    samples = monitor_samples(monitor, monitor.required_samples(contract), cpu=86.0, memory=9.0, disk=10.0)
+    samples[8] = monitor.MetricSnapshot("2026-08-12T02:00:00+00:00", 86.0, 9.0, 10.0)
+
+    alerts = monitor.classify(samples, thresholds, contract["monitoring"]["sustained_seconds"], contract["monitoring"]["interval_seconds"])
+
+    assert alerts == []
+
+
+def test_host_monitor_escalates_and_recommends_without_resizing() -> None:
+    monitor = load_module(ROOT / "infra" / "monitoring" / "host_monitor.py", "host_monitor_escalation")
+    contract = json.loads((ROOT / "infra" / "vps-contract.json").read_text(encoding="utf-8"))
+    thresholds = monitor.Thresholds.from_contract(contract)
+    urgent_samples = monitor_samples(monitor, monitor.required_samples(contract), cpu=86.0, memory=9.0, disk=81.0)
+
+    alerts = monitor.classify(urgent_samples, thresholds, contract["monitoring"]["sustained_seconds"], contract["monitoring"]["interval_seconds"])
+    by_metric = {alert.metric: alert for alert in alerts}
+
+    assert by_metric["cpu_percent"].severity == "urgent"
+    assert by_metric["memory_available_percent"].severity == "urgent"
+    assert by_metric["disk_used_percent"].severity == "resize_recommendation"
+    assert "manual" in by_metric["disk_used_percent"].action

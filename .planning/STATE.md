@@ -37,6 +37,7 @@
 - 2026-08-12 (Mike): roadmap перестроен data-first - Phase 2 = вертикальный slice (intake -> manifest -> staging -> minimal facts -> минимальная localhost-страница).
 - 2026-08-12 (Mike): independent cross-model review 0/0 обязателен только для критических phases 3, 4, 7; остальным - `make verify` + CI + self-review в EVIDENCE.md.
 - 2026-08-12 (Mike): минимальный VPS поднимается к Phase 4, 90-day backfill выполняется на нём; базовый daily scheduler (без SLA-timeline и alerts) - тоже Phase 4. Полный ops-харднинг остаётся в Phase 7.
+- 2026-08-12 (Mike): для staging, затем pilot выбран Selectel Cloud в РФ: Ubuntu 24.04 LTS, 2 vCPU, 4 GiB RAM, 80 GiB NVMe, лимит 3,000 RUB/месяц. Входящий трафик только TCP/22, private UI - только SSH tunnel. Alerting идёт в отдельный private Telegram chat; масштабирование никогда не автоматическое, любое платное изменение вручную одобряет Mike.
 - 2026-08-12 (data spike): reconciliation M1 = official WB API (canonical) vs official manual XLSX (supporting); Torgstat supporting отложен до M2, его экспорты не дают daily grain. См. `.planning/research/DATA-SPIKE-2026-08-12.md`.
 - Raw evidence is immutable, content-addressed, outside Git and retained for the full pilot.
 - Operational, inventory and financial releases have independent atomic pointers; failure preserves last-known-good and remains visible separately.
@@ -64,7 +65,6 @@
 | A1 | TS codegen из JSON Schema (сейчас схемы валидирует только Python) | Phase 2 | json-schema-to-typescript в verify-цепочку |
 | B6 | Additive-only доктрина миграций | Phase 3 CONTEXT | Записать при планировании Phase 3 |
 | C9 | ADR: точные WB endpoints + наблюдаемые RPS limits | Phase 4 planning | Первый артефакт планирования Phase 4; заполнить из API-ноги data spike |
-| R5 | VPS: провайдер + бюджет + юрисдикция (данные кабинета клиента на стороннем сервере) | Phase 4 planning | Выбрать до планирования Phase 4; юрисдикция РФ |
 | D11 | Rotation policy WB токенов: владелец + cadence | до Phase 4 | Expiry наблюдён: токены живут ~180 дней (тестовый истекает 2027-02-01). Mike ротирует вручную по календарному напоминанию < 180 дней; на Phase 4 выпустить 3 токена с раздельными scope |
 | C10 | Правило при mismatch manifest vs raw bytes | Phase 2 CONTEXT | Байты = истина; mismatch = quarantine + alert, pointer не двигается |
 | D13 | Физическое место Restic encryption key вне VPS | Phase 7 | Password manager Mike + бумажная копия |

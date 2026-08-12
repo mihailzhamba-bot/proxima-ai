@@ -1,6 +1,6 @@
-.PHONY: verify install typecheck test contracts migrations provenance architecture boundary secrets
+.PHONY: verify install typecheck test contracts migrations provenance architecture boundary secrets vps
 
-verify: install typecheck test contracts migrations provenance architecture boundary secrets
+verify: install typecheck test contracts migrations provenance architecture boundary secrets vps
 
 install:
 	npm ci
@@ -31,3 +31,6 @@ boundary:
 secrets:
 	uv run --python 3.14 python tools/secret_scan.py --self-test
 	uv run --python 3.14 python tools/secret_scan.py
+
+vps:
+	uv run --python 3.14 python tools/verify_vps_contract.py

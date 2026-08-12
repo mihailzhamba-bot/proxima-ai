@@ -1,9 +1,12 @@
 flowchart TB
-  MIKE[Mike via VPN or SSH tunnel]
+  MIKE[Mike with SSH key]
   TG[Telegram API]
   S3[S3-compatible off-site storage]
+  SG[Selectel security group: TCP 22 only]
 
-  subgraph VPS[One private VPS - Docker Compose]
+  subgraph VPS[Selectel Cloud VPS: staging then pilot - Ubuntu 24.04, 2 vCPU, 4 GiB RAM, 80 GiB NVMe]
+    HOST[Hardened host: SSH key only, no root or password login]
+    MONITOR[systemd capacity monitor: recommend only]
     NET[Internal Docker network]
     SCHED[TypeScript scheduler and worker]
     PG[(PostgreSQL 16)]
@@ -23,10 +26,15 @@ flowchart TB
     NET --- SCHED
     NET --- PG
     NET --- HEALTH
+    HOST --> MONITOR
+    HOST --> NET
   end
 
-  MIKE -->|private tunnel only| HEALTH
+  SG --> HOST
+  MIKE -->|SSH TCP 22| HOST
+  MIKE -->|SSH tunnel only| HEALTH
   SCHED -->|sanitized status only| TG
+  MONITOR -->|sanitized capacity only| TG
   BACKUP -->|encrypted repository| S3
 
   PUBLIC[Public inbound traffic]

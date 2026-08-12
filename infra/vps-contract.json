@@ -1,0 +1,70 @@
+{
+  "decision": {
+    "source": "Mike, 2026-08-12",
+    "provider": "Selectel Cloud",
+    "region": "Russia",
+    "stage": "staging_then_pilot"
+  },
+  "baseline": {
+    "vcpus": 2,
+    "memory_gib": 4,
+    "storage": {
+      "kind": "nvme",
+      "gib": 80
+    },
+    "operating_system": "ubuntu-24.04-lts",
+    "monthly_budget_rub": 3000
+  },
+  "network": {
+    "security_group": {
+      "inbound_allow": [
+        "tcp/22"
+      ],
+      "application_public_ports": []
+    },
+    "application_access": "ssh_tunnel_only"
+  },
+  "access": {
+    "admin_user": "proxima-admin",
+    "ssh_key_only": true,
+    "root_login": false,
+    "password_authentication": false
+  },
+  "paths": {
+    "repository": "/srv/proxima-ai/repo",
+    "raw_store": "/srv/proxima-ai/data",
+    "monitor_state": "/var/lib/proxima-ai-monitor/state.json",
+    "secrets": "/etc/proxima-ai/secrets"
+  },
+  "monitoring": {
+    "channel": "private_telegram_chat",
+    "interval_seconds": 60,
+    "sustained_seconds": 900,
+    "thresholds": {
+      "cpu_percent": {
+        "warning": 70,
+        "urgent": 85
+      },
+      "memory_available_percent": {
+        "warning_below": 20,
+        "urgent_below": 10
+      },
+      "disk_used_percent": {
+        "warning": 70,
+        "resize_recommendation": 80,
+        "urgent": 90
+      }
+    }
+  },
+  "scaling": {
+    "automatic": false,
+    "action": "recommend_only",
+    "approval": "Mike",
+    "change_window": "manual_agreed"
+  },
+  "business_data_admission": {
+    "allowed_now": false,
+    "requires_backup_guardrail": true,
+    "full_recovery_ownership_phase": 7
+  }
+}

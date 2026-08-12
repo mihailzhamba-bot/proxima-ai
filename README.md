@@ -17,5 +17,14 @@ Render all maps with `make architecture`. Run the complete local contract with `
 - Python 3.14 control-plane package boundary.
 - PostgreSQL 16 private Compose skeleton and self-recording bootstrap migration.
 - Cross-language artifact, attempt and domain-release contracts.
+- Reproducible Selectel staging-VPS bootstrap: SSH hardening, private Docker host, capacity-monitor contract and a disabled-by-default systemd timer.
 
-Official WB intake, normalized facts, live scheduling, Data Health and deployment are implemented only in their owning roadmap phases. Torgstat live browser/session automation is not part of M1 and has no production entrypoint.
+## Staging VPS
+
+The chosen host is Selectel Cloud in Russia: Ubuntu 24.04 LTS, 2 vCPU, 4 GiB RAM and 80 GiB NVMe, with a 3,000 RUB monthly budget cap. The machine has only TCP/22 inbound; any future private UI is reached through an SSH tunnel.
+
+Before bootstrap, create the Selectel security group with only TCP/22 inbound and prepare one public SSH key for `proxima-admin`. From a clean temporary checkout of this private repository on the fresh host, run `sudo PROXIMA_SECURITY_GROUP_VERIFIED=yes PROXIMA_ADMIN_PUBLIC_KEY_FILE=/path/to/public-key bash infra/bootstrap/bootstrap-vps.sh`. It copies that exact clean checkout into `/srv/proxima-ai/repo`, so later operation does not depend on agent forwarding or a server-side GitHub credential.
+
+The bootstrap does not start the host monitor. Create the Telegram secret files outside Git, test delivery into the private chat, and only then enable `proxima-host-monitor.timer`. It sends sanitized capacity alerts and makes no resize or other paid change automatically. Business data remains blocked until the backup guardrail is ready; complete recovery is still Phase 7.
+
+Official WB intake, normalized facts, live scheduling, Data Health and the production Compose stack are implemented only in their owning roadmap phases. Torgstat live browser/session automation is not part of M1 and has no production entrypoint.
