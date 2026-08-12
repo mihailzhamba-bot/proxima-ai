@@ -11,6 +11,7 @@
     "source",
     "dataset",
     "content_sha256",
+    "content_size",
     "period",
     "data_as_of",
     "retrieved_at",
@@ -34,6 +35,7 @@
     },
     "dataset": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$" },
     "content_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "content_size": { "type": "integer", "minimum": 1 },
     "period": {
       "type": "object",
       "additionalProperties": false,

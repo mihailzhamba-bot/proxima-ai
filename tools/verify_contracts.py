@@ -41,6 +41,9 @@ def verify() -> None:
     artifact = copy.deepcopy(values["source-artifact"])
     del artifact["content_sha256"]
     must_reject(validator("source-artifact"), artifact, "artifact without checksum")
+    artifact = copy.deepcopy(values["source-artifact"])
+    del artifact["content_size"]
+    must_reject(validator("source-artifact"), artifact, "artifact without content size")
 
     attempt = copy.deepcopy(values["acquisition-attempt"])
     attempt["pagination"]["complete"] = False
