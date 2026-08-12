@@ -6,6 +6,7 @@
     "services/collector"
   ],
   "scripts": {
+    "build": "npm --workspace @proxima/collector run build",
     "test": "npm --workspace @proxima/collector test",
     "typecheck": "npm --workspace @proxima/collector run typecheck"
   },
