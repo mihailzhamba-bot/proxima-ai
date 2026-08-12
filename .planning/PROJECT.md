@@ -86,7 +86,9 @@
 
 **Пилот:** Wildberries-кабинет Bogatova Belle Robe. Один кабинет, один пилот, одна метрика сверки - намеренно узко для верификации data contract перед масштабированием.
 
-**Sibling-репозитории:** torgstat-collector и proxima-ai-manager существуют как предшественники; код импортируется избирательно с provenance inventory. Оба репозитория не найдены локально на 2026-08-12 - запросить у Mike пути или доступ перед импортом.
+**Sibling-репозитории (проверено локально 2026-08-12):**
+- `torgstat-collector`: `/Users/mikezhamba/Desktop/MILV/03-startups/!Proxima/PRoxima/Торгстат-автоматизация/torgstat-collector`, clean tracked baseline `610169a6bd3253fa351fa6fbe4ff571d4f4d5539`; поверх baseline лежит owner-owned dirty worktree с PostgreSQL/ETL/ops файлами. Источник не изменять и не коммитить. Импортировать tracked baseline как provenance-bound subtree, а dirty additions переносить только после allowlist-аудита и фиксации SHA-256 каждого файла.
+- `proxima-ai-manager`: `/Users/mikezhamba/Desktop/MILV/03-startups/!Proxima/PRoxima/Опрос-v2.2`, tracked baseline `9cca25d1118ab74a113be43e4346a024b0c7abe7`; source worktree также содержит unrelated owner changes. Импортировать только явно выбранные contracts/tests после аудита.
 
 **WB API:** Три отдельных SecretRef (Statistics, Analytics, Finance) - разделение по принципу least privilege. Официальные ручные выгрузки XLSX - первичный источник для исторических данных.
 
@@ -98,7 +100,7 @@
 
 ## Constraints
 
-- **Tech stack**: Python или Go для workers, PostgreSQL 15+, Docker Compose - не Kubernetes для M1
+- **Tech stack**: hybrid monorepo - Node.js 22 + TypeScript для существующего collector/data-plane, Python 3.14 + FastAPI для control-plane/Data Health, PostgreSQL 16, Docker Compose; не переписывать проверенный TypeScript collector на Python без отдельного ADR и benchmark evidence
 - **Хранилище**: Raw-артефакты вне Git (private Docker volume или network mount), но SHA-256 манифест и lineage таблицы в Git и PostgreSQL
 - **Безопасность**: SecretRef через Docker secrets или env-файл вне репозитория; никаких credentials в git history
 - **Fail-closed**: Любая операция с внешними источниками либо успешна полностью, либо откатывается; нет partial commits в production
