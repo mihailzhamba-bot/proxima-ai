@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -45,3 +46,18 @@ def test_runtime_boundary_has_no_live_torgstat_path() -> None:
 def test_secret_scanner_patterns_are_live() -> None:
     scanner = load_tool("secret_scan")
     scanner.self_test()
+
+
+def test_secret_scanner_reads_staged_blob_when_worktree_is_safe(tmp_path: Path) -> None:
+    scanner = load_tool("secret_scan")
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "--quiet"], cwd=repository, check=True)
+    path = repository / "probe.txt"
+    path.write_bytes(b"sk-proj-" + b"a" * 36)
+    subprocess.run(["git", "add", "probe.txt"], cwd=repository, check=True)
+    path.write_text("safe worktree content\n", encoding="utf-8")
+
+    result = scanner.findings(repository)
+
+    assert result == ["index:probe.txt:1: openai-key"]

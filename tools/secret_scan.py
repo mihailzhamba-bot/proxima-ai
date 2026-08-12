@@ -17,33 +17,49 @@ PATTERNS = {
 FORBIDDEN_NAMES = re.compile(r"(^|/)(?:\.env(?:\..+)?|id_rsa|id_ed25519|.+\.(?:pem|key))$", re.IGNORECASE)
 
 
-def repository_files() -> list[Path]:
+def git_paths(root: Path, *arguments: str) -> list[str]:
     result = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-        cwd=ROOT,
+        ["git", "ls-files", *arguments, "-z"],
+        cwd=root,
         check=True,
         capture_output=True,
     )
-    return [ROOT / item.decode() for item in result.stdout.split(b"\0") if item]
+    return [item.decode() for item in result.stdout.split(b"\0") if item]
 
 
-def findings(paths: list[Path]) -> list[str]:
+def index_bytes(root: Path, relative: str) -> bytes:
+    result = subprocess.run(
+        ["git", "show", f":{relative}"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    return result.stdout
+
+
+def inspect(scope: str, relative: str, content: bytes) -> list[str]:
     found: list[str] = []
-    for path in paths:
-        relative = path.relative_to(ROOT).as_posix()
-        if FORBIDDEN_NAMES.search(relative):
-            found.append(f"{relative}: forbidden secret filename")
-            continue
-        if not path.is_file() or path.stat().st_size > 5_000_000:
-            continue
-        content = path.read_bytes()
-        if b"\0" in content:
-            continue
-        for line_number, line in enumerate(content.splitlines(), start=1):
-            for label, pattern in PATTERNS.items():
-                if pattern.search(line):
-                    found.append(f"{relative}:{line_number}: {label}")
+    location = f"{scope}:{relative}"
+    if FORBIDDEN_NAMES.search(relative):
+        return [f"{location}: forbidden secret filename"]
+    if len(content) > 5_000_000 or b"\0" in content:
+        return []
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        for label, pattern in PATTERNS.items():
+            if pattern.search(line):
+                found.append(f"{location}:{line_number}: {label}")
     return found
+
+
+def findings(root: Path = ROOT) -> list[str]:
+    found: list[str] = []
+    for relative in git_paths(root, "--cached"):
+        found.extend(inspect("index", relative, index_bytes(root, relative)))
+    for relative in git_paths(root, "--cached", "--others", "--exclude-standard"):
+        path = root / relative
+        if path.is_file():
+            found.extend(inspect("worktree", relative, path.read_bytes()))
+    return sorted(set(found))
 
 
 def self_test() -> None:
@@ -67,7 +83,7 @@ def main() -> None:
         self_test()
         print("secret scanner self-test passed")
         return
-    result = findings(repository_files())
+    result = findings()
     if result:
         raise ValueError("secret scan failed:\n" + "\n".join(result))
     print("secret scan passed")

@@ -49,6 +49,14 @@ def verify() -> None:
     release = copy.deepcopy(values["domain-release"])
     release["atomic"] = False
     must_reject(validator("domain-release"), release, "non-atomic published release")
+    for field, invalid in (
+        ("attempt_ids", ["not an id with spaces"]),
+        ("artifact_ids", ["%%%"]),
+        ("previous_release_id", "***"),
+    ):
+        release = copy.deepcopy(values["domain-release"])
+        release[field] = invalid
+        must_reject(validator("domain-release"), release, f"invalid {field}")
 
 
 if __name__ == "__main__":
