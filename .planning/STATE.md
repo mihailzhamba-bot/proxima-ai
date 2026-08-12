@@ -13,8 +13,8 @@
 ## Current Position
 
 **Phase:** 2 of 8 - Vertical Slice: Immutable Intake to Visible Facts
-**Plan:** Not planned
-**Status:** Phase 1 complete; ready for Phase 2 planning
+**Plan:** 02-01 implemented and verified; 02-02 is checkpointed on an official WB XLSX.
+**Status:** Phase 2 in progress; immutable manual intake foundation is complete, parser/preview must wait for observed workbook structure.
 **Progress:** `[#---------] 13%`
 
 ## Performance Metrics
@@ -22,9 +22,9 @@
 | Metric | Current |
 |--------|---------|
 | Phases complete | 1/8 |
-| Plans complete | 3/3 planned Phase 1 plans |
+| Plans complete | 3/3 Phase 1; 1/2 Phase 2 |
 | Requirements complete | 6/32 |
-| Root verify evidence | Phase 1 aggregate PASS, GitHub run 31586198951 |
+| Root verify evidence | Phase 2 Plan 02-01 PASS, GitHub run 31594703739 on `56ebe000` |
 | Independent cross-model reviews | 3/3 Phase 1 plans PASS with 0 blocker / 0 warning |
 | Data GO | Pending separate Mike decision |
 | Live Deploy GO | Pending separate Mike decision |
@@ -54,7 +54,6 @@
 
 ### Todos
 
-- Create Phase 2 implementation plan from `.planning/ROADMAP.md`.
 - Keep official WB XLSX bytes outside Git and use only synthetic structural fixtures in tests.
 - Keep evidence locators per phase for final Phase 8 gate.
 
@@ -81,9 +80,9 @@
 
 ## Session Continuity
 
-**Last action:** 2026-08-12: data spike по реальным данным store_9725 (Torgstat exports, contract PASS, grain findings) и data-first перестройка roadmap по решениям Mike; см. `.planning/research/DATA-SPIKE-2026-08-12.md`.
+**Last action:** 2026-08-12: Plan 02-01 delivered immutable official WB XLSX intake foundation in `56ebe000`; root `make verify` and GitHub run 31594703739 passed. See `.planning/phases/02-vertical-slice-immutable-intake/EVIDENCE.md`.
 
-**Next action:** Получить от Mike официальную XLSX-выгрузку кабинета + WB READ tokens (закрыть API/XLSX ноги spike), затем Plan Phase 2 vertical slice без чтения pilot business values и без XLSX bytes в Git.
+**Next action:** Mike supplies one official pilot-cabinet XLSX. Inspect only its structure, record the approved field mapping without values, then execute Plan 02-02. WB READ tokens remain needed only for Phase 4.
 
 **Resume context:** Start from `.planning/ROADMAP.md` Phase 2. Treat `.planning/phases/01-architecture-provenance-import-baseline/EVIDENCE.md` as the completed upstream gate and preserve the Phase 1 source/Linear boundaries.
 
