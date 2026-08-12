@@ -25,7 +25,7 @@
 - [ ] **DATA-04** Текущий failed attempt виден отдельно от last-known-good, без подмены failure состоянием business health.
 - [ ] **DATA-05** Каждый public fact разрешается до exact artifact SHA-256, manifest, parser/schema version и acquisition attempt.
 - [ ] **DATA-06** Versioned MetricAuthority фиксирует canonical/supporting source, endpoint/export, field/date/status semantics, timezone, aggregation, owner и validity.
-- [ ] **DATA-07** `order_count` сверяется по cabinet + SKU + calendar day `Europe/Moscow`; official WB canonical, Torgstat supporting.
+- [ ] **DATA-07** `order_count` сверяется по cabinet + SKU + calendar day `Europe/Moscow`; canonical = official WB API, supporting в M1 = official manual XLSX. Torgstat supporting отложен до M2 (structural-unwired; отсутствие фиксируется как `supporting_absent`) - data spike 2026-08-12: Torgstat-экспорты не дают daily grain.
 - [ ] **DATA-08** Любое необъяснённое ненулевое расхождение `order_count` получает `conflict` и блокирует соответствующий release.
 - [ ] **DATA-09** Runtime roles разделяют migration owner, source publisher, release publisher и read-only Data Health; cross-tenant и forbidden-write tests обязательны.
 - [ ] **DATA-10** Migration roundtrip и crash-injection tests доказывают atomic pointer, last-known-good и recovery.

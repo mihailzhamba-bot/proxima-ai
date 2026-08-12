@@ -14,7 +14,7 @@ Mike получает production-ready read-only data foundation для пило
 1. Phase завершается отдельным clean implementation commit; planning-only изменения не считаются implementation evidence.
 2. Root `make verify` проходит одним exit code и включает релевантные TypeScript, Python, PostgreSQL migration/contract, Mermaid render и secret-scan проверки.
 3. CI evidence сохраняет commit SHA и locators результатов.
-4. Independent cross-model deep review того же commit возвращает `0 blocker / 0 warning`; авторская self-review не считается independent review.
+4. Independent cross-model deep review того же commit возвращает `0 blocker / 0 warning` для критических phases 3, 4 и 7 (atomic releases, official WB clients, operations/recovery); авторская self-review не считается independent review. Для остальных phases gate = root `make verify` + CI evidence + авторская self-review, записанная в EVIDENCE.md. (Решение Mike 2026-08-12.)
 5. Source worktrees только читаются и остаются неизменными. Импорт разрешён только из зафиксированного commit или из явно allowlisted working-tree файла с byte SHA-256.
 6. LLM runtime, Ozon, WB Advertising APIs, любые WB WRITE, client-facing UI и Torgstat live session automation не входят в M1.
 
@@ -27,7 +27,7 @@ Mike получает production-ready read-only data foundation для пило
 ## Phases
 
 - [x] **Phase 1: Architecture & Provenance Import Baseline** - Зафиксировать service boundaries, безопасный provenance-bound импорт и единый verification contract.
-- [ ] **Phase 2: Immutable Evidence & Manual Intake** - Провести официальный WB XLSX через единый idempotent intake в immutable content-addressed storage.
+- [ ] **Phase 2: Vertical Slice - Immutable Intake to Visible Facts** - Провести официальный WB XLSX через единый idempotent intake в immutable content-addressed storage и довести вертикальным slice до минимальной localhost-страницы с `order_count` по дням.
 - [ ] **Phase 3: PostgreSQL Quality & Atomic Releases** - Создать tenant-safe quarantine, lineage, runtime roles и fail-closed atomic domain releases.
 - [ ] **Phase 4: Official WB READ & 90-Day Backfill** - Подключить три official READ источника и выполнить параметризуемый 90-дневный operational backfill.
 - [ ] **Phase 5: order_count Authority & Reconciliation** - Зафиксировать семантику order_count и блокировать release при необъяснённом расхождении.
@@ -49,15 +49,16 @@ Mike получает production-ready read-only data foundation для пило
   5. Rebaseline phase hierarchy существует отдельно, а legacy Linear history на 2026-08-12 остаётся неизменной и связана с repository phase contracts только reference links.
 **Plans**: 3/3 complete
 
-### Phase 2: Immutable Evidence & Manual Intake
-**Goal**: Официальный ручной WB XLSX становится неизменяемым evidence artifact до любого parsing или staging.
-**Depends on**: Phase 1
+### Phase 2: Vertical Slice - Immutable Intake to Visible Facts
+**Goal**: Официальный ручной WB XLSX становится неизменяемым evidence artifact до любого parsing или staging, и один вертикальный slice доводит его до видимых минимальных facts: intake -> manifest -> staging -> minimal facts -> минимальная read-only localhost-страница. (Data-first порядок, решение Mike 2026-08-12.)
+**Depends on**: Phase 1; data spike gate `.planning/research/DATA-SPIKE-2026-08-12.md` (official XLSX кабинета и WB READ tokens передаёт Mike)
 **Requirements**: SRC-01, SRC-03, SRC-04
 **Success Criteria** (what must be TRUE):
   1. Operator передаёт официальный WB XLSX в один intake path и затем получает byte-for-byte artifact в private content-addressed storage вне Git.
   2. Manifest фиксирует SHA-256 исходных bytes до parsing и содержит tenant, source, dataset, period, `data_as_of`, `retrieved_at`, schema/parser versions, provenance и locator.
   3. Повторный intake того же artifact возвращает тот же identity и не создаёт duplicate artifacts или facts.
   4. Crash в любой точке intake можно повторить: raw evidence сохраняется, а partial или duplicate public state не возникает.
+  5. Минимальная read-only страница на localhost показывает `order_count` по дням из minimal facts реального artifact. Это preview-slice: полный Data Health (UI-01..03) остаётся в Phase 6, полный quality/release-механизм - в Phase 3.
 **Plans**: TBD
 
 ### Phase 3: PostgreSQL Quality & Atomic Releases
@@ -90,7 +91,7 @@ Mike получает production-ready read-only data foundation для пило
 **Requirements**: DATA-06, DATA-07, DATA-08
 **Success Criteria** (what must be TRUE):
   1. Versioned MetricAuthority в Git и PostgreSQL одинаково фиксирует canonical/supporting source, exact endpoint/export, field/date/status semantics, timezone, aggregation, owner и validity для `order_count`.
-  2. Reviewer воспроизводит comparison на гранулярности `cabinet + SKU + calendar_day` с явным `Europe/Moscow`; official WB является canonical, Torgstat только supporting.
+  2. Reviewer воспроизводит comparison на гранулярности `cabinet + SKU + calendar_day` с явным `Europe/Moscow`; canonical = official WB API, supporting в M1 = official manual XLSX (второй независимый официальный канал). Torgstat как supporting источник отложен до M2: data spike 2026-08-12 показал, что его экспорты агрегированы по неделям/периодам и daily grain не дают.
   3. Любое необъяснённое ненулевое расхождение получает status `conflict` и оставляет operational release pointer на last-known-good.
   4. Отсутствие structural-unwired Torgstat фиксируется как `supporting_absent`, не подменяет WB canonical value и не активирует session automation.
 **Plans**: TBD
@@ -172,7 +173,7 @@ Mike получает production-ready read-only data foundation для пило
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Architecture & Provenance Import Baseline | 3/3 | Complete | 2026-08-12 |
-| 2. Immutable Evidence & Manual Intake | 0/TBD | Not started | - |
+| 2. Vertical Slice - Immutable Intake to Visible Facts | 0/TBD | Not started | - |
 | 3. PostgreSQL Quality & Atomic Releases | 0/TBD | Not started | - |
 | 4. Official WB READ & 90-Day Backfill | 0/TBD | Not started | - |
 | 5. order_count Authority & Reconciliation | 0/TBD | Not started | - |
