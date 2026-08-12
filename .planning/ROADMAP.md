@@ -26,7 +26,7 @@ Mike получает production-ready read-only data foundation для пило
 
 ## Phases
 
-- [ ] **Phase 1: Architecture & Provenance Import Baseline** - Зафиксировать service boundaries, безопасный provenance-bound импорт и единый verification contract.
+- [x] **Phase 1: Architecture & Provenance Import Baseline** - Зафиксировать service boundaries, безопасный provenance-bound импорт и единый verification contract.
 - [ ] **Phase 2: Immutable Evidence & Manual Intake** - Провести официальный WB XLSX через единый idempotent intake в immutable content-addressed storage.
 - [ ] **Phase 3: PostgreSQL Quality & Atomic Releases** - Создать tenant-safe quarantine, lineage, runtime roles и fail-closed atomic domain releases.
 - [ ] **Phase 4: Official WB READ & 90-Day Backfill** - Подключить три official READ источника и выполнить параметризуемый 90-дневный operational backfill.
@@ -47,7 +47,7 @@ Mike получает production-ready read-only data foundation для пило
   3. Mermaid system, data, deployment и delivery sources воспроизводимо рендерятся в SVG/PDF через root `make verify` вместе с TypeScript, Python, migrations, contracts и secret scan.
   4. Production entrypoints и dependency graph не содержат Torgstat adapter; runtime flag не может подключить live session automation.
   5. Rebaseline phase hierarchy существует отдельно, а legacy Linear history на 2026-08-12 остаётся неизменной и связана с repository phase contracts только reference links.
-**Plans**: TBD
+**Plans**: 3/3 complete
 
 ### Phase 2: Immutable Evidence & Manual Intake
 **Goal**: Официальный ручной WB XLSX становится неизменяемым evidence artifact до любого parsing или staging.
@@ -171,7 +171,7 @@ Mike получает production-ready read-only data foundation для пило
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Architecture & Provenance Import Baseline | 0/TBD | Not started | - |
+| 1. Architecture & Provenance Import Baseline | 3/3 | Complete | 2026-08-12 |
 | 2. Immutable Evidence & Manual Intake | 0/TBD | Not started | - |
 | 3. PostgreSQL Quality & Atomic Releases | 0/TBD | Not started | - |
 | 4. Official WB READ & 90-Day Backfill | 0/TBD | Not started | - |

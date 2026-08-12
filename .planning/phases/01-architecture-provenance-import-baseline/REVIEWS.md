@@ -21,5 +21,7 @@ Review actor: independent `gpt-5.4` subagent `/root/plan01_diff_review_retry`. T
 
 ## Plan 01-03 - Linear rebaseline and evidence
 
-- Status: pending independent review of the evidence commit.
-- Required verdict: 0 blocker, 0 warning.
+- Reviewed range: `ba20d89..36488d4`
+- CI run: `31586198951`, exact SHA `36488d439d7ef4059257841317ef21128d324898`, PASS.
+- Final verdict on 2026-08-12: 0 blocker, 0 warning, 0 suggestion.
+- Reviewer checks: 141 protected unique UUIDs, identical before/after SHA-256, 9 new issues, 8 parent links, 7 ordered relations, live Orca read-back and absence of legacy issue bodies/secrets.

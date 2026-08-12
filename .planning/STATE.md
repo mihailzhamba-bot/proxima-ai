@@ -6,26 +6,26 @@
 
 **Milestone:** M1 - production-ready read-only data foundation для одного пилотного кабинета Bogatova Belle Robe.
 
-**Current focus:** Phase 1 - Architecture & Provenance Import Baseline.
+**Current focus:** Phase 2 - Immutable Evidence & Manual Intake.
 
 **Roadmap:** 8 phases, 32/32 requirements mapped, 0 orphaned, 0 duplicate ownership.
 
 ## Current Position
 
-**Phase:** 1 of 8 - Architecture & Provenance Import Baseline
+**Phase:** 2 of 8 - Immutable Evidence & Manual Intake
 **Plan:** Not planned
-**Status:** Roadmap created; ready for phase planning
-**Progress:** `[----------] 0%`
+**Status:** Phase 1 complete; ready for Phase 2 planning
+**Progress:** `[#---------] 13%`
 
 ## Performance Metrics
 
 | Metric | Current |
 |--------|---------|
-| Phases complete | 0/8 |
-| Plans complete | 0/TBD |
-| Requirements complete | 0/32 |
-| Root verify evidence | 0 phase commits |
-| Independent cross-model reviews | 0 passing phase reviews |
+| Phases complete | 1/8 |
+| Plans complete | 3/3 planned Phase 1 plans |
+| Requirements complete | 6/32 |
+| Root verify evidence | Phase 1 aggregate PASS, GitHub run 31586198951 |
+| Independent cross-model reviews | 3/3 Phase 1 plans PASS with 0 blocker / 0 warning |
 | Data GO | Pending separate Mike decision |
 | Live Deploy GO | Pending separate Mike decision |
 
@@ -50,23 +50,23 @@
 
 ### Todos
 
-- Create Phase 1 implementation plan from `.planning/ROADMAP.md`.
-- At Phase 1 start, record source worktree pre-import fingerprints and exact import allowlist.
+- Create Phase 2 implementation plan from `.planning/ROADMAP.md`.
+- Keep official WB XLSX bytes outside Git and use only synthetic structural fixtures in tests.
 - Keep evidence locators per phase for final Phase 8 gate.
 
 ### Blockers
 
-- None for Phase 1 planning.
+- None for Phase 2 planning and offline implementation.
 - First approved data release remains blocked on Phase 8 Data GO evidence.
 - Live deployment remains blocked on separate Live Deploy GO.
 
 ## Session Continuity
 
-**Last action:** Created decision-complete M1 roadmap and initialized state on 2026-08-12.
+**Last action:** Completed Phase 1 with aggregate commit `36488d4`, GitHub Actions run `31586198951` PASS and independent review 0 blocker / 0 warning on 2026-08-12.
 
-**Next action:** Run phase planning for Phase 1 without implementing or mutating sibling source worktrees.
+**Next action:** Plan Phase 2 immutable official WB manual intake without reading pilot business values or storing XLSX bytes in Git.
 
-**Resume context:** Start from `.planning/ROADMAP.md` Phase 1. Treat `.planning/SOURCE-INVENTORY.md` as the provenance boundary and `.planning/REQUIREMENTS.md` traceability table as the single ownership map.
+**Resume context:** Start from `.planning/ROADMAP.md` Phase 2. Treat `.planning/phases/01-architecture-provenance-import-baseline/EVIDENCE.md` as the completed upstream gate and preserve the Phase 1 source/Linear boundaries.
 
 ---
 *Updated: 2026-08-12*

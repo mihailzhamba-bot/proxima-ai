@@ -2,10 +2,10 @@
 
 ## Architecture and provenance
 
-- [ ] **ARCH-01** Canonical monorepo сохраняет service boundary: TypeScript collector/data-plane, Python control-plane/Data Health, PostgreSQL 16 и Docker Compose.
-- [ ] **ARCH-02** Импортированный код имеет inventory с source repository, commit или working-tree SHA-256, destination и review status; source worktrees не изменяются.
-- [ ] **ARCH-03** Mermaid system/data/deployment/delivery diagrams хранятся как source и проходят render check в CI.
-- [ ] **ARCH-04** Root `make verify` проверяет TypeScript, Python, migrations, contracts, architecture render и secret scan одним exit code.
+- [x] **ARCH-01** Canonical monorepo сохраняет service boundary: TypeScript collector/data-plane, Python control-plane/Data Health, PostgreSQL 16 и Docker Compose.
+- [x] **ARCH-02** Импортированный код имеет inventory с source repository, commit или working-tree SHA-256, destination и review status; source worktrees не изменяются.
+- [x] **ARCH-03** Mermaid system/data/deployment/delivery diagrams хранятся как source и проходят render check в CI.
+- [x] **ARCH-04** Root `make verify` проверяет TypeScript, Python, migrations, contracts, architecture render и secret scan одним exit code.
 
 ## Sources and immutable evidence
 
@@ -14,7 +14,7 @@
 - [ ] **SRC-03** Каждый XLSX или gzip JSON artifact имеет SHA-256 manifest с tenant/source/dataset/period/data_as_of/retrieved_at/schema/parser/provenance/locator metadata.
 - [ ] **SRC-04** Повторный artifact и повтор API pagination/retry идемпотентны; crash/restart не создаёт duplicate facts.
 - [ ] **SRC-05** 90-day operational backfill является параметризованным workflow, а не hardcoded one-off path.
-- [ ] **SRC-06** Torgstat adapter остаётся structural-unwired в production; runtime env flag не может включить live session automation.
+- [x] **SRC-06** Torgstat adapter остаётся structural-unwired в production; runtime env flag не может включить live session automation.
 - [ ] **SRC-07** Неизвестный cabinet mapping, schema drift, auth failure, 429 exhaustion или неполный source остаются typed blocked/failed attempt.
 
 ## PostgreSQL, quality and releases
@@ -48,7 +48,7 @@
 
 - [ ] **PROC-01** Каждый vertical slice имеет clean implementation commit, CI evidence и independent cross-model deep review с 0 blocker/0 warning.
 - [ ] **PROC-02** Architecture GO считается принятой через запрос Mike `Implement the plan` от 2026-08-12; Data GO и Live Deploy GO требуют отдельного Mike decision record с evidence locators.
-- [ ] **PROC-03** Legacy Linear issues от 2026-08-12 не переписываются; rebaseline hierarchy создаётся отдельно и связывается с repository phase contracts.
+- [x] **PROC-03** Legacy Linear issues от 2026-08-12 не переписываются; rebaseline hierarchy создаётся отдельно и связывается с repository phase contracts.
 
 ## Deferred beyond M1
 
@@ -62,16 +62,16 @@
 
 | Requirement | Owning Phase | Status |
 |-------------|--------------|--------|
-| ARCH-01 | Phase 1 | Pending |
-| ARCH-02 | Phase 1 | Pending |
-| ARCH-03 | Phase 1 | Pending |
-| ARCH-04 | Phase 1 | Pending |
+| ARCH-01 | Phase 1 | Complete |
+| ARCH-02 | Phase 1 | Complete |
+| ARCH-03 | Phase 1 | Complete |
+| ARCH-04 | Phase 1 | Complete |
 | SRC-01 | Phase 2 | Pending |
 | SRC-02 | Phase 4 | Pending |
 | SRC-03 | Phase 2 | Pending |
 | SRC-04 | Phase 2 | Pending |
 | SRC-05 | Phase 4 | Pending |
-| SRC-06 | Phase 1 | Pending |
+| SRC-06 | Phase 1 | Complete |
 | SRC-07 | Phase 4 | Pending |
 | DATA-01 | Phase 3 | Pending |
 | DATA-02 | Phase 3 | Pending |
@@ -93,4 +93,4 @@
 | OPS-05 | Phase 7 | Pending |
 | PROC-01 | Phase 8 | Pending |
 | PROC-02 | Phase 8 | Pending |
-| PROC-03 | Phase 1 | Pending |
+| PROC-03 | Phase 1 | Complete |
