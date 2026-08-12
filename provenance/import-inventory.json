@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-08-12",
+  "imports": [
+    {
+      "source_repository": "https://github.com/mihailzhamba-bot/torgstat-collector.git",
+      "source_path": "src/auth-error.ts",
+      "source_commit": "610169a6bd3253fa351fa6fbe4ff571d4f4d5539",
+      "source_sha256": "1fe841dc6864113230cb26af7aa7234907e8736307ddd5fe4bf2c0cdb2083902",
+      "destination": "services/collector/src/imported/auth-error.ts",
+      "import_mode": "tracked_commit_exact_bytes",
+      "review_status": "pending_independent_review"
+    },
+    {
+      "source_repository": "https://github.com/mihailzhamba-bot/torgstat-collector.git",
+      "source_path": "src/path-safety.ts",
+      "source_commit": "610169a6bd3253fa351fa6fbe4ff571d4f4d5539",
+      "source_sha256": "9926c3b9c9b97acd40a49501f9a55762d060a41b944f2d3c835111e6a11b6660",
+      "destination": "services/collector/src/imported/path-safety.ts",
+      "import_mode": "tracked_commit_exact_bytes",
+      "review_status": "pending_independent_review"
+    },
+    {
+      "source_repository": "https://github.com/mihailzhamba-bot/torgstat-collector.git",
+      "source_path": "src/redact.ts",
+      "source_commit": "610169a6bd3253fa351fa6fbe4ff571d4f4d5539",
+      "source_sha256": "13e0e683c44b9e2129a922737c3ff01b4d40f0ad49fb900b93c3762b8442533e",
+      "destination": "services/collector/src/imported/redact.ts",
+      "import_mode": "tracked_commit_exact_bytes",
+      "review_status": "pending_independent_review"
+    }
+  ],
+  "source_worktrees": [
+    {
+      "name": "torgstat-collector",
+      "path": "/Users/mikezhamba/Desktop/MILV/03-startups/!Proxima/PRoxima/Торгстат-автоматизация/torgstat-collector",
+      "tracked_commit": "610169a6bd3253fa351fa6fbe4ff571d4f4d5539",
+      "status_sha256_before": "0e77e03f38430d8c1021b134494862a2825c10006be41183e632adb978fad29f",
+      "status_sha256_after": "0e77e03f38430d8c1021b134494862a2825c10006be41183e632adb978fad29f"
+    },
+    {
+      "name": "proxima-ai-manager",
+      "path": "/Users/mikezhamba/Desktop/MILV/03-startups/!Proxima/PRoxima/Опрос-v2.2",
+      "tracked_commit": "9cca25d1118ab74a113be43e4346a024b0c7abe7",
+      "status_sha256_before": "e02a035d7885b7a9ead9e9eb8b13f4f2da202a3e3e57b52ad83a8eea8ae70fc3",
+      "status_sha256_after": "e02a035d7885b7a9ead9e9eb8b13f4f2da202a3e3e57b52ad83a8eea8ae70fc3"
+    }
+  ]
+}
