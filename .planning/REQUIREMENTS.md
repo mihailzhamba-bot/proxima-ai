@@ -12,7 +12,7 @@
 - [ ] **SRC-01** Manual official WB XLSX проходит один общий intake path и сохраняется byte-for-byte в private content-addressed storage.
 - [ ] **SRC-02** Official WB Statistics, Analytics и Finance READ clients используют отдельные least-privilege SecretRef и никогда не сохраняют token values в Git, БД, logs или alerts.
 - [ ] **SRC-03** Каждый XLSX или gzip JSON artifact имеет SHA-256 manifest с tenant/source/dataset/period/data_as_of/retrieved_at/schema/parser/provenance/locator metadata.
-- [ ] **SRC-04** Повторный artifact и повтор API pagination/retry идемпотентны; crash/restart не создаёт duplicate facts.
+- [ ] **SRC-04** Повторный intake того же artifact идемпотентен; crash/restart не создаёт duplicate artifacts или facts. (Идемпотентность API pagination/retry - зона Phase 4: SRC-05, SRC-07.)
 - [ ] **SRC-05** 90-day operational backfill является параметризованным workflow, а не hardcoded one-off path.
 - [x] **SRC-06** Torgstat adapter остаётся structural-unwired в production; runtime env flag не может включить live session automation.
 - [ ] **SRC-07** Неизвестный cabinet mapping, schema drift, auth failure, 429 exhaustion или неполный source остаются typed blocked/failed attempt.
@@ -46,7 +46,7 @@
 
 ## Delivery gates
 
-- [ ] **PROC-01** Каждый vertical slice имеет clean implementation commit, CI evidence и independent cross-model deep review с 0 blocker/0 warning.
+- [ ] **PROC-01** Каждый vertical slice имеет clean implementation commit и CI evidence; для критических phases 3, 4 и 7 дополнительно independent cross-model deep review с 0 blocker/0 warning на том же commit; для остальных phases - авторская self-review, записанная в EVIDENCE.md (решение Mike 2026-08-12).
 - [ ] **PROC-02** Architecture GO считается принятой через запрос Mike `Implement the plan` от 2026-08-12; Data GO и Live Deploy GO требуют отдельного Mike decision record с evidence locators.
 - [x] **PROC-03** Legacy Linear issues от 2026-08-12 не переписываются; rebaseline hierarchy создаётся отдельно и связывается с repository phase contracts.
 

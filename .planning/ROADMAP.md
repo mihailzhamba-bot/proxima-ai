@@ -29,7 +29,7 @@ Mike получает production-ready read-only data foundation для пило
 - [x] **Phase 1: Architecture & Provenance Import Baseline** - Зафиксировать service boundaries, безопасный provenance-bound импорт и единый verification contract.
 - [ ] **Phase 2: Vertical Slice - Immutable Intake to Visible Facts** - Провести официальный WB XLSX через единый idempotent intake в immutable content-addressed storage и довести вертикальным slice до минимальной localhost-страницы с `order_count` по дням.
 - [ ] **Phase 3: PostgreSQL Quality & Atomic Releases** - Создать tenant-safe quarantine, lineage, runtime roles и fail-closed atomic domain releases.
-- [ ] **Phase 4: Official WB READ & 90-Day Backfill** - Подключить три official READ источника и выполнить параметризуемый 90-дневный operational backfill.
+- [ ] **Phase 4: Official WB READ & 90-Day Backfill** - Подключить три official READ источника и выполнить параметризуемый 90-дневный operational backfill на минимальном VPS с базовым daily scheduler.
 - [ ] **Phase 5: order_count Authority & Reconciliation** - Зафиксировать семантику order_count и блокировать release при необъяснённом расхождении.
 - [ ] **Phase 6: Data Health** - Дать Mike приватную read-only наблюдаемость от source attempt до artifact checksum.
 - [ ] **Phase 7: VPS Operations & Recovery Readiness** - Подтвердить ежедневный scheduler, sanitized alerts, one-VPS stack, backup и изолированный restore.
@@ -50,15 +50,15 @@ Mike получает production-ready read-only data foundation для пило
 **Plans**: 3/3 complete
 
 ### Phase 2: Vertical Slice - Immutable Intake to Visible Facts
-**Goal**: Официальный ручной WB XLSX становится неизменяемым evidence artifact до любого parsing или staging, и один вертикальный slice доводит его до видимых минимальных facts: intake -> manifest -> staging -> minimal facts -> минимальная read-only localhost-страница. (Data-first порядок, решение Mike 2026-08-12.)
-**Depends on**: Phase 1; data spike gate `.planning/research/DATA-SPIKE-2026-08-12.md` (official XLSX кабинета и WB READ tokens передаёт Mike)
+**Goal**: Официальный ручной WB XLSX становится неизменяемым evidence artifact до любого parsing или staging, и один вертикальный slice доводит его до видимых минимальных facts: intake -> manifest -> staging -> minimal facts -> минимальная read-only localhost-страница. (Data-first порядок, решение Mike 2026-08-12.) Slice-таблицы создаются каноническими ordered migrations (`002_...`+) аддитивно - никаких throwaway-таблиц вне migration ledger; Phase 3 наследует и расширяет их.
+**Depends on**: Phase 1; data spike gate `.planning/research/DATA-SPIKE-2026-08-12.md` (official XLSX кабинета передаёт Mike; WB READ tokens нужны только Phase 4)
 **Requirements**: SRC-01, SRC-03, SRC-04
 **Success Criteria** (what must be TRUE):
   1. Operator передаёт официальный WB XLSX в один intake path и затем получает byte-for-byte artifact в private content-addressed storage вне Git.
   2. Manifest фиксирует SHA-256 исходных bytes до parsing и содержит tenant, source, dataset, period, `data_as_of`, `retrieved_at`, schema/parser versions, provenance и locator.
   3. Повторный intake того же artifact возвращает тот же identity и не создаёт duplicate artifacts или facts.
   4. Crash в любой точке intake можно повторить: raw evidence сохраняется, а partial или duplicate public state не возникает.
-  5. Минимальная read-only страница на localhost показывает `order_count` по дням из minimal facts реального artifact. Это preview-slice: полный Data Health (UI-01..03) остаётся в Phase 6, полный quality/release-механизм - в Phase 3.
+  5. (Slice-evidence, без requirement-owner.) Минимальная read-only страница на localhost показывает `order_count` по дням из staging/preview facts реального artifact с явной пометкой `unreleased`; production release pointer в slice не участвует. Полный Data Health (UI-01..03) остаётся в Phase 6, полный quality/release-механизм - в Phase 3.
 **Plans**: TBD
 
 ### Phase 3: PostgreSQL Quality & Atomic Releases
@@ -66,7 +66,7 @@ Mike получает production-ready read-only data foundation для пило
 **Depends on**: Phase 2
 **Requirements**: DATA-01, DATA-02, DATA-03, DATA-04, DATA-05, DATA-09, DATA-10
 **Success Criteria** (what must be TRUE):
-  1. Ordered immutable migrations создают tenant-safe metadata, attempts, artifacts, staging/quarantine, normalized facts, quality checks, lineage и release records; migration roundtrip проходит на real PostgreSQL.
+  1. Ordered immutable migrations создают tenant-safe metadata, attempts, artifacts, staging/quarantine, normalized facts, quality checks, lineage и release records, наследуя и расширяя slice-миграции Phase 2; migration roundtrip проходит на real PostgreSQL.
   2. Operational, inventory и financial release pointers продвигаются независимо и только в одной transaction с promotion соответствующих facts.
   3. Failed, partial, stale, conflicting или schema-drift attempt оставляет current pointer на last-known-good и виден как отдельный текущий failure.
   4. Из любого public fact reviewer переходит к exact artifact SHA-256, manifest, parser/schema version и acquisition attempt.
@@ -74,8 +74,8 @@ Mike получает production-ready read-only data foundation для пило
 **Plans**: TBD
 
 ### Phase 4: Official WB READ & 90-Day Backfill
-**Goal**: Пилот получает complete official WB evidence через READ-only clients и воспроизводимый 90-дневный operational backfill.
-**Depends on**: Phase 3
+**Goal**: Пилот получает complete official WB evidence через READ-only clients и воспроизводимый 90-дневный operational backfill, выполняемый на минимальном VPS с базовым ежедневным scheduler. (Решение Mike 2026-08-12: VPS и daily-сбор поднимаются здесь, а не big-bang в Phase 7.)
+**Depends on**: Phase 3; VPS выбран и оплачен (провайдер/бюджет/юрисдикция - open decision к planning этой фазы)
 **Requirements**: SRC-02, SRC-05, SRC-07
 **Success Criteria** (what must be TRUE):
   1. Statistics, Analytics и Finance clients используют три отдельные least-privilege SecretRef и не экспонируют token values в Git, PostgreSQL, logs или alerts.
@@ -83,6 +83,8 @@ Mike получает production-ready read-only data foundation для пило
   3. Operator запускает backfill параметрами cabinet и date range на 90 calendar days от launch date, а повторный или возобновлённый run не дублирует факты.
   4. Unknown cabinet mapping, schema drift, auth failure, exhausted 429 retries или incomplete pagination завершаются typed `blocked`/`failed` attempt без движения release pointer.
   5. Для каждого backfill window видны completeness evidence и immutable gzip JSON artifacts до staging.
+  6. (Preview-инфраструктура; ownership OPS-01 остаётся в Phase 7.) Минимальный VPS с Compose-стеком поднят; backfill выполняется на VPS, а не на ноутбуке.
+  7. (Preview; ownership OPS-02/OPS-03 остаётся в Phase 7.) Базовый scheduler job запускает ежедневный сбор на VPS - без SLA-timeline 07:00-09:00 и без Telegram alerts; SLA-дисциплина и alerting формализуются в Phase 7.
 **Plans**: TBD
 
 ### Phase 5: order_count Authority & Reconciliation
@@ -125,7 +127,7 @@ Mike получает production-ready read-only data foundation для пило
 **Depends on**: Phase 7
 **Requirements**: PROC-01, PROC-02
 **Success Criteria** (what must be TRUE):
-  1. Для каждой Phase 1-7 Mike открывает evidence locator с clean implementation commit SHA, successful root `make verify`, CI result и independent cross-model review `0 blocker / 0 warning` на том же commit.
+  1. Для каждой Phase 1-7 Mike открывает evidence locator с clean implementation commit SHA, successful root `make verify` и CI result; для phases 3, 4, 7 дополнительно independent cross-model review `0 blocker / 0 warning` на том же commit, для остальных - записанная в EVIDENCE.md self-review (gate-правило 2026-08-12).
   2. First release evidence связывает official WB artifact bytes и SHA-256 manifest с acquisition attempt, quarantine checks, reconciliation result, atomic release ID и public fact lineage.
   3. Data GO записан отдельным Mike decision record с evidence locators до продвижения первого approved release; Architecture GO с запросом `Implement the plan` от 2026-08-12 остаётся исходным принятым gate.
   4. Live Deploy GO записан отдельно после passing scheduler, alert, backup, isolated restore и private-access evidence; без него stack не считается live.
