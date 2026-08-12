@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
+import copy
 import importlib.util
+import json
 import subprocess
 from pathlib import Path
 
@@ -31,6 +34,20 @@ def test_source_path_rejects_parent_traversal() -> None:
     provenance = load_tool("verify_provenance")
     with pytest.raises(ValueError, match="unsafe source path"):
         provenance.safe_source_path("../dirty-secret")
+
+
+def test_provenance_attestation_rejects_tampered_tree_object() -> None:
+    provenance = load_tool("verify_provenance")
+    path = ROOT / "provenance" / "torgstat-collector-610169a.attestation.json"
+    attestation = json.loads(path.read_text(encoding="utf-8"))
+    tampered = copy.deepcopy(attestation)
+    tree_id = tampered["root_tree"]
+    content = bytearray(base64.b64decode(tampered["objects"][tree_id]["content_base64"] ))
+    content[0] ^= 1
+    tampered["objects"][tree_id]["content_base64"] = base64.b64encode(content).decode()
+
+    with pytest.raises(ValueError, match="attested Git object hash mismatch"):
+        provenance.attested_paths(tampered)
 
 
 def test_cross_language_contracts_accept_only_fail_closed_examples() -> None:

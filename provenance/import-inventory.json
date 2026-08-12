@@ -1,6 +1,13 @@
 {
   "schema_version": 1,
   "recorded_at": "2026-08-12",
+  "source_attestations": [
+    {
+      "source_repository": "https://github.com/mihailzhamba-bot/torgstat-collector.git",
+      "source_commit": "610169a6bd3253fa351fa6fbe4ff571d4f4d5539",
+      "path": "provenance/torgstat-collector-610169a.attestation.json"
+    }
+  ],
   "imports": [
     {
       "source_repository": "https://github.com/mihailzhamba-bot/torgstat-collector.git",
