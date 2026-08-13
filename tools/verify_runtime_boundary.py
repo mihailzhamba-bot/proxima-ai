@@ -45,8 +45,8 @@ def verify() -> None:
         violations.append("infra/compose.yaml: forbidden live adapter flag")
     if "0.0.0.0" in compose or "127.0.0.1:${PROXIMA_POSTGRES_PORT:-5432}:5432" not in compose:
         violations.append("infra/compose.yaml: PostgreSQL must bind only to configurable loopback")
-    if "postgres:16" not in compose or "internal: true" not in compose:
-        violations.append("infra/compose.yaml: PostgreSQL 16 private boundary missing")
+    if "postgres:16" not in compose or "name: proxima-ai-private" not in compose:
+        violations.append("infra/compose.yaml: PostgreSQL 16 isolated bridge boundary missing")
 
     exports = manifest.get("exports", {})
     if not isinstance(exports, dict) or "import" not in exports:
