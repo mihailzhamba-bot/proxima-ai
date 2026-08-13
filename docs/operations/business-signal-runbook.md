@@ -16,6 +16,15 @@ Phase 2.1 запускается вручную на Selectel VPS `135.106.186.2
 
 Нельзя переиспользовать широкий token: CLI декодирует JWT scope и блокирует запуск, если token не READ-only или содержит больше одной нужной категории.
 
+Подготовить private bundle вне Git с семью файлами из списка выше, используя короткие имена `wb_statistics_token`, `wb_analytics_token`, `wb_finance_token`, `telegram_bot_token`, `founder-chat.json`, `products.csv`, `warehouses.csv`. Каждый source-файл должен иметь mode `0600`. Значения не передавать через shell arguments. После безопасной доставки bundle на VPS проверить и установить его одной командой:
+
+```bash
+sudo bash /srv/proxima-ai/repo/infra/bootstrap/install-business-signal-inputs.sh \
+  amirova-test /absolute/private/bundle
+```
+
+Installer сначала копирует bundle во временный private staging, переиспользует runtime validators для трёх WB scopes, Telegram token shape, founder chat и обеих CSV, затем устанавливает проверенные файлы с owner `proxima-admin` и mode `0600`. При validation failure существующие runtime inputs не меняются. Source bundle после подтверждённой установки удаляет сам оператор.
+
 ## Deploy without live send
 
 1. Записать baseline commit VPS и сделать private `pg_dump` до migration.

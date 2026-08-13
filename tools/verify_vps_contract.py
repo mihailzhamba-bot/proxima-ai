@@ -142,6 +142,15 @@ def verify(root: Path = ROOT) -> None:
         require(required in signal_runtime, f"business signal runtime boundary missing: {required}", errors)
     require("telegram" not in signal_runtime.lower(), "runtime bootstrap must not create Telegram credentials or send messages", errors)
 
+    signal_installer = (root / "infra" / "bootstrap" / "install-business-signal-inputs.sh").read_text(encoding="utf-8")
+    for required in (
+        "validate-signal-inputs.js",
+        '[[ "$(id -u)" -eq 0 ]]',
+        "stat --format '%a'",
+        "install --mode 0600 --owner proxima-admin",
+    ):
+        require(required in signal_installer, f"business signal private installer boundary missing: {required}", errors)
+
     runtime_template = (root / "infra" / "runtime.env.template").read_text(encoding="utf-8")
     require(
         runtime_template.splitlines() == [

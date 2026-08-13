@@ -13,6 +13,7 @@ def verify() -> None:
     cli = (ROOT / "services" / "collector" / "src" / "cli" / "stockout-signal.ts").read_text(encoding="utf-8")
     migration = (ROOT / "db" / "migrations" / "004_business_signal_slice.sql").read_text(encoding="utf-8")
     runtime = (ROOT / "infra" / "bootstrap" / "prepare-business-signal-runtime.sh").read_text(encoding="utf-8")
+    input_installer = (ROOT / "infra" / "bootstrap" / "install-business-signal-inputs.sh").read_text(encoding="utf-8")
 
     required_endpoints = (
         "https://statistics-api.wildberries.ru/api/v1/supplier/sales",
@@ -38,6 +39,21 @@ def verify() -> None:
     for required in ('NODE_MAJOR="22"', "node_${NODE_MAJOR}.x", "PUPPETEER_SKIP_DOWNLOAD=true", "npm --prefix", "run build"):
         if required not in runtime:
             errors.append(f"business signal runtime bootstrap missing: {required}")
+    for required in (
+        "validate-signal-inputs.js",
+        "wb_statistics_token",
+        "wb_analytics_token",
+        "wb_finance_token",
+        "telegram_bot_token",
+        "founder-chat.json",
+        "products.csv",
+        "warehouses.csv",
+        "--mode 0600",
+    ):
+        if required not in input_installer:
+            errors.append(f"business signal private installer missing: {required}")
+    if "read -s" in input_installer or "--token " in input_installer:
+        errors.append("business signal installer must not accept secret values as interactive or command arguments")
     for forbidden in ("FOUNDER_CHAT_ID =", "founderChatId: 1", "founderChatId: -1"):
         if forbidden in source:
             errors.append("founder chat value or placeholder must not be committed in source")

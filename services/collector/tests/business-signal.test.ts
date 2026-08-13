@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { chmod, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -8,6 +8,7 @@ import { Decimal } from 'decimal.js';
 import { calculateCandidates, calculateMargins, selectTopRisk } from '../src/business-signal/calculate.js';
 import { completedSignalWindow } from '../src/business-signal/date-window.js';
 import { RecordedHttpClient, parseJson, type HttpRequest, type HttpResponse, type HttpTransport } from '../src/business-signal/http.js';
+import { validateSignalInputFiles } from '../src/business-signal/input-validation.js';
 import { runBusinessSignal } from '../src/business-signal/pipeline.js';
 import { BusinessSignalRawStore } from '../src/business-signal/raw-store.js';
 import { assertLeastPrivilegeToken } from '../src/business-signal/secrets.js';
@@ -76,6 +77,54 @@ test('rejects a READ token that grants required and unrelated WB categories', ()
   assert.doesNotThrow(() => assertLeastPrivilegeToken(jwt(5), 'statistics', new Date('2026-08-13T10:00:00Z')));
   assert.throws(() => assertLeastPrivilegeToken(jwt(5, 1), 'statistics', new Date('2026-08-13T10:00:00Z')), { code: 'TOKEN_SCOPE_INVALID' });
   assert.throws(() => assertLeastPrivilegeToken(jwt(13, 12), 'finance', new Date('2026-08-13T10:00:00Z')), { code: 'TOKEN_SCOPE_INVALID' });
+});
+
+test('validates a complete private signal input bundle without returning secret values', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'signal-inputs-'));
+  const files = {
+    statistics: join(root, 'wb_statistics_token'),
+    analytics: join(root, 'wb_analytics_token'),
+    finance: join(root, 'wb_finance_token'),
+    telegram: join(root, 'telegram_bot_token'),
+    founder: join(root, 'founder-chat.json'),
+    products: join(root, 'products.csv'),
+    warehouses: join(root, 'warehouses.csv'),
+  };
+  const telegram = ['123456789', 'x'.repeat(35)].join(':');
+  await Promise.all([
+    writeFile(files.statistics, jwt(5)),
+    writeFile(files.analytics, jwt(2)),
+    writeFile(files.finance, jwt(13)),
+    writeFile(files.telegram, telegram),
+    writeFile(files.founder, JSON.stringify({ chat_id: '-1001234567890' })),
+    writeFile(files.products, 'tenant_id,nm_id,internal_article,cogs_rub,lead_time_days,safety_buffer_days,effective_from\namirova-test,1001,SKU-1,300.10,40,5,2026-08-13\n'),
+    writeFile(files.warehouses, 'tenant_id,sales_warehouse_name,stock_warehouse_name,canonical_warehouse,effective_from\namirova-test,Коледино,Коледино,Коледино,2026-08-13\n'),
+  ]);
+  await Promise.all(Object.values(files).map((path) => chmod(path, 0o600)));
+  const paths = {
+    tenantId: 'amirova-test',
+    statisticsTokenFile: files.statistics,
+    analyticsTokenFile: files.analytics,
+    financeTokenFile: files.finance,
+    telegramTokenFile: files.telegram,
+    founderChatSource: files.founder,
+    productsCsv: files.products,
+    warehousesCsv: files.warehouses,
+  };
+
+  const result = await validateSignalInputFiles(paths, new Date('2026-08-13T10:00:00Z'));
+  assert.deepEqual(result, {
+    tenantId: 'amirova-test',
+    products: 1,
+    warehouseMappings: 1,
+    wbScopes: ['statistics', 'analytics', 'finance'],
+    telegramTokenShape: 'valid',
+    founderChatSource: 'valid',
+  });
+  assert.equal(JSON.stringify(result).includes(telegram), false);
+
+  await writeFile(files.analytics, jwt(2, 1));
+  assert.rejects(() => validateSignalInputFiles(paths, new Date('2026-08-13T10:00:00Z')), { code: 'TOKEN_SCOPE_INVALID' });
 });
 
 test('calculates Decimal margin including reverse logistics', () => {
