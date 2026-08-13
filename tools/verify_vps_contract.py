@@ -89,6 +89,8 @@ def verify(root: Path = ROOT) -> None:
     require(data_admission.get("full_recovery_ownership_phase") == 7, "full recovery must remain Phase 7", errors)
 
     bootstrap = (root / "infra" / "bootstrap" / "bootstrap-vps.sh").read_text(encoding="utf-8")
+    require("/etc/ssh/sshd_config.d/00-proxima-ai.conf" in bootstrap, "SSH hardening must precede cloud-init drop-ins", errors)
+    require("rm -f /etc/ssh/sshd_config.d/60-proxima-ai.conf" in bootstrap, "legacy late SSH drop-in must be removed", errors)
     for required in (
         "PROXIMA_SECURITY_GROUP_VERIFIED",
         "PermitRootLogin no",
@@ -104,7 +106,7 @@ def verify(root: Path = ROOT) -> None:
         "systemctl enable --now docker",
         "Do not enable proxima-host-monitor.timer before Telegram secret files",
     ):
-        require(required in bootstrap or required in (root / "infra" / "bootstrap" / "60-proxima-ai.conf").read_text(encoding="utf-8"), f"bootstrap boundary missing: {required}", errors)
+        require(required in bootstrap or required in (root / "infra" / "bootstrap" / "00-proxima-ai.conf").read_text(encoding="utf-8"), f"bootstrap boundary missing: {required}", errors)
 
     day1_runtime = (root / "infra" / "bootstrap" / "prepare-day1-runtime.sh").read_text(encoding="utf-8")
     for required in (
@@ -112,7 +114,11 @@ def verify(root: Path = ROOT) -> None:
         "/etc/proxima-ai/secrets",
         "WB_STATISTICS_TOKEN_FILE=",
         "PROXIMA_RAW_DIR=",
+        "WB_ANALYTICS_TOKEN_FILE=",
+        "PROXIMA_SPOOL_DIR=",
+        "POSTGRES_PASSWORD_FILE=",
         "tools/wb_api_probe_requirements.txt",
+        "tools/apply_migrations.py",
         "docker compose",
         "up --detach postgres",
         '"healthy"',
@@ -126,6 +132,13 @@ def verify(root: Path = ROOT) -> None:
             "# Copy to repository-root .env. Never put a token value in this file.",
             "WB_STATISTICS_TOKEN_FILE=/etc/proxima-ai/secrets/wb_statistics_token",
             "PROXIMA_RAW_DIR=/srv/proxima-ai/data/day1-wb-api",
+            "WB_ANALYTICS_TOKEN_FILE=/etc/proxima-ai/secrets/wb_analytics_token",
+            "PROXIMA_SPOOL_DIR=/srv/proxima-ai/data/wb-analytics-spool",
+            "POSTGRES_USER_FILE=/etc/proxima-ai/secrets/postgres_user",
+            "POSTGRES_PASSWORD_FILE=/etc/proxima-ai/secrets/postgres_password",
+            "POSTGRES_HOST=127.0.0.1",
+            "POSTGRES_PORT=5432",
+            "POSTGRES_DB=proxima",
         ],
         "runtime env template must contain only path references",
         errors,

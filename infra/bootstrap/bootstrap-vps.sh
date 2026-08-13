@@ -115,7 +115,8 @@ install --directory --mode 0750 --owner root --group "${MONITOR_USER}" /etc/prox
 install --directory --mode 0700 --owner "${MONITOR_USER}" --group "${MONITOR_USER}" /var/lib/proxima-ai-monitor
 install --mode 0640 --owner root --group "${MONITOR_USER}" "${ROOT_DIR}/infra/vps-contract.json" /etc/proxima-ai/vps-contract.json
 
-install --mode 0644 "${SCRIPT_DIR}/60-proxima-ai.conf" /etc/ssh/sshd_config.d/60-proxima-ai.conf
+rm -f /etc/ssh/sshd_config.d/60-proxima-ai.conf
+install --mode 0644 "${SCRIPT_DIR}/00-proxima-ai.conf" /etc/ssh/sshd_config.d/00-proxima-ai.conf
 install --directory --mode 0755 /run/sshd
 /usr/sbin/sshd -t
 systemctl reload ssh
