@@ -13,8 +13,8 @@
 ## Current Position
 
 **Phase:** 2 of 8 - Vertical Slice: Immutable Intake to Visible Facts
-**Plan:** 02-01 implemented and verified; 02-02 is checkpointed on an official WB XLSX.
-**Status:** Phase 2 in progress; immutable manual intake foundation is complete, parser/preview must wait for observed workbook structure.
+**Plan:** 02-01 and early-feedback 02-01A implemented; 02-02 is checkpointed on an official WB XLSX.
+**Status:** Phase 2 in progress; Phase 2.1 repository slice passes local verification, while CI/live Telegram acceptance and the observed XLSX parser remain pending.
 **Progress:** `[#---------] 13%`
 
 ## Performance Metrics
@@ -22,9 +22,9 @@
 | Metric | Current |
 |--------|---------|
 | Phases complete | 1/8 |
-| Plans complete | 3/3 Phase 1; 1/2 Phase 2 |
+| Plans complete | 3/3 Phase 1; 2/3 Phase 2 |
 | Requirements complete | 6/32 |
-| Root verify evidence | Phase 2 Plan 02-01 PASS, GitHub run 31594703739 on `56ebe000` |
+| Root verify evidence | 02-01 GitHub PASS on `56ebe000`; 02-01A local PASS on `20ea8cf`, CI pending |
 | Independent cross-model reviews | 3/3 Phase 1 plans PASS with 0 blocker / 0 warning |
 | Data GO | Pending separate Mike decision |
 | Live Deploy GO | Pending separate Mike decision |
@@ -38,6 +38,7 @@
 - 2026-08-12 (Mike): independent cross-model review 0/0 обязателен только для критических phases 3, 4, 7; остальным - `make verify` + CI + self-review в EVIDENCE.md.
 - 2026-08-12 (Mike): минимальный VPS поднимается к Phase 4, 90-day backfill выполняется на нём; базовый daily scheduler (без SLA-timeline и alerts) - тоже Phase 4. Полный ops-харднинг остаётся в Phase 7.
 - 2026-08-13 (Mike): созданный Selectel VPS `135.106.186.210` оставляем после SSH preflight: Ubuntu 24.04 LTS, 6 vCPU, 12,247,548 KiB RAM, root filesystem 126,752,366,592 bytes (12 GiB / 120 GiB provider class). Лимит 3,000 RUB/месяц сохраняется, фактическая цена Selectel пока не проверена. Входящий трафик только TCP/22, private UI - только SSH tunnel.
+- 2026-08-13 (Mike): Phase 2.1 - staging exception для ранней обратной связи: одна маржа, один deterministic out-of-stock signal, один ручной Telegram send; scheduler, production release pointer, Data GO и Live Deploy GO не двигаются.
 - 2026-08-12 (data spike): reconciliation M1 = official WB API (canonical) vs official manual XLSX (supporting); Torgstat supporting отложен до M2, его экспорты не дают daily grain. См. `.planning/research/DATA-SPIKE-2026-08-12.md`.
 - Raw evidence is immutable, content-addressed, outside Git and retained for the full pilot.
 - Operational, inventory and financial releases have independent atomic pointers; failure preserves last-known-good and remains visible separately.
@@ -74,17 +75,18 @@
 
 ### Blockers
 
+- Phase 2.1 acceptance: нужны private SKU/COGS/lead time/buffer/warehouse mapping, 3 least-privilege WB READ tokens, BotFather token и founder chat private source; после review root выполняет один deploy/send на `135.106.186.210` и фиксирует receipt. Repository implementation не заблокирована.
 - Phase 2 slice: официальная XLSX-выгрузка из кабинета WB отсутствует - передаёт Mike (см. DATA-SPIKE F4). API-нога закрыта тестовым токеном Амировой 2026-08-12; боевой токен кабинета Богатовой нужен к Phase 4. Планирование Phase 2 не блокировано.
 - First approved data release remains blocked on Phase 8 Data GO evidence.
 - Live deployment remains blocked on separate Live Deploy GO.
 
 ## Session Continuity
 
-**Last action:** 2026-08-12: Plan 02-01 delivered immutable official WB XLSX intake foundation in `56ebe000`; root `make verify` and GitHub run 31594703739 passed. See `.planning/phases/02-vertical-slice-immutable-intake/EVIDENCE.md`.
+**Last action:** 2026-08-13: Plan 02-01A repository slice delivered in `76d39a2`, `0d5b950`, `20ea8cf`; local root `make verify` passed on `20ea8cf`. No VPS mutation or Telegram send occurred.
 
-**Next action:** Mike supplies one official pilot-cabinet XLSX. Inspect only its structure, record the approved field mapping without values, then execute Plan 02-02. WB READ tokens remain needed only for Phase 4.
+**Next action:** Root reviews/deploys 02-01A, supplies private inputs and records one live Telegram acceptance. In parallel, Mike supplies the official pilot-cabinet XLSX for Plan 02-02.
 
 **Resume context:** Start from `.planning/ROADMAP.md` Phase 2. Treat `.planning/phases/01-architecture-provenance-import-baseline/EVIDENCE.md` as the completed upstream gate and preserve the Phase 1 source/Linear boundaries.
 
 ---
-*Updated: 2026-08-12*
+*Updated: 2026-08-13*

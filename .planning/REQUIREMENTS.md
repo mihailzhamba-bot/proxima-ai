@@ -60,6 +60,8 @@
 
 Каждый M1 requirement назначен ровно одной owning phase. Более ранние phases используются только как dependencies.
 
+Phase 2.1 staging evidence от 2026-08-13 не меняет requirement ownership/status: early Telegram proof переиспользует official READ boundaries, но не заменяет XLSX completion Phase 2, backfill Phase 4 или operations acceptance Phase 7.
+
 | Requirement | Owning Phase | Status |
 |-------------|--------------|--------|
 | ARCH-01 | Phase 1 | Complete |

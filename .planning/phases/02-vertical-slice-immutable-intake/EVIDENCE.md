@@ -14,3 +14,12 @@
 
 **Checkpoint pending:** Mike supplies one official WB XLSX from the pilot cabinet. Before any parser code, record only private locator, filename, workbook sheet names, header names, byte size, SHA-256, retrieval time and approved field mapping. Never commit workbook bytes, cells, customer values or WB tokens.
 
+## Plan 02-01A - Margin and out-of-stock Telegram proof
+
+- **Implementation commits:** `76d39a2` (schema/private config), `0d5b950` (collector/calculation/Telegram), `20ea8cf` (Node 22 VPS contract/runbook).
+- **Root verification:** `make verify` PASS on implementation HEAD `20ea8cf`, 2026-08-13. Evidence: 29 TypeScript tests, 35 Python tests, 1 Docker-dependent PostgreSQL test skipped, contracts, 4 ordered migration checks, provenance, 4 Mermaid renders, runtime boundary, secret scan, VPS and business-signal verifier PASS.
+- **Observed official schemas:** test-cabinet probes by root on 2026-08-13 confirmed 459 sales rows with strict `saleID` prefixes S (454) / R (5), current stock response under `data.items`, and non-identical sales/stock warehouse vocabularies requiring the planned private mapping. No values or response payloads are committed.
+- **Self-review:** PASS. Exact bodies are fsynced/content-addressed and linked in PostgreSQL before parse; token scopes are separate/read-only; unknown S/R prefix, schema, mapping, pagination, 401/403/429 and Telegram failure stop without an automatic notification retry. Deterministic top-risk and HTML escaping are tested.
+- **Hosted CI:** pending for implementation HEAD `20ea8cf`; no PASS is claimed.
+- **Live acceptance:** pending. Repository execution did not mutate `135.106.186.210` or send Telegram. Root must supply private config/tokens, deploy reviewed code, record one `SENT` run with source SHA-256 and `message_id`, and obtain founder receipt confirmation.
+- **Release boundary:** staging exception only. Production release pointers, Phase 2 requirements, Data GO and Live Deploy GO are unchanged.
