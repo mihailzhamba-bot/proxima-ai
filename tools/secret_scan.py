@@ -13,6 +13,7 @@ PATTERNS = {
     "github-token": re.compile(rb"\bgh[pousr]_[A-Za-z0-9]{30,}\b"),
     "openai-key": re.compile(rb"\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}\b"),
     "telegram-token": re.compile(rb"\b[0-9]{8,10}:[A-Za-z0-9_-]{35}\b"),
+    "jwt-token": re.compile(rb"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),
 }
 FORBIDDEN_NAMES = re.compile(r"(^|/)(?:\.env(?:\..+)?|id_rsa|id_ed25519|.+\.(?:pem|key))$", re.IGNORECASE)
 
@@ -69,6 +70,7 @@ def self_test() -> None:
         "github-token": b"ghp_" + b"a" * 36,
         "openai-key": b"sk-proj-" + b"a" * 36,
         "telegram-token": b"123456789:" + b"a" * 35,
+        "jwt-token": b"eyJ" + b"a" * 20 + b"." + b"b" * 20 + b"." + b"c" * 20,
     }
     for label, sample in samples.items():
         if not PATTERNS[label].search(sample):

@@ -76,6 +76,13 @@ def test_secret_scanner_patterns_are_live() -> None:
     scanner.self_test()
 
 
+def test_secret_scanner_detects_jwt_tokens() -> None:
+    scanner = load_tool("secret_scan")
+    sample = b"eyJ" + b"a" * 20 + b"." + b"b" * 20 + b"." + b"c" * 20
+
+    assert scanner.inspect("worktree", "probe.txt", sample) == ["worktree:probe.txt:1: jwt-token"]
+
+
 def test_secret_scanner_reads_staged_blob_when_worktree_is_safe(tmp_path: Path) -> None:
     scanner = load_tool("secret_scan")
     repository = tmp_path / "repository"
