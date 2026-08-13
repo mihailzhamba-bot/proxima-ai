@@ -35,9 +35,9 @@ const warehouse: WarehouseMap = {
   effectiveFrom: '2026-01-01',
 };
 
-function jwt(categoryBit: number, unrelatedBit?: number): string {
+function jwt(categoryBit: number, unrelatedBit?: number, readOnly = true): string {
   const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
-  const scopes = (1 << 30) | (1 << categoryBit) | (unrelatedBit === undefined ? 0 : (1 << unrelatedBit));
+  const scopes = (readOnly ? (1 << 30) : 0) | (1 << categoryBit) | (unrelatedBit === undefined ? 0 : (1 << unrelatedBit));
   const payload = Buffer.from(JSON.stringify({ s: scopes, exp: 2_000_000_000 })).toString('base64url');
   return `${header}.${payload}.signature`;
 }
@@ -81,6 +81,14 @@ test('rejects a READ token that grants required and unrelated WB categories', ()
   assert.throws(() => assertLeastPrivilegeToken(jwt(13, 12), 'finance', new Date('2026-08-13T10:00:00Z')), { code: 'TOKEN_SCOPE_INVALID' });
 });
 
+test('allows an exact-category Analytics RW token only through explicit temporary opt-in', () => {
+  const now = new Date('2026-08-13T10:00:00Z');
+  const analyticsReadWrite = jwt(2, undefined, false);
+  assert.throws(() => assertLeastPrivilegeToken(analyticsReadWrite, 'analytics', now), { code: 'TOKEN_SCOPE_INVALID' });
+  assert.doesNotThrow(() => assertLeastPrivilegeToken(analyticsReadWrite, 'analytics', now, { allowReadWrite: true }));
+  assert.throws(() => assertLeastPrivilegeToken(jwt(2, 1, false), 'analytics', now, { allowReadWrite: true }), { code: 'TOKEN_SCOPE_INVALID' });
+});
+
 test('validates a complete private signal input bundle without returning secret values', async () => {
   const root = await mkdtemp(join(tmpdir(), 'signal-inputs-'));
   const files = {
@@ -120,6 +128,7 @@ test('validates a complete private signal input bundle without returning secret 
     products: 1,
     warehouseMappings: 1,
     wbScopes: ['statistics', 'analytics', 'finance'],
+    analyticsAccess: 'read-only',
     telegramTokenShape: 'valid',
     founderChatSource: 'valid',
   });
@@ -127,6 +136,10 @@ test('validates a complete private signal input bundle without returning secret 
 
   await writeFile(files.analytics, jwt(2, 1));
   assert.rejects(() => validateSignalInputFiles(paths, new Date('2026-08-13T10:00:00Z')), { code: 'TOKEN_SCOPE_INVALID' });
+
+  await writeFile(files.analytics, jwt(2, undefined, false));
+  const temporary = await validateSignalInputFiles({ ...paths, allowAnalyticsReadWrite: true }, new Date('2026-08-13T10:00:00Z'));
+  assert.equal(temporary.analyticsAccess, 'read-write-temporary');
 });
 
 test('calculates Decimal margin including reverse logistics', () => {

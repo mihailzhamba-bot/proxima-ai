@@ -56,7 +56,12 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
   }
 }
 
-export function assertLeastPrivilegeToken(token: string, requiredCategory: 'statistics' | 'analytics' | 'finance', now = new Date()): void {
+export function assertLeastPrivilegeToken(
+  token: string,
+  requiredCategory: 'statistics' | 'analytics' | 'finance',
+  now = new Date(),
+  options: { allowReadWrite?: boolean } = {},
+): void {
   const payload = decodeJwtPayload(token);
   if (typeof payload.s !== 'number' || !Number.isSafeInteger(payload.s)) {
     throw new BusinessSignalError('TOKEN_INVALID', 'WB token scope claim is missing');
@@ -65,8 +70,10 @@ export function assertLeastPrivilegeToken(token: string, requiredCategory: 'stat
   const granted = Object.entries(TOKEN_CATEGORY_BITS)
     .filter(([bit]) => (scopes & (1 << Number(bit))) !== 0)
     .map(([, category]) => category);
-  if ((scopes & (1 << READ_ONLY_BIT)) === 0 || granted.length !== 1 || granted[0] !== requiredCategory) {
-    throw new BusinessSignalError('TOKEN_SCOPE_INVALID', `WB ${requiredCategory} token must be READ-only and grant only its category`);
+  const isReadOnly = (scopes & (1 << READ_ONLY_BIT)) !== 0;
+  if ((!isReadOnly && !options.allowReadWrite) || granted.length !== 1 || granted[0] !== requiredCategory) {
+    const access = options.allowReadWrite ? 'grant only its category' : 'be READ-only and grant only its category';
+    throw new BusinessSignalError('TOKEN_SCOPE_INVALID', `WB ${requiredCategory} token must ${access}`);
   }
   if (typeof payload.exp !== 'number' || payload.exp * 1000 <= now.getTime()) {
     throw new BusinessSignalError('TOKEN_EXPIRED', `WB ${requiredCategory} token is expired`);

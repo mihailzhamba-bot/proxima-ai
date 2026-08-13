@@ -16,6 +16,7 @@ export interface RunSignalInput {
   statisticsToken: string;
   analyticsToken: string;
   financeToken: string;
+  allowAnalyticsReadWrite?: boolean;
   now?: Date;
   send?: { telegram: TelegramTransport; founderChatId: bigint };
   httpTransport?: HttpTransport;
@@ -41,7 +42,7 @@ export async function runBusinessSignal(repository: SignalRepository, input: Run
   await repository.createRun(runId, input.tenantId, window);
   try {
     assertLeastPrivilegeToken(input.statisticsToken, 'statistics', now);
-    assertLeastPrivilegeToken(input.analyticsToken, 'analytics', now);
+    assertLeastPrivilegeToken(input.analyticsToken, 'analytics', now, { allowReadWrite: input.allowAnalyticsReadWrite });
     assertLeastPrivilegeToken(input.financeToken, 'finance', now);
     const [products, warehouseMap] = await Promise.all([
       repository.loadProductConfig(input.tenantId, window.to),

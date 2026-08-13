@@ -16,11 +16,13 @@ Phase 2.1 запускается вручную на Selectel VPS `135.106.186.2
 
 Нельзя переиспользовать широкий token: CLI декодирует JWT scope и блокирует запуск, если token не READ-only или содержит больше одной нужной категории.
 
+Временное исключение для staging: exact-category Analytics token в режиме RW допускается только явным флагом `--allow-analytics-read-write`. Флаг не разрешает дополнительные категории и не ослабляет Statistics/Finance. Удалить исключение после выпуска Analytics READ-only token.
+
 Подготовить private bundle вне Git с семью файлами из списка выше, используя короткие имена `wb_statistics_token`, `wb_analytics_token`, `wb_finance_token`, `telegram_bot_token`, `founder-chat.json`, `products.csv`, `warehouses.csv`. Каждый source-файл должен иметь mode `0600`. Значения не передавать через shell arguments. После безопасной доставки bundle на VPS проверить и установить его одной командой:
 
 ```bash
 sudo bash /srv/proxima-ai/repo/infra/bootstrap/install-business-signal-inputs.sh \
-  amirova-test /absolute/private/bundle
+  amirova-test /absolute/private/bundle --allow-analytics-read-write
 ```
 
 Installer сначала копирует bundle во временный private staging, переиспользует runtime validators для трёх WB scopes, Telegram token shape, founder chat и обеих CSV, затем устанавливает проверенные файлы с owner `proxima-admin` и mode `0600`. При validation failure существующие runtime inputs не меняются. Source bundle после подтверждённой установки удаляет сам оператор.
@@ -60,7 +62,8 @@ runuser --user proxima-admin -- node /srv/proxima-ai/repo/services/collector/dis
   --raw-root /srv/proxima-ai/data/business-signal \
   --statistics-token-file /etc/proxima-ai/secrets/wb_statistics_token \
   --analytics-token-file /etc/proxima-ai/secrets/wb_analytics_token \
-  --finance-token-file /etc/proxima-ai/secrets/wb_finance_token
+  --finance-token-file /etc/proxima-ai/secrets/wb_finance_token \
+  --allow-analytics-read-write
 ```
 
 Dry run должен завершиться `READY`, `NO_SIGNAL` или typed `BLOCKED`. До parse каждый WB response уже лежит byte-for-byte в content-addressed store с SHA-256 manifest и строкой `business_signal_raw_artifacts`.
