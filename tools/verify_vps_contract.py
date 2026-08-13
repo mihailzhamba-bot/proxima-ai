@@ -135,6 +135,7 @@ def verify(root: Path = ROOT) -> None:
         "/etc/proxima-ai/business-signal",
         "/srv/proxima-ai/data/business-signal",
         "postgres_url",
+        "PUPPETEER_SKIP_DOWNLOAD=true",
         'npm --prefix "${REPOSITORY_DIR}" ci',
         'npm --prefix "${REPOSITORY_DIR}" run build',
     ):

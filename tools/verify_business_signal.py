@@ -35,7 +35,7 @@ def verify() -> None:
     for table in ("dim_product", "dim_warehouse_map", "business_signal_runs", "business_signal_raw_artifacts"):
         if f"CREATE TABLE {table}" not in migration:
             errors.append(f"migration missing table: {table}")
-    for required in ('NODE_MAJOR="22"', "node_${NODE_MAJOR}.x", "npm --prefix", "run build"):
+    for required in ('NODE_MAJOR="22"', "node_${NODE_MAJOR}.x", "PUPPETEER_SKIP_DOWNLOAD=true", "npm --prefix", "run build"):
         if required not in runtime:
             errors.append(f"business signal runtime bootstrap missing: {required}")
     for forbidden in ("FOUNDER_CHAT_ID =", "founderChatId: 1", "founderChatId: -1"):

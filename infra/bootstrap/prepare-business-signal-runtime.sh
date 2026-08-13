@@ -50,7 +50,7 @@ password = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8").strip()
 print(f"postgresql://{urllib.parse.quote(user, safe='')}:{urllib.parse.quote(password, safe='')}@127.0.0.1:5432/proxima")
 PY
 
-runuser --user proxima-admin -- npm --prefix "${REPOSITORY_DIR}" ci
+runuser --user proxima-admin -- env PUPPETEER_SKIP_DOWNLOAD=true npm --prefix "${REPOSITORY_DIR}" ci
 runuser --user proxima-admin -- npm --prefix "${REPOSITORY_DIR}" run build
 
 printf '%s\n' "prepare-business-signal-runtime: Node ${NODE_MAJOR}, private directories and collector build are ready. Add private source files before dry run."
