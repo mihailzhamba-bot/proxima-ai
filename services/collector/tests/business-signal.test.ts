@@ -1,0 +1,241 @@
+import assert from 'node:assert/strict';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import test from 'node:test';
+import { Decimal } from 'decimal.js';
+
+import { calculateCandidates, calculateMargins, selectTopRisk } from '../src/business-signal/calculate.js';
+import { completedSignalWindow } from '../src/business-signal/date-window.js';
+import { RecordedHttpClient, parseJson, type HttpRequest, type HttpResponse, type HttpTransport } from '../src/business-signal/http.js';
+import { runBusinessSignal } from '../src/business-signal/pipeline.js';
+import { BusinessSignalRawStore } from '../src/business-signal/raw-store.js';
+import { formatStockoutMessage, preflightAndSend, type TelegramTransport } from '../src/business-signal/telegram.js';
+import type { ProductConfig, RawArtifactRecord, SignalCandidate, SignalRepository, SignalWindow, WarehouseMap } from '../src/business-signal/types.js';
+import { WbSignalClient, type WbSale } from '../src/business-signal/wb-client.js';
+
+const product: ProductConfig = {
+  tenantId: 'amirova-test',
+  nmId: 1001n,
+  internalArticle: 'SKU <ONE>',
+  cogsRub: new Decimal('300.10'),
+  leadTimeDays: 40,
+  safetyBufferDays: 5,
+  effectiveFrom: '2026-01-01',
+};
+const warehouse: WarehouseMap = {
+  tenantId: 'amirova-test',
+  salesWarehouseName: 'Коледино',
+  stockWarehouseName: 'КОЛЕДИНО ',
+  canonicalWarehouse: 'Коледино & центр',
+  effectiveFrom: '2026-01-01',
+};
+
+function jwt(categoryBit: number): string {
+  const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ s: (1 << 30) | (1 << categoryBit), exp: 2_000_000_000 })).toString('base64url');
+  return `${header}.${payload}.signature`;
+}
+
+class MemoryRepository implements SignalRepository {
+  raw: RawArtifactRecord[] = [];
+  status = 'NONE';
+  reason?: string;
+  candidate?: SignalCandidate;
+  telegramMessageId?: bigint | null;
+  constructor(public products = [product], public warehouses = [warehouse]) {}
+  async createRun(_runId: string, _tenantId: string, _window: SignalWindow): Promise<void> { this.status = 'RUNNING'; }
+  async loadProductConfig(): Promise<ProductConfig[]> { return this.products; }
+  async loadWarehouseMap(): Promise<WarehouseMap[]> { return this.warehouses; }
+  async recordRawArtifact(record: RawArtifactRecord): Promise<void> { this.raw.push(record); }
+  async completeRun(_runId: string, status: 'NO_SIGNAL' | 'BLOCKED', reason: string): Promise<void> {
+    if (this.status === 'RUNNING') { this.status = status; this.reason = reason; }
+  }
+  async markReady(_runId: string, candidate: SignalCandidate): Promise<void> { this.status = 'READY'; this.candidate = candidate; }
+  async recordTelegramResult(_runId: string, _attemptedAt: Date, messageId: bigint | null): Promise<void> {
+    this.status = messageId === null ? 'SEND_FAILED' : 'SENT'; this.telegramMessageId = messageId;
+  }
+}
+
+function financeRows() {
+  return [
+    { nmId: 1001n, docTypeName: 'Продажа', quantity: '1', retailPriceWithDisc: '1000.00', ppvzSalesCommission: '100.00', deliveryService: '50.00', rrdId: 1n },
+    { nmId: 1001n, docTypeName: 'Продажа', quantity: '1', retailPriceWithDisc: '1200.00', ppvzSalesCommission: '120.00', deliveryService: '50.00', rrdId: 2n },
+    { nmId: 1001n, docTypeName: 'Возврат', quantity: '1', retailPriceWithDisc: '0', ppvzSalesCommission: '0', deliveryService: '30.00', rrdId: 3n },
+  ];
+}
+
+test('uses 14 completed Europe/Moscow calendar days', () => {
+  assert.deepEqual(completedSignalWindow(new Date('2026-08-13T20:59:59Z')), { from: '2026-07-30', to: '2026-08-12' });
+  assert.deepEqual(completedSignalWindow(new Date('2026-08-13T21:00:00Z')), { from: '2026-07-31', to: '2026-08-13' });
+});
+
+test('calculates Decimal margin including reverse logistics', () => {
+  const margins = calculateMargins([product], financeRows());
+  assert.equal(margins.get(1001n)?.toFixed(2), '624.90');
+});
+
+test('aggregates stock sizes, nets returns, and signals at threshold equality', () => {
+  const margins = calculateMargins([product], financeRows());
+  const sales: WbSale[] = Array.from({ length: 14 }, (_, index) => ({
+    saleId: `S${index}`,
+    kind: 'sale',
+    date: '2026-08-01T12:00:00+03:00',
+    lastChangeDate: '2026-08-01T12:00:00+03:00',
+    nmId: 1001n,
+    warehouseName: index === 0 ? ' КОЛЕДИНО ' : 'Коледино',
+  }));
+  sales.push({ ...sales[0]!, saleId: 'R1', kind: 'return' });
+  const candidates = calculateCandidates({
+    products: [product],
+    warehouseMap: [warehouse],
+    sales,
+    stocks: [
+      { nmId: 1001n, warehouseName: 'коледино', quantity: 20 },
+      { nmId: 1001n, warehouseName: 'КОЛЕДИНО', quantity: 21 },
+    ],
+    margins,
+    stockAsOf: new Date('2026-08-13T10:00:00Z'),
+  });
+  assert.equal(candidates[0]?.daysCover, 44);
+  assert.equal(candidates[0]?.thresholdDays, 45);
+  assert.equal(candidates[0]?.stockQuantity, 41);
+});
+
+test('skips zero net velocity and fails closed on an unknown warehouse', () => {
+  const margins = calculateMargins([product], financeRows());
+  assert.deepEqual(calculateCandidates({
+    products: [product], warehouseMap: [warehouse], margins, stockAsOf: new Date(), stocks: [],
+    sales: [
+      { saleId: 'S1', kind: 'sale', date: '', lastChangeDate: '', nmId: 1001n, warehouseName: 'Коледино' },
+      { saleId: 'R1', kind: 'return', date: '', lastChangeDate: '', nmId: 1001n, warehouseName: 'Коледино' },
+    ],
+  }), []);
+  assert.throws(() => calculateCandidates({
+    products: [product], warehouseMap: [warehouse], margins, stockAsOf: new Date(), stocks: [],
+    sales: [{ saleId: 'S1', kind: 'sale', date: '', lastChangeDate: '', nmId: 1001n, warehouseName: 'Новый склад' }],
+  }), { code: 'WAREHOUSE_MAP_MISSING' });
+});
+
+test('selects one deterministic maximum-deficit risk', () => {
+  const base: SignalCandidate = {
+    nmId: 2n, internalArticle: 'B', warehouse: 'Z', stockQuantity: 1,
+    velocityUnitsPerDay: new Decimal(1), daysCover: 5, leadTimeDays: 10,
+    safetyBufferDays: 0, thresholdDays: 10, marginPerUnitRub: new Decimal(1), stockAsOf: new Date(),
+  };
+  const selected = selectTopRisk([
+    base,
+    { ...base, nmId: 1n, internalArticle: 'A', warehouse: 'A' },
+    { ...base, nmId: 3n, daysCover: 4, thresholdDays: 8 },
+  ]);
+  assert.equal(selected?.nmId, 1n);
+});
+
+test('records exact raw bytes before schema parse', async () => {
+  const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-signal-raw-'));
+  const repository = new MemoryRepository();
+  const store = await BusinessSignalRawStore.open(rawRoot, resolve('.'));
+  const client = new RecordedHttpClient('00000000-0000-4000-8000-000000000001', store, repository, async () => ({ status: 200, body: Buffer.from('{bad'), retrievedAt: new Date('2026-08-13T10:00:00Z') }));
+  const response = await client.request({ method: 'GET', url: 'https://example.test/path', token: 'secret', source: 'official_wb_statistics', stage: 'sales', pageSequence: 0 });
+  assert.equal(repository.raw.length, 1);
+  assert.throws(() => parseJson(response.body, 'test'), { code: 'WB_SCHEMA_DRIFT' });
+});
+
+test('persists 429 evidence and makes no automatic retry', async () => {
+  const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-signal-raw-'));
+  const repository = new MemoryRepository();
+  const store = await BusinessSignalRawStore.open(rawRoot, resolve('.'));
+  let calls = 0;
+  const client = new RecordedHttpClient('00000000-0000-4000-8000-000000000003', store, repository, async () => {
+    calls += 1;
+    return { status: 429, body: Buffer.from('{"error":"limited"}'), retrievedAt: new Date() };
+  });
+  await assert.rejects(client.request({ method: 'GET', url: 'https://example.test/path', token: 'secret', source: 'official_wb_statistics', stage: 'sales', pageSequence: 0 }), { code: 'WB_RATE_LIMITED' });
+  assert.equal(calls, 1);
+  assert.equal(repository.raw[0]?.httpStatus, 429);
+});
+
+test('classifies strict S/R sales and blocks unknown prefix after raw persistence', async () => {
+  const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-signal-raw-'));
+  const repository = new MemoryRepository();
+  const store = await BusinessSignalRawStore.open(rawRoot, resolve('.'));
+  const transport: HttpTransport = async () => ({ status: 200, retrievedAt: new Date(), body: Buffer.from(JSON.stringify([
+    { saleID: 'X1', date: '2026-08-01T10:00:00+03:00', lastChangeDate: '2026-08-01T11:00:00+03:00', nmId: 1001, warehouseName: 'Коледино' },
+  ])) });
+  const wb = new WbSignalClient(new RecordedHttpClient('00000000-0000-4000-8000-000000000002', store, repository, transport));
+  await assert.rejects(wb.sales('token', { from: '2026-08-01', to: '2026-08-14' }), { code: 'WB_UNKNOWN_SALE_KIND' });
+  assert.equal(repository.raw.length, 1);
+});
+
+test('escapes Telegram HTML and performs preflight plus exactly one send', async () => {
+  const candidate: SignalCandidate = {
+    nmId: 1001n, internalArticle: '<SKU>', warehouse: 'A&B', stockQuantity: 6,
+    velocityUnitsPerDay: new Decimal(1), daysCover: 6, leadTimeDays: 40,
+    safetyBufferDays: 5, thresholdDays: 45, marginPerUnitRub: new Decimal('123.50'),
+    stockAsOf: new Date('2026-08-13T10:00:00Z'),
+  };
+  const message = formatStockoutMessage(candidate, { from: '2026-07-30', to: '2026-08-12' });
+  assert.match(message, /&lt;SKU&gt;/);
+  assert.match(message, /A&amp;B/);
+  assert.doesNotMatch(message, /—|важно отметить|следует подчеркнуть/i);
+  const calls: string[] = [];
+  const telegram: TelegramTransport = { call: async (method) => {
+    calls.push(method);
+    return { ok: true, result: method === 'sendMessage' ? { message_id: 77 } : { id: 1 } };
+  } };
+  assert.equal(await preflightAndSend(telegram, 1n, message), 77n);
+  assert.deepEqual(calls, ['getMe', 'getChat', 'sendMessage']);
+});
+
+test('does not retry a failed Telegram send', async () => {
+  const calls: string[] = [];
+  const telegram: TelegramTransport = { call: async (method) => {
+    calls.push(method);
+    if (method === 'sendMessage') throw new Error('timeout');
+    return { ok: true, result: { id: 1 } };
+  } };
+  await assert.rejects(preflightAndSend(telegram, 1n, 'message'));
+  assert.deepEqual(calls, ['getMe', 'getChat', 'sendMessage']);
+});
+
+test('blocks finance pagination without HTTP 204 terminator', async () => {
+  const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-signal-raw-'));
+  const repository = new MemoryRepository();
+  const store = await BusinessSignalRawStore.open(rawRoot, resolve('.'));
+  const wb = new WbSignalClient(new RecordedHttpClient('00000000-0000-4000-8000-000000000004', store, repository, async () => ({
+    status: 200,
+    retrievedAt: new Date(),
+    body: Buffer.from('[]'),
+  })));
+  await assert.rejects(wb.finance('token', { from: '2026-08-01', to: '2026-08-14' }), { code: 'WB_INCOMPLETE_PAGINATION' });
+  assert.equal(repository.raw.length, 1);
+});
+
+test('runs one complete mocked vertical slice and sends one top-risk message', async () => {
+  const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-signal-raw-'));
+  const repository = new MemoryRepository();
+  const bodies = (request: HttpRequest): HttpResponse => {
+    if (request.url.includes('/supplier/sales')) return { status: 200, retrievedAt: new Date('2026-08-13T09:00:00Z'), body: Buffer.from(JSON.stringify([
+      { saleID: 'S1', date: '2026-08-05T10:00:00+03:00', lastChangeDate: '2026-08-05T11:00:00+03:00', nmId: 1001, warehouseName: 'Коледино' },
+    ])) };
+    if (request.url.includes('/stocks-report/')) return { status: 200, retrievedAt: new Date('2026-08-13T10:00:00Z'), body: Buffer.from(JSON.stringify({ data: { items: [
+      { nmId: 1001, warehouseName: 'КОЛЕДИНО', quantity: 0 },
+    ] } })) };
+    const body = request.body as { rrdId: number };
+    if (body.rrdId === 0) return { status: 200, retrievedAt: new Date('2026-08-13T11:00:00Z'), body: Buffer.from(JSON.stringify(financeRows().map((row) => ({ ...row, nmId: Number(row.nmId), rrdId: Number(row.rrdId) })))) };
+    return { status: 204, retrievedAt: new Date('2026-08-13T11:00:01Z'), body: Buffer.alloc(0) };
+  };
+  const telegramCalls: string[] = [];
+  const result = await runBusinessSignal(repository, {
+    tenantId: 'amirova-test', repositoryRoot: resolve('.'), rawRoot,
+    statisticsToken: jwt(5), analyticsToken: jwt(2), financeToken: jwt(13),
+    now: new Date('2026-08-13T10:00:00Z'), httpTransport: async (request) => bodies(request),
+    send: { founderChatId: 1n, telegram: { call: async (method) => {
+      telegramCalls.push(method); return { ok: true, result: method === 'sendMessage' ? { message_id: 88 } : { id: 1 } };
+    } } },
+  });
+  assert.equal(result.status, 'SENT');
+  assert.equal(repository.raw.length, 4);
+  assert.equal(repository.status, 'SENT');
+  assert.deepEqual(telegramCalls, ['getMe', 'getChat', 'sendMessage']);
+});

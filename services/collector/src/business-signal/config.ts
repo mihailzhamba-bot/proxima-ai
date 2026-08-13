@@ -1,10 +1,9 @@
-import { readFile } from 'node:fs/promises';
-import { lstat } from 'node:fs/promises';
 import { parse } from 'csv-parse/sync';
 import { Decimal } from 'decimal.js';
 import type { PoolClient } from 'pg';
 
 import { BusinessSignalError, type ProductConfig, type WarehouseMap } from './types.js';
+import { readPrivateFile } from './secrets.js';
 
 const PRODUCT_HEADERS = [
   'tenant_id',
@@ -51,11 +50,12 @@ function validDate(value: string): string {
 }
 
 async function readPrivateCsv(path: string, headers: readonly string[]): Promise<CsvRow[]> {
-  const info = await lstat(path);
-  if (!info.isFile() || info.isSymbolicLink() || (info.mode & 0o077) !== 0) {
-    throw new BusinessSignalError('CONFIG_UNSAFE', 'config CSV must be a private regular file with mode 0600');
+  let bytes: Buffer;
+  try { bytes = await readPrivateFile(path, 'config CSV'); } catch (error) {
+    if (error instanceof BusinessSignalError) throw new BusinessSignalError('CONFIG_UNSAFE', 'config CSV must be a private regular file with mode 0600');
+    throw error;
   }
-  const rows = parse(await readFile(path), {
+  const rows = parse(bytes, {
     bom: true,
     columns: true,
     skip_empty_lines: true,

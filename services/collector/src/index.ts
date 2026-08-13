@@ -41,3 +41,8 @@ export {
   type ManualWbXlsxMetadata,
   type SourceArtifactManifest,
 } from './intake/types.js';
+export { calculateCandidates, calculateMargins, normalizeWarehouse, selectTopRisk } from './business-signal/calculate.js';
+export { completedSignalWindow, isInsideWindow, moscowWindowBounds } from './business-signal/date-window.js';
+export { runBusinessSignal } from './business-signal/pipeline.js';
+export { formatStockoutMessage, preflightAndSend, TelegramBotApi } from './business-signal/telegram.js';
+export { BusinessSignalError } from './business-signal/types.js';

@@ -13,6 +13,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "manual-wb-xlsx-intake": "node dist/cli/manual-wb-xlsx-intake.js",
+    "seed-signal-config": "node dist/cli/seed-signal-config.js",
+    "stockout-signal": "node dist/cli/stockout-signal.js",
     "test": "tsx --test tests/**/*.test.ts && npm run build && node --input-type=module --eval \"import('@proxima/collector').then((module) => { if (typeof module.redactValue !== 'function' || typeof module.intakeManualWbXlsx !== 'function') process.exit(1) })\"",
     "typecheck": "tsc --noEmit"
   },
