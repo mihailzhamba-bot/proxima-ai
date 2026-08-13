@@ -55,7 +55,7 @@ completed: 2026-08-13
 - Added additive versioned product/COGS, warehouse mapping, run and raw lineage tables without committing business values.
 - Implemented strict Statistics sales, current Analytics stock and Finance detailed-report collection with exact raw bytes durable before parse.
 - Added 14 completed Moscow-day velocity, Decimal margin, deterministic top-risk selection, escaped founder message and no automatic Telegram retry.
-- Added a Node 22 VPS bootstrap and private one-shot runbook; no live VPS mutation or send occurred in repository execution.
+- Added a Node 22 VPS bootstrap and private one-shot runbook; root later deployed the reviewed slice without a live send.
 
 ## Task Commits
 
@@ -67,6 +67,7 @@ Review fixes:
 
 - **WB page pacing and complete least-privilege scope validation** - `fe0bc5d`
 - **Finance line-amount commission semantics** - `255e6c0`
+- **Skip unused Puppeteer browser download on VPS** - `deeefcb`
 
 ## Files Created/Modified
 
@@ -138,18 +139,27 @@ Review fixes:
 - **Verification:** quantity-2 regression test produces 549.90 RUB/unit and fails under the old formula.
 - **Committed in:** `255e6c0`
 
-**Total deviations:** 6 auto-fixed (2 security, 3 correctness, 1 blocking).
+**7. [Rule 3 - Blocking] Skipped unused Puppeteer browser downloads on VPS**
+- **Found during:** Root staging deploy on 2026-08-13
+- **Issue:** root `npm ci` stopped before build because Puppeteer tried to extract Chromium on a host without `unzip`; the business-signal runtime does not use Puppeteer.
+- **Fix:** set `PUPPETEER_SKIP_DOWNLOAD=true` only for the VPS install and made the guard mandatory in both runtime verifiers.
+- **Files modified:** `prepare-business-signal-runtime.sh`, VPS verifier, business-signal verifier.
+- **Verification:** targeted verifiers and full `make verify` passed; the repeated VPS bootstrap installed 221 packages, audited 223 with 0 vulnerabilities and built the collector.
+- **Committed in:** `deeefcb`
+
+**Total deviations:** 7 auto-fixed (2 security, 3 correctness, 2 blocking).
 **Impact on plan:** All changes close correctness or deployability gaps; scope remains one manual staging signal.
 
 ## Issues Encountered
 
-- Local Docker daemon was unavailable. The Docker-dependent PostgreSQL test remained skipped; no VPS mutation was used as a substitute.
-- `make verify` passed on implementation HEAD `255e6c0`: 33 TypeScript tests, 35 Python tests, 1 existing Docker-dependent skip, all contract/migration/provenance/architecture/secret/VPS/business-signal verifiers.
+- Local Docker daemon was unavailable. The Docker-dependent PostgreSQL test remained skipped; a separate disposable PostgreSQL smoke and the staging migration both passed.
+- `make verify` passed on deployed HEAD `deeefcb`, 2026-08-13: 33 TypeScript tests, 35 Python tests, 1 existing Docker-dependent skip, all contract/migration/provenance/architecture/secret/VPS/business-signal verifiers.
 - A disposable local PostgreSQL 16.14 cluster applied all 4 migrations, seeded the synthetic product/warehouse versions twice without duplicates (`4|1|1`), then accepted a run/raw lineage insert through its foreign keys and constraints.
+- Staging VPS `135.106.186.210` now has clean detached HEAD `deeefcb`, Node `v22.23.2`, npm `10.9.8`, compiled CLIs and migration ledger `001-004`. The pre-migration private dump is `/srv/proxima-ai/backups/pre-phase-2.1-20260813.dump`, 39,747 bytes, mode `0600`, SHA-256 `745abc25ceded8768213c623614687643e3b32b7d860b5c5037536f03d0741d8`.
 
 ## User Setup Required
 
-External WB and Telegram setup is required. Follow `docs/operations/business-signal-runbook.md`; it contains paths and commands but no secret, business value or chat ID placeholders.
+Private setup is still required: SKU/COGS/lead time/buffer, warehouse mapping, three separate least-privilege WB READ tokens, BotFather token and founder chat source. Follow `docs/operations/business-signal-runbook.md`; it contains paths and commands but no secret, business value or chat ID placeholders.
 
 ## Known Stubs
 
@@ -167,14 +177,15 @@ None. Private business values and credentials are intentional deployment inputs,
 ## Next Phase Readiness
 
 - Repository implementation and local verification are complete.
-- CI evidence is pending for implementation HEAD `255e6c0`.
-- End-to-end acceptance is pending private config/tokens, reviewed VPS deploy, one live `--send`, `SENT` DB evidence and founder receipt.
+- Staging deploy and migration are complete on `deeefcb`; `dim_product` and `dim_warehouse_map` remain empty by design.
+- CI evidence is pending for deployed HEAD `deeefcb`.
+- End-to-end acceptance is pending private config/tokens, dry run, one live `--send`, `SENT` DB evidence and founder receipt.
 - Plan 02-02 remains checkpointed on the official WB XLSX and is unchanged.
 
 ## Self-Check: PASSED
 
 - All 8 key implementation/planning files exist.
-- Commits `76d39a2`, `0d5b950`, `20ea8cf`, `fe0bc5d` and `255e6c0` exist in repository history.
+- Commits `76d39a2`, `0d5b950`, `20ea8cf`, `fe0bc5d`, `255e6c0` and `deeefcb` exist in repository history.
 - Secret scan passed; Phase 2 requirements remain Pending; no send-capable values were committed.
 
 ---
