@@ -7,7 +7,7 @@ import { BusinessSignalRawStore } from './raw-store.js';
 import { assertLeastPrivilegeToken } from './secrets.js';
 import { formatStockoutMessage, preflightAndSend, type TelegramTransport } from './telegram.js';
 import { BusinessSignalError, type SignalCandidate, type SignalRepository } from './types.js';
-import { WbSignalClient } from './wb-client.js';
+import { WbSignalClient, type Sleep } from './wb-client.js';
 
 export interface RunSignalInput {
   tenantId: string;
@@ -19,6 +19,7 @@ export interface RunSignalInput {
   now?: Date;
   send?: { telegram: TelegramTransport; founderChatId: bigint };
   httpTransport?: HttpTransport;
+  sleep?: Sleep;
 }
 
 export interface RunSignalResult {
@@ -50,7 +51,7 @@ export async function runBusinessSignal(repository: SignalRepository, input: Run
     if (warehouseMap.length === 0) throw new BusinessSignalError('WAREHOUSE_MAP_MISSING', 'no effective warehouse map rows');
     const store = await BusinessSignalRawStore.open(input.rawRoot, input.repositoryRoot);
     const http = new RecordedHttpClient(runId, store, repository, input.httpTransport);
-    const wb = new WbSignalClient(http);
+    const wb = new WbSignalClient(http, input.sleep ? { sleep: input.sleep } : {});
     const [sales, stocks, finance] = await Promise.all([
       wb.sales(input.statisticsToken, window),
       wb.stocks(input.analyticsToken, products.map((product) => product.nmId)),

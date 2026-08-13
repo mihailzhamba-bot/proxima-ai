@@ -6,6 +6,28 @@ const SALES_PAGE_LIMIT = 80_000;
 const STOCK_PAGE_LIMIT = 250_000;
 const FINANCE_PAGE_LIMIT = 100_000;
 const MAX_PAGES = 100;
+const STATISTICS_PAGE_INTERVAL_MS = 60_000;
+const ANALYTICS_PAGE_INTERVAL_MS = 20_000;
+const FINANCE_PAGE_INTERVAL_MS = 60_000;
+const FINANCE_FIELDS = [
+  'rrdId',
+  'nmId',
+  'docTypeName',
+  'quantity',
+  'retailPriceWithDisc',
+  'ppvzSalesCommission',
+  'deliveryService',
+] as const;
+
+export type Sleep = (milliseconds: number) => Promise<void>;
+const realSleep: Sleep = async (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+export interface WbSignalClientOptions {
+  sleep?: Sleep;
+  salesPageLimit?: number;
+  stockPageLimit?: number;
+  financePageLimit?: number;
+}
 
 function objectRow(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BusinessSignalError('WB_SCHEMA_DRIFT', `${label} row must be an object`);
@@ -61,12 +83,23 @@ export interface WbFinanceRow {
 }
 
 export class WbSignalClient {
-  constructor(private readonly http: RecordedHttpClient) {}
+  private readonly sleep: Sleep;
+  private readonly salesPageLimit: number;
+  private readonly stockPageLimit: number;
+  private readonly financePageLimit: number;
+
+  constructor(private readonly http: RecordedHttpClient, options: WbSignalClientOptions = {}) {
+    this.sleep = options.sleep ?? realSleep;
+    this.salesPageLimit = options.salesPageLimit ?? SALES_PAGE_LIMIT;
+    this.stockPageLimit = options.stockPageLimit ?? STOCK_PAGE_LIMIT;
+    this.financePageLimit = options.financePageLimit ?? FINANCE_PAGE_LIMIT;
+  }
 
   async sales(token: string, window: SignalWindow): Promise<WbSale[]> {
     const rows = new Map<string, WbSale>();
     let cursor = moscowWindowBounds(window).from;
     for (let page = 0; page < MAX_PAGES; page += 1) {
+      if (page > 0) await this.sleep(STATISTICS_PAGE_INTERVAL_MS);
       const url = new URL('https://statistics-api.wildberries.ru/api/v1/supplier/sales');
       url.searchParams.set('dateFrom', cursor);
       url.searchParams.set('flag', '0');
@@ -97,7 +130,7 @@ export class WbSignalClient {
         }
         rows.set(row.saleId, row);
       }
-      if (pageRows.length < SALES_PAGE_LIMIT) return [...rows.values()];
+      if (pageRows.length < this.salesPageLimit) return [...rows.values()];
       const next = pageRows.at(-1)?.lastChangeDate;
       if (!next || new Date(next).getTime() <= new Date(cursor).getTime()) throw new BusinessSignalError('WB_INCOMPLETE_PAGINATION', 'sales pagination cursor did not advance');
       cursor = next;
@@ -109,7 +142,8 @@ export class WbSignalClient {
     const rows: WbStock[] = [];
     let latest = new Date(0);
     for (let page = 0; page < MAX_PAGES; page += 1) {
-      const offset = page * STOCK_PAGE_LIMIT;
+      if (page > 0) await this.sleep(ANALYTICS_PAGE_INTERVAL_MS);
+      const offset = page * this.stockPageLimit;
       const response = await this.http.request({
         method: 'POST',
         url: 'https://seller-analytics-api.wildberries.ru/api/analytics/v1/stocks-report/wb-warehouses',
@@ -117,7 +151,7 @@ export class WbSignalClient {
         source: 'official_wb_analytics',
         stage: 'stocks',
         pageSequence: page,
-        body: { params: { nmIDs: nmIds.map((value) => jsonInteger(value, 'nmId')), limit: STOCK_PAGE_LIMIT, offset } },
+        body: { params: { nmIDs: nmIds.map((value) => jsonInteger(value, 'nmId')), limit: this.stockPageLimit, offset } },
       });
       latest = response.retrievedAt > latest ? response.retrievedAt : latest;
       const payload = objectRow(parseJson(response.body, 'stocks'), 'stocks');
@@ -132,7 +166,7 @@ export class WbSignalClient {
         };
       });
       rows.push(...pageRows);
-      if (pageRows.length < STOCK_PAGE_LIMIT) return { rows, asOf: latest };
+      if (pageRows.length < this.stockPageLimit) return { rows, asOf: latest };
     }
     throw new BusinessSignalError('WB_INCOMPLETE_PAGINATION', 'stock pagination exceeded the safe page limit');
   }
@@ -142,6 +176,7 @@ export class WbSignalClient {
     let rrdId = 0n;
     const bounds = moscowWindowBounds(window);
     for (let page = 0; page < MAX_PAGES; page += 1) {
+      if (page > 0) await this.sleep(FINANCE_PAGE_INTERVAL_MS);
       const response = await this.http.request({
         method: 'POST',
         url: 'https://finance-api.wildberries.ru/api/finance/v1/sales-reports/detailed',
@@ -150,7 +185,13 @@ export class WbSignalClient {
         stage: 'sales_report_detailed',
         pageSequence: page,
         acceptedStatuses: [200, 204],
-        body: { dateFrom: bounds.from, dateTo: bounds.to, limit: FINANCE_PAGE_LIMIT, rrdId: jsonInteger(rrdId, 'rrdId') },
+        body: {
+          dateFrom: bounds.from,
+          dateTo: bounds.to,
+          limit: this.financePageLimit,
+          rrdId: jsonInteger(rrdId, 'rrdId'),
+          fields: FINANCE_FIELDS,
+        },
       });
       if (response.status === 204) return rows;
       const payload = parseJson(response.body, 'finance');

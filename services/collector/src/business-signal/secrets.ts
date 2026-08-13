@@ -4,9 +4,19 @@ import { open } from 'node:fs/promises';
 import { BusinessSignalError } from './types.js';
 
 const TOKEN_CATEGORY_BITS: Record<number, string> = {
+  1: 'content',
   2: 'analytics',
+  3: 'prices',
+  4: 'marketplace',
   5: 'statistics',
+  6: 'promotion',
+  7: 'feedbacks',
+  9: 'buyer_chat',
+  10: 'supplies',
+  11: 'returns',
+  12: 'documents',
   13: 'finance',
+  16: 'users',
 };
 const READ_ONLY_BIT = 30;
 

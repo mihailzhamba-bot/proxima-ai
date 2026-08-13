@@ -10,6 +10,7 @@ import { completedSignalWindow } from '../src/business-signal/date-window.js';
 import { RecordedHttpClient, parseJson, type HttpRequest, type HttpResponse, type HttpTransport } from '../src/business-signal/http.js';
 import { runBusinessSignal } from '../src/business-signal/pipeline.js';
 import { BusinessSignalRawStore } from '../src/business-signal/raw-store.js';
+import { assertLeastPrivilegeToken } from '../src/business-signal/secrets.js';
 import { formatStockoutMessage, preflightAndSend, type TelegramTransport } from '../src/business-signal/telegram.js';
 import type { ProductConfig, RawArtifactRecord, SignalCandidate, SignalRepository, SignalWindow, WarehouseMap } from '../src/business-signal/types.js';
 import { WbSignalClient, type WbSale } from '../src/business-signal/wb-client.js';
@@ -31,9 +32,10 @@ const warehouse: WarehouseMap = {
   effectiveFrom: '2026-01-01',
 };
 
-function jwt(categoryBit: number): string {
+function jwt(categoryBit: number, unrelatedBit?: number): string {
   const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
-  const payload = Buffer.from(JSON.stringify({ s: (1 << 30) | (1 << categoryBit), exp: 2_000_000_000 })).toString('base64url');
+  const scopes = (1 << 30) | (1 << categoryBit) | (unrelatedBit === undefined ? 0 : (1 << unrelatedBit));
+  const payload = Buffer.from(JSON.stringify({ s: scopes, exp: 2_000_000_000 })).toString('base64url');
   return `${header}.${payload}.signature`;
 }
 
@@ -68,6 +70,12 @@ function financeRows() {
 test('uses 14 completed Europe/Moscow calendar days', () => {
   assert.deepEqual(completedSignalWindow(new Date('2026-08-13T20:59:59Z')), { from: '2026-07-30', to: '2026-08-12' });
   assert.deepEqual(completedSignalWindow(new Date('2026-08-13T21:00:00Z')), { from: '2026-07-31', to: '2026-08-13' });
+});
+
+test('rejects a READ token that grants required and unrelated WB categories', () => {
+  assert.doesNotThrow(() => assertLeastPrivilegeToken(jwt(5), 'statistics', new Date('2026-08-13T10:00:00Z')));
+  assert.throws(() => assertLeastPrivilegeToken(jwt(5, 1), 'statistics', new Date('2026-08-13T10:00:00Z')), { code: 'TOKEN_SCOPE_INVALID' });
+  assert.throws(() => assertLeastPrivilegeToken(jwt(13, 12), 'finance', new Date('2026-08-13T10:00:00Z')), { code: 'TOKEN_SCOPE_INVALID' });
 });
 
 test('calculates Decimal margin including reverse logistics', () => {
@@ -206,9 +214,64 @@ test('blocks finance pagination without HTTP 204 terminator', async () => {
     status: 200,
     retrievedAt: new Date(),
     body: Buffer.from('[]'),
-  })));
+  })), { sleep: async () => {} });
   await assert.rejects(wb.finance('token', { from: '2026-08-01', to: '2026-08-14' }), { code: 'WB_INCOMPLETE_PAGINATION' });
   assert.equal(repository.raw.length, 1);
+});
+
+test('paces Finance pages for 60 seconds and requests only metric fields', async () => {
+  const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-signal-raw-'));
+  const repository = new MemoryRepository();
+  const store = await BusinessSignalRawStore.open(rawRoot, resolve('.'));
+  const sleeps: number[] = [];
+  const requests: HttpRequest[] = [];
+  let page = 0;
+  const wb = new WbSignalClient(new RecordedHttpClient('00000000-0000-4000-8000-000000000005', store, repository, async (request) => {
+    requests.push(request);
+    page += 1;
+    if (page === 1) return { status: 200, retrievedAt: new Date(), body: Buffer.from(JSON.stringify(financeRows().slice(0, 1).map((row) => ({ ...row, nmId: Number(row.nmId), rrdId: Number(row.rrdId) })))) };
+    return { status: 204, retrievedAt: new Date(), body: Buffer.alloc(0) };
+  }), { sleep: async (milliseconds) => { sleeps.push(milliseconds); } });
+  const rows = await wb.finance('token', { from: '2026-08-01', to: '2026-08-14' });
+  assert.equal(rows.length, 1);
+  assert.deepEqual(sleeps, [60_000]);
+  assert.deepEqual((requests[0]?.body as { fields: string[] }).fields, [
+    'rrdId', 'nmId', 'docTypeName', 'quantity', 'retailPriceWithDisc', 'ppvzSalesCommission', 'deliveryService',
+  ]);
+});
+
+test('paces Statistics and Analytics pagination without treating it as a retry', async () => {
+  const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-signal-raw-'));
+  const repository = new MemoryRepository();
+  const store = await BusinessSignalRawStore.open(rawRoot, resolve('.'));
+  const sleeps: number[] = [];
+  let salesPage = 0;
+  let stockPage = 0;
+  const wb = new WbSignalClient(new RecordedHttpClient('00000000-0000-4000-8000-000000000006', store, repository, async (request) => {
+    if (request.url.includes('/supplier/sales')) {
+      salesPage += 1;
+      return {
+        status: 200,
+        retrievedAt: new Date(),
+        body: Buffer.from(JSON.stringify(salesPage === 1 ? [{ saleID: 'S1', date: '2026-08-01T10:00:00+03:00', lastChangeDate: '2026-08-01T11:00:00+03:00', nmId: 1001, warehouseName: 'Коледино' }] : [])),
+      };
+    }
+    stockPage += 1;
+    return {
+      status: 200,
+      retrievedAt: new Date(),
+      body: Buffer.from(JSON.stringify({ data: { items: stockPage === 1 ? [{ nmId: 1001, warehouseName: 'Коледино', quantity: 1 }] : [] } })),
+    };
+  }), {
+    sleep: async (milliseconds) => { sleeps.push(milliseconds); },
+    salesPageLimit: 1,
+    stockPageLimit: 1,
+  });
+  await wb.sales('token', { from: '2026-08-01', to: '2026-08-14' });
+  await wb.stocks('token', [1001n]);
+  assert.deepEqual(sleeps, [60_000, 20_000]);
+  assert.equal(salesPage, 2);
+  assert.equal(stockPage, 2);
 });
 
 test('runs one complete mocked vertical slice and sends one top-risk message', async () => {
@@ -230,6 +293,7 @@ test('runs one complete mocked vertical slice and sends one top-risk message', a
     tenantId: 'amirova-test', repositoryRoot: resolve('.'), rawRoot,
     statisticsToken: jwt(5), analyticsToken: jwt(2), financeToken: jwt(13),
     now: new Date('2026-08-13T10:00:00Z'), httpTransport: async (request) => bodies(request),
+    sleep: async () => {},
     send: { founderChatId: 1n, telegram: { call: async (method) => {
       telegramCalls.push(method); return { ok: true, result: method === 'sendMessage' ? { message_id: 88 } : { id: 1 } };
     } } },
