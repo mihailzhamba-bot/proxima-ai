@@ -103,6 +103,11 @@ def test_vps_contract_is_fail_closed() -> None:
     vps.verify()
 
 
+def test_business_signal_contract_is_fail_closed() -> None:
+    signal = load_tool("verify_business_signal")
+    signal.verify()
+
+
 def monitor_samples(monitor, count: int, *, cpu: float, memory: float, disk: float, minute_offset: int = 0):
     return [
         monitor.MetricSnapshot(f"2026-08-12T00:{minute + minute_offset:02d}:00+00:00", cpu, memory, disk)

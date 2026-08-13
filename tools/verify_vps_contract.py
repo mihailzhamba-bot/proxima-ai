@@ -127,6 +127,20 @@ def verify(root: Path = ROOT) -> None:
         require(required in day1_runtime, f"Day 1 runtime boundary missing: {required}", errors)
     require("WB_API_KEY=" not in day1_runtime, "Day 1 runtime must not put a WB token value in .env", errors)
 
+    signal_runtime = (root / "infra" / "bootstrap" / "prepare-business-signal-runtime.sh").read_text(encoding="utf-8")
+    for required in (
+        'NODE_MAJOR="22"',
+        "node_${NODE_MAJOR}.x",
+        "Node ${NODE_MAJOR}.x is required",
+        "/etc/proxima-ai/business-signal",
+        "/srv/proxima-ai/data/business-signal",
+        "postgres_url",
+        'npm --prefix "${REPOSITORY_DIR}" ci',
+        'npm --prefix "${REPOSITORY_DIR}" run build',
+    ):
+        require(required in signal_runtime, f"business signal runtime boundary missing: {required}", errors)
+    require("telegram" not in signal_runtime.lower(), "runtime bootstrap must not create Telegram credentials or send messages", errors)
+
     runtime_template = (root / "infra" / "runtime.env.template").read_text(encoding="utf-8")
     require(
         runtime_template.splitlines() == [

@@ -26,6 +26,8 @@ flowchart TB
   end
 
   UI[Read-only Data Health]
+  SIGNAL[Staging exception: margin and stockout calculation]
+  TG[One manual Telegram alert]
 
   XLSX -->|hash before parse| RAW
   API -->|gzip JSON then hash| RAW
@@ -43,3 +45,5 @@ flowchart TB
   ATT --> UI
   MAN --> UI
   QUAR --> UI
+  API -->|exact response bytes before parse| SIGNAL
+  SIGNAL -->|one deterministic top risk| TG

@@ -11,3 +11,5 @@
 На ephemeral GitHub-hosted runner Chromium запускается с CI-only `tools/puppeteer.ci.json`, потому что AppArmor runner запрещает user namespaces. Локальный render использует стандартный Chromium sandbox.
 
 Сплошная стрелка означает реализуемый M1 path. Пунктир означает supporting, blocked или deferred path. Torgstat в M1 существует только как supporting-source contract и не имеет browser/session entrypoint.
+
+Phase 2.1 добавляет staging exception для ранней проверки ценности: один ручной запуск Node 22 CLI сохраняет exact WB response bytes до parse, считает одну маржу, выбирает один out-of-stock risk и может отправить одно Telegram-сообщение. Scheduler, retries, production release pointer и Live Deploy GO здесь не появляются.

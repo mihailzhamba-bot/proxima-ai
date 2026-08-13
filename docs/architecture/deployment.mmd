@@ -14,6 +14,7 @@ flowchart TB
     BACKUP[Restic backup job]
     RAW[(Private raw and manifest volumes)]
     SECRETS[Docker secret files]
+    MANUAL[Manual Node 22 business signal CLI]
 
     SCHED --> PG
     SCHED --> RAW
@@ -23,6 +24,9 @@ flowchart TB
     SECRETS --> SCHED
     SECRETS --> PG
     SECRETS --> BACKUP
+    SECRETS --> MANUAL
+    MANUAL --> PG
+    MANUAL --> RAW
     NET --- SCHED
     NET --- PG
     NET --- HEALTH
@@ -35,6 +39,7 @@ flowchart TB
   MIKE -->|SSH tunnel only| HEALTH
   SCHED -->|sanitized status only| TG
   MONITOR -->|sanitized capacity only| TG
+  MANUAL -->|one formatted stockout message| TG
   BACKUP -->|encrypted repository| S3
 
   PUBLIC[Public inbound traffic]
