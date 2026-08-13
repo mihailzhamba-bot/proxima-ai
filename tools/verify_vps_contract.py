@@ -91,10 +91,38 @@ def verify(root: Path = ROOT) -> None:
         "git clone --no-hardlinks",
         "remote remove bootstrap-source",
         "runuser --user",
+        "NOPASSWD: ALL",
+        "visudo --check",
+        "passwd --lock root",
         "systemctl enable --now docker",
         "Do not enable proxima-host-monitor.timer before Telegram secret files",
     ):
         require(required in bootstrap or required in (root / "infra" / "bootstrap" / "60-proxima-ai.conf").read_text(encoding="utf-8"), f"bootstrap boundary missing: {required}", errors)
+
+    day1_runtime = (root / "infra" / "bootstrap" / "prepare-day1-runtime.sh").read_text(encoding="utf-8")
+    for required in (
+        "Python 3.11+ is required",
+        "/etc/proxima-ai/secrets",
+        "WB_STATISTICS_TOKEN_FILE=",
+        "PROXIMA_RAW_DIR=",
+        "tools/wb_api_probe_requirements.txt",
+        "docker compose",
+        "up --detach postgres",
+        '"healthy"',
+    ):
+        require(required in day1_runtime, f"Day 1 runtime boundary missing: {required}", errors)
+    require("WB_API_KEY=" not in day1_runtime, "Day 1 runtime must not put a WB token value in .env", errors)
+
+    runtime_template = (root / "infra" / "runtime.env.template").read_text(encoding="utf-8")
+    require(
+        runtime_template.splitlines() == [
+            "# Copy to repository-root .env. Never put a token value in this file.",
+            "WB_STATISTICS_TOKEN_FILE=/etc/proxima-ai/secrets/wb_statistics_token",
+            "PROXIMA_RAW_DIR=/srv/proxima-ai/data/day1-wb-api",
+        ],
+        "runtime env template must contain only path references",
+        errors,
+    )
 
     service = (root / "infra" / "monitoring" / "proxima-host-monitor.service").read_text(encoding="utf-8")
     for required in ("User=proxima-monitor", "ProtectSystem=strict", "NoNewPrivileges=true", "ReadWritePaths=/var/lib/proxima-ai-monitor"):

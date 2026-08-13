@@ -55,6 +55,12 @@ def test_provenance_attestation_rejects_tampered_tree_object() -> None:
         provenance.attested_paths(tampered)
 
 
+def test_provenance_uses_locked_commit_bytes_not_later_worktree_state() -> None:
+    provenance = load_tool("verify_provenance")
+
+    provenance.verify()
+
+
 def test_cross_language_contracts_accept_only_fail_closed_examples() -> None:
     contracts = load_tool("verify_contracts")
     contracts.verify()

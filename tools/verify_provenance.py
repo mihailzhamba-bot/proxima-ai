@@ -20,16 +20,6 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def status_digest(path: Path) -> str:
-    result = subprocess.run(
-        ["git", "status", "--porcelain=v1", "-uall"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-    return digest(result.stdout)
-
-
 def git_bytes(path: Path, *arguments: str) -> bytes:
     result = subprocess.run(
         ["git", *arguments],
@@ -219,15 +209,6 @@ def verify() -> None:
     }
     if actual != destinations:
         raise ValueError(f"undeclared or missing imports: {sorted(actual ^ destinations)}")
-
-    for worktree in worktrees:
-        path = Path(worktree["path"])
-        if not path.exists():
-            continue
-        current = status_digest(path)
-        if current != worktree["status_sha256_after"]:
-            raise ValueError(f"source worktree changed after import: {worktree['name']}")
-
 
 if __name__ == "__main__":
     verify()

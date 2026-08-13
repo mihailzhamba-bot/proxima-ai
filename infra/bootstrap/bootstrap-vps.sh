@@ -95,11 +95,15 @@ elif apt-cache show docker-compose-plugin >/dev/null 2>&1; then
 else
   fail "no Docker Compose v2 package is available from the configured Ubuntu repositories"
 fi
-apt-get install --yes ca-certificates curl "${compose_package}" docker.io git openssh-server python3 ufw
+apt-get install --yes ca-certificates curl "${compose_package}" docker.io git openssh-server python3 python3-venv ufw
 
 ensure_user "${ADMIN_USER}" "/bin/bash"
 usermod --append --groups sudo "${ADMIN_USER}"
 ensure_user "${MONITOR_USER}" "/usr/sbin/nologin"
+
+install --mode 0440 /dev/null "/etc/sudoers.d/${ADMIN_USER}"
+printf '%s\n' "${ADMIN_USER} ALL=(ALL:ALL) NOPASSWD: ALL" > "/etc/sudoers.d/${ADMIN_USER}"
+visudo --check --file "/etc/sudoers.d/${ADMIN_USER}" >/dev/null
 
 install --directory --mode 0700 --owner "${ADMIN_USER}" --group "${ADMIN_USER}" "/home/${ADMIN_USER}/.ssh"
 install --mode 0600 --owner "${ADMIN_USER}" --group "${ADMIN_USER}" "${PROXIMA_ADMIN_PUBLIC_KEY_FILE}" "/home/${ADMIN_USER}/.ssh/authorized_keys"
@@ -130,5 +134,6 @@ install --mode 0644 "${ROOT_DIR}/infra/monitoring/proxima-host-monitor.timer" /e
 systemctl daemon-reload
 systemctl enable --now docker
 docker compose version >/dev/null
+passwd --lock root >/dev/null
 
 printf '%s\n' "bootstrap-vps: complete. Do not enable proxima-host-monitor.timer before Telegram secret files and a delivery test are ready."
