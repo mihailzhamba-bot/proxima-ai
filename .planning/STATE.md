@@ -24,7 +24,7 @@
 | Phases complete | 1/8 |
 | Plans complete | 3/3 Phase 1; 2/3 Phase 2 |
 | Requirements complete | 6/32 |
-| Root verify evidence | 02-01 GitHub PASS on `56ebe000`; 02-01A local PASS on `20ea8cf`, CI pending |
+| Root verify evidence | 02-01 GitHub PASS on `56ebe000`; 02-01A local PASS on `255e6c0`, CI pending |
 | Independent cross-model reviews | 3/3 Phase 1 plans PASS with 0 blocker / 0 warning |
 | Data GO | Pending separate Mike decision |
 | Live Deploy GO | Pending separate Mike decision |
@@ -82,7 +82,7 @@
 
 ## Session Continuity
 
-**Last action:** 2026-08-13: Plan 02-01A repository slice delivered in `76d39a2`, `0d5b950`, `20ea8cf`; local root `make verify` passed on `20ea8cf`. No VPS mutation or Telegram send occurred.
+**Last action:** 2026-08-13: Plan 02-01A plus review fixes delivered through `255e6c0`; local root `make verify` and disposable PostgreSQL 16.14 smoke passed. No VPS mutation or Telegram send occurred.
 
 **Next action:** Root reviews/deploys 02-01A, supplies private inputs and records one live Telegram acceptance. In parallel, Mike supplies the official pilot-cabinet XLSX for Plan 02-02.
 

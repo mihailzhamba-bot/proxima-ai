@@ -34,7 +34,7 @@ patterns-established:
   - "HTTP evidence pattern: persist exact body and manifest, record DB lineage, then parse."
   - "Notification pattern: preflight getMe/getChat, one sendMessage call site, no automatic retry."
 requirements-completed: []
-duration: 21min
+duration: 31min
 completed: 2026-08-13
 ---
 
@@ -44,7 +44,7 @@ completed: 2026-08-13
 
 ## Performance
 
-- **Duration:** 21 min
+- **Duration:** 31 min
 - **Started:** 2026-08-13T10:39:00Z
 - **Completed:** 2026-08-13T10:59:45Z
 - **Tasks:** 3
@@ -62,6 +62,11 @@ completed: 2026-08-13
 1. **Task 1: Add versioned config and provenance schema** - `76d39a2`
 2. **Task 2: Collect, calculate and send one signal** - `0d5b950`
 3. **Task 3: Add pinned VPS runtime and operator contract** - `20ea8cf`
+
+Review fixes:
+
+- **WB page pacing and complete least-privilege scope validation** - `fe0bc5d`
+- **Finance line-amount commission semantics** - `255e6c0`
 
 ## Files Created/Modified
 
@@ -109,13 +114,38 @@ completed: 2026-08-13
 - **Verification:** `bash -n`, VPS verifier and full `make verify` pass.
 - **Committed in:** `20ea8cf`
 
-**Total deviations:** 3 auto-fixed (1 security, 1 correctness, 1 blocking).
+**4. [Rule 1 - Correctness] Paced continuation pages at official WB limits**
+- **Found during:** Root review after Task 3
+- **Issue:** Immediate continuation requests would hit Statistics/Finance 1-minute and Analytics 20-second limits.
+- **Fix:** Added dependency-injected 60s/20s/60s pacing before continuation pages; no HTTP request is retried.
+- **Files modified:** `wb-client.ts`, `pipeline.ts`, business-signal tests.
+- **Verification:** tests assert all three intervals without sleeping and Finance explicit field projection.
+- **Committed in:** `fe0bc5d`
+
+**5. [Rule 2 - Security] Rejected WB tokens with unrelated category scopes**
+- **Found during:** Root review after Task 3
+- **Issue:** The partial scope-bit map could accept required scope plus an unrecognized category.
+- **Fix:** Reused the complete known category-bit map and require exactly one requested category plus READ-only.
+- **Files modified:** `secrets.ts`, business-signal tests.
+- **Verification:** negative Statistics/content and Finance/documents scope tests pass without logging claims.
+- **Committed in:** `fe0bc5d`
+
+**6. [Rule 1 - Correctness] Treated Finance commission as a line amount**
+- **Found during:** Root review after Task 3
+- **Issue:** Multiplying `ppvzSalesCommission` by quantity double-counted commission for multi-unit rows.
+- **Fix:** Sum sale-row commissions once, then divide by total sold units; price remains quantity-weighted and logistics includes every SKU row.
+- **Files modified:** `calculate.ts`, business-signal tests.
+- **Verification:** quantity-2 regression test produces 549.90 RUB/unit and fails under the old formula.
+- **Committed in:** `255e6c0`
+
+**Total deviations:** 6 auto-fixed (2 security, 3 correctness, 1 blocking).
 **Impact on plan:** All changes close correctness or deployability gaps; scope remains one manual staging signal.
 
 ## Issues Encountered
 
 - Local Docker daemon was unavailable. The Docker-dependent PostgreSQL test remained skipped; no VPS mutation was used as a substitute.
-- `make verify` passed on implementation HEAD `20ea8cf`: 29 TypeScript tests, 35 Python tests, 1 Docker-dependent skip, all contract/migration/provenance/architecture/secret/VPS/business-signal verifiers.
+- `make verify` passed on implementation HEAD `255e6c0`: 33 TypeScript tests, 35 Python tests, 1 existing Docker-dependent skip, all contract/migration/provenance/architecture/secret/VPS/business-signal verifiers.
+- A disposable local PostgreSQL 16.14 cluster applied all 4 migrations, seeded the synthetic product/warehouse versions twice without duplicates (`4|1|1`), then accepted a run/raw lineage insert through its foreign keys and constraints.
 
 ## User Setup Required
 
@@ -137,14 +167,14 @@ None. Private business values and credentials are intentional deployment inputs,
 ## Next Phase Readiness
 
 - Repository implementation and local verification are complete.
-- CI evidence is pending for implementation HEAD `20ea8cf`.
+- CI evidence is pending for implementation HEAD `255e6c0`.
 - End-to-end acceptance is pending private config/tokens, reviewed VPS deploy, one live `--send`, `SENT` DB evidence and founder receipt.
 - Plan 02-02 remains checkpointed on the official WB XLSX and is unchanged.
 
 ## Self-Check: PASSED
 
 - All 8 key implementation/planning files exist.
-- Commits `76d39a2`, `0d5b950` and `20ea8cf` exist in repository history.
+- Commits `76d39a2`, `0d5b950`, `20ea8cf`, `fe0bc5d` and `255e6c0` exist in repository history.
 - Secret scan passed; Phase 2 requirements remain Pending; no send-capable values were committed.
 
 ---

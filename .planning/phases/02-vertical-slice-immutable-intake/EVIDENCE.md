@@ -16,10 +16,11 @@
 
 ## Plan 02-01A - Margin and out-of-stock Telegram proof
 
-- **Implementation commits:** `76d39a2` (schema/private config), `0d5b950` (collector/calculation/Telegram), `20ea8cf` (Node 22 VPS contract/runbook).
-- **Root verification:** `make verify` PASS on implementation HEAD `20ea8cf`, 2026-08-13. Evidence: 29 TypeScript tests, 35 Python tests, 1 Docker-dependent PostgreSQL test skipped, contracts, 4 ordered migration checks, provenance, 4 Mermaid renders, runtime boundary, secret scan, VPS and business-signal verifier PASS.
+- **Implementation commits:** `76d39a2` (schema/private config), `0d5b950` (collector/calculation/Telegram), `20ea8cf` (Node 22 VPS contract/runbook), `fe0bc5d` (WB page pacing/full token scope validation), `255e6c0` (Finance line-amount commission fix).
+- **Root verification:** `make verify` PASS on implementation HEAD `255e6c0`, 2026-08-13. Evidence: 33 TypeScript tests, 35 Python tests, 1 existing Docker-dependent test skipped, contracts, 4 ordered migration checks, provenance, 4 Mermaid renders, runtime boundary, secret scan, VPS and business-signal verifier PASS.
+- **PostgreSQL smoke:** disposable local PostgreSQL 16.14 applied migrations 001-004, idempotently seeded synthetic config twice (`schema_migrations=4`, `dim_product=1`, `dim_warehouse_map=1`) and accepted one synthetic run/raw lineage insert. No customer values or persistent database were used.
 - **Observed official schemas:** test-cabinet probes by root on 2026-08-13 confirmed 459 sales rows with strict `saleID` prefixes S (454) / R (5), current stock response under `data.items`, and non-identical sales/stock warehouse vocabularies requiring the planned private mapping. No values or response payloads are committed.
 - **Self-review:** PASS. Exact bodies are fsynced/content-addressed and linked in PostgreSQL before parse; token scopes are separate/read-only; unknown S/R prefix, schema, mapping, pagination, 401/403/429 and Telegram failure stop without an automatic notification retry. Deterministic top-risk and HTML escaping are tested.
-- **Hosted CI:** pending for implementation HEAD `20ea8cf`; no PASS is claimed.
+- **Hosted CI:** pending for implementation HEAD `255e6c0`; no PASS is claimed.
 - **Live acceptance:** pending. Repository execution did not mutate `135.106.186.210` or send Telegram. Root must supply private config/tokens, deploy reviewed code, record one `SENT` run with source SHA-256 and `message_id`, and obtain founder receipt confirmation.
 - **Release boundary:** staging exception only. Production release pointers, Phase 2 requirements, Data GO and Live Deploy GO are unchanged.
