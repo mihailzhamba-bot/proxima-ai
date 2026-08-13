@@ -57,6 +57,11 @@ function text(value: unknown, field: string): string {
   return value;
 }
 
+function stringValue(value: unknown, field: string): string {
+  if (typeof value !== 'string') throw new BusinessSignalError('WB_SCHEMA_DRIFT', `${field} must be text`);
+  return value;
+}
+
 export interface WbSale {
   saleId: string;
   kind: 'sale' | 'return';
@@ -201,7 +206,7 @@ export class WbSignalClient {
         const row = objectRow(value, 'finance');
         return {
           nmId: positiveInteger(row.nmId, 'nmId'),
-          docTypeName: text(row.docTypeName, 'docTypeName'),
+          docTypeName: stringValue(row.docTypeName, 'docTypeName'),
           quantity: text(String(row.quantity), 'quantity'),
           retailPriceWithDisc: text(row.retailPriceWithDisc, 'retailPriceWithDisc'),
           ppvzSalesCommission: text(row.ppvzSalesCommission, 'ppvzSalesCommission'),

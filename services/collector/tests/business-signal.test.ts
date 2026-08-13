@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -40,6 +40,13 @@ function jwt(categoryBit: number, unrelatedBit?: number, readOnly = true): strin
   const scopes = (readOnly ? (1 << 30) : 0) | (1 << categoryBit) | (unrelatedBit === undefined ? 0 : (1 << unrelatedBit));
   const payload = Buffer.from(JSON.stringify({ s: scopes, exp: 2_000_000_000 })).toString('base64url');
   return `${header}.${payload}.signature`;
+}
+
+async function replacePrivateFile(path: string, value: string): Promise<void> {
+  const temporary = `${path}.next`;
+  await writeFile(temporary, value, { mode: 0o600 });
+  await chmod(temporary, 0o600);
+  await rename(temporary, path);
 }
 
 class MemoryRepository implements SignalRepository {
@@ -134,10 +141,10 @@ test('validates a complete private signal input bundle without returning secret 
   });
   assert.equal(JSON.stringify(result).includes(telegram), false);
 
-  await writeFile(files.analytics, jwt(2, 1));
+  await replacePrivateFile(files.analytics, jwt(2, 1));
   assert.rejects(() => validateSignalInputFiles(paths, new Date('2026-08-13T10:00:00Z')), { code: 'TOKEN_SCOPE_INVALID' });
 
-  await writeFile(files.analytics, jwt(2, undefined, false));
+  await replacePrivateFile(files.analytics, jwt(2, undefined, false));
   const temporary = await validateSignalInputFiles({ ...paths, allowAnalyticsReadWrite: true }, new Date('2026-08-13T10:00:00Z'));
   assert.equal(temporary.analyticsAccess, 'read-write-temporary');
 });
@@ -338,11 +345,12 @@ test('paces Finance pages for 60 seconds and requests only metric fields', async
   const wb = new WbSignalClient(new RecordedHttpClient('00000000-0000-4000-8000-000000000005', store, repository, async (request) => {
     requests.push(request);
     page += 1;
-    if (page === 1) return { status: 200, retrievedAt: new Date(), body: Buffer.from(JSON.stringify(financeRows().slice(0, 1).map((row) => ({ ...row, nmId: Number(row.nmId), rrdId: Number(row.rrdId) })))) };
+    if (page === 1) return { status: 200, retrievedAt: new Date(), body: Buffer.from(JSON.stringify(financeRows().slice(0, 1).map((row) => ({ ...row, docTypeName: '', nmId: Number(row.nmId), rrdId: Number(row.rrdId) })))) };
     return { status: 204, retrievedAt: new Date(), body: Buffer.alloc(0) };
   }), { sleep: async (milliseconds) => { sleeps.push(milliseconds); } });
   const rows = await wb.finance('token', { from: '2026-08-01', to: '2026-08-14' });
   assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.docTypeName, '');
   assert.deepEqual(sleeps, [60_000]);
   assert.deepEqual((requests[0]?.body as { fields: string[] }).fields, [
     'rrdId', 'nmId', 'docTypeName', 'quantity', 'retailPriceWithDisc', 'ppvzSalesCommission', 'deliveryService',
