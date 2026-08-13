@@ -83,6 +83,19 @@ test('calculates Decimal margin including reverse logistics', () => {
   assert.equal(margins.get(1001n)?.toFixed(2), '624.90');
 });
 
+test('treats ppvzSalesCommission as a line amount when quantity is greater than one', () => {
+  const margins = calculateMargins([product], [{
+    nmId: 1001n,
+    docTypeName: 'Продажа',
+    quantity: '2',
+    retailPriceWithDisc: '1000.00',
+    ppvzSalesCommission: '200.00',
+    deliveryService: '100.00',
+    rrdId: 1n,
+  }]);
+  assert.equal(margins.get(1001n)?.toFixed(2), '549.90');
+});
+
 test('aggregates stock sizes, nets returns, and signals at threshold equality', () => {
   const margins = calculateMargins([product], financeRows());
   const sales: WbSale[] = Array.from({ length: 14 }, (_, index) => ({

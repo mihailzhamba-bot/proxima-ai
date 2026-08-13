@@ -24,7 +24,7 @@ export function calculateMargins(products: ProductConfig[], rows: WbFinanceRow[]
     const soldUnits = sales.reduce((sum, row) => sum.plus(decimal(row.quantity, 'quantity')), new Decimal(0));
     if (!soldUnits.isPositive()) throw new BusinessSignalError('WB_SCHEMA_DRIFT', 'finance sold quantity must be positive');
     const price = sales.reduce((sum, row) => sum.plus(decimal(row.retailPriceWithDisc, 'retailPriceWithDisc').times(decimal(row.quantity, 'quantity'))), new Decimal(0)).div(soldUnits);
-    const commission = sales.reduce((sum, row) => sum.plus(decimal(row.ppvzSalesCommission, 'ppvzSalesCommission').times(decimal(row.quantity, 'quantity'))), new Decimal(0)).div(soldUnits);
+    const commission = sales.reduce((sum, row) => sum.plus(decimal(row.ppvzSalesCommission, 'ppvzSalesCommission')), new Decimal(0)).div(soldUnits);
     const logistics = skuRows.reduce((sum, row) => sum.plus(decimal(row.deliveryService, 'deliveryService')), new Decimal(0)).div(soldUnits);
     result.set(product.nmId, price.minus(commission).minus(logistics).minus(product.cogsRub).toDecimalPlaces(2));
   }
