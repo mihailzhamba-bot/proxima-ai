@@ -13,6 +13,7 @@ fail() {
 
 [[ "$(id -u)" -eq 0 ]] || fail "run as root via sudo"
 [[ -d "${REPOSITORY_DIR}/.git" ]] || fail "bootstrap repository is missing"
+getent group proxima-monitor >/dev/null 2>&1 || fail "proxima-monitor group is missing"
 command -v docker >/dev/null 2>&1 || fail "Docker is not installed"
 docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 is not installed"
 command -v python3 >/dev/null 2>&1 || fail "Python 3 is not installed"
@@ -23,7 +24,8 @@ if sys.version_info < (3, 11):
     raise SystemExit("prepare-day1-runtime: Python 3.11+ is required")
 PY
 
-install --directory --mode 0750 --owner root --group proxima-admin "${SECRETS_DIR}"
+usermod --append --groups proxima-monitor proxima-admin
+install --directory --mode 0750 --owner root --group proxima-monitor "${SECRETS_DIR}"
 install --directory --mode 0750 --owner proxima-admin --group proxima-admin /srv/proxima-ai/data/day1-wb-api
 install --directory --mode 0700 --owner proxima-admin --group proxima-admin /srv/proxima-ai/data/wb-analytics-spool
 
@@ -36,7 +38,7 @@ import secrets
 print(secrets.token_urlsafe(48))
 PY
 fi
-chown root:proxima-admin "${SECRETS_DIR}/postgres_user" "${SECRETS_DIR}/postgres_password"
+chown root:proxima-monitor "${SECRETS_DIR}/postgres_user" "${SECRETS_DIR}/postgres_password"
 chmod 0640 "${SECRETS_DIR}/postgres_user" "${SECRETS_DIR}/postgres_password"
 
 install --mode 0600 /dev/null "${ENV_FILE}"

@@ -111,6 +111,7 @@ def verify(root: Path = ROOT) -> None:
     day1_runtime = (root / "infra" / "bootstrap" / "prepare-day1-runtime.sh").read_text(encoding="utf-8")
     for required in (
         "Python 3.11+ is required",
+        "usermod --append --groups proxima-monitor proxima-admin",
         "/etc/proxima-ai/secrets",
         "WB_STATISTICS_TOKEN_FILE=",
         "PROXIMA_RAW_DIR=",
