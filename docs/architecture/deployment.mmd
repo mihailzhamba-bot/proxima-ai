@@ -4,7 +4,7 @@ flowchart TB
   S3[S3-compatible off-site storage]
   SG[Selectel security group: TCP 22 only]
 
-  subgraph VPS[Selectel Cloud VPS: staging then pilot - Ubuntu 24.04, 2 vCPU, 4 GiB RAM, 80 GiB NVMe]
+  subgraph VPS[Selectel Cloud VPS: staging then pilot - Ubuntu 24.04, 6 vCPU, 12 GiB RAM, 120 GiB NVMe class]
     HOST[Hardened host: SSH key only, no root or password login]
     MONITOR[systemd capacity monitor: recommend only]
     NET[Internal Docker network]

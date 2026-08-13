@@ -21,7 +21,7 @@ Render all maps with `make architecture`. Run the complete local contract with `
 
 ## Staging VPS
 
-The chosen host is Selectel Cloud in Russia: Ubuntu 24.04 LTS, 2 vCPU, 4 GiB RAM and 80 GiB NVMe, with a 3,000 RUB monthly budget cap. The machine has only TCP/22 inbound; any future private UI is reached through an SSH tunnel.
+The approved host is Selectel Cloud in Russia at `135.106.186.210`: Ubuntu 24.04 LTS, 6 vCPU, a 12 GiB RAM class and a 120 GiB NVMe class. These dimensions were observed by SSH preflight on 2026-08-13 and retained by Mike the same day. The 3,000 RUB monthly budget cap remains, but the actual Selectel monthly price is not yet verified. The machine has only TCP/22 inbound; any future private UI is reached through an SSH tunnel.
 
 Before bootstrap, create the Selectel security group with only TCP/22 inbound and prepare one public SSH key for `proxima-admin`. From a clean temporary checkout of this private repository on the fresh host, run `sudo PROXIMA_SECURITY_GROUP_VERIFIED=yes PROXIMA_ADMIN_PUBLIC_KEY_FILE=/path/to/public-key bash infra/bootstrap/bootstrap-vps.sh`. It copies that exact clean checkout into `/srv/proxima-ai/repo`, so later operation does not depend on agent forwarding or a server-side GitHub credential.
 

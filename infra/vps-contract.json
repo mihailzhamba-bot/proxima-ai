@@ -1,19 +1,26 @@
 {
   "decision": {
-    "source": "Mike, 2026-08-12",
+    "source": "Mike, 2026-08-13",
     "provider": "Selectel Cloud",
     "region": "Russia",
-    "stage": "staging_then_pilot"
+    "stage": "staging_then_pilot",
+    "host_ipv4": "135.106.186.210",
+    "retain_observed_host": true
   },
   "baseline": {
-    "vcpus": 2,
-    "memory_gib": 4,
+    "vcpus": 6,
+    "memory_gib": 12,
     "storage": {
       "kind": "nvme",
-      "gib": 80
+      "gib": 120
     },
     "operating_system": "ubuntu-24.04-lts",
-    "monthly_budget_rub": 3000
+    "observed_at": "2026-08-13T11:53:00+03:00",
+    "observed_memory_kib": 12247548,
+    "observed_root_filesystem_bytes": 126752366592,
+    "monthly_budget_rub": 3000,
+    "monthly_price_rub": null,
+    "price_verification": "pending_selectel_billing"
   },
   "network": {
     "security_group": {

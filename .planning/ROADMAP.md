@@ -75,7 +75,7 @@ Mike получает production-ready read-only data foundation для пило
 
 ### Phase 4: Official WB READ & 90-Day Backfill
 **Goal**: Пилот получает complete official WB evidence через READ-only clients и воспроизводимый 90-дневный operational backfill, выполняемый на минимальном VPS с базовым ежедневным scheduler. (Решение Mike 2026-08-12: VPS и daily-сбор поднимаются здесь, а не big-bang в Phase 7.)
-**Depends on**: Phase 3; Selectel Cloud VPS в РФ выбран (2 vCPU, 4 GiB RAM, 80 GiB NVMe, до 3,000 RUB/месяц) и должен быть создан до выполнения backfill.
+**Depends on**: Phase 3; Selectel Cloud VPS `135.106.186.210` в РФ создан и оставлен решением Mike 2026-08-13 после preflight (6 vCPU, 12 GiB / 120 GiB provider class; фактическая цена pending) и должен быть готов до выполнения backfill.
 **Requirements**: SRC-02, SRC-05, SRC-07
 **Success Criteria** (what must be TRUE):
   1. Statistics, Analytics и Finance clients используют три отдельные least-privilege SecretRef и не экспонируют token values в Git, PostgreSQL, logs или alerts.
