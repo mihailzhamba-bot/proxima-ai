@@ -43,8 +43,8 @@ def verify() -> None:
     compose = (ROOT / "infra" / "compose.yaml").read_text(encoding="utf-8")
     if re.search(r"TORGSTAT|LIVE[_-]?SESSION", compose, re.IGNORECASE):
         violations.append("infra/compose.yaml: forbidden live adapter flag")
-    if re.search(r"(?:ports:|0\.0\.0\.0)", compose):
-        violations.append("infra/compose.yaml: public port binding")
+    if "0.0.0.0" in compose or "127.0.0.1:${PROXIMA_POSTGRES_PORT:-5432}:5432" not in compose:
+        violations.append("infra/compose.yaml: PostgreSQL must bind only to configurable loopback")
     if "postgres:16" not in compose or "internal: true" not in compose:
         violations.append("infra/compose.yaml: PostgreSQL 16 private boundary missing")
 

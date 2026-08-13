@@ -1,4 +1,4 @@
-.PHONY: verify install typecheck test contracts migrations provenance architecture boundary secrets vps probe-wb-api
+.PHONY: verify install typecheck test contracts migrations provenance architecture boundary secrets vps probe-wb-api collect-wb-analytics apply-migrations
 
 verify: install typecheck test contracts migrations provenance architecture boundary secrets vps
 
@@ -37,3 +37,9 @@ vps:
 
 probe-wb-api:
 	uv run --python 3.14 --project services/control-plane --extra test python tools/wb_api_probe.py --env-file .env
+
+apply-migrations:
+	uv run --python 3.14 --project services/control-plane --extra test python tools/apply_migrations.py --env-file .env
+
+collect-wb-analytics:
+	uv run --python 3.14 --project services/control-plane --extra test python tools/wb_async_report.py --env-file .env --tenant-id amirova-test --period latest-closed-week

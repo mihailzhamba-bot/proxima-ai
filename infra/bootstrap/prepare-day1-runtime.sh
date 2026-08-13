@@ -25,6 +25,7 @@ PY
 
 install --directory --mode 0750 --owner root --group proxima-admin "${SECRETS_DIR}"
 install --directory --mode 0750 --owner proxima-admin --group proxima-admin /srv/proxima-ai/data/day1-wb-api
+install --directory --mode 0700 --owner proxima-admin --group proxima-admin /srv/proxima-ai/data/wb-analytics-spool
 
 if [[ ! -e "${SECRETS_DIR}/postgres_user" ]]; then
   printf '%s\n' "proxima" | install --mode 0600 /dev/stdin "${SECRETS_DIR}/postgres_user"
@@ -35,11 +36,20 @@ import secrets
 print(secrets.token_urlsafe(48))
 PY
 fi
+chown root:proxima-admin "${SECRETS_DIR}/postgres_user" "${SECRETS_DIR}/postgres_password"
+chmod 0640 "${SECRETS_DIR}/postgres_user" "${SECRETS_DIR}/postgres_password"
 
 install --mode 0600 /dev/null "${ENV_FILE}"
 printf '%s\n' \
   "WB_STATISTICS_TOKEN_FILE=${SECRETS_DIR}/wb_statistics_token" \
   "PROXIMA_RAW_DIR=/srv/proxima-ai/data/day1-wb-api" \
+  "WB_ANALYTICS_TOKEN_FILE=${SECRETS_DIR}/wb_analytics_token" \
+  "PROXIMA_SPOOL_DIR=/srv/proxima-ai/data/wb-analytics-spool" \
+  "POSTGRES_USER_FILE=${SECRETS_DIR}/postgres_user" \
+  "POSTGRES_PASSWORD_FILE=${SECRETS_DIR}/postgres_password" \
+  "POSTGRES_HOST=127.0.0.1" \
+  "POSTGRES_PORT=5432" \
+  "POSTGRES_DB=proxima" \
   > "${ENV_FILE}"
 chown proxima-admin:proxima-admin "${ENV_FILE}"
 
@@ -55,7 +65,8 @@ PROXIMA_SECRETS_DIR="${SECRETS_DIR}" docker compose \
 for _ in $(seq 1 30); do
   status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' proxima-ai-postgres-1 2>/dev/null || true)"
   if [[ "${status}" == "healthy" ]]; then
-    printf '%s\n' "prepare-day1-runtime: PostgreSQL healthy; WB token remains required"
+    runuser --user proxima-admin -- "${PROBE_VENV}/bin/python" "${REPOSITORY_DIR}/tools/apply_migrations.py" --env-file "${ENV_FILE}"
+    printf '%s\n' "prepare-day1-runtime: PostgreSQL healthy and migrations current; WB tokens remain required"
     exit 0
   fi
   [[ "${status}" != "unhealthy" ]] || fail "PostgreSQL healthcheck failed"
