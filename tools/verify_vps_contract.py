@@ -99,6 +99,7 @@ def verify(root: Path = ROOT) -> None:
         "runuser --user",
         "NOPASSWD: ALL",
         "visudo --check",
+        "install --directory --mode 0755 /run/sshd",
         "passwd --lock root",
         "systemctl enable --now docker",
         "Do not enable proxima-host-monitor.timer before Telegram secret files",
