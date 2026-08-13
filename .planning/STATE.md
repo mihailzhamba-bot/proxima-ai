@@ -24,7 +24,7 @@
 | Phases complete | 1/8 |
 | Plans complete | 3/3 Phase 1; 2/3 Phase 2 |
 | Requirements complete | 6/32 |
-| Root verify evidence | 02-01 GitHub PASS on `56ebe000`; 02-01A local PASS and staging deploy on `deeefcb`, CI pending |
+| Root verify evidence | 02-01 GitHub PASS on `56ebe000`; 02-01A local PASS and staging deploy on `ab8f451`, CI pending |
 | Independent cross-model reviews | 3/3 Phase 1 plans PASS with 0 blocker / 0 warning |
 | Data GO | Pending separate Mike decision |
 | Live Deploy GO | Pending separate Mike decision |
@@ -82,7 +82,7 @@
 
 ## Session Continuity
 
-**Last action:** 2026-08-13: Plan 02-01A deployed to staging on clean detached `deeefcb`; Node `v22.23.2`, migration `004` and private pre-migration dump verified. No Telegram call occurred.
+**Last action:** 2026-08-13: fail-closed private input installer deployed on clean detached `ab8f451`; synthetic valid/broad-scope smoke and full `make verify` passed. No Telegram call occurred.
 
 **Next action:** Mike supplies Phase 2.1 private inputs; root seeds config, performs dry run and records one live Telegram acceptance. In parallel, Mike supplies the official pilot-cabinet XLSX for Plan 02-02.
 
