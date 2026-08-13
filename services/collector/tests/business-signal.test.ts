@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -12,7 +12,9 @@ import { validateSignalInputFiles } from '../src/business-signal/input-validatio
 import { runBusinessSignal } from '../src/business-signal/pipeline.js';
 import { BusinessSignalRawStore } from '../src/business-signal/raw-store.js';
 import { assertLeastPrivilegeToken } from '../src/business-signal/secrets.js';
+import { writeFounderChatId } from '../src/business-signal/runtime.js';
 import { formatStockoutMessage, preflightAndSend, type TelegramTransport } from '../src/business-signal/telegram.js';
+import { discoverFounderChatId } from '../src/business-signal/telegram-setup.js';
 import type { ProductConfig, RawArtifactRecord, SignalCandidate, SignalRepository, SignalWindow, WarehouseMap } from '../src/business-signal/types.js';
 import { WbSignalClient, type WbSale } from '../src/business-signal/wb-client.js';
 
@@ -266,6 +268,38 @@ test('does not retry a failed Telegram send', async () => {
   } };
   await assert.rejects(preflightAndSend(telegram, 1n, 'message'));
   assert.deepEqual(calls, ['getMe', 'getChat', 'sendMessage']);
+});
+
+test('discovers exactly one private founder /start without sending and writes mode 0600', async () => {
+  const calls: string[] = [];
+  const telegram: TelegramTransport = { call: async (method) => {
+    calls.push(method);
+    if (method === 'getWebhookInfo') return { ok: true, result: { url: '' } };
+    if (method === 'getUpdates') return { ok: true, result: [
+      { update_id: 1, message: { text: '/start', from: { id: 123, is_bot: false }, chat: { id: 123, type: 'private' } } },
+      { update_id: 2, message: { text: '/start payload', from: { id: 123, is_bot: false }, chat: { id: 123, type: 'private' } } },
+      { update_id: 3, message: { text: '/start', from: { id: 456, is_bot: false }, chat: { id: -789, type: 'group' } } },
+    ] };
+    throw new Error('unexpected method');
+  } };
+  const chatId = await discoverFounderChatId(telegram);
+  const root = await mkdtemp(join(tmpdir(), 'founder-chat-'));
+  const target = join(root, 'founder-chat.json');
+  await writeFounderChatId(target, chatId);
+  assert.deepEqual(calls, ['getWebhookInfo', 'getUpdates']);
+  assert.deepEqual(JSON.parse(await readFile(target, 'utf8')), { chat_id: '123' });
+  assert.equal((await stat(target)).mode & 0o777, 0o600);
+});
+
+test('founder discovery fails closed for webhook or multiple private /start senders', async () => {
+  await assert.rejects(discoverFounderChatId({ call: async () => ({ ok: true, result: { url: 'https://example.invalid/hook' } }) }), { code: 'TELEGRAM_WEBHOOK_ACTIVE' });
+  const transport: TelegramTransport = { call: async (method) => method === 'getWebhookInfo'
+    ? { ok: true, result: { url: '' } }
+    : { ok: true, result: [
+      { message: { text: '/start', from: { id: 1, is_bot: false }, chat: { id: 1, type: 'private' } } },
+      { message: { text: '/start', from: { id: 2, is_bot: false }, chat: { id: 2, type: 'private' } } },
+    ] } };
+  await assert.rejects(discoverFounderChatId(transport), { code: 'TELEGRAM_START_AMBIGUOUS' });
 });
 
 test('blocks finance pagination without HTTP 204 terminator', async () => {

@@ -16,12 +16,12 @@ export function formatStockoutMessage(candidate: SignalCandidate, window: Signal
 }
 
 export interface TelegramTransport {
-  call(method: 'getMe' | 'getChat' | 'sendMessage', body: Record<string, unknown>): Promise<unknown>;
+  call(method: 'getMe' | 'getChat' | 'getWebhookInfo' | 'getUpdates' | 'sendMessage', body: Record<string, unknown>): Promise<unknown>;
 }
 
 export class TelegramBotApi implements TelegramTransport {
   constructor(private readonly token: string) {}
-  async call(method: 'getMe' | 'getChat' | 'sendMessage', body: Record<string, unknown>): Promise<unknown> {
+  async call(method: 'getMe' | 'getChat' | 'getWebhookInfo' | 'getUpdates' | 'sendMessage', body: Record<string, unknown>): Promise<unknown> {
     const response = await fetch(`https://api.telegram.org/bot${this.token}/${method}`, {
       method: 'POST',
       redirect: 'error',

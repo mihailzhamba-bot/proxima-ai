@@ -11,6 +11,7 @@ def verify() -> None:
     source_root = ROOT / "services" / "collector" / "src" / "business-signal"
     source = "\n".join(path.read_text(encoding="utf-8") for path in sorted(source_root.glob("*.ts")))
     cli = (ROOT / "services" / "collector" / "src" / "cli" / "stockout-signal.ts").read_text(encoding="utf-8")
+    chat_cli = (ROOT / "services" / "collector" / "src" / "cli" / "discover-founder-chat.ts").read_text(encoding="utf-8")
     migration = (ROOT / "db" / "migrations" / "004_business_signal_slice.sql").read_text(encoding="utf-8")
     runtime = (ROOT / "infra" / "bootstrap" / "prepare-business-signal-runtime.sh").read_text(encoding="utf-8")
     input_installer = (ROOT / "infra" / "bootstrap" / "install-business-signal-inputs.sh").read_text(encoding="utf-8")
@@ -33,6 +34,11 @@ def verify() -> None:
         errors.append("business signal must remain a manual one-shot")
     if source.count("transport.call('sendMessage'") != 1:
         errors.append("Telegram surface must contain exactly one send call site")
+    for required in ("getWebhookInfo", "getUpdates", "writeFounderChatId"):
+        if required not in source + chat_cli:
+            errors.append(f"founder chat discovery missing: {required}")
+    if "sendMessage" in chat_cli:
+        errors.append("founder chat discovery must not send Telegram messages")
     for table in ("dim_product", "dim_warehouse_map", "business_signal_runs", "business_signal_raw_artifacts"):
         if f"CREATE TABLE {table}" not in migration:
             errors.append(f"migration missing table: {table}")

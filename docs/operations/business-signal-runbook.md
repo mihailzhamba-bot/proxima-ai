@@ -25,6 +25,16 @@ sudo bash /srv/proxima-ai/repo/infra/bootstrap/install-business-signal-inputs.sh
 
 Installer сначала копирует bundle во временный private staging, переиспользует runtime validators для трёх WB scopes, Telegram token shape, founder chat и обеих CSV, затем устанавливает проверенные файлы с owner `proxima-admin` и mode `0600`. При validation failure существующие runtime inputs не меняются. Source bundle после подтверждённой установки удаляет сам оператор.
 
+Founder `chat_id` вручную искать не нужно. После создания бота через BotFather записать token в `telegram_bot_token`, отправить этому боту `/start` из Telegram-аккаунта основателя и выполнить:
+
+```bash
+node /srv/proxima-ai/repo/services/collector/dist/cli/discover-founder-chat.js \
+  --telegram-token-file /home/proxima-admin/signal-inputs/telegram_bot_token \
+  --founder-chat-source /home/proxima-admin/signal-inputs/founder-chat.json
+```
+
+CLI работает только при отключённом webhook, требует ровно один private chat с `/start`, ничего не отправляет и атомарно записывает private `chat_id` с mode `0600`. Если `/start` прислали разные аккаунты, discovery блокируется.
+
 ## Deploy without live send
 
 1. Записать baseline commit VPS и сделать private `pg_dump` до migration.
