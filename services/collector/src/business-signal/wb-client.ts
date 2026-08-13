@@ -41,6 +41,13 @@ function positiveInteger(value: unknown, field: string): bigint {
   return BigInt(String(value));
 }
 
+function nonNegativeBigInteger(value: unknown, field: string): bigint {
+  if ((typeof value !== 'number' && typeof value !== 'string') || !/^\d+$/.test(String(value))) {
+    throw new BusinessSignalError('WB_SCHEMA_DRIFT', `${field} must be a non-negative integer`);
+  }
+  return BigInt(String(value));
+}
+
 function nonNegativeInteger(value: unknown, field: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new BusinessSignalError('WB_SCHEMA_DRIFT', `${field} must be a non-negative integer`);
   return value;
@@ -204,17 +211,22 @@ export class WbSignalClient {
       if (payload.length === 0) throw new BusinessSignalError('WB_INCOMPLETE_PAGINATION', 'finance must terminate with HTTP 204');
       const pageRows = payload.map((value) => {
         const row = objectRow(value, 'finance');
+        const nmId = nonNegativeBigInteger(row.nmId, 'nmId');
+        const rowRrdId = positiveInteger(row.rrdId, 'rrdId');
         return {
-          nmId: positiveInteger(row.nmId, 'nmId'),
-          docTypeName: stringValue(row.docTypeName, 'docTypeName'),
-          quantity: text(String(row.quantity), 'quantity'),
-          retailPriceWithDisc: text(row.retailPriceWithDisc, 'retailPriceWithDisc'),
-          ppvzSalesCommission: text(row.ppvzSalesCommission, 'ppvzSalesCommission'),
-          deliveryService: text(row.deliveryService, 'deliveryService'),
-          rrdId: positiveInteger(row.rrdId, 'rrdId'),
+          rrdId: rowRrdId,
+          finance: nmId === 0n ? undefined : {
+            nmId,
+            docTypeName: stringValue(row.docTypeName, 'docTypeName'),
+            quantity: text(String(row.quantity), 'quantity'),
+            retailPriceWithDisc: text(row.retailPriceWithDisc, 'retailPriceWithDisc'),
+            ppvzSalesCommission: text(row.ppvzSalesCommission, 'ppvzSalesCommission'),
+            deliveryService: text(row.deliveryService, 'deliveryService'),
+            rrdId: rowRrdId,
+          },
         };
       });
-      rows.push(...pageRows);
+      rows.push(...pageRows.flatMap((row) => row.finance ? [row.finance] : []));
       const next = pageRows.at(-1)?.rrdId;
       if (!next || next <= rrdId) throw new BusinessSignalError('WB_INCOMPLETE_PAGINATION', 'finance pagination cursor did not advance');
       rrdId = next;

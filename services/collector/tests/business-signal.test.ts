@@ -345,13 +345,14 @@ test('paces Finance pages for 60 seconds and requests only metric fields', async
   const wb = new WbSignalClient(new RecordedHttpClient('00000000-0000-4000-8000-000000000005', store, repository, async (request) => {
     requests.push(request);
     page += 1;
-    if (page === 1) return { status: 200, retrievedAt: new Date(), body: Buffer.from(JSON.stringify(financeRows().slice(0, 1).map((row) => ({ ...row, docTypeName: '', nmId: Number(row.nmId), rrdId: Number(row.rrdId) })))) };
+    if (page === 1) return { status: 200, retrievedAt: new Date(), body: Buffer.from(JSON.stringify(financeRows().slice(0, 2).map((row, index) => ({ ...row, docTypeName: '', nmId: index === 1 ? 0 : Number(row.nmId), rrdId: Number(row.rrdId) })))) };
     return { status: 204, retrievedAt: new Date(), body: Buffer.alloc(0) };
   }), { sleep: async (milliseconds) => { sleeps.push(milliseconds); } });
   const rows = await wb.finance('token', { from: '2026-08-01', to: '2026-08-14' });
   assert.equal(rows.length, 1);
   assert.equal(rows[0]?.docTypeName, '');
   assert.deepEqual(sleeps, [60_000]);
+  assert.equal((requests[1]?.body as { rrdId: number }).rrdId, 2);
   assert.deepEqual((requests[0]?.body as { fields: string[] }).fields, [
     'rrdId', 'nmId', 'docTypeName', 'quantity', 'retailPriceWithDisc', 'ppvzSalesCommission', 'deliveryService',
   ]);
