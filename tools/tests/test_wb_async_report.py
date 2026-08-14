@@ -42,6 +42,8 @@ class FakeRepository:
         self.raw = []
         self.events: list[str] = []
         self.fail_persist_once = False
+        self.fail_stage_mismatch_once = False
+        self.staged_rows: list[dict[str, str]] = []
 
     def reserve_task(self, tenant_id, period_from, period_to, quota_date):
         if self.task is not None:
@@ -121,14 +123,20 @@ class FakeRepository:
         self.events.append("status:not-found")
         return self.task
 
-    def complete_download(self, task_id, sha256, byte_size, downloaded_at):
+    def complete_download(self, task_id, sha256, byte_size, downloaded_at, rows):
         task = self.get_task(task_id)
+        if self.fail_stage_mismatch_once:
+            self.fail_stage_mismatch_once = False
+            raise self.collector.RowCountMismatch(f"parsed {len(rows)} report rows but staged 0 for task {task_id}")
+        self.staged_rows = list(rows)
         self.task = replace(
             task,
             lifecycle_status="DOWNLOADED",
             api_status="SUCCESS",
             downloaded_sha256=sha256,
             downloaded_size=byte_size,
+            parsed_row_count=len(rows),
+            staged_row_count=len(rows),
         )
         self.events.append("status:DOWNLOADED")
         return self.task
@@ -187,6 +195,9 @@ def test_waiting_processing_retry_are_polled_without_retry_post(tmp_path: Path) 
 
     assert result.lifecycle_status == "DOWNLOADED"
     assert result.downloaded_size == len(archive)
+    assert result.parsed_row_count == 1
+    assert result.staged_row_count == 1
+    assert repository.staged_rows == [{"nmID": "123", "dt": "2026-08-03", "ordersCount": "2"}]
     assert [request.url.path for request in requests].count("/api/v2/nm-report/downloads/retry") == 0
     assert [item.stage for item in repository.raw] == ["create", "status", "status", "status", "status", "download"]
     download = repository.raw[-1]
@@ -252,6 +263,76 @@ def test_failed_uses_official_regenerate_but_retry_status_only_waits(tmp_path: P
     assert result.lifecycle_status == "DOWNLOADED"
     assert paths.count("/api/v2/nm-report/downloads/retry") == 1
     assert repository.quota_used == 2
+
+
+def test_download_without_csv_blocks_with_parse_error(tmp_path: Path) -> None:
+    collector = load_collector()
+    repository = FakeRepository(collector)
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("detail.txt", "not a csv")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(200, json={"data": "Created"})
+        if "/file/" in request.url.path:
+            return httpx.Response(200, content=output.getvalue(), headers={"Content-Type": "application/zip"})
+        return httpx.Response(200, json={"data": [{"id": str(repository.task.task_id), "status": "SUCCESS"}]})
+
+    runner, client = make_runner(collector, tmp_path, repository, handler, [])
+    try:
+        with pytest.raises(collector.WbAsyncReportError, match="exactly one CSV"):
+            runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO)
+    finally:
+        client.close()
+
+    assert repository.task is not None
+    assert repository.task.lifecycle_status == "BLOCKED"
+    assert repository.staged_rows == []
+
+
+def test_row_count_mismatch_blocks_task_instead_of_reporting_success(tmp_path: Path) -> None:
+    collector = load_collector()
+    repository = FakeRepository(collector)
+    repository.fail_stage_mismatch_once = True
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(200, json={"data": "Created"})
+        if "/file/" in request.url.path:
+            return httpx.Response(200, content=zip_bytes(), headers={"Content-Type": "application/zip"})
+        return httpx.Response(200, json={"data": [{"id": str(repository.task.task_id), "status": "SUCCESS"}]})
+
+    runner, client = make_runner(collector, tmp_path, repository, handler, [])
+    try:
+        with pytest.raises(collector.RowCountMismatch):
+            runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO)
+    finally:
+        client.close()
+
+    assert repository.task is not None
+    assert repository.task.lifecycle_status == "BLOCKED"
+    assert "status:BLOCKED" in repository.events
+
+
+def test_parse_report_rows_is_fail_closed_on_malformed_rows() -> None:
+    collector = load_collector()
+
+    def archive_with(csv_text: str) -> bytes:
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("detail.csv", csv_text)
+        return output.getvalue()
+
+    assert collector.parse_report_rows(archive_with("nmID,dt,ordersCount\n123,2026-08-03,2\n")) == [
+        {"nmID": "123", "dt": "2026-08-03", "ordersCount": "2"}
+    ]
+    with pytest.raises(collector.WbAsyncReportError, match="does not match the header"):
+        collector.parse_report_rows(archive_with("nmID,dt\n123,2026-08-03,extra\n"))
+    with pytest.raises(collector.WbAsyncReportError, match="does not match the header"):
+        collector.parse_report_rows(archive_with("nmID,dt,ordersCount\n123,2026-08-03\n"))
+    with pytest.raises(collector.WbAsyncReportError, match="no valid header"):
+        collector.parse_report_rows(archive_with(""))
 
 
 def test_raw_is_spooled_and_committed_before_invalid_json_is_parsed(tmp_path: Path) -> None:
@@ -352,6 +433,10 @@ def test_analytics_rw_token_requires_explicit_opt_in() -> None:
         collector.validate_analytics_token(token(rw_analytics | (1 << 3)), now=NOW, allow_read_write=True)
     with pytest.raises(collector.WbAsyncReportError, match="only the Analytics category"):
         collector.validate_analytics_token(token(rw_analytics | (1 << 3) | (1 << 30)), now=NOW)
+    with pytest.raises(collector.WbAsyncReportError, match="only the Analytics category"):
+        collector.validate_analytics_token(token(rw_analytics | (1 << 8) | (1 << 30)), now=NOW)
+    with pytest.raises(collector.WbAsyncReportError, match="only the Analytics category"):
+        collector.validate_analytics_token(token(rw_analytics | (1 << 31)), now=NOW, allow_read_write=True)
     with pytest.raises(collector.WbAsyncReportError, match="personal"):
         collector.validate_analytics_token(token(rw_analytics, acc=1), now=NOW, allow_read_write=True)
     with pytest.raises(collector.WbAsyncReportError, match="expired"):

@@ -40,6 +40,8 @@ def test_real_postgres_preserves_raw_bytes_and_task_idempotency(tmp_path: Path) 
             "001_bootstrap.sql",
             "002_intake_metadata.sql",
             "003_wb_analytics_raw.sql",
+            "004_business_signal_slice.sql",
+            "005_wb_analytics_staging.sql",
         ]
         repository = collector.PostgresReportRepository(connection)
         tenant_id = f"it-{uuid.uuid4().hex[:12]}"
@@ -65,12 +67,24 @@ def test_real_postgres_preserves_raw_bytes_and_task_idempotency(tmp_path: Path) 
             httpx.Response(200, content=archive, headers={"Content-Type": "application/zip"}),
             datetime.fromisoformat("2026-08-13T12:01:00+03:00"),
         )
-        repository.complete_download(
+        report_rows = collector.parse_report_rows(archive)
+        completed = repository.complete_download(
             task.task_id,
             hashlib.sha256(archive).hexdigest(),
             len(archive),
             datetime.fromisoformat("2026-08-13T12:01:00+03:00"),
+            report_rows,
         )
+        assert completed.parsed_row_count == 1
+        assert completed.staged_row_count == 1
+        completed_again = repository.complete_download(
+            task.task_id,
+            hashlib.sha256(archive).hexdigest(),
+            len(archive),
+            datetime.fromisoformat("2026-08-13T12:01:00+03:00"),
+            report_rows,
+        )
+        assert completed_again.staged_row_count == 1
 
         rows = connection.execute(
             "SELECT stage, payload, content_sha256, byte_size FROM raw_wb_analytics_responses WHERE task_id = %s ORDER BY raw_response_id",
@@ -80,7 +94,14 @@ def test_real_postgres_preserves_raw_bytes_and_task_idempotency(tmp_path: Path) 
             "SELECT count(*) AS count FROM wb_analytics_quota_events WHERE task_id = %s",
             (task.task_id,),
         ).fetchone()
+        staged = connection.execute(
+            "SELECT row_number, nm_id, row_date, payload FROM stg_wb_nm_report_rows WHERE task_id = %s ORDER BY row_number",
+            (task.task_id,),
+        ).fetchall()
 
+    assert [dict(row) for row in staged] == [
+        {"row_number": 1, "nm_id": 123, "row_date": date.fromisoformat("2026-08-03"), "payload": {"nmID": "123", "dt": "2026-08-03", "ordersCount": "2"}}
+    ]
     assert quota is not None and quota["count"] == 1
     assert [row["stage"] for row in rows] == ["create", "download"]
     assert base64.b64decode(rows[0]["payload"]["body_base64"]) == b"not-json"

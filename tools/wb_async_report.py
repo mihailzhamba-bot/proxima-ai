@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import csv
 import hashlib
 import io
 import json
@@ -35,12 +36,14 @@ DAILY_REPORT_QUOTA = 20
 MAX_CREATE_REPLAYS = 2
 MAX_REGENERATIONS = 2
 NOT_FOUND_BEFORE_REPLAY = 3
-TOKEN_CATEGORY_BITS = frozenset({1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 16})
 SAFE_ENV_KEYS = frozenset(
     {
         "WB_STATISTICS_TOKEN_FILE",
         "PROXIMA_RAW_DIR",
         "WB_ANALYTICS_TOKEN_FILE",
+        "WB_FINANCE_TOKEN_FILE",
+        "WB_PRICES_TOKEN_FILE",
+        "WB_PROMOTION_TOKEN_FILE",
         "PROXIMA_SPOOL_DIR",
         "POSTGRES_USER_FILE",
         "POSTGRES_PASSWORD_FILE",
@@ -68,6 +71,10 @@ class WbAsyncReportError(RuntimeError):
     pass
 
 
+class RowCountMismatch(WbAsyncReportError):
+    pass
+
+
 class QuotaExhausted(WbAsyncReportError):
     pass
 
@@ -86,6 +93,8 @@ class TaskRecord:
     regenerate_count: int
     downloaded_sha256: str | None = None
     downloaded_size: int | None = None
+    parsed_row_count: int | None = None
+    staged_row_count: int | None = None
 
     @classmethod
     def from_row(cls, row: Mapping[str, object]) -> TaskRecord:
@@ -105,6 +114,8 @@ class TaskRecord:
             regenerate_count=int(row["regenerate_count"]),
             downloaded_sha256=str(row["downloaded_sha256"]) if row.get("downloaded_sha256") is not None else None,
             downloaded_size=int(row["downloaded_size"]) if row.get("downloaded_size") is not None else None,
+            parsed_row_count=int(row["parsed_row_count"]) if row.get("parsed_row_count") is not None else None,
+            staged_row_count=int(row["staged_row_count"]) if row.get("staged_row_count") is not None else None,
         )
 
 
@@ -164,7 +175,7 @@ class ReportRepository(Protocol):
     def persist_raw(self, envelope: RawEnvelope) -> None: ...
     def set_status(self, task_id: uuid.UUID, lifecycle_status: str, *, api_status: str | None = None, error_code: str | None = None) -> TaskRecord: ...
     def increment_not_found(self, task_id: uuid.UUID) -> TaskRecord: ...
-    def complete_download(self, task_id: uuid.UUID, sha256: str, byte_size: int, downloaded_at: datetime) -> TaskRecord: ...
+    def complete_download(self, task_id: uuid.UUID, sha256: str, byte_size: int, downloaded_at: datetime, rows: list[dict[str, str]]) -> TaskRecord: ...
     def record_error(self, task_id: uuid.UUID, error_code: str) -> None: ...
 
 
@@ -219,8 +230,7 @@ def validate_analytics_token(token: str, *, now: datetime, allow_read_write: boo
         raise WbAsyncReportError("async report requires a personal WB token")
     if not mask & (1 << 2):
         raise WbAsyncReportError("WB token is missing Analytics scope")
-    granted = {bit for bit in TOKEN_CATEGORY_BITS if mask & (1 << bit)}
-    if granted != {2}:
+    if mask & ~((1 << 2) | (1 << 30)):
         raise WbAsyncReportError("WB Analytics token must grant only the Analytics category")
     if not mask & (1 << 30) and not allow_read_write:
         raise WbAsyncReportError("WB token must be read-only")
@@ -452,17 +462,41 @@ class PostgresReportRepository:
             )
             return self._row(task_id)
 
-    def complete_download(self, task_id: uuid.UUID, sha256: str, byte_size: int, downloaded_at: datetime) -> TaskRecord:
+    def complete_download(self, task_id: uuid.UUID, sha256: str, byte_size: int, downloaded_at: datetime, rows: list[dict[str, str]]) -> TaskRecord:
         with self.connection.transaction():
+            self.connection.execute("DELETE FROM stg_wb_nm_report_rows WHERE task_id = %s", (task_id,))
+            for row_number, row in enumerate(rows, start=1):
+                nm_value = row.get("nmID", "")
+                raw_date = row.get("dt", "")
+                try:
+                    row_date = date.fromisoformat(raw_date) if raw_date else None
+                except ValueError:
+                    row_date = None
+                self.connection.execute(
+                    """
+                    INSERT INTO stg_wb_nm_report_rows (task_id, row_number, nm_id, row_date, payload)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (task_id, row_number, int(nm_value) if nm_value.isdigit() else None, row_date, Jsonb(row)),
+                )
+            staged_row = self.connection.execute(
+                "SELECT count(*) AS count FROM stg_wb_nm_report_rows WHERE task_id = %s",
+                (task_id,),
+            ).fetchone()
+            assert staged_row is not None
+            staged = int(staged_row["count"])
+            if staged != len(rows):
+                raise RowCountMismatch(f"parsed {len(rows)} report rows but staged {staged} for task {task_id}")
             self.connection.execute(
                 """
                 UPDATE wb_analytics_report_tasks
                 SET lifecycle_status = 'DOWNLOADED', api_status = 'SUCCESS',
                     downloaded_sha256 = %s, downloaded_size = %s, downloaded_at = %s,
+                    parsed_row_count = %s, staged_row_count = %s,
                     last_error_code = NULL, updated_at = CURRENT_TIMESTAMP
                 WHERE task_id = %s
                 """,
-                (sha256, byte_size, downloaded_at, task_id),
+                (sha256, byte_size, downloaded_at, len(rows), staged, task_id),
             )
             return self._row(task_id)
 
@@ -581,6 +615,27 @@ def retry_delay(response: httpx.Response) -> float:
         except ValueError:
             continue
     return float(POLL_INTERVAL_SECONDS)
+
+
+def parse_report_rows(content: bytes) -> list[dict[str, str]]:
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        csv_names = [name for name in archive.namelist() if name.lower().endswith(".csv")]
+        if len(csv_names) != 1:
+            raise WbAsyncReportError("report archive must contain exactly one CSV file")
+        raw = archive.read(csv_names[0])
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as error:
+        raise WbAsyncReportError("report CSV is not valid UTF-8") from error
+    reader = csv.DictReader(io.StringIO(text, newline=""))
+    if not reader.fieldnames or any(not name for name in reader.fieldnames):
+        raise WbAsyncReportError("report CSV has no valid header")
+    rows: list[dict[str, str]] = []
+    for row in reader:
+        if None in row or any(value is None for value in row.values()):
+            raise WbAsyncReportError("report CSV row does not match the header")
+        rows.append(dict(row))
+    return rows
 
 
 def assert_valid_zip(content: bytes) -> None:
@@ -815,12 +870,22 @@ class AsyncReportCollector:
         except WbAsyncReportError:
             self.repository.record_error(task_id, "DOWNLOAD_INVALID_ZIP")
             raise
-        return self.repository.complete_download(
-            task_id,
-            hashlib.sha256(response.content).hexdigest(),
-            len(response.content),
-            self.now(),
-        )
+        try:
+            report_rows = parse_report_rows(response.content)
+        except WbAsyncReportError:
+            self.repository.set_status(task_id, "BLOCKED", error_code="REPORT_PARSE_FAILED")
+            raise
+        try:
+            return self.repository.complete_download(
+                task_id,
+                hashlib.sha256(response.content).hexdigest(),
+                len(response.content),
+                self.now(),
+                report_rows,
+            )
+        except RowCountMismatch:
+            self.repository.set_status(task_id, "BLOCKED", error_code="ROW_COUNT_MISMATCH")
+            raise
 
 
 def connect_repository(env: Mapping[str, str]) -> PostgresReportRepository:
@@ -897,6 +962,8 @@ def main(argv: list[str] | None = None) -> int:
                 "period_to": result.period_to.isoformat(),
                 "sha256": result.downloaded_sha256,
                 "byte_size": result.downloaded_size,
+                "parsed_row_count": result.parsed_row_count,
+                "staged_row_count": result.staged_row_count,
                 "raw_payload_printed": False,
                 "analytics_access": "read-write-temporary" if args.allow_analytics_read_write else "read-only",
             },
