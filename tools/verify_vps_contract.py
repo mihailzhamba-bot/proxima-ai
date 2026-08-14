@@ -59,7 +59,11 @@ def verify(root: Path = ROOT) -> None:
     paths = mapping(contract.get("paths"), "paths", errors)
     for name in ("repository", "raw_store", "monitor_state", "secrets"):
         value = paths.get(name)
-        require(isinstance(value, str) and value.startswith("/") and not value.startswith(str(root)), f"paths.{name} must be an absolute host path outside the repository", errors)
+        # On the deployment host the verified checkout IS paths.repository, so
+        # that one entry may equal the checkout root; everything else must stay outside.
+        inside_checkout = isinstance(value, str) and (value == str(root) or value.startswith(f"{root}/"))
+        allowed = inside_checkout is False or (name == "repository" and value == str(root))
+        require(isinstance(value, str) and value.startswith("/") and allowed, f"paths.{name} must be an absolute host path outside the repository", errors)
 
     monitoring = mapping(contract.get("monitoring"), "monitoring", errors)
     thresholds = mapping(monitoring.get("thresholds"), "monitoring.thresholds", errors)
