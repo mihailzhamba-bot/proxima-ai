@@ -164,7 +164,7 @@ Review fixes:
 
 ## User Setup Required
 
-Private setup for the one-shot proof is complete. Mike still needs to confirm founder receipt. Replacing the explicitly allowed Analytics RW token with Analytics READ-only remains follow-up hardening; no secret or business value is committed.
+Private setup and founder receipt for the one-shot proof are complete. Replacing the explicitly allowed Analytics RW token with Analytics READ-only remains follow-up hardening; no secret or business value is committed.
 
 ## Known Stubs
 
@@ -184,7 +184,7 @@ None. Private business values and credentials are intentional deployment inputs,
 - Repository implementation and local verification are complete.
 - Staging deploy, migration and private seed are complete on `2d0f6ec`; the 2026-08-13 VPS ledger contains 4 product versions and 24 warehouse mappings.
 - CI evidence is pending for deployed HEAD `2d0f6ec`.
-- Dry run and one live send are complete with `SENT` DB evidence and Telegram `message_id=4`; only founder receipt confirmation remains for end-to-end acceptance.
+- End-to-end acceptance is complete: the dry run and one live send have `SENT` DB evidence and Telegram `message_id=4`, and root visually observed the formatted message in Mike's `@proximaaaai_bot` chat on 2026-08-14.
 - Plan 02-02 remains checkpointed on the official WB XLSX and is unchanged.
 
 ## Self-Check: PASSED

@@ -14,7 +14,7 @@
 
 **Phase:** 2 of 8 - Vertical Slice: Immutable Intake to Visible Facts
 **Plan:** 02-01 and early-feedback 02-01A implemented; 02-02 is checkpointed on an official WB XLSX.
-**Status:** Phase 2 in progress; Phase 2.1 is deployed, seeded and technically `SENT`, while founder receipt, CI and the observed XLSX parser remain pending.
+**Status:** Phase 2 in progress; Phase 2.1 end-to-end acceptance is complete, while CI and the observed XLSX parser remain pending.
 **Progress:** `[#---------] 13%`
 
 ## Performance Metrics
@@ -75,16 +75,15 @@
 
 ### Blockers
 
-- Phase 2.1 acceptance: deploy, migration, private seed, dry run и один live `SENT` завершены 2026-08-13; остался human gate - Mike подтверждает появление сообщения в founder chat. Analytics READ-only rotation остается hardening debt после явно разрешенного временного RW opt-in.
 - Phase 2 slice: официальная XLSX-выгрузка из кабинета WB отсутствует - передаёт Mike (см. DATA-SPIKE F4). API-нога закрыта тестовым токеном Амировой 2026-08-12; боевой токен кабинета Богатовой нужен к Phase 4. Планирование Phase 2 не блокировано.
 - First approved data release remains blocked on Phase 8 Data GO evidence.
 - Live deployment remains blocked on separate Live Deploy GO.
 
 ## Session Continuity
 
-**Last action:** 2026-08-14: `make verify` повторно PASS на `2d0f6ec` - 37 TypeScript tests, 35 Python pass, 1 Docker-dependent skip. Live run `ce53fb4e-8052-4956-ab45-00d230f66be0` ранее записал `SENT`, Telegram `message_id=4` и четыре raw SHA-256 на VPS 2026-08-13.
+**Last action:** 2026-08-14: root visually observed the formatted 2026-08-13 18:03 alert in Mike's exact BotFather-created chat `@proximaaaai_bot`; Phase 2.1 end-to-end acceptance is complete. `make verify` also repeated PASS on `2d0f6ec` - 37 TypeScript tests, 35 Python pass, 1 Docker-dependent skip.
 
-**Next action:** Mike подтверждает receipt в founder chat; после этого root закрывает Phase 2.1 acceptance. Отдельно Mike передает official pilot-cabinet XLSX для Plan 02-02 и позже меняет Analytics RW token на READ-only.
+**Next action:** Mike передает official pilot-cabinet XLSX для Plan 02-02 и позже меняет Analytics RW token на READ-only.
 
 **Resume context:** Start from `.planning/ROADMAP.md` Phase 2. Treat `.planning/phases/01-architecture-provenance-import-baseline/EVIDENCE.md` as the completed upstream gate and preserve the Phase 1 source/Linear boundaries.
 
