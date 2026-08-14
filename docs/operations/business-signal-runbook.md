@@ -14,7 +14,9 @@ Phase 2.1 запускается вручную на Selectel VPS `135.106.186.2
 - `/etc/proxima-ai/business-signal/products.csv` - `tenant_id,nm_id,internal_article,cogs_rub,lead_time_days,safety_buffer_days,effective_from`;
 - `/etc/proxima-ai/business-signal/warehouses.csv` - `tenant_id,sales_warehouse_name,stock_warehouse_name,canonical_warehouse,effective_from`.
 
-Нельзя переиспользовать широкий token: CLI декодирует JWT scope и блокирует запуск, если token не READ-only или содержит больше одной нужной категории.
+Нельзя переиспользовать широкий token: CLI декодирует JWT scope и блокирует запуск, если token не READ-only или содержит больше одной нужной категории. Незнакомые scope-биты тоже отвергаются.
+
+Для Day 1 probe дополнительно нужны `/etc/proxima-ai/secrets/wb_prices_token` и `/etc/proxima-ai/secrets/wb_promotion_token` (READ-only, exact-category). Они не входят в business-signal bundle installer: оператор устанавливает их вручную с owner `proxima-admin` и mode `0600`, как statistics token.
 
 Временное исключение для staging: exact-category Analytics token в режиме RW допускается только явным флагом `--allow-analytics-read-write`. Флаг не разрешает дополнительные категории и не ослабляет Statistics/Finance. Тот же флаг принимает Day 2 коллектор `tools/wb_async_report.py` (Makefile-таргет `collect-wb-analytics` флаг не передаёт - добавлять в команду явно). Удалить исключение после выпуска Analytics READ-only token.
 
@@ -67,6 +69,13 @@ runuser --user proxima-admin -- node /srv/proxima-ai/repo/services/collector/dis
 ```
 
 Dry run должен завершиться `READY`, `NO_SIGNAL` или typed `BLOCKED`. До parse каждый WB response уже лежит byte-for-byte в content-addressed store с SHA-256 manifest и строкой `business_signal_raw_artifacts`.
+
+Семантика детектора (зафиксировано 2026-08-14):
+
+- Сигнал срабатывает строго при `daysCover < leadTimeDays + safetyBufferDays`. Равенство порогу сигналом не считается.
+- SKU с остатком, но без продаж в окне 14 дней не создаёт сигнал и не блокирует run; он перечисляется в поле `new_sku_no_history` вывода CLI.
+- SKU с продажами, но без строк «Продажа» в Finance-отчёте исключается из кандидатов и перечисляется в поле `margin_missing`; run продолжается по остальным SKU.
+- Неожиданно пустой sales- или stock-ответ по активному кабинету даёт `BLOCKED` (`WB_SALES_EMPTY` / `WB_STOCKS_EMPTY`) до ручного разбора.
 
 ## One live attempt
 

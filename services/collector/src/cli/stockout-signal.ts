@@ -65,6 +65,8 @@ async function main(): Promise<void> {
         margin_per_unit_rub: result.candidate.marginPerUnitRub.toFixed(2),
       } : undefined,
       telegram_message_id: result.telegramMessageId?.toString(),
+      new_sku_no_history: result.newSkuNoHistory,
+      margin_missing: result.marginMissing,
     })}\n`);
     if (result.status === 'BLOCKED') process.exitCode = 2;
   } finally { await pool.end(); }

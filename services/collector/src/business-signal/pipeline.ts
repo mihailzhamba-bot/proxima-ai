@@ -29,6 +29,8 @@ export interface RunSignalResult {
   reason?: string;
   candidate?: SignalCandidate;
   telegramMessageId?: bigint;
+  newSkuNoHistory?: string[];
+  marginMissing?: string[];
 }
 
 function safeReason(error: unknown): string {
@@ -65,18 +67,20 @@ export async function runBusinessSignal(repository: SignalRepository, input: Run
       throw new BusinessSignalError('WB_STOCKS_EMPTY', 'analytics returned no stock rows for configured products');
     }
     const margins = calculateMargins(products, finance);
-    const candidate = selectTopRisk(calculateCandidates({ products, warehouseMap, sales, stocks: stocks.rows, margins, stockAsOf: stocks.asOf }));
+    const calculation = calculateCandidates({ products, warehouseMap, sales, stocks: stocks.rows, margins, stockAsOf: stocks.asOf });
+    const surfaced = { newSkuNoHistory: calculation.newSkuNoHistory, marginMissing: calculation.marginMissing };
+    const candidate = selectTopRisk(calculation.candidates);
     if (!candidate) {
       await repository.completeRun(runId, 'NO_SIGNAL', 'NO_RISK');
-      return { runId, status: 'NO_SIGNAL', reason: 'NO_RISK' };
+      return { runId, status: 'NO_SIGNAL', reason: 'NO_RISK', ...surfaced };
     }
     await repository.markReady(runId, candidate);
-    if (!input.send) return { runId, status: 'READY', candidate };
+    if (!input.send) return { runId, status: 'READY', candidate, ...surfaced };
     const attemptedAt = new Date();
     try {
       const messageId = await preflightAndSend(input.send.telegram, input.send.founderChatId, formatStockoutMessage(candidate, window));
       await repository.recordTelegramResult(runId, attemptedAt, messageId);
-      return { runId, status: 'SENT', candidate, telegramMessageId: messageId };
+      return { runId, status: 'SENT', candidate, telegramMessageId: messageId, ...surfaced };
     } catch (error) {
       await repository.recordTelegramResult(runId, attemptedAt, null);
       throw error;

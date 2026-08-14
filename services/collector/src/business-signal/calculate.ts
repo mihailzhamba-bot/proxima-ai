@@ -31,6 +31,12 @@ export function calculateMargins(products: ProductConfig[], rows: WbFinanceRow[]
   return result;
 }
 
+export interface CandidateCalculation {
+  candidates: SignalCandidate[];
+  newSkuNoHistory: string[];
+  marginMissing: string[];
+}
+
 export function calculateCandidates(input: {
   products: ProductConfig[];
   warehouseMap: WarehouseMap[];
@@ -38,7 +44,7 @@ export function calculateCandidates(input: {
   stocks: WbStock[];
   margins: Map<bigint, Decimal>;
   stockAsOf: Date;
-}): SignalCandidate[] {
+}): CandidateCalculation {
   const productById = new Map(input.products.map((product) => [product.nmId, product]));
   const salesAlias = new Map<string, string>();
   const stockAlias = new Map<string, string>();
@@ -63,20 +69,33 @@ export function calculateCandidates(input: {
     const key = `${stock.nmId}:${warehouse}`;
     stockByKey.set(key, (stockByKey.get(key) ?? 0) + stock.quantity);
   }
+  const soldNmIds = new Set<bigint>();
+  for (const key of netSales.keys()) soldNmIds.add(BigInt(key.slice(0, key.indexOf(':'))));
   const candidates: SignalCandidate[] = [];
-  for (const [key, units] of netSales) {
-    if (units <= 0) continue;
+  const newSkuNoHistory = new Set<string>();
+  const marginMissing = new Set<string>();
+  for (const key of [...new Set([...netSales.keys(), ...stockByKey.keys()])].sort()) {
     const delimiter = key.indexOf(':');
     const nmId = BigInt(key.slice(0, delimiter));
     const warehouse = key.slice(delimiter + 1);
     const product = productById.get(nmId);
+    if (!product) throw new BusinessSignalError('PRODUCT_CONFIG_MISSING', `product config is unavailable for nmId ${nmId}`);
+    if (!netSales.has(key)) {
+      if (!soldNmIds.has(nmId) && (stockByKey.get(key) ?? 0) > 0) newSkuNoHistory.add(nmId.toString());
+      continue;
+    }
+    const units = netSales.get(key)!;
+    if (units <= 0) continue;
     const margin = input.margins.get(nmId);
-    if (!product || !margin) throw new BusinessSignalError('MARGIN_MISSING', `margin is unavailable for nmId ${nmId}`);
+    if (!margin) {
+      marginMissing.add(nmId.toString());
+      continue;
+    }
     const velocity = new Decimal(units).div(SIGNAL_WINDOW_DAYS);
     const stockQuantity = stockByKey.get(key) ?? 0;
     const daysCover = new Decimal(stockQuantity).div(velocity).floor().toNumber();
     const thresholdDays = product.leadTimeDays + product.safetyBufferDays;
-    if (daysCover <= thresholdDays) {
+    if (daysCover < thresholdDays) {
       candidates.push({
         nmId,
         internalArticle: product.internalArticle,
@@ -92,7 +111,7 @@ export function calculateCandidates(input: {
       });
     }
   }
-  return candidates;
+  return { candidates, newSkuNoHistory: [...newSkuNoHistory].sort(), marginMissing: [...marginMissing].sort() };
 }
 
 export function selectTopRisk(candidates: SignalCandidate[]): SignalCandidate | undefined {

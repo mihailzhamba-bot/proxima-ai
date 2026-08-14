@@ -87,6 +87,8 @@ test('rejects a READ token that grants required and unrelated WB categories', ()
   assert.doesNotThrow(() => assertLeastPrivilegeToken(jwt(5), 'statistics', new Date('2026-08-13T10:00:00Z')));
   assert.throws(() => assertLeastPrivilegeToken(jwt(5, 1), 'statistics', new Date('2026-08-13T10:00:00Z')), { code: 'TOKEN_SCOPE_INVALID' });
   assert.throws(() => assertLeastPrivilegeToken(jwt(13, 12), 'finance', new Date('2026-08-13T10:00:00Z')), { code: 'TOKEN_SCOPE_INVALID' });
+  assert.throws(() => assertLeastPrivilegeToken(jwt(5, 8), 'statistics', new Date('2026-08-13T10:00:00Z')), { code: 'TOKEN_SCOPE_INVALID' });
+  assert.throws(() => assertLeastPrivilegeToken(jwt(5, 17), 'statistics', new Date('2026-08-13T10:00:00Z')), { code: 'TOKEN_SCOPE_INVALID' });
 });
 
 test('allows an exact-category Analytics RW token only through explicit temporary opt-in', () => {
@@ -168,8 +170,7 @@ test('treats ppvzSalesCommission as a line amount when quantity is greater than 
   assert.equal(margins.get(1001n)?.toFixed(2), '549.90');
 });
 
-test('aggregates stock sizes, nets returns, and signals at threshold equality', () => {
-  const margins = calculateMargins([product], financeRows());
+function windowSales(): WbSale[] {
   const sales: WbSale[] = Array.from({ length: 14 }, (_, index) => ({
     saleId: `S${index}`,
     kind: 'sale',
@@ -179,10 +180,15 @@ test('aggregates stock sizes, nets returns, and signals at threshold equality', 
     warehouseName: index === 0 ? ' КОЛЕДИНО ' : 'Коледино',
   }));
   sales.push({ ...sales[0]!, saleId: 'R1', kind: 'return' });
-  const candidates = calculateCandidates({
+  return sales;
+}
+
+test('aggregates stock sizes, nets returns, and signals strictly below the threshold', () => {
+  const margins = calculateMargins([product], financeRows());
+  const { candidates } = calculateCandidates({
     products: [product],
     warehouseMap: [warehouse],
-    sales,
+    sales: windowSales(),
     stocks: [
       { nmId: 1001n, warehouseName: 'коледино', quantity: 20 },
       { nmId: 1001n, warehouseName: 'КОЛЕДИНО', quantity: 21 },
@@ -195,6 +201,73 @@ test('aggregates stock sizes, nets returns, and signals at threshold equality', 
   assert.equal(candidates[0]?.stockQuantity, 41);
 });
 
+test('does not signal when days cover exactly equals the threshold', () => {
+  const margins = calculateMargins([product], financeRows());
+  const { candidates } = calculateCandidates({
+    products: [product],
+    warehouseMap: [warehouse],
+    sales: windowSales(),
+    stocks: [{ nmId: 1001n, warehouseName: 'КОЛЕДИНО', quantity: 42 }],
+    margins,
+    stockAsOf: new Date('2026-08-13T10:00:00Z'),
+  });
+  assert.deepEqual(candidates, []);
+});
+
+test('surfaces a stocked SKU without sales history instead of skipping it silently', () => {
+  const fresh: ProductConfig = { ...product, nmId: 1002n, internalArticle: 'SKU NEW' };
+  const margins = calculateMargins([product, fresh], financeRows());
+  const calculation = calculateCandidates({
+    products: [product, fresh],
+    warehouseMap: [warehouse],
+    sales: windowSales(),
+    stocks: [
+      { nmId: 1001n, warehouseName: 'КОЛЕДИНО', quantity: 1 },
+      { nmId: 1002n, warehouseName: 'КОЛЕДИНО', quantity: 7 },
+    ],
+    margins,
+    stockAsOf: new Date('2026-08-13T10:00:00Z'),
+  });
+  assert.deepEqual(calculation.newSkuNoHistory, ['1002']);
+  assert.equal(calculation.candidates.length, 1);
+  assert.equal(calculation.candidates[0]?.nmId, 1001n);
+});
+
+test('does not list a zero-stock SKU without history and keeps sold SKUs out of the new list', () => {
+  const fresh: ProductConfig = { ...product, nmId: 1002n, internalArticle: 'SKU EMPTY' };
+  const margins = calculateMargins([product, fresh], financeRows());
+  const calculation = calculateCandidates({
+    products: [product, fresh],
+    warehouseMap: [warehouse, { ...warehouse, salesWarehouseName: 'Тула', stockWarehouseName: 'ТУЛА', canonicalWarehouse: 'Тула' }],
+    sales: windowSales(),
+    stocks: [
+      { nmId: 1001n, warehouseName: 'ТУЛА', quantity: 3 },
+      { nmId: 1002n, warehouseName: 'КОЛЕДИНО', quantity: 0 },
+    ],
+    margins,
+    stockAsOf: new Date('2026-08-13T10:00:00Z'),
+  });
+  assert.deepEqual(calculation.newSkuNoHistory, []);
+});
+
+test('excludes a SKU without finance margin and keeps the run alive for the rest', () => {
+  const unpriced: ProductConfig = { ...product, nmId: 1003n, internalArticle: 'SKU NO FINANCE' };
+  const margins = calculateMargins([product, unpriced], financeRows());
+  const sales = windowSales();
+  sales.push({ saleId: 'S-unpriced', kind: 'sale', date: '2026-08-01T12:00:00+03:00', lastChangeDate: '2026-08-01T12:00:00+03:00', nmId: 1003n, warehouseName: 'Коледино' });
+  const calculation = calculateCandidates({
+    products: [product, unpriced],
+    warehouseMap: [warehouse],
+    sales,
+    stocks: [{ nmId: 1001n, warehouseName: 'КОЛЕДИНО', quantity: 1 }],
+    margins,
+    stockAsOf: new Date('2026-08-13T10:00:00Z'),
+  });
+  assert.deepEqual(calculation.marginMissing, ['1003']);
+  assert.equal(calculation.candidates.length, 1);
+  assert.equal(calculation.candidates[0]?.nmId, 1001n);
+});
+
 test('skips zero net velocity and fails closed on an unknown warehouse', () => {
   const margins = calculateMargins([product], financeRows());
   assert.deepEqual(calculateCandidates({
@@ -203,10 +276,14 @@ test('skips zero net velocity and fails closed on an unknown warehouse', () => {
       { saleId: 'S1', kind: 'sale', date: '', lastChangeDate: '', nmId: 1001n, warehouseName: 'Коледино' },
       { saleId: 'R1', kind: 'return', date: '', lastChangeDate: '', nmId: 1001n, warehouseName: 'Коледино' },
     ],
-  }), []);
+  }).candidates, []);
   assert.throws(() => calculateCandidates({
     products: [product], warehouseMap: [warehouse], margins, stockAsOf: new Date(), stocks: [],
     sales: [{ saleId: 'S1', kind: 'sale', date: '', lastChangeDate: '', nmId: 1001n, warehouseName: 'Новый склад' }],
+  }), { code: 'WAREHOUSE_MAP_MISSING' });
+  assert.throws(() => calculateCandidates({
+    products: [product], warehouseMap: [warehouse], margins, stockAsOf: new Date(), sales: [],
+    stocks: [{ nmId: 1001n, warehouseName: 'Новый склад', quantity: 5 }],
   }), { code: 'WAREHOUSE_MAP_MISSING' });
 });
 

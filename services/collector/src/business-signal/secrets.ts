@@ -67,11 +67,11 @@ export function assertLeastPrivilegeToken(
     throw new BusinessSignalError('TOKEN_INVALID', 'WB token scope claim is missing');
   }
   const scopes = payload.s;
-  const granted = Object.entries(TOKEN_CATEGORY_BITS)
-    .filter(([bit]) => (scopes & (1 << Number(bit))) !== 0)
-    .map(([, category]) => category);
+  const categoryBit = Number(Object.keys(TOKEN_CATEGORY_BITS).find((bit) => TOKEN_CATEGORY_BITS[Number(bit)] === requiredCategory));
+  const allowedMask = (1 << categoryBit) | (1 << READ_ONLY_BIT);
   const isReadOnly = (scopes & (1 << READ_ONLY_BIT)) !== 0;
-  if ((!isReadOnly && !options.allowReadWrite) || granted.length !== 1 || granted[0] !== requiredCategory) {
+  const grantsOnlyCategory = scopes >= 0 && scopes < 2 ** 31 && (scopes & (1 << categoryBit)) !== 0 && (scopes & ~allowedMask) === 0;
+  if ((!isReadOnly && !options.allowReadWrite) || !grantsOnlyCategory) {
     const access = options.allowReadWrite ? 'grant only its category' : 'be READ-only and grant only its category';
     throw new BusinessSignalError('TOKEN_SCOPE_INVALID', `WB ${requiredCategory} token must ${access}`);
   }
