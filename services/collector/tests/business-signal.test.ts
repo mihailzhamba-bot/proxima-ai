@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { chmod, mkdtemp, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -390,6 +391,58 @@ test('paces Statistics and Analytics pagination without treating it as a retry',
   assert.deepEqual(sleeps, [60_000, 20_000]);
   assert.equal(salesPage, 2);
   assert.equal(stockPage, 2);
+});
+
+test('blocks an unexpectedly empty statistics sales window instead of reporting no risk', async () => {
+  const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-signal-raw-'));
+  const repository = new MemoryRepository();
+  const bodies = (request: HttpRequest): HttpResponse => {
+    if (request.url.includes('/supplier/sales')) return { status: 200, retrievedAt: new Date('2026-08-13T09:00:00Z'), body: Buffer.from(JSON.stringify([])) };
+    if (request.url.includes('/stocks-report/')) return { status: 200, retrievedAt: new Date('2026-08-13T10:00:00Z'), body: Buffer.from(JSON.stringify({ data: { items: [
+      { nmId: 1001, warehouseName: 'КОЛЕДИНО', quantity: 0 },
+    ] } })) };
+    const body = request.body as { rrdId: number };
+    if (body.rrdId === 0) return { status: 200, retrievedAt: new Date('2026-08-13T11:00:00Z'), body: Buffer.from(JSON.stringify(financeRows().map((row) => ({ ...row, nmId: Number(row.nmId), rrdId: Number(row.rrdId) })))) };
+    return { status: 204, retrievedAt: new Date('2026-08-13T11:00:01Z'), body: Buffer.alloc(0) };
+  };
+  const result = await runBusinessSignal(repository, {
+    tenantId: 'amirova-test', repositoryRoot: resolve('.'), rawRoot,
+    statisticsToken: jwt(5), analyticsToken: jwt(2), financeToken: jwt(13),
+    now: new Date('2026-08-13T10:00:00Z'), httpTransport: async (request) => bodies(request),
+    sleep: async () => {},
+  });
+  assert.equal(result.status, 'BLOCKED');
+  assert.equal(result.reason, 'WB_SALES_EMPTY');
+  assert.equal(repository.status, 'BLOCKED');
+  assert.equal(repository.reason, 'WB_SALES_EMPTY');
+  assert.equal(repository.raw.length, 4);
+  const emptySalesArtifact = repository.raw.find((record) => record.source === 'official_wb_statistics');
+  assert.ok(emptySalesArtifact);
+  assert.equal(emptySalesArtifact.contentSha256, createHash('sha256').update('[]').digest('hex'));
+});
+
+test('blocks an empty analytics stock report instead of alerting zero stock', async () => {
+  const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-signal-raw-'));
+  const repository = new MemoryRepository();
+  const bodies = (request: HttpRequest): HttpResponse => {
+    if (request.url.includes('/supplier/sales')) return { status: 200, retrievedAt: new Date('2026-08-13T09:00:00Z'), body: Buffer.from(JSON.stringify([
+      { saleID: 'S1', date: '2026-08-05T10:00:00+03:00', lastChangeDate: '2026-08-05T11:00:00+03:00', nmId: 1001, warehouseName: 'Коледино' },
+    ])) };
+    if (request.url.includes('/stocks-report/')) return { status: 200, retrievedAt: new Date('2026-08-13T10:00:00Z'), body: Buffer.from(JSON.stringify({ data: { items: [] } })) };
+    const body = request.body as { rrdId: number };
+    if (body.rrdId === 0) return { status: 200, retrievedAt: new Date('2026-08-13T11:00:00Z'), body: Buffer.from(JSON.stringify(financeRows().map((row) => ({ ...row, nmId: Number(row.nmId), rrdId: Number(row.rrdId) })))) };
+    return { status: 204, retrievedAt: new Date('2026-08-13T11:00:01Z'), body: Buffer.alloc(0) };
+  };
+  const result = await runBusinessSignal(repository, {
+    tenantId: 'amirova-test', repositoryRoot: resolve('.'), rawRoot,
+    statisticsToken: jwt(5), analyticsToken: jwt(2), financeToken: jwt(13),
+    now: new Date('2026-08-13T10:00:00Z'), httpTransport: async (request) => bodies(request),
+    sleep: async () => {},
+  });
+  assert.equal(result.status, 'BLOCKED');
+  assert.equal(result.reason, 'WB_STOCKS_EMPTY');
+  assert.equal(repository.status, 'BLOCKED');
+  assert.equal(repository.reason, 'WB_STOCKS_EMPTY');
 });
 
 test('runs one complete mocked vertical slice and sends one top-risk message', async () => {

@@ -58,6 +58,12 @@ export async function runBusinessSignal(repository: SignalRepository, input: Run
       wb.stocks(input.analyticsToken, products.map((product) => product.nmId)),
       wb.finance(input.financeToken, window),
     ]);
+    if (sales.length === 0) {
+      throw new BusinessSignalError('WB_SALES_EMPTY', 'statistics returned no sales for an active cabinet window');
+    }
+    if (stocks.rows.length === 0) {
+      throw new BusinessSignalError('WB_STOCKS_EMPTY', 'analytics returned no stock rows for configured products');
+    }
     const margins = calculateMargins(products, finance);
     const candidate = selectTopRisk(calculateCandidates({ products, warehouseMap, sales, stocks: stocks.rows, margins, stockAsOf: stocks.asOf }));
     if (!candidate) {
