@@ -14,9 +14,31 @@ export interface HttpResponse {
   status: number;
   body: Buffer;
   retrievedAt: Date;
+  headers?: Record<string, string>;
 }
 
 export type HttpTransport = (request: HttpRequest) => Promise<HttpResponse>;
+
+export const SAFE_RESPONSE_HEADERS = new Set([
+  'content-type',
+  'content-length',
+  'content-disposition',
+  'date',
+  'retry-after',
+  'x-ratelimit-limit',
+  'x-ratelimit-remaining',
+  'x-ratelimit-reset',
+  'x-ratelimit-retry',
+]);
+
+export function filterResponseHeaders(headers: Iterable<[string, string]>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [name, value] of headers) {
+    const key = String(name).toLowerCase();
+    if (SAFE_RESPONSE_HEADERS.has(key) && typeof value === 'string') result[key] = value;
+  }
+  return result;
+}
 
 export const fetchTransport: HttpTransport = async (request) => {
   const response = await fetch(request.url, {
@@ -30,7 +52,12 @@ export const fetchTransport: HttpTransport = async (request) => {
     ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
     signal: AbortSignal.timeout(60_000),
   });
-  return { status: response.status, body: Buffer.from(await response.arrayBuffer()), retrievedAt: new Date() };
+  return {
+    status: response.status,
+    body: Buffer.from(await response.arrayBuffer()),
+    retrievedAt: new Date(),
+    headers: filterResponseHeaders(response.headers.entries()),
+  };
 };
 
 export class RecordedHttpClient {
@@ -44,6 +71,7 @@ export class RecordedHttpClient {
   async request(input: HttpRequest & { source: SignalSource; stage: string; pageSequence: number; acceptedStatuses?: number[] }): Promise<HttpResponse> {
     const endpointPath = new URL(input.url).pathname;
     const response = await this.transport(input);
+    const responseHeaders = filterResponseHeaders(Object.entries(response.headers ?? {}));
     const artifact = await this.store.persist({
       runId: this.runId,
       source: input.source,
@@ -52,6 +80,7 @@ export class RecordedHttpClient {
       endpointPath,
       httpStatus: response.status,
       retrievedAt: response.retrievedAt,
+      responseHeaders,
       body: response.body,
     });
     await this.repository.recordRawArtifact({
@@ -63,6 +92,7 @@ export class RecordedHttpClient {
       endpointPath,
       httpStatus: response.status,
       retrievedAt: response.retrievedAt,
+      responseHeaders,
       ...artifact,
     });
     const accepted = input.acceptedStatuses ?? [200];

@@ -68,6 +68,7 @@ export class BusinessSignalRawStore {
     endpointPath: string;
     httpStatus: number;
     retrievedAt: Date;
+    responseHeaders: Record<string, string>;
     body: Buffer;
   }): Promise<RawHttpArtifact> {
     const contentSha256 = createHash('sha256').update(input.body).digest('hex');
@@ -89,13 +90,14 @@ export class BusinessSignalRawStore {
     }
     const objectLocator = `artifact://business-signal/sha256/${contentSha256}`;
     const manifest = Buffer.from(`${canonicalJson({
-      schema_version: 1,
+      schema_version: 2,
       run_id: input.runId,
       source: input.source,
       stage: input.stage,
       page_sequence: input.pageSequence,
       endpoint_path: input.endpointPath,
       http_status: input.httpStatus,
+      response_headers: input.responseHeaders,
       retrieved_at: input.retrievedAt.toISOString(),
       content_sha256: contentSha256,
       content_size: input.body.length,

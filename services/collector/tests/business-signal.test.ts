@@ -318,11 +318,21 @@ test('persists 429 evidence and makes no automatic retry', async () => {
   let calls = 0;
   const client = new RecordedHttpClient('00000000-0000-4000-8000-000000000003', store, repository, async () => {
     calls += 1;
-    return { status: 429, body: Buffer.from('{"error":"limited"}'), retrievedAt: new Date() };
+    return {
+      status: 429,
+      body: Buffer.from('{"error":"limited"}'),
+      retrievedAt: new Date(),
+      headers: { 'Retry-After': '60', 'X-RateLimit-Remaining': '0', 'Set-Cookie': 'must-not-be-stored' },
+    };
   });
   await assert.rejects(client.request({ method: 'GET', url: 'https://example.test/path', token: 'secret', source: 'official_wb_statistics', stage: 'sales', pageSequence: 0 }), { code: 'WB_RATE_LIMITED' });
   assert.equal(calls, 1);
   assert.equal(repository.raw[0]?.httpStatus, 429);
+  assert.deepEqual(repository.raw[0]?.responseHeaders, { 'retry-after': '60', 'x-ratelimit-remaining': '0' });
+  const manifestPath = join(rawRoot, 'manifests', '00000000-0000-4000-8000-000000000003', 'official_wb_statistics', 'sales-0.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { schema_version: number; response_headers: Record<string, string> };
+  assert.equal(manifest.schema_version, 2);
+  assert.deepEqual(manifest.response_headers, { 'retry-after': '60', 'x-ratelimit-remaining': '0' });
 });
 
 test('classifies strict S/R sales and blocks unknown prefix after raw persistence', async () => {

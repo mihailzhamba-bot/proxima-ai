@@ -37,6 +37,7 @@ export interface RawArtifactRecord {
   pageSequence: number;
   endpointPath: string;
   httpStatus: number;
+  responseHeaders: Record<string, string>;
   contentSha256: string;
   contentSize: number;
   objectLocator: string;

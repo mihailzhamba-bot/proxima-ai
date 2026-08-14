@@ -42,6 +42,7 @@ def test_real_postgres_preserves_raw_bytes_and_task_idempotency(tmp_path: Path) 
             "003_wb_analytics_raw.sql",
             "004_business_signal_slice.sql",
             "005_wb_analytics_staging.sql",
+            "006_raw_artifact_headers.sql",
         ]
         repository = collector.PostgresReportRepository(connection)
         tenant_id = f"it-{uuid.uuid4().hex[:12]}"

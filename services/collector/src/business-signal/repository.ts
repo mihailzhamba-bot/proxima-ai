@@ -29,9 +29,9 @@ export class PostgresSignalRepository implements SignalRepository {
   async recordRawArtifact(record: RawArtifactRecord): Promise<void> {
     await this.pool.query(
       `INSERT INTO business_signal_raw_artifacts
-       (raw_artifact_id, run_id, source, stage, page_sequence, endpoint_path, http_status, content_sha256, content_size, object_locator, manifest_sha256, retrieved_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [record.rawArtifactId, record.runId, record.source, record.stage, record.pageSequence, record.endpointPath, record.httpStatus, record.contentSha256, record.contentSize, record.objectLocator, record.manifestSha256, record.retrievedAt],
+       (raw_artifact_id, run_id, source, stage, page_sequence, endpoint_path, http_status, response_headers, content_sha256, content_size, object_locator, manifest_sha256, retrieved_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [record.rawArtifactId, record.runId, record.source, record.stage, record.pageSequence, record.endpointPath, record.httpStatus, JSON.stringify(record.responseHeaders), record.contentSha256, record.contentSize, record.objectLocator, record.manifestSha256, record.retrievedAt],
     );
   }
 

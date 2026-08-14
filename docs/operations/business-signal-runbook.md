@@ -68,7 +68,7 @@ runuser --user proxima-admin -- node /srv/proxima-ai/repo/services/collector/dis
   --allow-analytics-read-write
 ```
 
-Dry run должен завершиться `READY`, `NO_SIGNAL` или typed `BLOCKED`. До parse каждый WB response уже лежит byte-for-byte в content-addressed store с SHA-256 manifest и строкой `business_signal_raw_artifacts`.
+Dry run должен завершиться `READY`, `NO_SIGNAL` или typed `BLOCKED`. До parse каждый WB response уже лежит byte-for-byte в content-addressed store с SHA-256 manifest и строкой `business_signal_raw_artifacts`. Манифесты raw store существуют в двух версиях: `schema_version: 1` (до 2026-08-14, без `response_headers`) и `schema_version: 2` (с allowlisted rate-limit заголовками). Верификаторы обязаны принимать обе. В БД `response_headers IS NULL` означает строку до внедрения захвата заголовков, пустой объект - заголовки собраны, но WB не прислал ни одного allowlisted.
 
 Семантика детектора (зафиксировано 2026-08-14):
 
