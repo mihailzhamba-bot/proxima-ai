@@ -55,7 +55,7 @@ completed: 2026-08-13
 - Added additive versioned product/COGS, warehouse mapping, run and raw lineage tables without committing business values.
 - Implemented strict Statistics sales, current Analytics stock and Finance detailed-report collection with exact raw bytes durable before parse.
 - Added 14 completed Moscow-day velocity, Decimal margin, deterministic top-risk selection, escaped founder message and no automatic Telegram retry.
-- Added a Node 22 VPS bootstrap and private one-shot runbook; root later deployed the reviewed slice without a live send.
+- Added a Node 22 VPS bootstrap and private one-shot runbook; root deployed the reviewed slice and recorded one live Telegram `SENT` run on 2026-08-13.
 
 ## Task Commits
 
@@ -69,6 +69,9 @@ Review fixes:
 - **Finance line-amount commission semantics** - `255e6c0`
 - **Skip unused Puppeteer browser download on VPS** - `deeefcb`
 - **Fail-closed private input bundle validator and installer** - `ab8f451`
+- **Fail-closed founder chat discovery after one private `/start`** - `6e0a605`
+- **Explicit temporary Analytics RW opt-in with secure default rejection** - `fcb3841`
+- **Observed Finance schema compatibility and unattributable-row pagination** - `5393bcb`, `2d0f6ec`
 
 ## Files Created/Modified
 
@@ -154,13 +157,14 @@ Review fixes:
 ## Issues Encountered
 
 - Local Docker daemon was unavailable. The Docker-dependent PostgreSQL test remained skipped; a separate disposable PostgreSQL smoke and the staging migration both passed.
-- `make verify` passed on deployed HEAD `ab8f451`, 2026-08-13: 34 TypeScript tests, 35 Python tests, 1 existing Docker-dependent skip, all contract/migration/provenance/architecture/secret/VPS/business-signal verifiers.
+- `make verify` passed on current and deployed implementation HEAD `2d0f6ec`, repeated 2026-08-14: 37 TypeScript tests, 35 Python tests, 1 existing Docker-dependent skip, all contract/migration/provenance/architecture/secret/VPS/business-signal verifiers.
 - A disposable local PostgreSQL 16.14 cluster applied all 4 migrations, seeded the synthetic product/warehouse versions twice without duplicates (`4|1|1`), then accepted a run/raw lineage insert through its foreign keys and constraints.
-- Staging VPS `135.106.186.210` now has clean detached HEAD `ab8f451`, Node `v22.23.2`, npm `10.9.8`, compiled CLIs and migration ledger `001-004`. A VPS synthetic smoke accepted one complete private bundle and rejected a broad Analytics scope before installation while preserving existing inputs byte-for-byte. The pre-migration private dump is `/srv/proxima-ai/backups/pre-phase-2.1-20260813.dump`, 39,747 bytes, mode `0600`, SHA-256 `745abc25ceded8768213c623614687643e3b32b7d860b5c5037536f03d0741d8`.
+- Staging VPS `135.106.186.210` had clean detached HEAD `2d0f6ec`, Node `v22.23.2`, npm `10.9.8`, compiled CLIs and migration ledger `001-004` when observed 2026-08-13. The private seed recorded 4 product versions and 24 warehouse mappings. The pre-migration private dump is `/srv/proxima-ai/backups/pre-phase-2.1-20260813.dump`, 39,747 bytes, mode `0600`, SHA-256 `745abc25ceded8768213c623614687643e3b32b7d860b5c5037536f03d0741d8`.
+- Live run `ce53fb4e-8052-4956-ab45-00d230f66be0` recorded `SENT` and Telegram `message_id=4` on 2026-08-13 after one `sendMessage` call. The run retained four raw source-page checksums. Direct VPS Telegram TLS timed out, so the production sender used a temporary local operator path and updated the VPS PostgreSQL ledger through an SSH tunnel; temporary local secret copies and the tunnel were removed after the send.
 
 ## User Setup Required
 
-Private setup is still required: SKU/COGS/lead time/buffer, warehouse mapping, three separate least-privilege WB READ tokens, BotFather token and founder chat source. Follow `docs/operations/business-signal-runbook.md`; it contains paths and commands but no secret, business value or chat ID placeholders.
+Private setup for the one-shot proof is complete. Mike still needs to confirm founder receipt. Replacing the explicitly allowed Analytics RW token with Analytics READ-only remains follow-up hardening; no secret or business value is committed.
 
 ## Known Stubs
 
@@ -178,15 +182,15 @@ None. Private business values and credentials are intentional deployment inputs,
 ## Next Phase Readiness
 
 - Repository implementation and local verification are complete.
-- Staging deploy and migration are complete on `ab8f451`; `dim_product` and `dim_warehouse_map` remain empty by design.
-- CI evidence is pending for deployed HEAD `ab8f451`.
-- End-to-end acceptance is pending private config/tokens, dry run, one live `--send`, `SENT` DB evidence and founder receipt.
+- Staging deploy, migration and private seed are complete on `2d0f6ec`; the 2026-08-13 VPS ledger contains 4 product versions and 24 warehouse mappings.
+- CI evidence is pending for deployed HEAD `2d0f6ec`.
+- Dry run and one live send are complete with `SENT` DB evidence and Telegram `message_id=4`; only founder receipt confirmation remains for end-to-end acceptance.
 - Plan 02-02 remains checkpointed on the official WB XLSX and is unchanged.
 
 ## Self-Check: PASSED
 
 - All 8 key implementation/planning files exist.
-- Commits `76d39a2`, `0d5b950`, `20ea8cf`, `fe0bc5d`, `255e6c0`, `deeefcb` and `ab8f451` exist in repository history.
+- Commits `76d39a2`, `0d5b950`, `20ea8cf`, `fe0bc5d`, `255e6c0`, `deeefcb`, `ab8f451`, `6e0a605`, `fcb3841`, `5393bcb` and `2d0f6ec` exist in repository history.
 - Secret scan passed; Phase 2 requirements remain Pending; no send-capable values were committed.
 
 ---

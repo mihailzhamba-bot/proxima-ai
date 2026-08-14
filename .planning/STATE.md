@@ -14,7 +14,7 @@
 
 **Phase:** 2 of 8 - Vertical Slice: Immutable Intake to Visible Facts
 **Plan:** 02-01 and early-feedback 02-01A implemented; 02-02 is checkpointed on an official WB XLSX.
-**Status:** Phase 2 in progress; Phase 2.1 is deployed to staging and passes local verification, while private inputs, CI/live Telegram acceptance and the observed XLSX parser remain pending.
+**Status:** Phase 2 in progress; Phase 2.1 is deployed, seeded and technically `SENT`, while founder receipt, CI and the observed XLSX parser remain pending.
 **Progress:** `[#---------] 13%`
 
 ## Performance Metrics
@@ -24,7 +24,7 @@
 | Phases complete | 1/8 |
 | Plans complete | 3/3 Phase 1; 2/3 Phase 2 |
 | Requirements complete | 6/32 |
-| Root verify evidence | 02-01 GitHub PASS on `56ebe000`; 02-01A local PASS and staging deploy on `ab8f451`, CI pending |
+| Root verify evidence | 02-01 GitHub PASS on `56ebe000`; 02-01A local PASS on deployed `2d0f6ec` repeated 2026-08-14, CI pending |
 | Independent cross-model reviews | 3/3 Phase 1 plans PASS with 0 blocker / 0 warning |
 | Data GO | Pending separate Mike decision |
 | Live Deploy GO | Pending separate Mike decision |
@@ -75,18 +75,18 @@
 
 ### Blockers
 
-- Phase 2.1 acceptance: deploy/migration на `135.106.186.210` готовы; нужны private SKU/COGS/lead time/buffer/warehouse mapping, 3 least-privilege WB READ tokens, BotFather token и founder chat private source. После dry run root выполняет один send и фиксирует receipt.
+- Phase 2.1 acceptance: deploy, migration, private seed, dry run и один live `SENT` завершены 2026-08-13; остался human gate - Mike подтверждает появление сообщения в founder chat. Analytics READ-only rotation остается hardening debt после явно разрешенного временного RW opt-in.
 - Phase 2 slice: официальная XLSX-выгрузка из кабинета WB отсутствует - передаёт Mike (см. DATA-SPIKE F4). API-нога закрыта тестовым токеном Амировой 2026-08-12; боевой токен кабинета Богатовой нужен к Phase 4. Планирование Phase 2 не блокировано.
 - First approved data release remains blocked on Phase 8 Data GO evidence.
 - Live deployment remains blocked on separate Live Deploy GO.
 
 ## Session Continuity
 
-**Last action:** 2026-08-13: fail-closed private input installer deployed on clean detached `ab8f451`; synthetic valid/broad-scope smoke and full `make verify` passed. No Telegram call occurred.
+**Last action:** 2026-08-14: `make verify` повторно PASS на `2d0f6ec` - 37 TypeScript tests, 35 Python pass, 1 Docker-dependent skip. Live run `ce53fb4e-8052-4956-ab45-00d230f66be0` ранее записал `SENT`, Telegram `message_id=4` и четыре raw SHA-256 на VPS 2026-08-13.
 
-**Next action:** Mike supplies Phase 2.1 private inputs; root seeds config, performs dry run and records one live Telegram acceptance. In parallel, Mike supplies the official pilot-cabinet XLSX for Plan 02-02.
+**Next action:** Mike подтверждает receipt в founder chat; после этого root закрывает Phase 2.1 acceptance. Отдельно Mike передает official pilot-cabinet XLSX для Plan 02-02 и позже меняет Analytics RW token на READ-only.
 
 **Resume context:** Start from `.planning/ROADMAP.md` Phase 2. Treat `.planning/phases/01-architecture-provenance-import-baseline/EVIDENCE.md` as the completed upstream gate and preserve the Phase 1 source/Linear boundaries.
 
 ---
-*Updated: 2026-08-13*
+*Updated: 2026-08-14*
