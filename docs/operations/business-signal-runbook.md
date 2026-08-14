@@ -12,7 +12,7 @@ Phase 2.1 запускается вручную на Selectel VPS `135.106.186.2
 - `/etc/proxima-ai/secrets/telegram_bot_token` - token бота, созданного через BotFather;
 - `/etc/proxima-ai/business-signal/founder-chat.json` - private source с единственным числовым полем `chat_id`; значение основателя захардкожено только в этом private-файле;
 - `/etc/proxima-ai/business-signal/products.csv` - `tenant_id,nm_id,internal_article,cogs_rub,lead_time_days,safety_buffer_days,effective_from`;
-- `/etc/proxima-ai/business-signal/warehouses.csv` - `tenant_id,sales_warehouse_name,stock_warehouse_name,canonical_warehouse,effective_from`.
+- `/etc/proxima-ai/business-signal/warehouses.csv` - `tenant_id,sales_warehouse_name,stock_warehouse_name,canonical_warehouse,effective_from`. Важно: pipeline загружает mappings с `effective_from <= window.to` (конец 14-дневного окна, вчерашний день). Новую строку датировать началом окна или раньше, иначе она невидима до завтра и run остаётся `WAREHOUSE_MAP_MISSING`. Sales-строки и stock-строки маппятся независимо: WB может прислать продажу со служебным складом (например «Склад WB РФ»), которого нет в stock-отчёте, - ему тоже нужна строка.
 
 Нельзя переиспользовать широкий token: CLI декодирует JWT scope и блокирует запуск, если token не READ-only или содержит больше одной нужной категории. Незнакомые scope-биты тоже отвергаются.
 
