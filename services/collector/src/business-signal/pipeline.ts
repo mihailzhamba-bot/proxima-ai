@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { calculateCandidates, calculateMargins, selectTopRisk } from './calculate.js';
+import { cancellationError, drainSettled } from './cancellation.js';
 import { completedSignalWindow } from './date-window.js';
 import { RecordedHttpClient, type HttpTransport } from './http.js';
 import { BusinessSignalRawStore } from './raw-store.js';
@@ -42,6 +43,13 @@ export async function runBusinessSignal(repository: SignalRepository, input: Run
   const window = completedSignalWindow(now);
   const runId = randomUUID();
   await repository.createRun(runId, input.tenantId, window);
+  const controller = new AbortController();
+  let branches: Promise<unknown>[] = [];
+  const transitionToBlocked = async (reason: string): Promise<void> => {
+    controller.abort(cancellationError(`run blocked: ${reason}`));
+    await drainSettled(branches, 5_000);
+    await repository.completeRun(runId, 'BLOCKED', reason);
+  };
   try {
     assertLeastPrivilegeToken(input.statisticsToken, 'statistics', now);
     assertLeastPrivilegeToken(input.analyticsToken, 'analytics', now, { allowReadWrite: input.allowAnalyticsReadWrite });
@@ -54,12 +62,16 @@ export async function runBusinessSignal(repository: SignalRepository, input: Run
     if (warehouseMap.length === 0) throw new BusinessSignalError('WAREHOUSE_MAP_MISSING', 'no effective warehouse map rows');
     const store = await BusinessSignalRawStore.open(input.rawRoot, input.repositoryRoot);
     const http = new RecordedHttpClient(runId, store, repository, input.httpTransport);
-    const wb = new WbSignalClient(http, input.sleep ? { sleep: input.sleep } : {});
-    const [sales, stocks, finance] = await Promise.all([
-      wb.sales(input.statisticsToken, window),
-      wb.stocks(input.analyticsToken, products.map((product) => product.nmId)),
-      wb.finance(input.financeToken, window),
-    ]);
+    const wb = new WbSignalClient(http, { signal: controller.signal, ...(input.sleep ? { sleep: input.sleep } : {}) });
+    const guard = <T>(work: Promise<T>): Promise<T> => work.catch((error: unknown) => {
+      if (controller.signal.aborted) throw cancellationError('branch cancelled after run left RUNNING');
+      throw error;
+    });
+    const salesBranch = guard(wb.sales(input.statisticsToken, window));
+    const stocksBranch = guard(wb.stocks(input.analyticsToken, products.map((product) => product.nmId)));
+    const financeBranch = guard(wb.finance(input.financeToken, window));
+    branches = [salesBranch, stocksBranch, financeBranch];
+    const [sales, stocks, finance] = await Promise.all([salesBranch, stocksBranch, financeBranch]);
     if (sales.length === 0) {
       throw new BusinessSignalError('WB_SALES_EMPTY', 'statistics returned no sales for an active cabinet window');
     }
@@ -87,8 +99,11 @@ export async function runBusinessSignal(repository: SignalRepository, input: Run
     }
   } catch (error) {
     const reason = safeReason(error);
-    await repository.completeRun(runId, 'BLOCKED', reason);
+    await transitionToBlocked(reason);
     if (error instanceof BusinessSignalError && !input.send) return { runId, status: 'BLOCKED', reason };
     throw error;
+  } finally {
+    controller.abort(cancellationError('run finished'));
+    await drainSettled(branches, 5_000);
   }
 }

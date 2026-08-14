@@ -1,3 +1,4 @@
+import { sleep as abortableSleep, throwIfAborted } from './cancellation.js';
 import { RecordedHttpClient, parseJson } from './http.js';
 import { BusinessSignalError, type SignalWindow } from './types.js';
 import { isInsideWindow, moscowWindowBounds } from './date-window.js';
@@ -19,11 +20,11 @@ const FINANCE_FIELDS = [
   'deliveryService',
 ] as const;
 
-export type Sleep = (milliseconds: number) => Promise<void>;
-const realSleep: Sleep = async (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+export type Sleep = (milliseconds: number, signal?: AbortSignal) => Promise<void>;
 
 export interface WbSignalClientOptions {
   sleep?: Sleep;
+  signal?: AbortSignal;
   salesPageLimit?: number;
   stockPageLimit?: number;
   financePageLimit?: number;
@@ -96,12 +97,14 @@ export interface WbFinanceRow {
 
 export class WbSignalClient {
   private readonly sleep: Sleep;
+  private readonly signal: AbortSignal | undefined;
   private readonly salesPageLimit: number;
   private readonly stockPageLimit: number;
   private readonly financePageLimit: number;
 
   constructor(private readonly http: RecordedHttpClient, options: WbSignalClientOptions = {}) {
-    this.sleep = options.sleep ?? realSleep;
+    this.sleep = options.sleep ?? abortableSleep;
+    this.signal = options.signal;
     this.salesPageLimit = options.salesPageLimit ?? SALES_PAGE_LIMIT;
     this.stockPageLimit = options.stockPageLimit ?? STOCK_PAGE_LIMIT;
     this.financePageLimit = options.financePageLimit ?? FINANCE_PAGE_LIMIT;
@@ -111,11 +114,12 @@ export class WbSignalClient {
     const rows = new Map<string, WbSale>();
     let cursor = moscowWindowBounds(window).from;
     for (let page = 0; page < MAX_PAGES; page += 1) {
-      if (page > 0) await this.sleep(STATISTICS_PAGE_INTERVAL_MS);
+      throwIfAborted(this.signal);
+      if (page > 0) await this.sleep(STATISTICS_PAGE_INTERVAL_MS, this.signal);
       const url = new URL('https://statistics-api.wildberries.ru/api/v1/supplier/sales');
       url.searchParams.set('dateFrom', cursor);
       url.searchParams.set('flag', '0');
-      const response = await this.http.request({ method: 'GET', url: url.toString(), token, source: 'official_wb_statistics', stage: 'sales', pageSequence: page });
+      const response = await this.http.request({ method: 'GET', url: url.toString(), token, source: 'official_wb_statistics', stage: 'sales', pageSequence: page, signal: this.signal });
       const payload = parseJson(response.body, 'sales');
       if (!Array.isArray(payload)) throw new BusinessSignalError('WB_SCHEMA_DRIFT', 'sales response must be an array');
       const pageRows = payload.map((value) => {
@@ -154,7 +158,8 @@ export class WbSignalClient {
     const rows: WbStock[] = [];
     let latest = new Date(0);
     for (let page = 0; page < MAX_PAGES; page += 1) {
-      if (page > 0) await this.sleep(ANALYTICS_PAGE_INTERVAL_MS);
+      throwIfAborted(this.signal);
+      if (page > 0) await this.sleep(ANALYTICS_PAGE_INTERVAL_MS, this.signal);
       const offset = page * this.stockPageLimit;
       const response = await this.http.request({
         method: 'POST',
@@ -163,6 +168,7 @@ export class WbSignalClient {
         source: 'official_wb_analytics',
         stage: 'stocks',
         pageSequence: page,
+        signal: this.signal,
         body: { params: { nmIDs: nmIds.map((value) => jsonInteger(value, 'nmId')), limit: this.stockPageLimit, offset } },
       });
       latest = response.retrievedAt > latest ? response.retrievedAt : latest;
@@ -188,7 +194,8 @@ export class WbSignalClient {
     let rrdId = 0n;
     const bounds = moscowWindowBounds(window);
     for (let page = 0; page < MAX_PAGES; page += 1) {
-      if (page > 0) await this.sleep(FINANCE_PAGE_INTERVAL_MS);
+      throwIfAborted(this.signal);
+      if (page > 0) await this.sleep(FINANCE_PAGE_INTERVAL_MS, this.signal);
       const response = await this.http.request({
         method: 'POST',
         url: 'https://finance-api.wildberries.ru/api/finance/v1/sales-reports/detailed',
@@ -197,6 +204,7 @@ export class WbSignalClient {
         stage: 'sales_report_detailed',
         pageSequence: page,
         acceptedStatuses: [200, 204],
+        signal: this.signal,
         body: {
           dateFrom: bounds.from,
           dateTo: bounds.to,

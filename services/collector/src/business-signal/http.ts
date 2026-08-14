@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { throwIfAborted } from './cancellation.js';
 import { BusinessSignalRawStore } from './raw-store.js';
 import { BusinessSignalError, type SignalRepository, type SignalSource } from './types.js';
 
@@ -8,6 +9,7 @@ export interface HttpRequest {
   url: string;
   token: string;
   body?: unknown;
+  signal?: AbortSignal;
 }
 
 export interface HttpResponse {
@@ -50,7 +52,7 @@ export const fetchTransport: HttpTransport = async (request) => {
       'User-Agent': 'proxima-ai-business-signal/1',
     },
     ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
-    signal: AbortSignal.timeout(60_000),
+    signal: request.signal ? AbortSignal.any([request.signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(60_000),
   });
   return {
     status: response.status,
@@ -69,8 +71,10 @@ export class RecordedHttpClient {
   ) {}
 
   async request(input: HttpRequest & { source: SignalSource; stage: string; pageSequence: number; acceptedStatuses?: number[] }): Promise<HttpResponse> {
+    throwIfAborted(input.signal);
     const endpointPath = new URL(input.url).pathname;
     const response = await this.transport(input);
+    throwIfAborted(input.signal);
     const responseHeaders = filterResponseHeaders(Object.entries(response.headers ?? {}));
     const artifact = await this.store.persist({
       runId: this.runId,
