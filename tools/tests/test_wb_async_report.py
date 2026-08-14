@@ -331,3 +331,34 @@ def test_analytics_token_must_be_personal_read_only_and_scoped() -> None:
         collector.validate_analytics_token(token(1 << 30), now=NOW)
     with pytest.raises(collector.WbAsyncReportError, match="read-only"):
         collector.validate_analytics_token(token(1 << 2), now=NOW)
+
+
+def test_analytics_rw_token_requires_explicit_opt_in() -> None:
+    collector = load_collector()
+
+    def token(mask: int, *, acc: int = 3, exp: int = 1800000000) -> str:
+        def encode(value: object) -> str:
+            return base64.urlsafe_b64encode(json.dumps(value).encode()).rstrip(b"=").decode()
+
+        return f"{encode({'alg': 'none'})}.{encode({'acc': acc, 'for': 'self', 't': False, 's': mask, 'exp': exp})}.signature"
+
+    rw_analytics = 1 << 2
+    with pytest.raises(collector.WbAsyncReportError, match="read-only"):
+        collector.validate_analytics_token(token(rw_analytics), now=NOW)
+    collector.validate_analytics_token(token(rw_analytics), now=NOW, allow_read_write=True)
+    with pytest.raises(collector.WbAsyncReportError, match="Analytics"):
+        collector.validate_analytics_token(token(0), now=NOW, allow_read_write=True)
+    with pytest.raises(collector.WbAsyncReportError, match="only the Analytics category"):
+        collector.validate_analytics_token(token(rw_analytics | (1 << 3)), now=NOW, allow_read_write=True)
+    with pytest.raises(collector.WbAsyncReportError, match="only the Analytics category"):
+        collector.validate_analytics_token(token(rw_analytics | (1 << 3) | (1 << 30)), now=NOW)
+    with pytest.raises(collector.WbAsyncReportError, match="personal"):
+        collector.validate_analytics_token(token(rw_analytics, acc=1), now=NOW, allow_read_write=True)
+    with pytest.raises(collector.WbAsyncReportError, match="expired"):
+        collector.validate_analytics_token(token(rw_analytics, exp=1), now=NOW, allow_read_write=True)
+    args = collector.parse_args(["--tenant-id", "amirova-test"])
+    assert args.allow_analytics_read_write is False
+    enabled = collector.parse_args(["--tenant-id", "amirova-test", "--allow-analytics-read-write"])
+    assert enabled.allow_analytics_read_write is True
+    with pytest.raises(SystemExit):
+        collector.parse_args(["--tenant-id", "amirova-test", "--allow"])

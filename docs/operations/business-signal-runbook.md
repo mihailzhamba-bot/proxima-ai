@@ -16,7 +16,7 @@ Phase 2.1 запускается вручную на Selectel VPS `135.106.186.2
 
 Нельзя переиспользовать широкий token: CLI декодирует JWT scope и блокирует запуск, если token не READ-only или содержит больше одной нужной категории.
 
-Временное исключение для staging: exact-category Analytics token в режиме RW допускается только явным флагом `--allow-analytics-read-write`. Флаг не разрешает дополнительные категории и не ослабляет Statistics/Finance. Удалить исключение после выпуска Analytics READ-only token.
+Временное исключение для staging: exact-category Analytics token в режиме RW допускается только явным флагом `--allow-analytics-read-write`. Флаг не разрешает дополнительные категории и не ослабляет Statistics/Finance. Тот же флаг принимает Day 2 коллектор `tools/wb_async_report.py` (Makefile-таргет `collect-wb-analytics` флаг не передаёт - добавлять в команду явно). Удалить исключение после выпуска Analytics READ-only token.
 
 Подготовить private bundle вне Git с семью файлами из списка выше, используя короткие имена `wb_statistics_token`, `wb_analytics_token`, `wb_finance_token`, `telegram_bot_token`, `founder-chat.json`, `products.csv`, `warehouses.csv`. Каждый source-файл должен иметь mode `0600`. Значения не передавать через shell arguments. После безопасной доставки bundle на VPS проверить и установить его одной командой:
 
