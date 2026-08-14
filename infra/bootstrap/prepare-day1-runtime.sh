@@ -46,6 +46,9 @@ printf '%s\n' \
   "WB_STATISTICS_TOKEN_FILE=${SECRETS_DIR}/wb_statistics_token" \
   "PROXIMA_RAW_DIR=/srv/proxima-ai/data/day1-wb-api" \
   "WB_ANALYTICS_TOKEN_FILE=${SECRETS_DIR}/wb_analytics_token" \
+  "WB_FINANCE_TOKEN_FILE=${SECRETS_DIR}/wb_finance_token" \
+  "WB_PRICES_TOKEN_FILE=${SECRETS_DIR}/wb_prices_token" \
+  "WB_PROMOTION_TOKEN_FILE=${SECRETS_DIR}/wb_promotion_token" \
   "PROXIMA_SPOOL_DIR=/srv/proxima-ai/data/wb-analytics-spool" \
   "POSTGRES_USER_FILE=${SECRETS_DIR}/postgres_user" \
   "POSTGRES_PASSWORD_FILE=${SECRETS_DIR}/postgres_password" \
