@@ -14,7 +14,7 @@
 
 **Phase:** 2 of 8 - Vertical Slice: Immutable Intake to Visible Facts
 **Plan:** 02-01 and early-feedback 02-01A implemented; 02-02 is checkpointed on an official WB XLSX.
-**Status:** Phase 2 in progress; Phase 2.1 end-to-end acceptance is complete, while CI and the observed XLSX parser remain pending.
+**Status:** Phase 2 in progress; Phase 2.1 end-to-end acceptance is complete including CI evidence; only the observed XLSX parser (02-02) remains pending on Mike's XLSX.
 **Progress:** `[#---------] 13%`
 
 ## Performance Metrics
@@ -24,7 +24,7 @@
 | Phases complete | 1/8 |
 | Plans complete | 3/3 Phase 1; 2/3 Phase 2 |
 | Requirements complete | 6/32 |
-| Root verify evidence | 02-01 GitHub PASS on `56ebe000`; 02-01A local PASS on deployed `2d0f6ec` repeated 2026-08-14, CI pending |
+| Root verify evidence | 02-01 GitHub PASS on `56ebe000`; 02-01A local PASS on deployed `2d0f6ec` repeated 2026-08-14 plus GitHub PASS on main `1a211c9` (run 31833195175); main CI green through `c32ed2f` (run 31890995602) |
 | Independent cross-model reviews | 3/3 Phase 1 plans PASS with 0 blocker / 0 warning |
 | Data GO | Pending separate Mike decision |
 | Live Deploy GO | Pending separate Mike decision |
@@ -82,7 +82,7 @@
 
 ## Session Continuity
 
-**Last action:** 2026-08-14: root visually observed the formatted 2026-08-13 18:03 alert in Mike's exact BotFather-created chat `@proximaaaai_bot`; Phase 2.1 end-to-end acceptance is complete. `make verify` also repeated PASS on `2d0f6ec` - 37 TypeScript tests, 35 Python pass, 1 Docker-dependent skip.
+**Last action:** 2026-08-15 (PA-12): 02-01A CI evidence gap closed - GitHub Actions `verify` PASS on main `1a211c9` (run 31833195175, 2026-08-14), recorded in STATE.md/EVIDENCE.md. Prior: 2026-08-14 root visually observed the formatted 2026-08-13 18:03 alert in Mike's BotFather chat `@proximaaaai_bot`; `make verify` PASS on `2d0f6ec` - 37 TypeScript tests, 35 Python pass, 1 Docker-dependent skip.
 
 **Next action:** Mike передает official pilot-cabinet XLSX для Plan 02-02 и позже меняет Analytics RW token на READ-only.
 

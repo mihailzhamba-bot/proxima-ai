@@ -183,7 +183,7 @@ None. Private business values and credentials are intentional deployment inputs,
 
 - Repository implementation and local verification are complete.
 - Staging deploy, migration and private seed are complete on `2d0f6ec`; the 2026-08-13 VPS ledger contains 4 product versions and 24 warehouse mappings.
-- CI evidence is pending for deployed HEAD `2d0f6ec`.
+- CI evidence is complete: GitHub Actions `verify` PASS on main for every push containing `2d0f6ec` (runs 31825962605 `8b75097`, 31826327515 `453ffe0`, 31827029471 `5603f50`, 31833195175 `1a211c9` on 2026-08-14), green through `c32ed2f` on 2026-08-15.
 - End-to-end acceptance is complete: the dry run and one live send have `SENT` DB evidence and Telegram `message_id=4`, and root visually observed the formatted message in Mike's `@proximaaaai_bot` chat on 2026-08-14.
 - Plan 02-02 remains checkpointed on the official WB XLSX and is unchanged.
 
