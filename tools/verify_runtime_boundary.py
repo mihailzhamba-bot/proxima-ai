@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 from pathlib import Path
 
 
@@ -9,11 +10,28 @@ ROOT = Path(__file__).resolve().parents[1]
 COLLECTOR = ROOT / "services" / "collector"
 CONTROL_PLANE = ROOT / "services" / "control-plane"
 BANNED_DEPENDENCIES = {"playwright", "playwright-core", "puppeteer", "puppeteer-core"}
+BANNED_AGENT_DEPENDENCIES = {"@anthropic-ai/sdk", "openai"}
+BANNED_AGENT_PACKAGES = {"anthropic", "openai"}
 BANNED_RUNTIME_PATTERNS = {
     "torgstat": re.compile(r"torgstat", re.IGNORECASE),
     "browser session": re.compile(r"browsercontext|launchpersistentcontext|live[_-]?session", re.IGNORECASE),
     "browser runtime": re.compile(r"from\s+['\"](?:playwright|puppeteer)|require\(['\"](?:playwright|puppeteer)", re.IGNORECASE),
+    "agent sdk (js)": re.compile(r"(?:from|import)\s+['\"](?:@anthropic-ai/sdk|openai)['\"]|require\(['\"](?:@anthropic-ai/sdk|openai)['\"]", re.IGNORECASE),
+    "agent sdk (py)": re.compile(r"^\s*(?:from|import)\s+(?:anthropic|openai)\b", re.IGNORECASE | re.MULTILINE),
 }
+
+
+def forbidden_agent_dependencies(manifest: dict) -> list[str]:
+    runtime = set(manifest.get("dependencies", {})) | set(manifest.get("optionalDependencies", {}))
+    return sorted(runtime & BANNED_AGENT_DEPENDENCIES)
+
+
+def forbidden_agent_packages(project: dict) -> list[str]:
+    runtime = set(project.get("dependencies", []))
+    for extra in project.get("optional-dependencies", {}).values():
+        runtime.update(extra)
+    names = {re.split(r"[=<>!~;\[]", dependency)[0].strip() for dependency in runtime}
+    return sorted(names & BANNED_AGENT_PACKAGES)
 
 
 def production_files() -> list[Path]:
@@ -32,6 +50,19 @@ def verify() -> None:
     forbidden = sorted(runtime_dependencies & BANNED_DEPENDENCIES)
     if forbidden:
         raise ValueError(f"browser dependency in collector runtime: {', '.join(forbidden)}")
+    agent_forbidden = forbidden_agent_dependencies(manifest)
+    if agent_forbidden:
+        raise ValueError(f"agent SDK dependency in collector runtime: {', '.join(agent_forbidden)}")
+
+    root_manifest = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    agent_forbidden = forbidden_agent_dependencies(root_manifest)
+    if agent_forbidden:
+        raise ValueError(f"agent SDK dependency in root runtime: {', '.join(agent_forbidden)}")
+
+    pyproject = tomllib.loads((CONTROL_PLANE / "pyproject.toml").read_text(encoding="utf-8"))
+    agent_forbidden = forbidden_agent_packages(pyproject.get("project", {}))
+    if agent_forbidden:
+        raise ValueError(f"agent SDK dependency in control-plane runtime: {', '.join(agent_forbidden)}")
 
     violations: list[str] = []
     for path in production_files():

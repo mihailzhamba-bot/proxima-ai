@@ -71,6 +71,18 @@ def test_runtime_boundary_has_no_live_torgstat_path() -> None:
     boundary.verify()
 
 
+def test_runtime_boundary_rejects_agent_sdk_dependencies() -> None:
+    boundary = load_tool("verify_runtime_boundary")
+
+    assert boundary.forbidden_agent_dependencies({"dependencies": {"openai": "1.0.0"}}) == ["openai"]
+    assert boundary.forbidden_agent_dependencies({"optionalDependencies": {"@anthropic-ai/sdk": "^1.0"}}) == ["@anthropic-ai/sdk"]
+    assert boundary.forbidden_agent_dependencies({"dependencies": {"pg": "8.16.3"}}) == []
+
+    assert boundary.forbidden_agent_packages({"dependencies": ["anthropic==1.0.0"]}) == ["anthropic"]
+    assert boundary.forbidden_agent_packages({"optional-dependencies": {"test": ["openai==1.0.0"]}}) == ["openai"]
+    assert boundary.forbidden_agent_packages({"dependencies": ["httpx==0.28.1"]}) == []
+
+
 def test_secret_scanner_patterns_are_live() -> None:
     scanner = load_tool("secret_scan")
     scanner.self_test()
