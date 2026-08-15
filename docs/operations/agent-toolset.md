@@ -7,7 +7,7 @@ Evidence captured on 2026-08-15 for Jira PA-30. Status values are `configured`, 
 | Sentry | missing | Repository scan and `codex mcp list` on 2026-08-15 found no error collector | Owner: Mike; Next: create a Sentry project and read-only agent connection before the first pilot release |
 | GitHub | missing | `gh auth status` on 2026-08-15 showed classic OAuth scopes `repo`, `workflow`, `gist`, `read:org`; the GitHub App returned 404 for the private repository | Owner: Mike; Next: replace OAuth with a fine-grained PAT limited to `mihailzhamba-bot/proxima-ai`, then revoke the old OAuth grant |
 | Chrome DevTools | configured | Chrome extension returned the Atlassian DOM and console logs on 2026-08-15; the browser Jira session itself is not authenticated | - |
-| PostgreSQL | missing | Staging role metadata on 2026-08-15 contained only the `proxima` login superuser and built-in roles | Owner: Mike; Next: deploy `provision-postgres-diagnostics.sh` and run the positive and forbidden-write probes |
+| PostgreSQL | configured | Staging provisioning and idempotent rerun passed on 2026-08-15; SELECT succeeded while DML and DDL probes were rejected; the secret file is `root:root 0600` | Role attributes deny superuser, createDB, createRole, replication and bypassRLS |
 | Jira | configured | Official Atlassian MCP read of PA-30 passed on 2026-08-15; `.codex/config.toml` exposes only read tools | Residual: upstream OAuth also has `write:jira-work`; project allowlist is the accepted mitigation |
 | Confluence | N/A | Confluence spaces returned 404 and Rovo search reported that the app is not installed on 2026-08-15 | Reason: the Atlassian site currently exposes Jira only |
 | jq / rg | configured | `command -v` and version smoke passed on 2026-08-15 | - |
