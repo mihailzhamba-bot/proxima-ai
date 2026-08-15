@@ -14,7 +14,7 @@
 
 **Phase:** 2 of 8 - Vertical Slice: Immutable Intake to Visible Facts
 **Plan:** 02-01 and early-feedback 02-01A implemented; 02-02 is checkpointed on an official WB XLSX.
-**Status:** Phase 2 in progress; Phase 2.1 end-to-end acceptance is complete, while CI and the observed XLSX parser remain pending.
+**Status:** Phase 2 in progress; Phase 2.1 end-to-end acceptance and its hosted CI evidence are complete; only the observed XLSX parser remains pending (checkpointed on the official XLSX from Mike).
 **Progress:** `[#---------] 13%`
 
 ## Performance Metrics
@@ -24,7 +24,7 @@
 | Phases complete | 1/8 |
 | Plans complete | 3/3 Phase 1; 2/3 Phase 2 |
 | Requirements complete | 6/32 |
-| Root verify evidence | 02-01 GitHub PASS on `56ebe000`; 02-01A local PASS on deployed `2d0f6ec` repeated 2026-08-14, CI pending |
+| Root verify evidence | 02-01 GitHub PASS on `56ebe000`; 02-01A local PASS on deployed `2d0f6ec` repeated 2026-08-14; hosted CI `verify` PASS on `1a211c9` (main, run completed 2026-08-14T19:25 UTC, observed 2026-08-15 - PA-12) |
 | Independent cross-model reviews | 3/3 Phase 1 plans PASS with 0 blocker / 0 warning |
 | Data GO | Pending separate Mike decision |
 | Live Deploy GO | Pending separate Mike decision |
@@ -33,6 +33,7 @@
 
 ### Decisions
 
+- 2026-08-15 (Mike, PA-32): coding agents standard регенерирован из фактов репозитория; `CLAUDE.md` - относительный симлинк на `AGENTS.md`; owner Mihail Zhamba, квартальный цикл пересмотра, следующее ревью 2026-11-15.
 - 2026-08-15 (Mike, PA-28): coding agents standard зафиксирован в `AGENTS.md` - Claude Code и Codex равноправны, доступ через vendor subscriptions, PAYG API только через отдельную Jira-задачу PA с reason/owner/spend limit/review date; credentials личные и не передаются сторонним агентам.
 - 2026-08-12 (Mike): ценность M1 = фундамент для LLM-аналитики M2; provenance/качество не режутся, Data Health UI минимальный, время до реальных данных сжимается.
 - 2026-08-12 (Mike): roadmap перестроен data-first - Phase 2 = вертикальный slice (intake -> manifest -> staging -> minimal facts -> минимальная localhost-страница).
@@ -82,7 +83,7 @@
 
 ## Session Continuity
 
-**Last action:** 2026-08-14: root visually observed the formatted 2026-08-13 18:03 alert in Mike's exact BotFather-created chat `@proximaaaai_bot`; Phase 2.1 end-to-end acceptance is complete. `make verify` also repeated PASS on `2d0f6ec` - 37 TypeScript tests, 35 Python pass, 1 Docker-dependent skip.
+**Last action:** 2026-08-15: hosted CI `verify` PASS confirmed on `1a211c9` (run completed 2026-08-14T19:25 UTC) - 02-01A evidence gap closed (PA-12); coding agents standard regenerated and `CLAUDE.md` converted to a relative symlink (PA-32, PR #1, merge `11a7a12`).
 
 **Next action:** Mike передает official pilot-cabinet XLSX для Plan 02-02 и позже меняет Analytics RW token на READ-only.
 
