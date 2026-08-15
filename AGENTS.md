@@ -36,6 +36,39 @@ Root `make verify` is the single CI entry point (mirrors `.github/workflows/veri
 
 Ops commands (not part of `verify`, require `.env` outside Git):
 `make probe-wb-api`, `make apply-migrations`, `make collect-wb-analytics`.
+These touch external WB endpoints or the production database; never run them
+speculatively.
+
+## Context routing
+
+Load only the context the current task needs. Open the entrypoints below first,
+then follow imports; do not read a whole directory when one file answers the
+question.
+
+| Path | Read when the task touches | Open first | Verify with |
+|---|---|---|---|
+| `services/collector` | TypeScript intake, WB collection, business signals | `src/index.ts` (public exports), then `src/cli/`, `src/business-signal/pipeline.ts`, `src/intake/manual-wb-xlsx.ts` | `make typecheck`, `make test` |
+| `services/control-plane` | Python control plane, plane boundaries | `pyproject.toml`, `src/proxima_control_plane/__init__.py`, `tests/test_boundary.py` | `make test` |
+| `contracts` | payload shape changes, intake or release schemas | the specific `*.schema.json` named by the failing check, `examples/*.synthetic.json` | `make contracts` |
+| `db/migrations` | PostgreSQL schema changes | highest-numbered `*.sql`, then the verifier `tools/verify_migrations.py` | `make migrations` |
+| `infra` | Compose stack, VPS bootstrap, runtime contracts | `compose.yaml`, `vps-contract.json`, `bootstrap/`, `monitoring/` | `make vps`, `make boundary` |
+| `tools` | verifiers, WB probes, operational scripts | the script behind the failing make target, `tools/tests/` | the matching target above |
+| `docs/architecture` | system, data flow, deployment and delivery questions | `README.md`, then `system.mmd` (mind map) and the one diagram matching the question | `make architecture` |
+| `docs/operations` | production runs, secrets, business-signal operation | `business-signal-runbook.md` (authority for secret locations) | `make business-signal`, `make secrets` |
+| `.planning` | scope, phase status, standing decisions | `STATE.md` (current position, decisions), `PROJECT.md` (out of scope) | - |
+
+Rules:
+
+- Never load the whole repository, all of `docs/` or all of `.planning/` when the
+  task is bound to one area. Use targeted search (grep/glob) and open the files the
+  table points to.
+- Tests and fixtures for an area live next to it (`services/collector/tests/`,
+  `services/control-plane/tests/`, `tools/tests/`) with synthetic data only; read
+  them before writing new tests.
+- For test tasks run the matching target from the table; for infrastructure tasks
+  `make vps` / `make boundary`; for production-touching tasks follow
+  `docs/operations/business-signal-runbook.md` and treat WB-facing operations as
+  fail-closed.
 
 ## Architecture boundaries
 
