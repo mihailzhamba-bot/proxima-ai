@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly CONTAINER="proxima-ai-postgres-1"
+readonly DATABASE="proxima"
+readonly DIAGNOSTIC_ROLE="proxima_diagnostics"
+
+fail() {
+  printf '%s\n' "proxima-psql-readonly: $*" >&2
+  exit 1
+}
+
+[[ "$(id -u)" -eq 0 ]] || fail "run as root via sudo"
+[[ ! -t 0 ]] || fail "provide SQL on stdin"
+command -v docker >/dev/null 2>&1 || fail "Docker is not installed"
+
+docker exec --interactive "${CONTAINER}" \
+  psql \
+    --username "${DIAGNOSTIC_ROLE}" \
+    --dbname "${DATABASE}" \
+    --no-psqlrc \
+    --set ON_ERROR_STOP=1 \
+    --tuples-only \
+    --no-align \
+    --field-separator '|' \
+    < /dev/stdin
