@@ -1,0 +1,56 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+[apps._default]
+enabled = false
+
+[mcp_servers.jira-atlassian]
+enabled = true
+required = true
+enabled_tools = [
+  "getAccessibleAtlassianResources",
+  "getJiraIssue",
+  "searchJiraIssuesUsingJql",
+]
+default_tools_approval_mode = "approve"
+
+[mcp_servers.node_repl]
+enabled = true
+required = true
+enabled_tools = ["js"]
+default_tools_approval_mode = "approve"
+
+[mcp_servers.computer-use]
+enabled = false
+
+[mcp_servers.granola]
+enabled = false
+
+[mcp_servers.klaviyo]
+enabled = false
+
+[mcp_servers.linear]
+enabled = false
+
+[mcp_servers.notebooklm]
+enabled = false
+
+[mcp_servers.omnisearch]
+enabled = false
+
+[mcp_servers.openaiDeveloperDocs]
+enabled = false
+
+[mcp_servers.shopify-storefront]
+enabled = false
+
+[mcp_servers.web-reader]
+enabled = false
+
+[mcp_servers.web-search-prime]
+enabled = false
+
+[mcp_servers.zai-mcp-server]
+enabled = false
+
+[mcp_servers.zread]
+enabled = false

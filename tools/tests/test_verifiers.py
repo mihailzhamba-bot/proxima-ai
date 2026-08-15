@@ -108,6 +108,41 @@ def test_business_signal_contract_is_fail_closed() -> None:
     signal.verify()
 
 
+def test_agent_toolset_contract_is_fail_closed() -> None:
+    toolset = load_tool("verify_agent_toolset")
+    toolset.verify_static()
+
+
+def test_agent_toolset_requires_owner_and_next_action_for_missing(tmp_path: Path) -> None:
+    toolset = load_tool("verify_agent_toolset")
+    inventory = tmp_path / "inventory.md"
+    inventory.write_text(
+        "| Интеграция | Статус | Evidence / limitation | Owner / action |\n"
+        "|---|---|---|---|\n"
+        "| Sentry | missing | not configured | no owner |\n",
+        encoding="utf-8",
+    )
+
+    parsed = toolset.parse_inventory(inventory)
+    errors: list[str] = []
+    toolset.validate_inventory(parsed, errors)
+
+    assert parsed["Sentry"].status == "missing"
+    assert any("Sentry: missing requires Owner and Next" in error for error in errors)
+
+
+def test_agent_toolset_detects_broad_github_scopes() -> None:
+    toolset = load_tool("verify_agent_toolset")
+
+    assert toolset.broad_github_scopes("Token scopes: 'gist', 'read:org', 'repo', 'workflow'") == {
+        "gist",
+        "read:org",
+        "repo",
+        "workflow",
+    }
+    assert toolset.broad_github_scopes("fine-grained token") == set()
+
+
 def monitor_samples(monitor, count: int, *, cpu: float, memory: float, disk: float, minute_offset: int = 0):
     return [
         monitor.MetricSnapshot(f"2026-08-12T00:{minute + minute_offset:02d}:00+00:00", cpu, memory, disk)
