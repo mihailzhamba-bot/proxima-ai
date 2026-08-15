@@ -37,6 +37,39 @@ Root `make verify` is the single CI entry point (mirrors `.github/workflows/veri
 Ops commands (not part of `verify`, require `.env` outside Git):
 `make probe-wb-api`, `make apply-migrations`, `make collect-wb-analytics`.
 
+## Runtime and dependency versions
+
+Manifests and lock files are the source of truth: `package.json`,
+`package-lock.json`, `services/collector/package.json`,
+`services/control-plane/pyproject.toml`, `services/control-plane/uv.lock`.
+The table below is a navigational snapshot dated 2026-08-15 (PA-33).
+
+| Component | Version | Source |
+|---|---|---|
+| Node | `>=22 <23` | root `package.json` `engines` |
+| Python | `>=3.14 <3.15` | control-plane `requires-python` |
+| TypeScript | `5.8.3` | collector devDependencies |
+| tsx | `4.20.3` | collector devDependencies |
+| Ajv | `8.20.0` | collector dependencies |
+| ajv-formats | `3.0.1` | collector dependencies |
+| csv-parse | `6.1.0` | collector dependencies |
+| decimal.js | `10.6.0` | collector dependencies |
+| pg | `8.16.3` | collector dependencies |
+| @mermaid-js/mermaid-cli | `11.16.0` | root devDependencies |
+| hatchling | `1.27.0` | control-plane build-system |
+| httpx | `0.28.1` | control-plane test extra |
+| jsonschema | `4.25.1` | control-plane test extra |
+| psycopg | `3.3.4` | control-plane test extra |
+| pytest | `8.4.2` | control-plane test extra |
+
+Rules:
+
+- Before generating code whose correctness depends on a library's API or
+  behavior, the agent checks the actual version in the manifests and lock
+  files; this table never substitutes for that check.
+- A dependency update includes a synchronized update of this table in the same
+  commit.
+
 ## Architecture boundaries
 
 - Hybrid monorepo: Node.js 22 + TypeScript collector/data-plane in `services/collector`;
