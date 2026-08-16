@@ -12,7 +12,6 @@ export interface SignalInputPaths {
   founderChatSource: string;
   productsCsv: string;
   warehousesCsv: string;
-  allowAnalyticsReadWrite?: boolean;
 }
 
 export interface SignalInputValidation {
@@ -20,7 +19,7 @@ export interface SignalInputValidation {
   products: number;
   warehouseMappings: number;
   wbScopes: readonly ['statistics', 'analytics', 'finance'];
-  analyticsAccess: 'read-only' | 'read-write-temporary';
+  analyticsAccess: 'read-only';
   telegramTokenShape: 'valid';
   founderChatSource: 'valid';
 }
@@ -42,7 +41,7 @@ export async function validateSignalInputFiles(
   ]);
 
   assertLeastPrivilegeToken(statisticsToken, 'statistics', now);
-  assertLeastPrivilegeToken(analyticsToken, 'analytics', now, { allowReadWrite: paths.allowAnalyticsReadWrite });
+  assertLeastPrivilegeToken(analyticsToken, 'analytics', now);
   assertLeastPrivilegeToken(financeToken, 'finance', now);
   if (!TELEGRAM_TOKEN_PATTERN.test(telegramToken)) {
     throw new BusinessSignalError('TELEGRAM_TOKEN_INVALID', 'Telegram token shape is invalid');
@@ -57,7 +56,7 @@ export async function validateSignalInputFiles(
     products: products.length,
     warehouseMappings: warehouses.length,
     wbScopes: ['statistics', 'analytics', 'finance'],
-    analyticsAccess: paths.allowAnalyticsReadWrite ? 'read-write-temporary' : 'read-only',
+    analyticsAccess: 'read-only',
     telegramTokenShape: 'valid',
     founderChatSource: 'valid',
   };
