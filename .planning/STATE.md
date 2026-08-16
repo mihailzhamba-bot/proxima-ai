@@ -83,11 +83,11 @@
 
 ## Session Continuity
 
-**Last action:** 2026-08-15: hosted CI `verify` PASS confirmed on `1a211c9` (run completed 2026-08-14T19:25 UTC) - 02-01A evidence gap closed (PA-12); coding agents standard regenerated and `CLAUDE.md` converted to a relative symlink (PA-32, PR #1, merge `11a7a12`).
+**Last action:** 2026-08-16 (PA-13): `--allow-analytics-read-write` RW-исключение удалено из коллектора, обоих Python-инструментов, installer, тестов и документации; Analytics RW теперь fail-closed везде; `make verify` PASS на `267cc3c`; DoD grep чист.
 
-**Next action:** Mike передает official pilot-cabinet XLSX для Plan 02-02 и позже меняет Analytics RW token на READ-only.
+**Next action:** 1) VPS: установить READ-only Analytics токен Амировой через двухаргументный installer и прогнать безфлаговый async Analytics сбор (закрывает DoD PA-13). 2) Mike передает official pilot-cabinet XLSX для Plan 02-02.
 
 **Resume context:** Start from `.planning/ROADMAP.md` Phase 2. Treat `.planning/phases/01-architecture-provenance-import-baseline/EVIDENCE.md` as the completed upstream gate and preserve the Phase 1 source/Linear boundaries.
 
 ---
-*Updated: 2026-08-15*
+*Updated: 2026-08-16*
