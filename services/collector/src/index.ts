@@ -46,3 +46,18 @@ export { completedSignalWindow, isInsideWindow, moscowWindowBounds } from './bus
 export { runBusinessSignal } from './business-signal/pipeline.js';
 export { formatStockoutMessage, preflightAndSend, TelegramBotApi } from './business-signal/telegram.js';
 export { BusinessSignalError } from './business-signal/types.js';
+export {
+  aggregatePreviewFacts,
+  classifyStagingRow,
+  PREVIEW_TRANSFORM_PROFILE,
+  PreviewTransformError,
+  transformStagingToPreview,
+  type PreviewFact,
+  type PreviewTransformFailurePoint,
+  type PreviewTransformHooks,
+  type PreviewTransformResult,
+  type QuarantinedStagingRow,
+  type QuarantineReason,
+  type StagingRowInput,
+  type ValidStagingRow,
+} from './staging/preview-transform.js';

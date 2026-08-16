@@ -12,7 +12,80 @@
 
 ## Plan 02-02 - Observed XLSX parser, staging and localhost preview
 
-**Checkpoint pending:** Mike supplies one official WB XLSX from the pilot cabinet. Before any parser code, record only private locator, filename, workbook sheet names, header names, byte size, SHA-256, retrieval time and approved field mapping. Never commit workbook bytes, cells, customer values or WB tokens.
+**Checkpoint resolution and pivot (2026-08-15, Mike GO, PA-9).** Two official
+WB XLSX exports supplied by Mike from the Amirova pilot cabinet were inspected
+locally before any parser code was written. Only structure is recorded here;
+no workbook bytes, cell values, customer payloads or tokens are committed.
+
+- Observed export 1: sales funnel workbook `1 с 14.07.2026 по 14.08.2026.zip`
+  (outer ZIP 109,646 bytes, SHA-256 `f89da726fdb76306c03fb142c51d90271ba888673c661ff18e1dc05e340e35cc`;
+  inner XLSX 133,570 bytes, SHA-256 `bd8763359d639d4ba854e47d1ebcd72e90a9fce2b3f35e46f92a86548c80596c`).
+  Sheets: Общая информация, Метрики, Фильтры, Товары (348 product rows), Промосервисы.
+  Headers on «Товары»: Артикул продавца, Артикул WB, Название, Предмет, Бренд, Удаленный товар,
+  Рейтинг карточки, Рейтинг по отзывам, Показы (+ previous period), CTR (+ previous period),
+  Доля карточки в выручке, Переходы в карточку, Положили в корзину, Добавили в отложенные,
+  Заказали товаров шт, Выкупили шт, Отменили шт, Конверсии. No calendar-day column anywhere.
+- Observed export 2: supplier report
+  `supplier-goods-45871-2026-07-14-2026-08-14-iiyngpinc.XLSX` (58,159 bytes, SHA-256
+  `e682e80397ad0f169fa8aedda23f053173a30d74c3dfae722cf6b4fbe5786004`, one sheet, 617 data rows).
+  Headers: Бренд, Предмет, Сезон, Коллекция, Наименование, Артикул продавца, Артикул WB, Баркод,
+  Размер, Контракт, Склад, Заказано шт., Сумма заказов минус комиссия WB руб., Выкупили шт.,
+  К перечислению за товар руб., Текущий остаток шт. No calendar-day column.
+- Conclusion: the pilot cabinet's manual XLSX exports are period aggregates;
+  the daily `order_count` grain lives in the official WB Analytics
+  DETAIL_HISTORY_REPORT (already collected via API into
+  `stg_wb_nm_report_rows`). Mike approved building the preview from the API
+  staging leg and deferring XLSX reconciliation to a separate plan. The two
+  observed workbooks stay recorded as candidate period-grain reconciliation
+  sources for that future plan.
+
+**Implementation (2026-08-16).** Migration `007_preview_order_counts.sql`
+(ordered, transaction-bounded, self-checksum) adds `artifact_parse_runs`
+(unique per task+profile, FK to `wb_analytics_report_tasks`), typed
+`preview_quarantine_rows` (NM_ID_INVALID / ROW_DATE_INVALID /
+ORDER_COUNT_INVALID) and `preview_order_counts` (PK
+tenant/task/calendar_day/nm_id, `release_status` fixed to `unreleased`).
+TypeScript transform `services/collector/src/staging/preview-transform.ts` +
+CLI `preview-transform` runs one PostgreSQL transaction: lock task, verify
+DOWNLOADED status and artifact SHA-256, classify staging rows into
+valid/quarantine, aggregate `order_count` per calendar day and nmId, insert
+run + quarantine + preview facts, mark success, commit. The localhost preview
+(`services/control-plane/src/proxima_control_plane/preview.py`) is a FastAPI
+read-only route bound to loopback with a host guard, an `UNRELEASED PREVIEW`
+banner, lineage to run/task/artifact SHA-256, 405 on all mutations and no
+docs/openapi surface.
+
+**Verification (2026-08-16).** Root `make verify` PASS: 60 TypeScript tests,
+55 Python tests (2 environment-gated skips), migration, contract, provenance,
+architecture, runtime-boundary, secret-scan, VPS-contract and business-signal
+checks. A dedicated PostgreSQL 16.14 integration suite
+(`preview-transform-postgres.test.ts`, enabled via
+`PROXIMA_TEST_POSTGRES_DSN`) proves: one complete preview set per task,
+idempotent retry (`existing`, no duplicate rows), typed rejections for
+non-DOWNLOADED tasks, tenant mismatch and staged-count drift, and full
+rollback with a clean single-set retry after injected crashes at all four
+write boundaries (run created, quarantine written, preview written, success
+marker). Route/bind tests plus a browserless HTTP smoke against a real
+uvicorn loopback server confirm the unreleased banner, day tables, 405 on
+POST/PUT/PATCH/DELETE and 404 outside the single route.
+
+**End-to-end local smoke (2026-08-16).** Disposable local PostgreSQL 16.14
+applied migrations 001-007; a synthetic five-row task for tenant
+`amirova-test` (3 valid rows incl. two same-day rows for one nmId, 2
+quarantined) was transformed by the compiled CLI (`created` then `existing`
+with identical run id, exactly one run/quarantine/preview set), and the
+compiled preview server on `127.0.0.1:8788` rendered the daily `order_count`
+page with lineage to the synthetic artifact checksum. No customer values,
+tokens or pilot bytes were used.
+
+**Live collection leg deferred.** The planned real-cabinet collect via
+`make collect-wb-analytics` requires the Analytics token stored on the VPS;
+SSH to `135.106.186.210:22` timed out from the operator network
+(2026-08-15/16). No token was fetched and no external WB endpoint was
+touched. The live run (collect -> transform -> preview on real pilot data)
+remains the only open PA-9 item and must be executed once VPS access or a
+READ-only Analytics token is available; identity/rollback guarantees are
+already proven by the integration suite.
 
 ## Plan 02-01A - Margin and out-of-stock Telegram proof
 

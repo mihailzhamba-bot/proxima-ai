@@ -14,7 +14,7 @@
 
 **Phase:** 2 of 8 - Vertical Slice: Immutable Intake to Visible Facts
 **Plan:** 02-01 and early-feedback 02-01A implemented; 02-02 is checkpointed on an official WB XLSX.
-**Status:** Phase 2 in progress; Phase 2.1 end-to-end acceptance and its hosted CI evidence are complete; only the observed XLSX parser remains pending (checkpointed on the official XLSX from Mike).
+**Status:** Phase 2 in progress; Phase 2.1 end-to-end acceptance and its hosted CI evidence are complete; 02-02 implemented on the API leg (PA-9): preview transform, migration 007 and localhost preview are verified, the live collect->preview run on real pilot data awaits restored VPS/token access.
 **Progress:** `[#---------] 13%`
 
 ## Performance Metrics
@@ -77,15 +77,15 @@
 
 ### Blockers
 
-- Phase 2 slice: официальная XLSX-выгрузка из кабинета WB отсутствует - передаёт Mike (см. DATA-SPIKE F4). API-нога закрыта тестовым токеном Амировой 2026-08-12; боевой токен кабинета Богатовой нужен к Phase 4. Планирование Phase 2 не блокировано.
+- Phase 2 slice: официальный дневной XLSX-экспорт в кабинете пилота отсутствует (наблюдены 2 официальных выгрузки - обе period-grain, см. EVIDENCE 02-02); Mike утвердил pivot на API-ногу 2026-08-15, XLSX-сверка отложена отдельным планом. Live collect для preview ждёт восстановления SSH до VPS 135.106.186.210 (таймаут с operator IP с 2026-08-15).
 - First approved data release remains blocked on Phase 8 Data GO evidence.
 - Live deployment remains blocked on separate Live Deploy GO.
 
 ## Session Continuity
 
-**Last action:** 2026-08-15: hosted CI `verify` PASS confirmed on `1a211c9` (run completed 2026-08-14T19:25 UTC) - 02-01A evidence gap closed (PA-12); coding agents standard regenerated and `CLAUDE.md` converted to a relative symlink (PA-32, PR #1, merge `11a7a12`).
+**Last action:** 2026-08-16: PA-9 implemented the 02-02 API-leg pivot - migration 007, transaction-bounded preview transform with crash-injection PostgreSQL suite, localhost unreleased preview, end-to-end local smoke; live collect leg awaits VPS/token access.
 
-**Next action:** Mike передает official pilot-cabinet XLSX для Plan 02-02 и позже меняет Analytics RW token на READ-only.
+**Next action:** восстановить доступ к VPS (или выпустить READ-only Analytics token), выполнить live collect -> transform -> preview на реальных данных кабинета и закрыть PA-9; затем заменить Analytics RW token на READ-only.
 
 **Resume context:** Start from `.planning/ROADMAP.md` Phase 2. Treat `.planning/phases/01-architecture-provenance-import-baseline/EVIDENCE.md` as the completed upstream gate and preserve the Phase 1 source/Linear boundaries.
 
