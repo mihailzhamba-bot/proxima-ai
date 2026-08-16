@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# scripts/agent/verify — fast agent-level verification gate for PROXIMA AI.
+# FAIL CLOSED: non-zero exit = work is NOT done. Never hide failing checks.
+# The canonical FULL gate remains `make verify` (Makefile) — this script runs the
+# fast subset that works on a dev machine without npm ci / VPS / codegen side effects.
+
+set -uo pipefail
+cd "$(dirname "$0")/../.."
+
+FAILED=0
+step() {  # step <name> <command...>
+  local name="$1"; shift
+  echo "==> $name"
+  if "$@"; then echo "    OK"; else echo "    FAIL"; FAILED=1; fi
+}
+skip() { echo "==> $1: SKIP ($2)"; }
+
+# --- Structural layer (always available) ---
+step "required files exist" bash -c '
+  for f in AGENTS.md CLAUDE.md docs/agent-system/HANDOFF.md docs/agent-system/TASKS.md \
+           docs/agent-system/README.md docs/agent-system/RULES.md docs/agent-system/EVALS.md \
+           docs/agent-system/MEMORY.md docs/agent-system/DECISIONS.md docs/agent-system/TOOLS.md; do
+    [ -f "$f" ] || { echo "missing: $f"; exit 1; }
+  done'
+step "exec-plans dirs exist" bash -c '
+  [ -d docs/exec-plans/active ] || { echo "missing: docs/exec-plans/active"; exit 1; }
+  [ -d docs/exec-plans/completed ] || { echo "missing: docs/exec-plans/completed"; exit 1; }'
+step "CLAUDE.md is an adapter importing AGENTS.md" bash -c '
+  grep -q "@AGENTS.md" CLAUDE.md || { echo "CLAUDE.md does not import @AGENTS.md"; exit 1; }'
+step "no placeholder UNKNOWN-as-template left in agent docs" bash -c '
+  ! grep -rqE "^<.*>$" docs/agent-system/ || { echo "template placeholder found"; exit 1; }'
+
+# --- Node layer (collector) ---
+if [ -f package.json ]; then
+  step "npm typecheck" npm run typecheck
+  step "npm test (tsx + build + import smoke)" npm test
+else
+  skip "npm" "no package.json"
+fi
+
+# --- Python layer (control-plane + tools) ---
+if command -v uv >/dev/null 2>&1; then
+  step "pytest (control-plane + tools)" uv run --python 3.14 --project services/control-plane --extra test pytest services/control-plane/tests tools/tests -q
+else
+  skip "pytest" "uv not installed"
+fi
+
+# --- Layers intentionally not run here (use make verify) ---
+skip "make verify (full gate)" "runs npm ci/codegen/renders; canonical gate for slice completion"
+skip "lint" "no lint script exists in package.json / Makefile"
+
+if [ "$FAILED" -eq 0 ]; then echo "VERIFY: PASS"; else echo "VERIFY: FAIL"; fi
+exit "$FAILED"
