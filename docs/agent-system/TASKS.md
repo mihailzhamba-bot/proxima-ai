@@ -6,7 +6,7 @@
 
 ### COLLECTOR-WB-BRANCHES — WB run cancellation / detached branch handling (Phase 2 collector hardening)
 
-Status: IN_PROGRESS (implementation thread landed at HEAD `1a211c9`; final integration state unconfirmed — see Next action)
+Status: IN_PROGRESS (implementation thread landed at `1a211c9`, later commits `e867911..8b07249` landed on top; final integration state unconfirmed — see Next action)
 Priority: P1 (Track A / M1, epic PA-36)
 Type: feature/bug (collector robustness)
 Tracker: UNKNOWN (specific Jira issue key not established from repo evidence; epic PA-36)
