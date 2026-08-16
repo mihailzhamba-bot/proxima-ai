@@ -6,6 +6,8 @@
 
 **Milestone:** M1 - production-ready read-only data foundation для одного пилотного кабинета Bogatova Belle Robe.
 
+**Product layer (2026-08-16):** `.planning/PRODUCT-VISION.md` - консолидированное видение M1->M2 (AI Daily Manager)->M3 (SaaS 50+ кабинетов). Четыре трека исполнения, гейты V1/V2/V3. Jira PA: эпики PA-36 (Трек A - M1), PA-37 (Трек B - value/сигналы), PA-35 (Трек C - discovery), PA-34 (Трек D - SaaS, заморожен до V3). M1-задачи PA-18..24 привязаны к PA-36.
+
 **Current focus:** Phase 2 - Vertical Slice: Immutable Intake to Visible Facts.
 
 **Roadmap:** 8 phases, 32/32 requirements mapped, 0 orphaned, 0 duplicate ownership.
@@ -33,6 +35,8 @@
 
 ### Decisions
 
+- 2026-08-16 (Mike): продуктовое интервью (38 ответов + 12 рекомендаций as-is) - см. PRODUCT-VISION.md. Ключевое: web-first (не Telegram), Decision Inbox в v0, все 11 сценариев волнами W1-W4, Advertising API сразу, полный P&L трек (COGS с онбординга), MPStats-бенчмарки, pricing 10-20k ₽ фикс/кабинет. Гейт V1 = 1 сквозной сигнал (AI нашёл -> AM подтвердил -> клиент получил результат).
+- 2026-08-16: мировой ресёрч `.planning/research/GLOBAL-LANDSCAPE-2026-08-16.md` - 12 рынков, ~30 продуктов. Прямые конкуренты: Sirena AI (490₽+), JVO (22.9-54k). Ниша 10-20k свободна. Заимствования: R-Karte декомпозиция, Anodot seasonal baseline + ₽-impact, Triple Whale Trust Layer, Lebesgue Auditor.
 - 2026-08-15 (Mike, PA-32): coding agents standard регенерирован из фактов репозитория; `CLAUDE.md` - относительный симлинк на `AGENTS.md`; owner Mihail Zhamba, квартальный цикл пересмотра, следующее ревью 2026-11-15.
 - 2026-08-15 (Mike, PA-28): coding agents standard зафиксирован в `AGENTS.md` - Claude Code и Codex равноправны, доступ через vendor subscriptions, PAYG API только через отдельную Jira-задачу PA с reason/owner/spend limit/review date; credentials личные и не передаются сторонним агентам.
 - 2026-08-12 (Mike): ценность M1 = фундамент для LLM-аналитики M2; provenance/качество не режутся, Data Health UI минимальный, время до реальных данных сжимается.
@@ -65,7 +69,7 @@
 
 | # | Решение | Дедлайн | Рекомендация |
 |---|---------|---------|--------------|
-| A1 | TS codegen из JSON Schema (сейчас схемы валидирует только Python) | Phase 2 | json-schema-to-typescript в verify-цепочку |
+| A1 | ~~TS codegen из JSON Schema~~ **Закрыто 2026-08-16**: `make codegen` (json-schema-to-typescript) в verify-цепочке; типы в `services/collector/src/contracts/`; boundary-гейт различает generated vs рукописный | Phase 2 | Done |
 | B6 | Additive-only доктрина миграций | Phase 3 CONTEXT | Записать при планировании Phase 3 |
 | C9 | ADR: точные WB endpoints + наблюдаемые RPS limits | Phase 4 planning | Первый артефакт планирования Phase 4; заполнить из API-ноги data spike |
 | D11 | Rotation policy WB токенов: владелец + cadence | до Phase 4 | Expiry наблюдён: токены живут ~180 дней (тестовый истекает 2027-02-01). Mike ротирует вручную по календарному напоминанию < 180 дней; на Phase 4 выпустить 3 токена с раздельными scope |
@@ -83,6 +87,10 @@
 
 ## Session Continuity
 
+**Last action:** 2026-08-16: продуктовая сессия - PRODUCT-VISION.md утверждён (50 решений), глобальный ресёрч-досье создано, Jira PA: эпики PA-34/35/36/37, задачи волн PA-38 (web-кабинет v0), PA-44/45 (W2/W3), PA-43 (источники), PA-46 (LLM+reviewer), PA-47 (verification), PA-48 (passport+PDF); M1-задачи PA-18..24 привязаны к PA-36.
+**Last action:** 2026-08-15: hosted CI `verify` PASS confirmed on `1a211c9` (run completed 2026-08-14T19:25 UTC) - 02-01A evidence gap closed (PA-12); coding agents standard regenerated and `CLAUDE.md` converted to a relative symlink (PA-32, PR #1, merge `11a7a12`).
+
+**Next action:** Старт Трека B: аудит scenario engine в Опрос-v2.2 (PA-39). От Mike: XLSX пилота (Phase 2), боевой токен, интервью-слоты, онбординг AI-ops аналитика, COGS у Богатовой.
 **Last action:** 2026-08-16 (PA-13): `--allow-analytics-read-write` RW-исключение удалено из коллектора, обоих Python-инструментов, installer, тестов и документации; Analytics RW теперь fail-closed везде; `make verify` PASS на `267cc3c`; DoD grep чист.
 
 **Next action:** 1) VPS: установить READ-only Analytics токен Амировой через двухаргументный installer и прогнать безфлаговый async Analytics сбор (закрывает DoD PA-13). 2) Mike передает official pilot-cabinet XLSX для Plan 02-02.

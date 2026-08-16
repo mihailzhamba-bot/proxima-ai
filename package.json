@@ -7,6 +7,7 @@
   ],
   "scripts": {
     "architecture:render": "node tools/render_architecture.mjs",
+    "codegen:contracts": "node tools/generate_contract_types.mjs",
     "build": "npm --workspace @proxima/collector run build",
     "test": "npm --workspace @proxima/collector test",
     "typecheck": "npm --workspace @proxima/collector run typecheck"
@@ -15,6 +16,7 @@
     "node": ">=22 <23"
   },
   "devDependencies": {
-    "@mermaid-js/mermaid-cli": "11.16.0"
+    "@mermaid-js/mermaid-cli": "11.16.0",
+    "json-schema-to-typescript": "^15.0.4"
   }
 }

@@ -1,10 +1,14 @@
-.PHONY: verify install typecheck test contracts migrations provenance architecture boundary secrets vps business-signal agent-toolset probe-wb-api collect-wb-analytics apply-migrations
+.PHONY: agent-toolset apply-migrations architecture boundary business-signal codegen collect-wb-analytics contracts install migrations probe-wb-api provenance secrets test typecheck verify vps
 
-verify: install typecheck test contracts migrations provenance architecture boundary secrets vps business-signal
+
+verify: install codegen typecheck test contracts migrations provenance architecture boundary secrets vps business-signal
 
 install:
 	npm ci
 	uv sync --python 3.14 --project services/control-plane --extra test --locked
+
+codegen:
+	npm run codegen:contracts
 
 typecheck:
 	npm --workspace @proxima/collector run typecheck

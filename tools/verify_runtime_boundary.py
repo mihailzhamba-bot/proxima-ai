@@ -8,6 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 COLLECTOR = ROOT / "services" / "collector"
 CONTROL_PLANE = ROOT / "services" / "control-plane"
+GENERATED_CONTRACTS = COLLECTOR / "src" / "contracts"
+GENERATED_BANNER = "AUTO-GENERATED from contracts/*.schema.json by `make codegen` - DO NOT EDIT."
 BANNED_DEPENDENCIES = {"playwright", "playwright-core", "puppeteer", "puppeteer-core"}
 BANNED_RUNTIME_PATTERNS = {
     "torgstat": re.compile(r"torgstat", re.IGNORECASE),
@@ -22,8 +24,13 @@ def production_files() -> list[Path]:
         path
         for source_root in roots
         for path in source_root.rglob("*")
-        if path.is_file() and path.suffix in {".ts", ".js", ".py"}
+        if path.is_file()
+        and path.suffix in {".ts", ".js", ".py"}
+        and GENERATOR_EXEMPT.match(str(path)) is None
     )
+
+
+GENERATOR_EXEMPT = re.compile(rf"^{re.escape(str(GENERATED_CONTRACTS))}/[^/]+$")
 
 
 def verify() -> None:
@@ -34,6 +41,18 @@ def verify() -> None:
         raise ValueError(f"browser dependency in collector runtime: {', '.join(forbidden)}")
 
     violations: list[str] = []
+
+    generated_files = sorted(
+        path for path in GENERATED_CONTRACTS.glob("*") if path.is_file() and path.suffix == ".ts"
+    )
+    if not generated_files:
+        violations.append("services/collector/src/contracts: generated contract types missing (run `make codegen`)")
+    for path in generated_files:
+        if GENERATED_BANNER not in path.read_text(encoding="utf-8").splitlines()[1]:
+            violations.append(
+                f"{path.relative_to(ROOT)}: generated contract file missing AUTO-GENERATED banner"
+            )
+
     for path in production_files():
         content = path.read_text(encoding="utf-8")
         for label, pattern in BANNED_RUNTIME_PATTERNS.items():
