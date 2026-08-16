@@ -49,6 +49,7 @@ COLLECTOR-WB-BRANCHES (see `docs/agent-system/TASKS.md`). No ExecPlan was create
 ## Verification status
 
 - Last fast-gate run: 2026-08-16 (after reviewer deploy), `scripts/agent/verify` — PASS (structural + `npm run typecheck` + `npm test` incl. build + uv pytest: 48 passed / 1 skipped).
+- Reviewer read-only runtime proof (2026-08-16, canary-file edit test, canary hash unchanged in all runs): opencode — delegation confirmed (child session), edit tool absent from reviewer pool, bash denied except git-read (agent quoted its own deny rules); Claude Code — write blocked, no retry/workaround; Codex — `operation not permitted` via read-only sandbox (note: that run executed in main thread; reviewer spawn proven separately by REVIEWER-CODEX-OK smoke test; whether the TOML `sandbox_mode` applies when the parent session is non-read-only was NOT isolated — for critical phases prefer launching the reviewer with an explicit read-only sandbox). Caveat for all CLI (`-p`/`run`/`exec`) modes: `@reviewer` mention does NOT force delegation — phrase tasks as review-matching descriptions or explicitly instruct "use the task tool to delegate".
 - Last full `make verify` run by this agent: not run (performs `npm ci`, codegen, renders; pre-existing dirty `package-lock.json` belongs to another thread). UNKNOWN when it last ran green end-to-end.
 
 ## Exact next action
