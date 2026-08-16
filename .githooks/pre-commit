@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# DONE-guard: blocks committing a DONE/verified-status transition unless scripts/agent/verify passes.
+# Rationale: fail-closed Definition of Done (portfolio GLOBAL_RULES). Normal commits are unaffected.
+set -uo pipefail
+cd "$(git rev_parse_show_toplevel 2>/dev/null || git rev-parse --show-toplevel)"
+
+if git diff --cached -- docs/agent-system/ 2>/dev/null | grep -E '^\+.*(Status:.*(DONE|VERIFIED|COMPLETED))' >/dev/null 2>&1; then
+  echo "pre-commit: DONE-status transition detected — running scripts/agent/verify (fail closed)"
+  if [ -x scripts/agent/verify ]; then
+    scripts/agent/verify || { echo "pre-commit: VERIFY FAILED — DONE not allowed. Fix, or revert the status change (use BLOCKED + reason instead)."; exit 1; }
+  else
+    echo "pre-commit: scripts/agent/verify missing — DONE not allowed without verification."; exit 1
+  fi
+fi
+exit 0
