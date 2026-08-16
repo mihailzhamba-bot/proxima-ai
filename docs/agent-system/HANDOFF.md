@@ -21,11 +21,12 @@ COLLECTOR-WB-BRANCHES (see `docs/agent-system/TASKS.md`). No ExecPlan was create
 
 - 2026-08-14: collector cancellation thread (see above); runbook warehouse-mapping pin (`5603f50`); contract repository path fix (`453ffe0`).
 - 2026-08-16: agent operating system layer deployed (this directory, AGENTS.md extension, `scripts/agent/verify`).
+- 2026-08-16: reviewer subagent deployed in three tool formats (`.opencode/agents/reviewer.md`, `.claude/agents/reviewer.md`, `.codex/agents/reviewer.toml`) + AGENTS.md "Delegation protocol" section (task-class → orchestration mapping, cross-model review gate 0/0 for phases 3/4/7). Not yet committed; needs live smoke test after session restart (agent dirs created mid-session are not discovered by already-running sessions).
 - Earlier: Phase 1 complete (3/3 plans, 3/3 cross-model reviews 0/0); Day-1 WB API proof (5 split read-only tokens); async Analytics CSV proof with quota reservation.
 
 ## In progress
 
-- None committed as open by the current agent. Pre-existing dirty tree (other threads, do not stage/commit blindly): `Makefile`, `README.md`, `package.json`, `package-lock.json`, `.planning/STATE.md`, `tools/verify_runtime_boundary.py` (modified); untracked `.mcp.json`, `opencode.json`, `.codex/`, `.planning/PRODUCT-VISION.md`, `.planning/research/GLOBAL-LANDSCAPE-2026-08-16.md`, `services/collector/src/contracts/`, `tools/generate_contract_types.mjs`, `AGENTS.md`, `CLAUDE.md` (AGENTS/CLAUDE now committed by the AI-OS layer).
+- None committed as open by the current agent. Pre-existing dirty tree (other threads, do not stage/commit blindly): `Makefile`, `README.md`, `package.json`, `package-lock.json`, `.planning/STATE.md`, `tools/verify_runtime_boundary.py` (modified); untracked `.mcp.json`, `opencode.json`, `.codex/`, `.planning/PRODUCT-VISION.md`, `.planning/research/GLOBAL-LANDSCAPE-2026-08-16.md`, `services/collector/src/contracts/`, `tools/generate_contract_types.mjs`, `AGENTS.md`, `CLAUDE.md` (AGENTS/CLAUDE now committed by the AI-OS layer). Reviewer-deploy thread (this agent, uncommitted): `AGENTS.md` modified (Delegation protocol + routing row), untracked `.opencode/agents/reviewer.md`, `.claude/agents/reviewer.md`, `.codex/agents/reviewer.toml`.
 
 ## Blockers
 
@@ -43,10 +44,11 @@ COLLECTOR-WB-BRANCHES (see `docs/agent-system/TASKS.md`). No ExecPlan was create
 ## Files changed
 
 - 2026-08-16 (AI-OS deploy): `AGENTS.md` (extended), `CLAUDE.md` (symlink → adapter file), `docs/agent-system/*`, `docs/exec-plans/{active,completed}/.gitkeep`, `scripts/agent/verify`.
+- 2026-08-16 (reviewer deploy): `AGENTS.md` (+18 lines: delegation protocol, routing row), `docs/agent-system/HANDOFF.md` (this update); new `.opencode/agents/reviewer.md`, `.claude/agents/reviewer.md`, `.codex/agents/reviewer.toml`.
 
 ## Verification status
 
-- Last fast-gate run: 2026-08-16, `scripts/agent/verify` — PASS (structural + `npm run typecheck` + `npm test` incl. build + uv pytest: 48 passed / 1 skipped).
+- Last fast-gate run: 2026-08-16 (after reviewer deploy), `scripts/agent/verify` — PASS (structural + `npm run typecheck` + `npm test` incl. build + uv pytest: 48 passed / 1 skipped).
 - Last full `make verify` run by this agent: not run (performs `npm ci`, codegen, renders; pre-existing dirty `package-lock.json` belongs to another thread). UNKNOWN when it last ran green end-to-end.
 
 ## Exact next action
