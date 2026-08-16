@@ -69,6 +69,20 @@ marker). Route/bind tests plus a browserless HTTP smoke against a real
 uvicorn loopback server confirm the unreleased banner, day tables, 405 on
 POST/PUT/PATCH/DELETE and 404 outside the single route.
 
+**Hosted CI (2026-08-16).** The first two `verify` runs on implementation
+commit `42616ba` failed inside `astral-sh/setup-uv` before `make verify`
+started (version-manifest fetch from raw.githubusercontent.com failed twice;
+runs 31951740556). Root cause removed by pinning the uv tool version via
+root `uv.toml` `required-version = "0.11.7"` (commit `7c60010`), which
+setup-uv resolves without the manifest lookup; the equivalent direct
+workflow pin (`defbf51`) was reverted because the push token lacks workflow
+scope. Hosted CI `verify` PASS on `7c60010` - a direct descendant of
+`42616ba` containing all PA-9 code - run
+[31956237791](https://github.com/mihailzhamba-bot/proxima-ai/actions/runs/31956237791),
+completed 2026-08-16T15:39 UTC with `make verify` fully executed (60
+TypeScript tests, 55 Python tests, all contract checks). Same
+descendant-CI precedent as 02-01A.
+
 **End-to-end local smoke (2026-08-16).** Disposable local PostgreSQL 16.14
 applied migrations 001-007; a synthetic five-row task for tenant
 `amirova-test` (3 valid rows incl. two same-day rows for one nmId, 2

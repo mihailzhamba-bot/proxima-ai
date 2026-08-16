@@ -24,7 +24,7 @@
 | Phases complete | 1/8 |
 | Plans complete | 3/3 Phase 1; 2/3 Phase 2 |
 | Requirements complete | 6/32 |
-| Root verify evidence | 02-01 GitHub PASS on `56ebe000`; 02-01A local PASS on deployed `2d0f6ec` repeated 2026-08-14; hosted CI `verify` PASS on `1a211c9` (main, run completed 2026-08-14T19:25 UTC, observed 2026-08-15 - PA-12) |
+| Root verify evidence | 02-01 GitHub PASS on `56ebe000`; 02-01A local PASS on deployed `2d0f6ec` repeated 2026-08-14; hosted CI `verify` PASS on `1a211c9` (main, run completed 2026-08-14T19:25 UTC, observed 2026-08-15 - PA-12); 02-02 local PASS on `42616ba` + hosted CI `verify` PASS on descendant `7c60010` (run 31956237791, completed 2026-08-16T15:39 UTC - PA-9) |
 | Independent cross-model reviews | 3/3 Phase 1 plans PASS with 0 blocker / 0 warning |
 | Data GO | Pending separate Mike decision |
 | Live Deploy GO | Pending separate Mike decision |
@@ -83,7 +83,7 @@
 
 ## Session Continuity
 
-**Last action:** 2026-08-16: PA-9 implemented the 02-02 API-leg pivot - migration 007, transaction-bounded preview transform with crash-injection PostgreSQL suite, localhost unreleased preview, end-to-end local smoke; live collect leg awaits VPS/token access.
+**Last action:** 2026-08-16: PA-9 closed the evidence chain - hosted CI `verify` PASS on `7c60010` (run 31956237791) after pinning uv 0.11.7 via root `uv.toml` to remove the setup-uv manifest fetch that failed two runs; migration 007, crash-injection PostgreSQL suite, localhost unreleased preview and e2e local smoke are all recorded in phase EVIDENCE.
 
 **Next action:** восстановить доступ к VPS (или выпустить READ-only Analytics token), выполнить live collect -> transform -> preview на реальных данных кабинета и закрыть PA-9; затем заменить Analytics RW token на READ-only.
 
