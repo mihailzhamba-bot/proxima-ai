@@ -1,0 +1,5 @@
+# Pins the uv tool version for every invocation inside this repository and for
+# astral-sh/setup-uv in CI: an explicit required-version removes the
+# "resolve latest" manifest fetch from raw.githubusercontent.com that failed
+# two consecutive verify runs before make verify started.
+required-version = "0.11.7"
