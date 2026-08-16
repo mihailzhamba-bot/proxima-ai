@@ -1,15 +1,8 @@
 {
   "mcpServers": {
-    "context7": {
+    "jira-atlassian": {
       "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"]
-    },
-    "postgres": {
-      "command": "uvx",
-      "args": ["--python", "3.13", "--with", "mcp<2", "--from", "postgres-mcp", "postgres-mcp", "--access-mode=restricted"],
-      "env": {
-        "DATABASE_URI": "${DATABASE_URI}"
-      }
+      "args": ["-y", "mcp-remote@0.1.38", "https://mcp.atlassian.com/v1/mcp"]
     }
   }
 }

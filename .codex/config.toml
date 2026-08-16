@@ -58,16 +58,3 @@ enabled = false
 # Codex MCP-конфиг проекта PROXIMA AI (project-scoped).
 # DATABASE_URI берётся из окружения запускающего shell (туннель к VPS - см. AGENTS.md);
 # секреты никогда не коммитятся. Эквивалент CLI-добавления:
-# codex mcp add context7 -- npx -y @upstash/context7-mcp
-# codex mcp add postgres --env DATABASE_URI=$DATABASE_URI -- uvx --python 3.13 --with "mcp<2" --from postgres-mcp postgres-mcp --access-mode=restricted
-
-[mcp_servers.context7]
-command = "npx"
-args = ["-y", "@upstash/context7-mcp"]
-
-[mcp_servers.postgres]
-command = "uvx"
-args = ["--python", "3.13", "--with", "mcp<2", "--from", "postgres-mcp", "postgres-mcp", "--access-mode=restricted"]
-
-[mcp_servers.postgres.env]
-DATABASE_URI = "${DATABASE_URI}"
