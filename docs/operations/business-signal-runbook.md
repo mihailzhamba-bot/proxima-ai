@@ -2,6 +2,16 @@
 
 Phase 2.1 запускается вручную на Selectel VPS `135.106.186.210`. Это staging exception для кабинета `amirova-test`: production release pointer, Data GO и Live Deploy GO не меняются. Scheduler и автоматический повтор Telegram отсутствуют.
 
+## SSH access rule
+
+Подключаться к VPS только **без VPN**. Через зарубежный egress (маршрут PL/DE) Selectel пропускает ICMP, но фильтрует TCP/22: ping проходит, SSH виснет на `Connecting to ... port 22`. Перед каждой сессией отключить VPN и проверить порт одной командой:
+
+```bash
+nc -z 135.106.186.210 22 && echo reachable
+```
+
+Если порт отвечает - заходить `ssh root@135.106.186.210`. Если нет - VPN всё ещё активен или надо проверять security group в панели Selectel.
+
 ## Private files
 
 Все файлы ниже создаются на VPS с owner `proxima-admin` и mode `0600`. Их значения не попадают в Git, shell history, PostgreSQL logs или evidence:
