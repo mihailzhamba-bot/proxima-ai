@@ -54,3 +54,10 @@
 - [ ] Edge cases (cancellation, rate limits, wait states)
 - [ ] Tests cover the change
 - [ ] Docs/state files updated (TASKS / HANDOFF / EVIDENCE)
+
+## Eval scenarios (v2.0, automatable)
+
+- E1 Full gate: `make verify` → typecheck + TS tests + pytest + contracts + secrets scan all green (CI runs on push/PR; local run before slice completion).
+- E2 Secrets negative control: plant `TOKEN=canary-abc123` in a TRACKED temp file → secrets scan must FAIL; remove → PASS. Validates the scanner is alive, not decorative.
+- E3 Fail-closed DONE: `scripts/agent/test-ai-os --fail-closed` → PASS.
+- E4 (manual-gated, DEC-010-adjacent) WB READ-only invariant: any code path calling mutating WB endpoint fails review — checked by reviewer + boundary tool (`tools/verify_runtime_boundary.py`).

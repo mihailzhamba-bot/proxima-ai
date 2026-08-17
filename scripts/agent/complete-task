@@ -29,6 +29,7 @@ echo "$VERIFY_OUT"
 
 if [ $TRIVIAL -eq 0 ] && [ -z "$REVIEWER" ]; then
   echo "complete-task: substantive task requires review — pass --reviewer <name> (or --trivial for docs-only fix)."
+  echo "Reviewer standard: _ai/templates/reviewer-agent.md (MILV) — independent, verdict format, 0 blockers gate."
   echo "Reviewer must be independent of the worker and check: acceptance criteria, regressions, edge cases, security, missing tests, doc drift."
   exit 1
 fi
@@ -69,7 +70,7 @@ python3 - "$TASKS" "$TASK_ID" "$EV" <<'PY'
 import re, sys, datetime
 path, tid, ev = sys.argv[1], sys.argv[2], sys.argv[3]
 body = open(path).read()
-pat = re.compile(r'(^##\s+' + re.escape(tid) + r'\b.*?Status:\s*)([A-Z_]+)', re.S | re.M)
+pat = re.compile(r'(^#{2,3}\s+' + re.escape(tid) + r'\b.*?Status:\s*)([A-Z_]+)', re.S | re.M)
 new, n = pat.subn(lambda m: m.group(1) + 'DONE (evidence: ' + ev + ', ' + datetime.date.today().isoformat() + ')', body, count=1)
 if n == 0:
     # fallback: task mentioned but no own Status line — annotate nearest status after the id
