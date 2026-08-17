@@ -36,15 +36,16 @@ Confirm with Mike / Jira PA whether this thread is DONE and can be closed (then 
 
 ## Queue
 
-1. PMM (M2/M3 backlog среза): исполнение начинается со Sprint 0 — спайки PMM-2 (налоговые сценарии → ADR) и PMM-14 (Build vs Buy, ≤3 дня), оба Highest; exit-критерии PMM-11. Manifest: `docs/exec-plans/active/pm2-backlog-run.manifest.yaml`.
-2. Track B PA-39: scenario engine audit in `Опрос-v2.2` (other repo; do not mutate that worktree without allowlist — see RULES).
+1. PMM (M2/M3 backlog среза), Sprint 0 в порядке исполнения после аудита 2026-08-17: **PMM-30** (DEC-006 — снять запрет DEC-005 на LLM runtime и web-UI; черновик решения уже внесён в `docs/agent-system/DECISIONS.md`, задача закрывается ссылкой на commit) → **PMM-29** (контракты signal/diagnosis/decision-record + codegen) → **PMM-31** (LLM-доступ: проверить egress с VPS ДО выбора моделей). Параллельно спайки **PMM-2** (налоговые сценарии → ADR) и **PMM-14** (Build vs Buy, ≤3 дня), оба ждут входных данных от Mike. Exit-критерии среза — PMM-11. Manifest: `docs/exec-plans/active/pm2-backlog-run.manifest.yaml`; отчёт аудита: `docs/exec-plans/active/pmm-audit-2026-08-17.md`.
+2. Track B PA-39: scenario engine audit in `Опрос-v2.2` (other repo; do not mutate that worktree without allowlist — see RULES). Теперь blocks PA-41, а PA-41 blocks PMM-5/20/23 — от этой пары зависит весь W1-срез.
 3. Phase 2 `02-02`: checkpointed on the official WB XLSX from Mike — blocked until the file is delivered (STATE.md, 2026-08-16).
 4. Phase 2 leftovers: CI pipeline green run; observed-XLSX parser (STATE.md: "CI and the observed XLSX parser remain pending").
 5. From Mike (inputs): pilot XLSX, production Bogatova token, interview slots, AI-ops analyst onboarding, COGS data (STATE.md, 2026-08-16).
 
 ## Done (recent)
 
-- 2026-08-17 PMM backlog-slice run: 28 issues созданы в PMM (company-managed), верифицированы, manifest в `docs/exec-plans/active/pm2-backlog-run.manifest.yaml`; rollback JQL `labels = "aios-run-2026-08-17"`.
+- 2026-08-17 Аудит M2-бэклога: снят двойной бэклог M2 (PA-37 имел 9 детей, пять дублировали срез — PA-43/45/46/47/48 закрыты, метка `superseded-by-pmm`, откат обратим); DEC-006 снял конфликт с DEC-005; заведены PMM-29…33 под четыре блокера критического пути; сироты разведены по эпикам, достроен граф связей, проставлены метки спринтов. Отчёт: `docs/exec-plans/active/pmm-audit-2026-08-17.md`; rollback JQL `labels = "aios-fix-2026-08-17"`.
+- 2026-08-17 PMM backlog-slice run: 28 issues созданы в PMM (company-managed), верифицированы, manifest в `docs/exec-plans/active/pm2-backlog-run.manifest.yaml`; rollback JQL `labels = "aios-run-2026-08-17"`. Три верификационных утверждения прогона позже опровергнуты аудитом (см. `verification_correction` в манифесте).
 - 2026-08-14 `1a211c9` test(collector): prove BLOCKED cancels detached WB branches.
 - 2026-08-14 `dc68839` fix(collector): cancel detached WB branches when a run leaves RUNNING.
 - 2026-08-14 `99fea05` feat(collector): abortable sleep and run cancellation helpers.
@@ -53,4 +54,4 @@ Confirm with Mike / Jira PA whether this thread is DONE and can be closed (then 
 
 ---
 
-Rules: one active main task; new ideas go to Jira PA backlog, not here; update this file at every state change of the active task.
+Rules: one active main task; new ideas go to the Jira backlog, not here — **M1 / Track A / Track C → PA, M2 / M3 → PMM** (split recorded in `.planning/PRODUCT-VISION.md`, section «Трекер», 2026-08-17); update this file at every state change of the active task.

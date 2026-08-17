@@ -93,6 +93,52 @@ existing:                          # PA — только чтение и link-ц
     matched_wbs: null
     action: none
     note: вне среза
+  # ── correction 2026-08-17 (аудит): фаза B1 читала PA только до PA-42.
+  #    PA-43…PA-48 созданы 2026-08-16 21:04, за сутки до прогона, и в карту не попали.
+  #    Пять из них дублировали срез один-в-один. Решение Mike: PMM — единственный дом M2/M3.
+  - jira_key: PA-43
+    title: "Client Passport v1 (COGS, лимиты) + недельный PDF клиенту + Auditor-режим"
+    matched_wbs: AIOS-MDM-001
+    action: closed-superseded
+    note: >-
+      пропущен прогоном; дубль PMM-21. Закрыт 2026-08-17 (label superseded-by-pmm).
+      Поля паспорта → PMM-21; недельный PDF и Auditor-режим → состав расширения PMM-4.
+  - jira_key: PA-44
+    title: "Источники M2: Advertising + Feedbacks + Content/цены API + MPStats-бенчмарки"
+    matched_wbs: null
+    action: link-only
+    note: >-
+      пропущен прогоном; остаётся в PA как инфраструктура. Добавлена связь
+      is-blocked-by PMM-14: вердикт Build vs Buy может отменить MPStats-коннектор.
+  - jira_key: PA-45
+    title: "W3: SCN-009 отзывы + SCN-010 акции + SCN-011 контент-алерты"
+    matched_wbs: null
+    action: closed-out-of-slice
+    note: >-
+      пропущен прогоном; волна W3 вне W1-среза. Закрыт 2026-08-17, состав → PMM-4.
+      SCN-009 дополнительно заблокирован 152-ФЗ (риск №5 в PMM-10): нужна отдельная
+      P0-задача об обезличивании, её нет ни в PA, ни в PMM.
+  - jira_key: PA-46
+    title: "Verification-петля: expected vs actual + Decision Memory"
+    matched_wbs: AIOS-DEC-004
+    action: closed-superseded
+    note: >-
+      пропущен прогоном; дубль PMM-26 (+ п.4 = гейт V1 = PMM-28). Закрыт 2026-08-17.
+      Пункт "verification job в scheduler" → PMM-32 (daily-цикл).
+  - jira_key: PA-47
+    title: "LLM Analyst + Independent Reviewer (BLOCK с дня 1, отдельная модель)"
+    matched_wbs: AIOS-AGT-001
+    action: closed-superseded
+    note: >-
+      пропущен прогоном; дубль PMM-5 + PMM-25. Закрыт 2026-08-17.
+      Ссылка на контракт AI Recommendation (06-ai-architecture) перенесена в PMM-5.
+  - jira_key: PA-48
+    title: "W2: SCN-007 DRR + SCN-002 заказы + SCN-004 маржа"
+    matched_wbs: null
+    action: closed-out-of-slice
+    note: >-
+      пропущен прогоном; волна W2 вне W1-среза. Закрыт 2026-08-17, состав → PMM-4.
+      Требует WB Advertising API, который DEC-006 не открывает.
 
 issues:
   # ── Верхний уровень ──────────────────────────────────────────
@@ -589,7 +635,8 @@ sprints:                            # без дат; порядок только
   - {number: 1, name: "Sprint 1 — детекторы W1 + LLM слой", goal: "SCN-001/005 + AGT-001/002 на staging"}
   - {number: 2, name: "Sprint 2 — сквозной сигнал", goal: "V1 value-gate демо + Decision Memory v0"}
 
-verification:                        # сверка 2026-08-17: JQL labels=aios-run-2026-08-17 → 28 issue, python-парсинг
+verification:                        # ЗАЯВЛЕНО ПРОГОНОМ 2026-08-17. Три пункта опровергнуты аудитом,
+                                     # см. verification_correction ниже. Исходные строки сохранены как есть.
   wbs_ids_unique: true               # 28 уникальных wbs-aios-* labels, дублей нет
   all_parents_linked: true           # 11 детей PMM-3 + 11 детей PMM-6, STUB/эпики/управляющая без parent (by design)
   dependencies_created: true         # 11 blocks внутри PMM + 4 Relates PMM→PA (37/38/39/41)
@@ -598,6 +645,51 @@ verification:                        # сверка 2026-08-17: JQL labels=aios-
   sprints_within_capacity: true      # 1 FTE, дат нет; sprint 0-2 порядок, объём сверен на гейте B3
   epics_linked_to_pa_or_marked_new: true   # DEC-010→PA-37; PROD-010 = новое (в PA отсутствовало)
   rollback_jql_reported: true
+
+verification_correction:             # аудит 2026-08-17, метод: счётчики JQL (searchResultMode=count), не самоотчёт
+  audited_at: 2026-08-17
+  fix_label: aios-fix-2026-08-17     # отдельная метка, чтобы откат прогона и откат правок не пересекались
+  refuted:
+    - claim: all_parents_linked (11 + 11 = 22/22)
+      fact: >-
+        фактически 21 из 25 не-эпиков имели parent. Без эпика оставались PMM-1, PMM-2, PMM-4,
+        PMM-17, PMM-18, при том что PMM-6 в собственном описании перечисляет FIN-001 и DEL-003
+        своими детьми. Проверка `project = PMM AND parent is EMPTY` давала 7, а не 3.
+      fixed: >-
+        PMM-2, PMM-4, PMM-17, PMM-18 → parent PMM-6. Без parent осознанно остаётся только
+        управляющая PMM-1 и два эпика. Контрольный счётчик теперь = 3.
+    - claim: dependencies_created (11 blocks достаточно)
+      fact: >-
+        11 blocks на 28 задач; у PMM-21, PMM-26, PMM-27 не было ни одной связи, хотя PMM-21
+        задаёт пороги обоим детекторам, а PMM-26 и PMM-24 нужны для AC гейта PMM-28.
+        Зависимость всего среза от PA-41 была оформлена как Relates, а не Blocks.
+      fixed: >-
+        достроено ~25 связей, включая PMM-21→PMM-20/23, PMM-22→PMM-23, PMM-26→PMM-28,
+        PMM-24→PMM-28, PMM-14→PMM-3, PA-39→PA-41, PA-41→PMM-5/20/23, PMM-14→PA-44.
+    - claim: "дублей против PA нет (existing-карта: link-only)"
+      fact: >-
+        пять дублей один-в-один. Фаза B1 читала PA-37…PA-42 и PA-26; PA-43…PA-48 созданы
+        2026-08-16 21:04, за сутки до прогона, и в existing-карту не попали.
+        PA-43 = PMM-21, PA-47 = PMM-5 + PMM-25, PA-46 = PMM-26 + PMM-28, PA-38 п.1 = PMM-20 + PMM-23.
+      fixed: >-
+        existing-карта дополнена записями PA-43…PA-48. PA-43/46/47 закрыты как superseded,
+        PA-45/48 закрыты как вне среза, состав перенесён в PMM-4. PA-38 и PA-44 остались в PA
+        с зафиксированной границей.
+  gaps_found:                        # блокеры критического пути, не имевшие задачи ни в PA, ни в PMM
+    - PMM-29: контракты signal/diagnosis/decision-record в contracts/ + codegen (Highest, Sprint 0)
+    - PMM-30: DEC-006 поверх DEC-005 — снятие запрета на LLM runtime и web-UI (Highest, Sprint 0)
+    - PMM-31: LLM-доступ, две независимые модели, egress с VPS, бюджет токенов → ADR (Highest, Sprint 0)
+    - PMM-32: daily-цикл 07:00 MSK + снятие manual one-shot в verify_business_signal.py (High, Sprint 1)
+    - PMM-33: eval-инфраструктура LLM-слоя, пороги в CI (High, Sprint 1)
+  open_for_mike:
+    - компоненты governance/w1-slice/delivery/finance создать в UI (MCP не умеет), затем проставить массово
+    - оценить 23 задачи на первом refinement (PMM-15); без этого PMM-13 нечего замерять
+    - >-
+      добавить в PMM-10 три риска - разъезд PA/PMM; M1 Phase 3 не начата, а детекторам нужен
+      snapshot_id и facts-слой; исторических данных пилота под backtest PMM-20 нет
+      (одна выгрузка 2026-08-13)
+    - >-
+      152-ФЗ - риск №5 требует отдельной P0-задачи об обезличивании до SCN-009, задачи нет
 
 # Key map (сверка JQL 2026-08-17):
 # AIOS-PROD-000 -> PMM-1
@@ -628,10 +720,21 @@ verification:                        # сверка 2026-08-17: JQL labels=aios-
 # AIOS-DEC-004 -> PMM-26
 # AIOS-BI-005 -> PMM-27
 # AIOS-PROD-008 -> PMM-28
+# ── добавлено аудитом 2026-08-17 (label aios-fix-2026-08-17) ──
+# AIOS-MDM-002  -> PMM-29   контракты signal/diagnosis/decision-record
+# AIOS-PROD-011 -> PMM-30   DEC-006 поверх DEC-005
+# AIOS-AGT-003  -> PMM-31   LLM-доступ и ADR выбора моделей
+# AIOS-BI-002   -> PMM-32   daily-цикл 07:00 MSK
+# AIOS-AGT-004  -> PMM-33   eval-инфраструктура LLM-слоя
 
 rollback:
   jql: 'labels = "aios-run-2026-08-17" ORDER BY created DESC'
   note: массовое удаление только вручную в Jira, не агентом
+  fix_run_jql: 'labels = "aios-fix-2026-08-17" ORDER BY created DESC'
+  fix_run_note: >-
+    правки аудита 2026-08-17. Пять новых задач PMM-29…33 и пять закрытых PA-43/45/46/47/48
+    (у последних также label superseded-by-pmm). Закрытие обратимо переходом в «К выполнению»:
+    статуса Cancelled в workflow PA нет, поэтому использован «Готово».
 
 counters:
   planned: 28

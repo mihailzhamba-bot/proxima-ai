@@ -16,7 +16,7 @@ Mike получает production-ready read-only data foundation для пило
 3. CI evidence сохраняет commit SHA и locators результатов.
 4. Independent cross-model deep review того же commit возвращает `0 blocker / 0 warning` для критических phases 3, 4 и 7 (atomic releases, official WB clients, operations/recovery); авторская self-review не считается independent review. Для остальных phases gate = root `make verify` + CI evidence + авторская self-review, записанная в EVIDENCE.md. (Решение Mike 2026-08-12.)
 5. Source worktrees только читаются и остаются неизменными. Импорт разрешён только из зафиксированного commit или из явно allowlisted working-tree файла с byte SHA-256.
-6. LLM runtime, Ozon, WB Advertising APIs, любые WB WRITE, client-facing UI и Torgstat live session automation не входят в M1.
+6. LLM runtime, Ozon, WB Advertising APIs, любые WB WRITE, client-facing UI и Torgstat live session automation не входят в M1. Граница M1 не меняется; вне M1-контура LLM runtime и client-facing web UI разрешены решением DEC-006 (2026-08-17) при трёх условиях: только staging-данные, маркировка `unreleased`, production release pointer не двигается. WB WRITE, Ozon, WB Advertising и Torgstat automation остаются запрещены везде.
 
 ## Source Import Boundary
 

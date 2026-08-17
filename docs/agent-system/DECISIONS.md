@@ -72,6 +72,30 @@ WB access is READ-endpoints only; Torgstat adapter stays structurally unwired; L
 ### Consequences
 Any mutating WB operation or Torgstat session automation = architectural violation (revert).
 
+### Status update 2026-08-17
+Partially superseded by DEC-006 for LLM runtime and client-facing UI **outside the M1 contour**. Everything else in DEC-005 stands unchanged.
+
+## DEC-006 — LLM runtime and client-facing web UI allowed outside the M1 contour
+
+Date: 2026-08-17 (Mike)
+Status: accepted; supersedes DEC-005 in part (LLM runtime, client-facing UI)
+Tracker: PMM-30
+
+### Context
+The M2 slice (Jira project PMM) is built on an LLM analyst plus an independent reviewer and a web Decision Inbox — exactly what DEC-005 defers beyond M1. No PMM issue lifted that decision, so every M2 task was formally an architectural violation with a revert consequence. Found by the backlog audit 2026-08-17.
+
+### Decision
+LLM runtime and client-facing web UI are permitted outside the M1 contour when all three conditions hold at once:
+
+1. staging data only (pilot cabinet), never production release data;
+2. every client-facing output carries the `unreleased` trust marking;
+3. the production release pointer does not move.
+
+Still forbidden, unchanged from DEC-005: any WB WRITE operation, Ozon APIs, WB Advertising API, Torgstat live session automation. Advertising is needed by wave W2 and requires its own separate decision — this one does not open it.
+
+### Consequences
+Work on PMM-5, PMM-24, PMM-25, PMM-27 is no longer a DEC-005 violation. Reviewers must check the three conditions instead of blocking LLM runtime outright. If any condition is dropped, the work falls back under DEC-005 and is revertible.
+
 ---
 
 Numbering: increment, never reuse. Supersede instead of deleting. Product/strategy decisions (web-first, pricing, tracks, gates V1-V3) → see `.planning/STATE.md` and `.planning/PRODUCT-VISION.md`; do not duplicate them here.

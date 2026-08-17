@@ -56,8 +56,20 @@ COLLECTOR-WB-BRANCHES (see `docs/agent-system/TASKS.md`). No ExecPlan was create
 
 ## Exact next action
 
-Confirm closure of COLLECTOR-WB-BRANCHES with Mike / in Jira PA (epic PA-36). If DONE: move it to TASKS "Done", and start the planned Track B task PA-39 (scenario-engine audit in `Опрос-v2.2`, external repo) or the next Phase 2 item once Mike delivers the pilot XLSX.
+Sprint 0 of the M2 slice is unblocked and ordered. Start with **PMM-30** (record DEC-006 in `docs/agent-system/DECISIONS.md`, already drafted there by the audit — the issue only needs closing with a commit link), then **PMM-29** (signal/diagnosis/decision-record contracts + `make codegen`) and **PMM-31** (LLM provider access: verify egress from the VPS *before* choosing models). PMM-2 and PMM-14 are the two Sprint 0 spikes and need input from Mike (legal entities and tax regimes; Build-vs-Buy verdict).
+
+In parallel on Track A: confirm closure of COLLECTOR-WB-BRANCHES with Mike in Jira PA (epic PA-36); if DONE, move it to TASKS "Done". PA-39 (scenario-engine audit) now blocks PA-41, which in turn blocks PMM-5/20/23 — the whole W1 slice waits on it, so it is the highest-value Track A item after the pilot XLSX.
+
+Two things need Mike before they can move: the pilot XLSX (Phase 2 plan 02-02) and four Jira components in the PMM UI (`governance`, `w1-slice`, `delivery`, `finance`) — the MCP has no endpoint for creating them.
+
+## Backlog audit 2026-08-17
+
+The M2 backlog was audited against primary sources (JQL counters + repo files). Three verification claims of run `aios-run-2026-08-17` did not hold, and four critical-path blockers had no issue at all. Full write-up: `docs/exec-plans/active/pmm-audit-2026-08-17.md`; corrections recorded in the run manifest under `verification_correction`.
+
+Headline: M2 existed twice. Epic PA-37 had nine children; five duplicated the PMM slice one-for-one, because phase B1 built its existing-map from PA-37…PA-42 while PA-43…PA-48 had been created a day earlier. Mike's decision: PMM is the single home of M2/M3. PA-43/45/46/47/48 closed (label `superseded-by-pmm`, reversible); PA-38/39/41/44 stay in PA as Track B infrastructure. New issues PMM-29…33 close the blockers. Fix label: `aios-fix-2026-08-17`.
+
+Note for anyone touching the LLM layer: DEC-006 now permits LLM runtime and client-facing web UI outside the M1 contour under three conditions (staging data only, `unreleased` marking, release pointer unmoved). WB WRITE, Ozon, WB Advertising and Torgstat automation remain forbidden.
 
 ---
 
-Last updated: 2026-08-16
+Last updated: 2026-08-17

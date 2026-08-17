@@ -6,7 +6,7 @@
 
 **Milestone:** M1 - production-ready read-only data foundation для одного пилотного кабинета Bogatova Belle Robe.
 
-**Product layer (2026-08-16):** `.planning/PRODUCT-VISION.md` - консолидированное видение M1->M2 (AI Daily Manager)->M3 (SaaS 50+ кабинетов). Четыре трека исполнения, гейты V1/V2/V3. Jira PA: эпики PA-36 (Трек A - M1), PA-37 (Трек B - value/сигналы), PA-35 (Трек C - discovery), PA-34 (Трек D - SaaS, заморожен до V3). M1-задачи PA-18..24 привязаны к PA-36.
+**Product layer (2026-08-16, разделение трекеров уточнено 2026-08-17):** `.planning/PRODUCT-VISION.md` - консолидированное видение M1->M2 (AI Daily Manager)->M3 (SaaS 50+ кабинетов). Четыре трека исполнения, гейты V1/V2/V3. Jira **PA**: эпики PA-36 (Трек A - M1), PA-35 (Трек C - discovery), PA-34 (Трек D - SaaS, заморожен до V3), PA-37 (Трек B - исторический указатель; инфраструктура PA-38/39/41/44 живёт под ним). M1-задачи PA-18..24 привязаны к PA-36. Jira **PMM** «Proxima M2-M3» (id 10043): весь backlog M2/M3 - эпики PMM-3 (W1-срез) и PMM-6 (Governance). Разделение зафиксировано в PRODUCT-VISION.md, раздел «Трекер».
 
 **Current focus:** Phase 2 - Vertical Slice: Immutable Intake to Visible Facts.
 
@@ -87,10 +87,14 @@
 
 ## Session Continuity
 
-**Last action:** 2026-08-16: продуктовая сессия - PRODUCT-VISION.md утверждён (50 решений), глобальный ресёрч-досье создано, Jira PA: эпики PA-34/35/36/37, задачи волн PA-38 (web-кабинет v0), PA-44/45 (W2/W3), PA-43 (источники), PA-46 (LLM+reviewer), PA-47 (verification), PA-48 (passport+PDF); M1-задачи PA-18..24 привязаны к PA-36.
+**Last action:** 2026-08-17: аудит M2-бэклога. Найдено, что M2 существовал в двух местах: эпик PA-37 имел девять детей, пять из них дублировали срез PMM один-в-один (PA-43 = PMM-21, PA-47 = PMM-5 + PMM-25, PA-46 = PMM-26 + PMM-28, PA-38 п.1 = PMM-20 + PMM-23). Причина: прогон 2026-08-17 строил existing-карту по PA-37…PA-42, а PA-43…PA-48 были созданы 2026-08-16 в 21:04. Решение Mike: **PMM - единственный дом M2/M3**; PA-43/45/46/47/48 закрыты (метка `superseded-by-pmm`, откат обратим), PA-38/39/41/44 остались в PA. Принято **DEC-006**: LLM runtime и client-facing web UI разрешены вне M1-контура при трёх условиях (staging-данные, маркировка `unreleased`, release pointer не двигается) - без него весь W1-срез нарушал DEC-005. Заведены PMM-29…33 под четыре блокера критического пути (контракты сигнала, LLM-доступ, daily-цикл, evals). Метка правок `aios-fix-2026-08-17`. Отчёт: `docs/exec-plans/active/pmm-audit-2026-08-17.md`.
+
+**Last action:** 2026-08-17: прогон `aios-run-2026-08-17` - создан Jira-проект **PMM** «Proxima M2-M3» (id 10043, company-managed) с 28 issue среза M2 при `engineers_fte = 1`; manifest и living plan в `docs/exec-plans/active/pm2-backlog-run.*`. Три верификационных утверждения прогона позже опровергнуты аудитом (см. `verification_correction` в манифесте).
+
+**Last action:** 2026-08-16: продуктовая сессия - PRODUCT-VISION.md утверждён (50 решений), глобальный ресёрч-досье создано, Jira PA: эпики PA-34/35/36/37, задачи PA-38 (web-кабинет v0), PA-43 (Client Passport + PDF + Auditor), PA-44 (источники M2), PA-45 (волна W3), PA-46 (verification-петля), PA-47 (LLM Analyst + reviewer), PA-48 (волна W2); M1-задачи PA-18..24 привязаны к PA-36. *(Соответствие ключей исправлено 2026-08-17: в исходной записи PA-43/44/46/47/48 были перепутаны местами.)*
 **Last action:** 2026-08-15: hosted CI `verify` PASS confirmed on `1a211c9` (run completed 2026-08-14T19:25 UTC) - 02-01A evidence gap closed (PA-12); coding agents standard regenerated and `CLAUDE.md` converted to a relative symlink (PA-32, PR #1, merge `11a7a12`).
 
-**Next action:** Старт Трека B: аудит scenario engine в Опрос-v2.2 (PA-39). От Mike: XLSX пилота (Phase 2), боевой токен, интервью-слоты, онбординг AI-ops аналитика, COGS у Богатовой.
+**Next action:** Sprint 0 среза M2 в порядке: PMM-30 (зафиксировать DEC-006 коммитом) → PMM-29 (контракты сигнала) → PMM-31 (LLM-доступ, egress с VPS проверить первым делом). Параллельно Трек B: аудит scenario engine в Опрос-v2.2 (PA-39) - он теперь blocks PA-41, а PA-41 blocks PMM-5/20/23, то есть весь W1-срез. От Mike: XLSX пилота (Phase 2), боевой токен, интервью-слоты, онбординг AI-ops аналитика, COGS у Богатовой, юрлица и налоговые режимы (вход спайка PMM-2), четыре компонента в UI проекта PMM.
 **Last action:** 2026-08-16 (PA-13): `--allow-analytics-read-write` RW-исключение удалено из коллектора, обоих Python-инструментов, installer, тестов и документации; Analytics RW теперь fail-closed везде; `make verify` PASS на `267cc3c`; DoD grep чист.
 
 **Next action:** 1) VPS: установить READ-only Analytics токен Амировой через двухаргументный installer и прогнать безфлаговый async Analytics сбор (закрывает DoD PA-13). 2) Mike передает official pilot-cabinet XLSX для Plan 02-02.
@@ -98,4 +102,4 @@
 **Resume context:** Start from `.planning/ROADMAP.md` Phase 2. Treat `.planning/phases/01-architecture-provenance-import-baseline/EVIDENCE.md` as the completed upstream gate and preserve the Phase 1 source/Linear boundaries.
 
 ---
-*Updated: 2026-08-16*
+*Updated: 2026-08-17*
