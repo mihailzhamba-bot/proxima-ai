@@ -61,7 +61,7 @@ Do not demand or block on cross-model review for non-critical phases; do not ski
 ## DEC-005 — Read-only M1 boundary: WB WRITE and Torgstat live automation excluded
 
 Date: carried from Phase 1 architecture decisions (STATE.md)
-Status: accepted
+Status: accepted; superseded by DEC-006 (2026-08-17) in the LLM-runtime / client-facing-UI part only — every other clause remains in force
 
 ### Context
 M1 is a provenance-safe data foundation; write operations and fragile browser automation are out of scope.
@@ -72,29 +72,27 @@ WB access is READ-endpoints only; Torgstat adapter stays structurally unwired; L
 ### Consequences
 Any mutating WB operation or Torgstat session automation = architectural violation (revert).
 
-### Status update 2026-08-17
-Partially superseded by DEC-006 for LLM runtime and client-facing UI **outside the M1 contour**. Everything else in DEC-005 stands unchanged.
+## DEC-006 — LLM runtime and client-facing UI permitted outside the M1 contour
 
-## DEC-006 — LLM runtime and client-facing web UI allowed outside the M1 contour
-
-Date: 2026-08-17 (Mike)
-Status: accepted; supersedes DEC-005 in part (LLM runtime, client-facing UI)
-Tracker: PMM-30
+Date: 2026-08-17 (Mike; audit finding 2026-08-17, Jira PMM-30)
+Status: accepted
 
 ### Context
-The M2 slice (Jira project PMM) is built on an LLM analyst plus an independent reviewer and a web Decision Inbox — exactly what DEC-005 defers beyond M1. No PMM issue lifted that decision, so every M2 task was formally an architectural violation with a revert consequence. Found by the backlog audit 2026-08-17.
+DEC-005 deferred LLM runtime, Ozon, WB Advertising and client-facing UI beyond M1. The whole W1 slice is exactly that (PMM-5, PMM-25 = LLM runtime; PMM-24, PMM-27 = client-facing UI), so executing W1 under DEC-005 as written would be an architectural violation subject to revert. Mike resolved the conflict on 2026-08-17 by a new decision on top of DEC-005, not by rewording DEC-005.
 
 ### Decision
-LLM runtime and client-facing web UI are permitted outside the M1 contour when all three conditions hold at once:
+LLM runtime and client-facing web-UI are allowed outside the M1 contour. This supersedes DEC-005 in the LLM-runtime and client-facing-UI part only, and applies when all three conditions hold simultaneously:
 
-1. staging data only (pilot cabinet), never production release data;
-2. every client-facing output carries the `unreleased` trust marking;
+1. only staging data of the pilot cabinet is used;
+2. every output carries the mandatory trust marker `unreleased`;
 3. the production release pointer does not move.
 
-Still forbidden, unchanged from DEC-005: any WB WRITE operation, Ozon APIs, WB Advertising API, Torgstat live session automation. Advertising is needed by wave W2 and requires its own separate decision — this one does not open it.
+WB Advertising API is not opened by this decision: it is required by W2 (SCN-007), not W1, and remains deferred.
+
+Everything else DEC-005 prohibits stays in force unchanged: any WB WRITE, Ozon, Torgstat live session automation.
 
 ### Consequences
-Work on PMM-5, PMM-24, PMM-25, PMM-27 is no longer a DEC-005 violation. Reviewers must check the three conditions instead of blocking LLM runtime outright. If any condition is dropped, the work falls back under DEC-005 and is revertible.
+DEC-005 is superseded in the LLM/UI part only; do not widen this decision to anything else. Reviewer must not qualify W1 LLM-runtime / client-facing-UI work (PMM-5, PMM-24, PMM-25, PMM-27) as an architectural violation while the three conditions above hold; any WB WRITE, Ozon or Torgstat session automation remains an architectural violation (revert). Opening WB WRITE requires its own gates after a stable M2 (PRODUCT-VISION §4).
 
 ---
 
