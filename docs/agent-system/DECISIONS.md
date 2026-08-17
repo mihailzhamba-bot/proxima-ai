@@ -100,7 +100,7 @@ Date: 2026-08-17 (Jira PMM-2, SPIKE AIOS-FIN-001)
 Status: draft (full ADR `docs/adr/0001-tax-regime-contribution.md`; becomes accepted after legal-entity inventory from Mike and accountant confirmation of rates)
 
 ### Context
-Portfolio of 4+ legal entities with mixed tax regimes (USN income / USN income-expenses / OSNO). Contribution formulas differ fundamentally per regime; `tax_regime: mixed` would defer the decision until unit economics is already written for one scenario. Since 2025, USN entities above 60M RUB/year also pay VAT, so regime and VAT status are two independent dimensions.
+Portfolio of 4+ legal entities (source: Mike, Jira PMM-2 description, 2026-08-17; exact count UNKNOWN until inventory) with mixed tax regimes (USN income / USN income-expenses / OSNO). Contribution formulas differ fundamentally per regime; `tax_regime: mixed` would defer the decision until unit economics is already written for one scenario. Since 2025, USN entities above 60M RUB/year also pay VAT, so regime and VAT status are two independent dimensions.
 
 ### Decision
 `tax_regime` (usn_income | usn_income_expenses | osno | unknown) is an attribute of `legal_entity` in the canonical model; each WB cabinet maps to exactly one legal entity; the contribution calculation selects the formula by this attribute. Default is `unknown` (never `mixed`); while unknown, profit estimates are UNKNOWN (fail-closed) and revenue estimates (PMM-22 v1) still work. `vat_status` is a separate legal-entity attribute. Full formulas per regime, inventory table (to be filled by Mike), revisit conditions and open questions Q1-Q4: see the ADR.
