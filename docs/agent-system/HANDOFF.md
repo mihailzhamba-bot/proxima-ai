@@ -56,7 +56,9 @@ COLLECTOR-WB-BRANCHES (see `docs/agent-system/TASKS.md`). No ExecPlan was create
 
 ## Exact next action
 
-Sprint 0 of the M2 slice is unblocked and ordered. Start with **PMM-30** (record DEC-006 in `docs/agent-system/DECISIONS.md`, already drafted there by the audit — the issue only needs closing with a commit link), then **PMM-29** (signal/diagnosis/decision-record contracts + `make codegen`) and **PMM-31** (LLM provider access: verify egress from the VPS *before* choosing models). PMM-2 and PMM-14 are the two Sprint 0 spikes and need input from Mike (legal entities and tax regimes; Build-vs-Buy verdict).
+Sprint 0 of the M2 slice is unblocked and ordered. **PMM-30 is effectively done**: DEC-006 landed on `main` via PR #9 (`a2a7b12`, branch `mihailzhamba-bot/pmm-30-dec-006-…`) — the issue only needs Mike to read the wording and close it. Next in line: **PMM-29** (signal/diagnosis/decision-record contracts + `make codegen`) and **PMM-31** (LLM provider access: verify egress from the VPS *before* choosing models). PMM-2 and PMM-14 are the two Sprint 0 spikes and need input from Mike (legal entities and tax regimes; Build-vs-Buy verdict).
+
+**Coordination note (2026-08-17).** This repo has a second executor: `mihailzhamba-bot` opens PRs against Jira PMM issues (PR #9 was the first). Mike's split as of 2026-08-17: the bot executes PMM issues, this agent maintains the backlog. Two consequences. First, always `git fetch` before assuming local `main` is current — the audit's own push was rejected because `origin/main` had moved. Second, a locally-authored change can collide with an already-merged PR: the audit wrote its own DEC-006, the bot's version was merged first, and the local duplicate was dropped in merge `36f3db9` in favour of the canonical one.
 
 In parallel on Track A: confirm closure of COLLECTOR-WB-BRANCHES with Mike in Jira PA (epic PA-36); if DONE, move it to TASKS "Done". PA-39 (scenario-engine audit) now blocks PA-41, which in turn blocks PMM-5/20/23 — the whole W1 slice waits on it, so it is the highest-value Track A item after the pilot XLSX.
 
