@@ -36,13 +36,15 @@ Confirm with Mike / Jira PA whether this thread is DONE and can be closed (then 
 
 ## Queue
 
-1. Track B PA-39: scenario engine audit in `Опрос-v2.2` (other repo; do not mutate that worktree without allowlist — see RULES).
-2. Phase 2 `02-02`: checkpointed on the official WB XLSX from Mike — blocked until the file is delivered (STATE.md, 2026-08-16).
-3. Phase 2 leftovers: CI pipeline green run; observed-XLSX parser (STATE.md: "CI and the observed XLSX parser remain pending").
-4. From Mike (inputs): pilot XLSX, production Bogatova token, interview slots, AI-ops analyst onboarding, COGS data (STATE.md, 2026-08-16).
+1. PMM (M2/M3 backlog среза): исполнение начинается со Sprint 0 — спайки PMM-2 (налоговые сценарии → ADR) и PMM-14 (Build vs Buy, ≤3 дня), оба Highest; exit-критерии PMM-11. Manifest: `docs/exec-plans/active/pm2-backlog-run.manifest.yaml`.
+2. Track B PA-39: scenario engine audit in `Опрос-v2.2` (other repo; do not mutate that worktree without allowlist — see RULES).
+3. Phase 2 `02-02`: checkpointed on the official WB XLSX from Mike — blocked until the file is delivered (STATE.md, 2026-08-16).
+4. Phase 2 leftovers: CI pipeline green run; observed-XLSX parser (STATE.md: "CI and the observed XLSX parser remain pending").
+5. From Mike (inputs): pilot XLSX, production Bogatova token, interview slots, AI-ops analyst onboarding, COGS data (STATE.md, 2026-08-16).
 
 ## Done (recent)
 
+- 2026-08-17 PMM backlog-slice run: 28 issues созданы в PMM (company-managed), верифицированы, manifest в `docs/exec-plans/active/pm2-backlog-run.manifest.yaml`; rollback JQL `labels = "aios-run-2026-08-17"`.
 - 2026-08-14 `1a211c9` test(collector): prove BLOCKED cancels detached WB branches.
 - 2026-08-14 `dc68839` fix(collector): cancel detached WB branches when a run leaves RUNNING.
 - 2026-08-14 `99fea05` feat(collector): abortable sleep and run cancellation helpers.
