@@ -150,12 +150,10 @@ marginal_tax_rate(legal_entity):
 
 | legal_entity_id | tax_regime | rate | vat_status | внутренние перепродажи | кабинеты WB |
 |---|---|---|---|---|---|
-| UNKNOWN-1 | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN |
-| UNKNOWN-2 | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN |
-| UNKNOWN-3 | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN |
-| UNKNOWN-4 | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN |
+| LE-1 | usn_income (ИП) | 0.07 `[Q3: вне федеральной шкалы 6%/8% - сверить]` (источник: Mike, 2026-08-17) | reduced_5 (без вычета; доход >60 млн) | UNKNOWN | UNKNOWN (уточняется) |
+| UNKNOWN-N | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN |
 
-Источник заполнения: выгрузка Mike одной пачкой (DoR задачи). Кол-во строк уточнить по факту (4+).
+Источник заполнения: выгрузка Mike одной пачкой (DoR задачи). Заполнено 1 из 4+ (2026-08-17, Mike: «пока 1 юрлицо»); остальные строки добавляются по мере выгрузки. Маппинг LE-ID -> реальные реквизиты хранится вне репо (у Mike), в ADR только обезличенные ID.
 
 ## 6. Элиминация внутренних перепродаж - вне scope
 
