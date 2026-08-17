@@ -94,6 +94,20 @@ Everything else DEC-005 prohibits stays in force unchanged: any WB WRITE, Ozon, 
 ### Consequences
 DEC-005 is superseded in the LLM/UI part only; do not widen this decision to anything else. Reviewer must not qualify W1 LLM-runtime / client-facing-UI work (PMM-5, PMM-24, PMM-25, PMM-27) as an architectural violation while the three conditions above hold; any WB WRITE, Ozon or Torgstat session automation remains an architectural violation (revert). Opening WB WRITE requires its own gates after a stable M2 (PRODUCT-VISION §4).
 
+## DEC-007 — tax_regime is a legal-entity attribute; contribution formula branches on it
+
+Date: 2026-08-17 (Jira PMM-2, SPIKE AIOS-FIN-001)
+Status: draft (full ADR `docs/adr/0001-tax-regime-contribution.md`; becomes accepted after legal-entity inventory from Mike and accountant confirmation of rates)
+
+### Context
+Portfolio of 4+ legal entities with mixed tax regimes (USN income / USN income-expenses / OSNO). Contribution formulas differ fundamentally per regime; `tax_regime: mixed` would defer the decision until unit economics is already written for one scenario. Since 2025, USN entities above 60M RUB/year also pay VAT, so regime and VAT status are two independent dimensions.
+
+### Decision
+`tax_regime` (usn_income | usn_income_expenses | osno | unknown) is an attribute of `legal_entity` in the canonical model; each WB cabinet maps to exactly one legal entity; the contribution calculation selects the formula by this attribute. Default is `unknown` (never `mixed`); while unknown, profit estimates are UNKNOWN (fail-closed) and revenue estimates (PMM-22 v1) still work. `vat_status` is a separate legal-entity attribute. Full formulas per regime, inventory table (to be filled by Mike), revisit conditions and open questions Q1-Q4: see the ADR.
+
+### Consequences
+Do not implement profit-based ₽-estimates against a guessed regime; do not introduce `tax_regime: mixed` anywhere. Profit v2 of PMM-22 starts only after the ADR reaches `accepted`. Elimination of inter-company resale is explicitly out of scope (per-entity calculation only in W1).
+
 ---
 
 Numbering: increment, never reuse. Supersede instead of deleting. Product/strategy decisions (web-first, pricing, tracks, gates V1-V3) → see `.planning/STATE.md` and `.planning/PRODUCT-VISION.md`; do not duplicate them here.
