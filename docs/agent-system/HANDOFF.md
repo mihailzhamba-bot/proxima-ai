@@ -8,14 +8,15 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Current task
 
-COLLECTOR-WB-BRANCHES (see `docs/agent-system/TASKS.md`). No ExecPlan was created for it: the commit history shows a complete three-step arc (helpers `99fea05` → fix `dc68839` → proving test `1a211c9`) with no evidence of remaining stages, so `docs/exec-plans/active/` is empty by design.
+PMM-2 (SPIKE tax regimes -> ADR) is code-complete and merged (PR #10, merge 7acd0a8, 2026-08-17): ADR-0001 `docs/adr/0001-tax-regime-contribution.md` + DEC-007. Reviewer PASS 0 blockers / 5 warnings, all fixed; `scripts/agent/verify` green after npm ci + build. ADR stays Draft: LE-1 (pilot cabinet entity, USN-income 7% + reduced VAT 5%, formula 3.4) fills the W1 need; remaining legal entities and accountant confirmation Q1-Q4 pending Mike. Jira PMM-2 = In Progress until Accepted. Next task: PMM-29 (contracts signal/diagnosis/decision-record) on a fresh branch.
 
 ## Current state
 
 - Phase 2 (Vertical Slice: Immutable Intake to Visible Facts) in progress; plans 02-01 and 02-01A implemented; 02-02 checkpointed on the official WB XLSX (not yet delivered). Progress 13%, requirements 6/32 (source: `.planning/STATE.md`, 2026-08-14/16).
-- Last commits (2026-08-14): collector run-cancellation thread landed — abortable sleep, detached-WB-branch cancellation on RUNNING leftovers, test proving BLOCKED cancels detached branches (`1a211c9` = HEAD).
+- M2 track opened in Jira PMM (sprint-0/1 backlog); PMM-30 (DEC-006) done; PMM-2 spike merged as above.
 - Staging VPS Selectel `135.106.186.210` bootstrapped; host monitor live since 2026-08-15 (Telegram delivery tested, `/etc/hosts` pin for `api.telegram.org` in place). Business data blocked until the backup guardrail (Phase 7).
 - 2026-08-16 planning session: PRODUCT-VISION.md approved, Jira PA epics PA-34/35/36/37 created (source: `.planning/STATE.md`).
+- Note: local `main` is checked out by the sibling worktree `!Proxima/PROXIMA AI`; this worktree works on feature branches rebased onto `origin/main`.
 
 ## Completed
 
@@ -56,9 +57,9 @@ COLLECTOR-WB-BRANCHES (see `docs/agent-system/TASKS.md`). No ExecPlan was create
 
 ## Exact next action
 
-Sprint 0 of the M2 slice is unblocked and ordered. **PMM-30 is effectively done**: DEC-006 landed on `main` via PR #9 (`a2a7b12`, branch `mihailzhamba-bot/pmm-30-dec-006-…`) — the issue only needs Mike to read the wording and close it. Next in line: **PMM-29** (signal/diagnosis/decision-record contracts + `make codegen`) and **PMM-31** (LLM provider access: verify egress from the VPS *before* choosing models). PMM-2 and PMM-14 are the two Sprint 0 spikes and need input from Mike (legal entities and tax regimes; Build-vs-Buy verdict).
+Sprint 0 of the M2 slice is unblocked and ordered. PMM-30 done (DEC-006, PR #9). **PMM-2 spike delivered and merged (PR #10, 2026-08-18): ADR-0001 + DEC-007, LE-1 pilot entity filled (USN-income 7% + VAT 5%, formula 3.4); stays Draft until accountant Q1-Q4 + remaining entities; Jira PMM-2 In Progress until Accepted.** W1 ₽-estimation for the pilot cabinet is unblocked by ADR-0001 §4.
 
-**Coordination note (2026-08-17).** This repo has a second executor: `mihailzhamba-bot` opens PRs against Jira PMM issues (PR #9 was the first). Mike's split as of 2026-08-17: the bot executes PMM issues, this agent maintains the backlog. Two consequences. First, always `git fetch` before assuming local `main` is current — the audit's own push was rejected because `origin/main` had moved. Second, a locally-authored change can collide with an already-merged PR: the audit wrote its own DEC-006, the bot's version was merged first, and the local duplicate was dropped in merge `36f3db9` in favour of the canonical one.
+**Coordination note (2026-08-17, still in force).** This repo has a second executor: `mihailzhamba-bot` opens PRs against Jira PMM issues (PR #9 was the first). Mike's split as of 2026-08-17: the bot executes PMM issues, this agent maintains the backlog. Two consequences. First, always `git fetch` before assuming local `main` is current — the audit's own push was rejected because `origin/main` had moved. Second, a locally-authored change can collide with an already-merged PR: the audit wrote its own DEC-006, the bot's version was merged first, and the local duplicate was dropped in merge `36f3db9` in favour of the canonical one. **Open lane question for Mike (2026-08-18): PMM-29 (contracts) — this agent or the bot? Do not start implementation on both lanes simultaneously.**
 
 In parallel on Track A: confirm closure of COLLECTOR-WB-BRANCHES with Mike in Jira PA (epic PA-36); if DONE, move it to TASKS "Done". PA-39 (scenario-engine audit) now blocks PA-41, which in turn blocks PMM-5/20/23 — the whole W1 slice waits on it, so it is the highest-value Track A item after the pilot XLSX.
 
@@ -74,4 +75,4 @@ Note for anyone touching the LLM layer: DEC-006 now permits LLM runtime and clie
 
 ---
 
-Last updated: 2026-08-17
+Last updated: 2026-08-18
