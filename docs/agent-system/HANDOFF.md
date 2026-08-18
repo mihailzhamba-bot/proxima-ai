@@ -8,7 +8,7 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Current task
 
-PMM-2 (SPIKE tax regimes -> ADR) is code-complete and merged (PR #10, merge 7acd0a8, 2026-08-17): ADR-0001 `docs/adr/0001-tax-regime-contribution.md` + DEC-007. Reviewer PASS 0 blockers / 5 warnings, all fixed; `scripts/agent/verify` green after npm ci + build. ADR stays Draft: LE-1 (pilot cabinet entity, USN-income 7% + reduced VAT 5%, formula 3.4) fills the W1 need; remaining legal entities and accountant confirmation Q1-Q4 pending Mike. Jira PMM-2 = In Progress until Accepted. Next task: PMM-29 (contracts signal/diagnosis/decision-record) on a fresh branch.
+PMM-2 (SPIKE tax regimes -> ADR) is code-complete and merged (PR #10, merge 7acd0a8, 2026-08-18): ADR-0001 `docs/adr/0001-tax-regime-contribution.md` + DEC-007. Reviewer PASS 0 blockers / 5 warnings, all fixed; `scripts/agent/verify` green after npm ci + build. Independent post-merge review (2026-08-18, orchestrator + reviewer subagent): 0 blockers / 3 warnings consolidated, doc-tail fixes landed via PR (TASKS sync, ADR:117 marker, §4 marginal-VAT caveat, AGENTS.md routing row); verify re-run PASS on both 682560b and 91d54c4 (the bot's reported structural FAIL was its env missing npm build — not reproducible with node_modules installed). ADR stays Draft: LE-1 (pilot cabinet entity, USN-income 7% + reduced VAT 5%, formula 3.4) fills the W1 need; remaining legal entities and accountant confirmation Q1-Q4 pending Mike. Jira PMM-2 = In Progress until Accepted. Next task: PMM-29 (contracts signal/diagnosis/decision-record) on a fresh branch — lane question for Mike open.
 
 ## Current state
 
@@ -51,7 +51,7 @@ PMM-2 (SPIKE tax regimes -> ADR) is code-complete and merged (PR #10, merge 7acd
 
 ## Verification status
 
-- Last fast-gate run: 2026-08-16 (after reviewer deploy), `scripts/agent/verify` — PASS (structural + `npm run typecheck` + `npm test` incl. build + uv pytest: 48 passed / 1 skipped).
+- Last fast-gate run: 2026-08-18 (post-merge review of PR #10), `scripts/agent/verify` — PASS on pre-merge 682560b and post-merge 91d54c4 (npm typecheck + npm test + pytest: 51 passed / 1 skipped, identical on both refs; doc-only diff proven not to affect the gate). Note: this worktree needed a fresh `npm install` — fresh worktrees have no node_modules and fail typecheck with code 127 before that.
 - Reviewer read-only runtime proof (2026-08-16, canary-file edit test, canary hash unchanged in all runs): opencode — delegation confirmed (child session), edit tool absent from reviewer pool, bash denied except git-read (agent quoted its own deny rules); Claude Code — write blocked, no retry/workaround; Codex — `operation not permitted` via read-only sandbox (note: that run executed in main thread; reviewer spawn proven separately by REVIEWER-CODEX-OK smoke test; whether the TOML `sandbox_mode` applies when the parent session is non-read-only was NOT isolated — for critical phases prefer launching the reviewer with an explicit read-only sandbox). Caveat for all CLI (`-p`/`run`/`exec`) modes: `@reviewer` mention does NOT force delegation — phrase tasks as review-matching descriptions or explicitly instruct "use the task tool to delegate".
 - Last full `make verify` run by this agent: not run (performs `npm ci`, codegen, renders; pre-existing dirty `package-lock.json` belongs to another thread). UNKNOWN when it last ran green end-to-end.
 
