@@ -95,11 +95,11 @@
 **Last action:** 2026-08-15: hosted CI `verify` PASS confirmed on `1a211c9` (run completed 2026-08-14T19:25 UTC) - 02-01A evidence gap closed (PA-12); coding agents standard regenerated and `CLAUDE.md` converted to a relative symlink (PA-32, PR #1, merge `11a7a12`).
 
 **Next action:** Sprint 0 среза M2 в порядке: PMM-30 (DEC-006 уже на `main` через PR #9 `a2a7b12` от `mihailzhamba-bot` - прочитать формулировки и закрыть) → PMM-29 (контракты сигнала) → PMM-31 (LLM-доступ, egress с VPS проверить первым делом). Исполнение PMM-задач - за ботом (решение Mike 2026-08-17), этот агент ведёт бэклог. Параллельно Трек B: аудит scenario engine в Опрос-v2.2 (PA-39) - он теперь blocks PA-41, а PA-41 blocks PMM-5/20/23, то есть весь W1-срез. От Mike: XLSX пилота (Phase 2), боевой токен, интервью-слоты, онбординг AI-ops аналитика, COGS у Богатовой, юрлица и налоговые режимы (вход спайка PMM-2), четыре компонента в UI проекта PMM.
-**Last action:** 2026-08-16 (PA-13): `--allow-analytics-read-write` RW-исключение удалено из коллектора, обоих Python-инструментов, installer, тестов и документации; Analytics RW теперь fail-closed везде; `make verify` PASS на `267cc3c`; DoD grep чист.
+**Last action:** 2026-08-21 (PA-13): код задеплоен на VPS - detached checkout `6168968` (main с `ed2bbb9`) через git bundle, `npm ci`+build green, pre-deploy dump `pre-pa13-20260821-082129.dump` (sha256 `d35f2e9c…`); задеплоенный код доказал fail-closed офлайн: установленный RW-токен отвергнут (`WB token must be read-only`), флаг - unrecognized argument, dist чист. SSH-доступ восстановлен: ключ `id_ed25519_proxima_selectel_20260813` (passphrase в Keychain) под пользователем `proxima-admin` + passwordless sudo; подключение только без VPN (зафиксировано в runbook, PR #8 `ed2bbb9`).
 
-**Next action:** 1) VPS: установить READ-only Analytics токен Амировой через двухаргументный installer и прогнать безфлаговый async Analytics сбор (закрывает DoD PA-13). 2) Mike передает official pilot-cabinet XLSX для Plan 02-02.
+**Next action (PA-13):** единственная зависимость - READ-only Analytics токен от Амировой (проверено 2026-08-21: на VPS и Mac его физически нет, обе копии - старый RW mask `0x4`). Когда токен получен: `install -m 0600 -o proxima-admin -g proxima-admin <файл> /etc/proxima-ai/secrets/wb_analytics_token` (или bundle через двухаргументный installer) → безфлаговый прогон `wb_async_report.py --tenant-id amirova-test` → PA-13 в «Готово». 2) Mike передает official pilot-cabinet XLSX для Plan 02-02.
 
 **Resume context:** Start from `.planning/ROADMAP.md` Phase 2. Treat `.planning/phases/01-architecture-provenance-import-baseline/EVIDENCE.md` as the completed upstream gate and preserve the Phase 1 source/Linear boundaries.
 
 ---
-*Updated: 2026-08-17*
+*Updated: 2026-08-21*
