@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+# ssh-doctor - диагностика доступа к staging VPS Proxima AI (Selectel).
+#
+# Отвечает на один вопрос: почему не подключается и что сделать прямо сейчас.
+# Скрипт read-only: ничего не меняет ни локально, ни на сервере.
+#
+# Запуск: bash infra/ssh-doctor
+set -uo pipefail
+
+readonly HOST_ALIAS="proxima"
+readonly DB_ALIAS="proxima-db"
+readonly VPS_IP="135.106.186.210"
+readonly VPS_USER="proxima-admin"
+readonly ADMIN_KEY="${HOME}/.ssh/id_ed25519_proxima_selectel_20260813"
+readonly ADMIN_KEY_SHORT="~/.ssh/id_ed25519_proxima_selectel_20260813"
+readonly ADMIN_KEY_FP="SHA256:CG+iddsvx2qxzSjJXC2v8nztu5LxkOb73ekmEYDNTXM"
+readonly TUNNEL_PORT="5433"
+
+problems=()
+step=0
+
+say() { printf '%s\n' "$*"; }
+head_line() { step=$((step + 1)); printf '\n[%d] %s\n' "${step}" "$*"; }
+ok() { printf '    OK    %s\n' "$*"; }
+warn() { printf '    WARN  %s\n' "$*"; }
+bad() { printf '    FAIL  %s\n' "$*"; problems+=("$*"); }
+
+say "ssh-doctor: ${VPS_USER}@${VPS_IP} (алиас ${HOST_ALIAS})"
+
+# ---------------------------------------------------------------- 1. конфиг
+head_line "Конфигурация ~/.ssh/config"
+if ssh -G "${HOST_ALIAS}" 2>/dev/null | grep -qx "hostname ${VPS_IP}"; then
+  ok "алиас '${HOST_ALIAS}' резолвится в ${VPS_IP}"
+  cfg_user="$(ssh -G "${HOST_ALIAS}" 2>/dev/null | awk '/^user /{print $2}')"
+  [[ "${cfg_user}" == "${VPS_USER}" ]] \
+    && ok "пользователь ${cfg_user}" \
+    || bad "в конфиге пользователь '${cfg_user}', сервер пускает только '${VPS_USER}' (AllowUsers)"
+  ssh -G "${HOST_ALIAS}" 2>/dev/null | grep -qx "identitiesonly yes" \
+    && ok "IdentitiesOnly yes (обязательно: на сервере MaxAuthTries 3)" \
+    || bad "нет IdentitiesOnly yes - ssh переберёт лишние ключи и упрётся в MaxAuthTries 3"
+else
+  bad "алиас '${HOST_ALIAS}' не настроен в ~/.ssh/config"
+fi
+
+# ------------------------------------------------------------------ 2. ключ
+head_line "Ключ администратора"
+if [[ -f "${ADMIN_KEY}" ]]; then
+  ok "файл на месте: ${ADMIN_KEY_SHORT}"
+  perms="$(stat -f '%Lp' "${ADMIN_KEY}" 2>/dev/null)"
+  [[ "${perms}" == "600" || "${perms}" == "400" ]] \
+    && ok "права ${perms}" \
+    || bad "права ${perms} - ssh откажется использовать ключ, нужно chmod 600"
+  if ssh-keygen -y -P "" -f "${ADMIN_KEY}" >/dev/null 2>&1; then
+    ok "ключ без passphrase"
+  else
+    ok "ключ защищён passphrase (это норма, её держит Keychain)"
+  fi
+else
+  bad "ключ не найден: ${ADMIN_KEY_SHORT}"
+fi
+
+# -------------------------------------------------------------------- 3. VPN
+head_line "VPN и маршрут до сервера"
+if pgrep -qf "AmneziaVPN" 2>/dev/null; then
+  say "    ..... AmneziaVPN запущен"
+else
+  say "    ..... AmneziaVPN не запущен"
+fi
+route_out="$(route -n get "${VPS_IP}" 2>/dev/null)"
+route_if="$(printf '%s' "${route_out}" | awk '/interface:/{print $2}')"
+route_gw="$(printf '%s' "${route_out}" | awk '/gateway:/{print $2}')"
+case "${route_if}" in
+  utun*)
+    warn "трафик идёт через VPN-туннель (${route_if}) - работает, но с лишней задержкой"
+    say  "          чтобы вывести сервер из-под VPN: Amnezia -> Раздельное туннелирование -> Сайты -> ${VPS_IP}" ;;
+  "")
+    bad "маршрут до ${VPS_IP} не определяется" ;;
+  *)
+    ok "прямой маршрут: ${route_if}${route_gw:+ через ${route_gw}} (мимо VPN)" ;;
+esac
+
+# ---------------------------------------------------------- 4. сетевой доступ
+head_line "Сетевая доступность"
+if ping -c 2 -t 5 "${VPS_IP}" >/dev/null 2>&1; then
+  rtt="$(ping -c 2 -t 5 "${VPS_IP}" 2>/dev/null | awk -F'/' '/round-trip/{printf "%.0f", $5}')"
+  ok "ICMP отвечает${rtt:+, RTT ~${rtt} ms}"
+else
+  warn "ICMP не проходит (сам по себе не блокер, ICMP могут резать)"
+fi
+if nc -z -G 6 -w 6 "${VPS_IP}" 22 >/dev/null 2>&1; then
+  ok "TCP/22 открыт"
+else
+  bad "TCP/22 недоступен - порт режется по пути (проверь VPN) или сервер лежит"
+fi
+
+# ----------------------------------------------------------- 5. личность хоста
+head_line "Идентичность сервера"
+known_fp="$(ssh-keygen -l -F "${VPS_IP}" 2>/dev/null | awk '/ED25519/{print $3}' | head -1)"
+live_fp="$(ssh-keyscan -T 8 -t ed25519 "${VPS_IP}" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | awk '{print $2}' | head -1)"
+if [[ -z "${known_fp}" ]]; then
+  warn "хоста нет в known_hosts - первое подключение запишет ключ"
+elif [[ -z "${live_fp}" ]]; then
+  warn "не удалось снять host key с сервера (сеть недоступна?)"
+elif [[ "${known_fp}" == "${live_fp}" ]]; then
+  ok "host key совпадает с known_hosts - это тот же сервер"
+else
+  bad "HOST KEY ИЗМЕНИЛСЯ. Не подключайся. Сервер пересоздан или подмена. Проверь панель Selectel"
+fi
+
+# --------------------------------------------------------------- 6. ssh-agent
+head_line "ssh-agent и Keychain"
+agent_list="$(ssh-add -l 2>&1)"
+if printf '%s' "${agent_list}" | grep -q "${ADMIN_KEY_FP}"; then
+  ok "ключ загружен в агент"
+elif printf '%s' "${agent_list}" | grep -q "no identities"; then
+  warn "агент пуст"
+  say  "          разово выполни: ssh-add --apple-use-keychain ${ADMIN_KEY_SHORT}"
+else
+  warn "в агенте есть ключи, но не наш"
+  say  "          разово выполни: ssh-add --apple-use-keychain ${ADMIN_KEY_SHORT}"
+fi
+
+# ------------------------------------------------------------ 7. аутентификация
+head_line "Аутентификация (боевая проверка)"
+auth_out="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "${HOST_ALIAS}" "echo SSH_DOCTOR_OK; hostname" 2>&1)"
+if printf '%s' "${auth_out}" | grep -q "SSH_DOCTOR_OK"; then
+  remote_host="$(printf '%s' "${auth_out}" | grep -v SSH_DOCTOR_OK | head -1)"
+  ok "вход выполнен${remote_host:+, hostname сервера: ${remote_host}}"
+elif printf '%s' "${auth_out}" | grep -q "Permission denied"; then
+  bad "Permission denied (publickey) - сервер не принял подпись"
+  say  "          чаще всего: passphrase не загружена. Выполни:"
+  say  "            ssh-add --apple-use-keychain ${ADMIN_KEY_SHORT}"
+else
+  bad "вход не удался: $(printf '%s' "${auth_out}" | tail -1)"
+fi
+
+# ---------------------------------------------------------------- 8. туннель
+head_line "Туннель к Postgres (порт ${TUNNEL_PORT})"
+if nc -z -w 2 localhost "${TUNNEL_PORT}" >/dev/null 2>&1; then
+  ok "порт ${TUNNEL_PORT} уже слушает - туннель поднят"
+else
+  say "    ..... туннель не поднят. Поднять: ssh -N ${DB_ALIAS}"
+fi
+
+# ----------------------------------------------------------------- итог
+printf '\n%s\n' "----------------------------------------"
+if [[ ${#problems[@]} -eq 0 ]]; then
+  say "ИТОГ: доступ исправен."
+  say "  вход:    ssh ${HOST_ALIAS}"
+  say "  туннель: ssh -N ${DB_ALIAS}   (Postgres на localhost:${TUNNEL_PORT})"
+  exit 0
+fi
+say "ИТОГ: найдено проблем - ${#problems[@]}"
+for p in "${problems[@]}"; do
+  say "  - ${p}"
+done
+say ""
+say "Напоминание: root на этом сервере заблокирован намеренно."
+say "'ssh root@${VPS_IP}' не заработает никогда - только 'ssh ${HOST_ALIAS}'."
+exit 1

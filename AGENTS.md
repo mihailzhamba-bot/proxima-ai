@@ -43,6 +43,7 @@ Do not ask the user "where did we stop". Recover state from repository files fir
 | Stable facts, pitfalls, preferences | `docs/agent-system/MEMORY.md` |
 | Past engineering decisions (do not reopen) | `docs/agent-system/DECISIONS.md` |
 | Tools, access, dangerous operations | `docs/agent-system/TOOLS.md` |
+| SSH к VPS не работает - диагностика | `infra/ssh-doctor` (read-only), раздел «SSH-доступ к VPS» ниже |
 | Big-task living plans | `docs/exec-plans/active/<task-id>.md` |
 | Reviewer subagent (opencode / Claude Code / Codex) | `.opencode/agents/reviewer.md`, `.claude/agents/reviewer.md`, `.codex/agents/reviewer.toml` |
 
@@ -70,7 +71,9 @@ make verify
 
 ```bash
 # 1. Туннель (держать открытым в отдельном терминале)
-ssh -N -L 5433:localhost:5432 proxima-admin@135.106.186.210
+ssh -N proxima-db
+# полная форма без алиаса:
+# ssh -N -L 5433:localhost:5432 proxima-admin@135.106.186.210
 
 # 2. Экспорт URI (credentials НЕ коммитить; реальные значения на VPS:
 #    /etc/proxima-ai/secrets/ и path-only .env - см. README)
@@ -78,6 +81,22 @@ export DATABASE_URI="postgresql://<user>:<password>@localhost:5433/<db>"
 ```
 
 Postgres MCP (restricted, read-only) использует ту же `DATABASE_URI`.
+
+## SSH-доступ к VPS
+
+Алиасы в `~/.ssh/config` (машина Mike): `proxima` - shell, `proxima-db` - туннель к Postgres.
+Канонический admin-ключ: `~/.ssh/id_ed25519_proxima_selectel_20260813`
+(`SHA256:CG+iddsvx2qxzSjJXC2v8nztu5LxkOb73ekmEYDNTXM`), защищён passphrase из macOS Keychain.
+
+Три вещи, без которых подключение не работает:
+
+- `IdentitiesOnly yes` - на сервере `MaxAuthTries 3`, перебор лишних ключей рвёт сессию до нужного;
+- `UseKeychain yes` - без неё ssh не берёт passphrase из Keychain и падает в `Permission denied (publickey)`;
+- пользователь **только** `proxima-admin`. Root заблокирован намеренно (`PermitRootLogin no`,
+  `AllowUsers proxima-admin`, `passwd --lock root`) - `ssh root@135.106.186.210` не заработает никогда.
+
+Диагностика одной командой: `bash infra/ssh-doctor` (read-only, проверяет маршрут/VPN, TCP/22,
+host key, агент, реальный вход и туннель, и печатает следующий шаг).
 
 ## MCP-серверы проекта
 

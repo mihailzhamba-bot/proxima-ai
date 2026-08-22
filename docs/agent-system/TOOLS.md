@@ -21,7 +21,7 @@ Verification: pytest green (48 passed, 1 skipped @ 2026-08-16).
 ## PostgreSQL 16 (staging VPS via tunnel / MCP)
 
 Purpose: normalized facts, domain releases, provenance.
-Access: SSH tunnel `ssh -N -L 5433:localhost:5432 proxima-admin@135.106.186.210`, then `DATABASE_URI` env var (never commit values). Postgres MCP Pro (restricted, read-only) for Claude Code.
+Access: SSH tunnel `ssh -N proxima-db` (alias; long form `ssh -N -L 5433:localhost:5432 proxima-admin@135.106.186.210`), then `DATABASE_URI` env var (never commit values). Postgres MCP Pro (restricted, read-only) for Claude Code.
 Safe operations: read-only queries; `make apply-migrations` on staging per runbook.
 Dangerous operations: `drop table`, data deletion, writes to immutable evidence tables, pointing production release pointers by hand — all require explicit Mike approval.
 Verification: `make migrations`; query results carry provenance refs.
@@ -37,10 +37,10 @@ Verification: probe receipts + SHA-256 content-addressed responses under `/srv/p
 ## Staging VPS (Selectel, 135.106.186.210)
 
 Purpose: single-VPS M1 deployment boundary; Postgres + monitor.
-Access: SSH as `proxima-admin`; bootstrap via `infra/bootstrap/bootstrap-vps.sh` (already executed).
-Safe operations: reading state (`/var/lib/proxima-ai-monitor/state.json`), monitor timer checks.
-Dangerous operations: resize/paid changes (monitor never does them automatically), firewall changes beyond TCP/22, secrets rotation — require explicit Mike approval.
-Verification: `make vps`; Telegram delivery test (note `/etc/hosts` pin, see MEMORY).
+Access: SSH alias `proxima` (user `proxima-admin`, key `~/.ssh/id_ed25519_proxima_selectel_20260813`, passphrase in macOS Keychain); bootstrap via `infra/bootstrap/bootstrap-vps.sh` (already executed). Root login is permanently disabled — `ssh root@…` can never work. `IdentitiesOnly yes` is mandatory (server `MaxAuthTries 3`).
+Safe operations: reading state (`/var/lib/proxima-ai-monitor/state.json`), monitor timer checks, `bash infra/ssh-doctor` (read-only access diagnostics).
+Dangerous operations: resize/paid changes (monitor never does them automatically), firewall changes beyond TCP/22, secrets rotation — require explicit Mike approval. Re-running `bootstrap-vps.sh` OVERWRITES `authorized_keys` (`bootstrap-vps.sh:109`) — never use it to "repair" access.
+Verification: `make vps`; `bash infra/ssh-doctor`; Telegram delivery test (note `/etc/hosts` pin, see MEMORY).
 
 ## Jira PA (tracker)
 

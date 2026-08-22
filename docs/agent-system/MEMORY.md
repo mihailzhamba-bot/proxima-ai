@@ -18,7 +18,9 @@
 
 ## Constraints & pitfalls
 
-- No local Docker: DB dev via SSH tunnel `ssh -N -L 5433:localhost:5432 proxima-admin@135.106.186.210` (Mike decision 2026-08-16, AGENTS.md).
+- No local Docker: DB dev via SSH tunnel `ssh -N proxima-db` (Mike decision 2026-08-16, AGENTS.md).
+- VPS SSH (verified 2026-08-22): admin key `~/.ssh/id_ed25519_proxima_selectel_20260813` (`SHA256:CG+iddsvx2qxzSjJXC2v8nztu5LxkOb73ekmEYDNTXM`), passphrase-protected, passphrase lives in macOS Keychain. `~/.ssh/config` must carry `IdentitiesOnly yes` (server `MaxAuthTries 3`) **and** `UseKeychain yes` — without the latter ssh never reads the Keychain and fails with `Permission denied (publickey)` while the server is perfectly healthy. Root is locked by design; `ssh root@135.106.186.210` can never work. Diagnose with `bash infra/ssh-doctor`.
+- AmneziaVPN does NOT block port 22 to the VPS — the 2026-08-14 note claiming otherwise was wrong. Re-measured 2026-08-22 through the full tunnel: TCP/22 connects in 0.15 s, RTT 140 ms, host key matches. The manual `sudo route add` workaround is unnecessary; the supported way to bypass the tunnel is Amnezia's own site-exclusion list (`Conf.ExceptSites`), which survives reconnects.
 - Python: always `uv` (3.14); system Python is 3.9 and must not be used (AGENTS.md toolchain table).
 - Selectel VPS filters default `api.telegram.org`; the host pins it to `149.154.167.220` in `/etc/hosts` (backup `/etc/hosts.bak-2026-08-15`). If Telegram delivery fails, re-test the pin first (README.md, 2026-08-15).
 - WB test Analytics token may be read-write; while so, the documented `--allow-analytics-read-write` flag must be passed (README.md).
