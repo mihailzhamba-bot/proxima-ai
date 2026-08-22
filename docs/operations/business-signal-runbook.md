@@ -4,13 +4,32 @@ Phase 2.1 запускается вручную на Selectel VPS `135.106.186.2
 
 ## SSH access rule
 
-Подключаться к VPS только **без VPN**. Через зарубежный egress (маршрут PL/DE) Selectel пропускает ICMP, но фильтрует TCP/22: ping проходит, SSH виснет на `Connecting to ... port 22`. Перед каждой сессией отключить VPN и проверить порт одной командой:
-
 ```bash
-nc -z 135.106.186.210 22 && echo reachable
+ssh proxima         # shell на VPS под proxima-admin
+ssh -N proxima-db   # туннель к Postgres на localhost:5433
+bash infra/ssh-doctor   # диагностика, если что-то не работает
 ```
 
-Если порт отвечает - заходить `ssh root@135.106.186.210`. Если нет - VPN всё ещё активен или надо проверять security group в панели Selectel.
+Алиасы описаны в `~/.ssh/config` на машине Mike. Ключ - `~/.ssh/id_ed25519_proxima_selectel_20260813`
+(`SHA256:CG+iddsvx2qxzSjJXC2v8nztu5LxkOb73ekmEYDNTXM`), защищён passphrase из macOS Keychain.
+Обязательны две опции: `IdentitiesOnly yes` (на сервере `MaxAuthTries 3`, перебор лишних ключей рвёт
+сессию) и `UseKeychain yes` (без неё ssh не читает passphrase и падает в `Permission denied (publickey)`
+при полностью исправном сервере).
+
+**Только `proxima-admin`.** Root заблокирован при bootstrap намеренно: `PermitRootLogin no`,
+`AllowUsers proxima-admin`, `passwd --lock root` (`infra/bootstrap/00-proxima-ai.conf`,
+`bootstrap-vps.sh:139`). `ssh root@135.106.186.210` не может сработать никогда - если такая команда
+где-то записана, это ошибка инструкции, а не проблема доступа.
+
+**VPN подключению не мешает.** Прежняя редакция этого раздела утверждала обратное («Selectel фильтрует
+TCP/22 через зарубежный egress»). Перепроверено 2026-08-22 при активном AmneziaVPN (full tunnel `utun4`):
+TCP/22 открывается за 0.148 s, ICMP 3/3, RTT 140 ms, host key совпадает с `known_hosts`. Ручной
+`sudo route add` не нужен. Если хост всё же надо вывести из туннеля - добавить его в список исключений
+самой Amnezia (Настройки → Раздельное туннелирование → Сайты); маршрут восстанавливается при реконнекте
+и после ребута, в отличие от ручного route.
+
+Быстрая проверка, сеть ли виновата: `nc -z 135.106.186.210 22`. Порт открылся - сеть ни при чём,
+причина в аутентификации; `bash infra/ssh-doctor` покажет, в какой именно.
 
 ## Private files
 
