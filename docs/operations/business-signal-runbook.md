@@ -124,4 +124,16 @@ CLI сначала вызывает Telegram `getMe` и `getChat`, затем д
 - одно сообщение содержит SKU, склад, days cover, срок поставки, buffer и маржу на единицу;
 - основатель подтверждает получение.
 
+## Manual dissection: BLOCKED async-report task (wb_analytics_report_tasks)
+
+Задача `wb_analytics_report_tasks` в `BLOCKED` терминальна для CLI (`wb_async_report.py` откажется с "task … is blocked"). Процедура операторской разблокировки добавлена 2026-08-25 после первой такой интервенции (task `f1b8892a…`, dead-token 401). Применять только после ручного анализа причины BLOCKED и её устранения (например, замена мёртвого токена):
+
+1. Убедиться, что raw-evidence причины блокировки сохранён: `raw_wb_analytics_responses` строки этой задачи не удаляются никогда.
+2. Вернуть задачу в очередь: `UPDATE wb_analytics_report_tasks SET lifecycle_status = 'RESERVED', last_error_code = NULL, api_status = NULL WHERE task_id = '<uuid>' AND lifecycle_status = 'BLOCKED';`
+3. Если initial create уже был помечен отправленным, сбросить ровно один квота-ивент: `UPDATE wb_analytics_quota_events SET sent_at = NULL WHERE task_id = '<uuid>' AND action = 'create' AND action_sequence = 1 AND sent_at IS NOT NULL;`
+4. Повторить прогон `wb_async_report.py` обычным путём; задача продолжит lifecycle с create.
+5. Зафиксировать интервенцию в phase EVIDENCE (причина, шаги, дата).
+
+Сброс не для автоматизации: каждый случай BLOCKED разбирается руками, условие п.1 обязательно.
+
 WB READ contracts: [Reports](https://dev.wildberries.ru/en/openapi/reports), [Analytics](https://dev.wildberries.ru/en/openapi/analytics), [Finance](https://dev.wildberries.ru/en/openapi/financial-reports-and-accounting). Stock runtime использует current `POST /api/analytics/v1/stocks-report/wb-warehouses`; deprecated stocks и realization endpoints запрещены verifier-ом.

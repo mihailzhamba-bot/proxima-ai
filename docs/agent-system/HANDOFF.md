@@ -8,7 +8,7 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Current task
 
-**PA-13 closed 2026-08-25 (amend-форма Mike).** Revert `fd95fcb` deployed (PR #17); свежий RW-токен №2 батча 25.08 (`01a03905…`) установлен; заблокированная задача `f1b8892a…` разблокирована по runbook-процедуре «BLOCKED = до ручного разбора» (RESERVED + сброс `sent_at` квота-ивента create/seq1); live-прогон с `--allow-analytics-read-write` = **DOWNLOADED/SUCCESS**: неделя 2026-08-17..23, 11 233 bytes, sha256 `ed58ad60…`, 1 220 строк parsed/staged (первый живой сбор с 2026-08-13). Finance RW из того же батча отклонён (не меняем рабочее READ-only). Хвост (не блокер): READ-only перевыпуск → повторный revert. **Plan 02-02 cancelled by Mike 2026-08-25**; Phase 2 fate (A close / B hold) — ждёт одну букву Mike. Next candidate: PMM-7.
+**PA-13 closed 2026-08-25 (amend-форма Mike).** Revert `fd95fcb` deployed (PR #17); свежий RW-токен №2 батча 25.08 (`01a03905…`) установлен (заменил мёртвый №4); заблокированная задача `f1b8892a…` разблокирована ручной операторской интервенцией - manual dissection (RESERVED + сброс `sent_at` квота-ивента create/seq1; процедура добавлена в runbook 2026-08-25 после review warning); live-прогон с `--allow-analytics-read-write` = **DOWNLOADED/SUCCESS**: неделя 2026-08-17..23, 11 233 bytes, sha256 `ed58ad60…`, 1 220 строк parsed/staged (первый живой сбор с 2026-08-13). Finance RW из того же батча отклонён (не меняем рабочее READ-only). Хвост (не блокер): READ-only перевыпуск → повторный revert. **Plan 02-02 cancelled by Mike 2026-08-25**; Phase 2 fate (A close / B hold) — ждёт одну букву Mike. Next candidate: PMM-7.
 
 ## Current state
 
