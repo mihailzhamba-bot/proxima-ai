@@ -12,7 +12,9 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Current state
 
-- Phase 2 (Vertical Slice: Immutable Intake to Visible Facts) in progress; plans 02-01/01A implemented, 02-01B enforcement reverted 2026-08-25, 02-02 cancelled 2026-08-25; first live Analytics collection since 2026-08-13 landed (1220 rows). Requirements 6/32 (source: `.planning/STATE.md`, 2026-08-25).
+- Phase 2 CLOSED 2026-08-25 (Mike, вариант A): criteria 1-4 выполнены, №5 descoped в Phase 3/6; requirements 9/32 (source: `.planning/STATE.md`, 2026-08-25).
+- **PA-49 web-кабинет v0** — чужой поток в main worktree (незакоммиченные `Makefile`, `package.json`, `package-lock.json`, `.gitignore` + untracked `services/webapp/`, `infra/Caddyfile`, `infra/webapp.compose.yaml`): не стейджить, не коммитить, не трогать (проверено ops-docsync 2026-08-25; восстановлено после выпадения в merge #17).
+- **Локальный `main` в worktree `!Proxima/PROXIMA AI` может опережать origin/main** (например, Orca-коммит `0faacb5` перед push-гейтом Mike) — всегда `git fetch` и смотреть обе стороны, не считать origin единственной истиной (восстановлено из ops-docsync 2026-08-25).
 - M2 track opened in Jira PMM (sprint-0/1 backlog); PMM-30 (DEC-006) done; PMM-2 spike merged as above.
 - Staging VPS Selectel `135.106.186.210` bootstrapped; host monitor live since 2026-08-15 (Telegram delivery tested, `/etc/hosts` pin for `api.telegram.org` in place). Business data blocked until the backup guardrail (Phase 7).
 - 2026-08-16 planning session: PRODUCT-VISION.md approved, Jira PA epics PA-34/35/36/37 created (source: `.planning/STATE.md`).
