@@ -3,9 +3,9 @@ name: Proxima AI
 description: Design system for the Proxima AI WB data platform (control plane UI, reports, internal tools)
 colors:
   primary: "#0f172a"
-  secondary: "#64748b"
+  secondary: "#57534e"
   tertiary: "#6d28d9"
-  neutral: "#f6f7fb"
+  neutral: "#f7f4ef"
   surface: "#ffffff"
   on-surface: "#0f172a"
   error: "#b91c1c"
@@ -93,29 +93,35 @@ components:
 
 # DESIGN — Proxima AI
 
-> Base: `_ai/DESIGN-BASE.md` (MILV), inlined 2026-08-25.
+> Base: `_ai/DESIGN-BASE.md` (MILV, Warm Precision), inlined 2026-08-25, v2.
 > Spec-before-UI: written before any frontend exists. Colors extracted from the project
 > map artifact (2026-08-22); status hues moved from 600- to 700-step Tailwind for WCAG AA.
-> Typography is a proposal pending Mike's approval.
+> v2 (2026-08-25): canvas migrated cool → warm ivory per Warm Precision meta-style;
+> chrome grays moved to the warm stone family. Typography is a proposal pending Mike's approval.
 > Format: Google DESIGN.md spec (alpha). Validate: `npx @google/design.md lint DESIGN.md`.
 
 ## Overview
 
-An analytical instrument, not a dashboard toy. The platform serves agency analysts and
-WB sellers who read numbers for a living: the UI must feel dense, calm and precise —
-a laboratory bench for marketplace data. Trustworthy over playful; every pixel of chrome
-must justify itself against the data it frames. When a rule does not cover a case,
-choose the option that maximizes data legibility and minimizes decoration.
+Built on the **Warm Precision** meta-style (see base): paper-warm surfaces, numbers as
+heroes, hairline structure, measured motion. An analytical instrument, not a dashboard
+toy. The platform serves agency analysts and WB sellers who read numbers for a living:
+the UI must feel dense, calm and precise — a laboratory bench for marketplace data, with
+the warmth of paper rather than the cold of chrome. Trustworthy over playful; every pixel
+of chrome must justify itself against the data it frames. When a rule does not cover a
+case, choose the option that maximizes data legibility and minimizes decoration.
 
 ## Colors
 
-Cool, quiet neutrals with a single violet accent, extracted from the project map.
+Warm ivory neutrals with a single violet accent. Initial palette came from the project
+map artifact (cool); v2 warms the ground per the meta-style — violet, ink and statuses
+carry over unchanged.
 
 - **Primary (#0f172a):** Slate ink for headings and primary text — near-black, never pure #000000.
-- **Secondary (#64748b):** Muted slate for metadata, captions, borders, secondary labels.
+- **Secondary (#57534e):** Warm stone for metadata, captions, borders, secondary labels.
+  Same family as the canvas — no cool grays anywhere in chrome.
 - **Tertiary (#6d28d9):** Proxima violet. Sole interaction driver: primary buttons, active
   states, key links. Never as background tint, divider or decoration.
-- **Neutral (#f6f7fb):** Cool canvas for page background; content sits on white surfaces.
+- **Neutral (#f7f4ef):** Warm ivory canvas for page background; content sits on white surfaces.
 - **Status (success #15803d / error #b91c1c / warning #b45309 / info #1d4ed8):** Tailwind
   status palette at 700-step for AA text contrast (artifact used 600-step; adjusted).
   Semantic use only — deltas in tables, badges, alerts; never brand decoration.
@@ -137,9 +143,10 @@ visible, never hidden behind icons.
 
 ## Elevation & Depth
 
-Tonal layers, not shadows: canvas (#f6f7fb) → surface (#ffffff) → subtle border
-(#e2e8f0) for boundaries. Shadows only for transient layers (dropdowns, modals, popovers)
-and even there: one soft shadow, never stacked glows. Depth signals layering, not decoration.
+Tonal layers, not shadows: canvas (#f7f4ef) → surface (#ffffff) → subtle border
+(#e7e5e4, warm) for boundaries. Shadows only for transient layers (dropdowns, modals,
+popovers) and even there: one soft shadow, never stacked glows. Depth signals layering,
+not decoration.
 
 ## Shapes
 
@@ -150,12 +157,15 @@ Charts and tables are square-edged — data geometry stays crisp.
 ## Components
 
 - **Buttons:** primary = violet fill, white text, 4px radius, 10px/16px padding, hover
-  darkens to slate ink. Secondary = white surface, slate border. Destructive = error red,
-  used only for irreversible actions.
-- **Tables (core component):** mono numerals, right-aligned numbers, left-aligned text,
-  zebra-free — row separation via 1px borders. Sticky headers on scroll.
+  darkens to slate ink. Secondary = white surface, warm stone border. Destructive = error
+  red, used only for irreversible actions.
+- **Tables (core component):** mono numerals, tabular figures, right-aligned numbers,
+  left-aligned text, zebra-free — row separation via 1px warm hairlines. Sticky headers on scroll.
 - **Status badges:** pill radius, solid status fill, white text, uppercase micro-label.
   Violet-tinted variant (#ddd6fe) reserved for selection states.
+- **Invisible details (craft checklist):** visible focus ring (2px violet, 2px offset) on
+  every interactive element; `::selection` in violet tint; thin warm scrollbar on data
+  surfaces; skeleton loaders in surface tones; designed empty/error states per view.
 
 ## Do's and Don'ts
 
