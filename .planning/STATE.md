@@ -83,7 +83,7 @@
 
 ### Blockers
 
-- Дата-трек: нет ни одного живого WB Analytics токена. Оба RW-токена батча 2026-08-16 мертвы по подписи (WB 401 `crypto/ecdsa: verification error`) - битые копии у владельца кабинета, не канал передачи. Нужен свежесозданный токен от Амировой (копировать прямо из диалога создания; желательно сразу «только чтение» - тогда закрывается и RW-исключение). Statistics/Finance токены живы (побайтово подтверждены 2026-08-25). Боевой токен кабинета Богатовой нужен к Phase 4.
+- ~~Дата-трек: нет живого Analytics токена~~ **Снято 2026-08-25**: свежесозданный RW-токен (батч 25.08, `01a03905…`, exp 2027-02-24) установлен; live-прогон `wb_async_report.py --allow-analytics-read-write` = DOWNLOADED/SUCCESS (1 220 строк, неделя 17-23.08, sha256 `ed58ad60…`). Хвост (не блокер): READ-only перевыпуск от Амировой → вернуть enforcement повторным revert `fd95fcb`; Finance RW из того же батча отклонён (рабочий остался READ-only). Боевой токен кабинета Богатовой нужен к Phase 4.
 - First approved data release remains blocked on Phase 8 Data GO evidence.
 - Live deployment remains blocked on separate Live Deploy GO.
 
@@ -91,7 +91,7 @@
 
 **Last action:** 2026-08-25 (PA-9 grill → PA-13 rollback): Plan 02-02 отменён решением Mike после разбора ценности (машина parse-run/staging уедет в Phase 4, reconciliation-нога M1 сокращена); чекпоинт-XLSX кабинета Амировой получен и профилирован без коммита байтов. По решению Mike выполнен rollback PA-13: revert `267cc3c` = commit `fd95fcb`, `make verify` PASS (51 pytest + TS-гейты), задеплоено на VPS (pre-deploy dump `pre-pa13rw-20260825.dump` sha256 `000577e0…`, detached `fd95fcb`, npm ci+build green, владение docs/agent-system и scripts/agent исправлено на proxima-admin). Пруфы задеплоенного кода: flagless прогон `wb_async_report.py` отверг RW-токен (`WB token must be read-only`); с флагом валидатор пройден, WB ответил 401. Диагностика до конца: подписание батча 2026-08-16 битое в копиях Амировой (обе Analytics-подписи `crypto/ecdsa: verification error`; Statistics/Finance вставки побайтово идентичны рабочим установленным токенам - канал чист). Установлен одобренный Mike RW-токен №4 (`0600 proxima-admin`), временные файлы с токенами удалены локально и на VPS.
 
-**Next action (по токену):** Mike получает от Амировой свежесозданный Analytics токен (копия прямо из диалога создания; галочка «только чтение» желательна). Агент проверяет подпись/mask до установки, устанавливает приватным пайпом, гоняет `wb_async_report.py --tenant-id amirova-test` (READ-only - без флага). Отдельно ждёт решения Mike: судьба Phase 2 после отмены 02-02 (закрыть с descope criterion №5 / держать открытой).
+**Next action (по токену):** выполнено 2026-08-25 - свежий RW-токен №2 установлен, live-сбор прошёл (DOWNLOADED, 1 220 строк, подробности в EVIDENCE 02-01B). Не горит: READ-only перевыпуск → вернуть enforcement. Отдельно ждёт решения Mike: судьба Phase 2 после отмены 02-02 (закрыть с descope criterion №5 / держать открытой).
 
 **Resume context:** Start from `.planning/ROADMAP.md` Phase 2. Treat `.planning/phases/01-architecture-provenance-import-baseline/EVIDENCE.md` as the completed upstream gate and preserve the Phase 1 source/Linear boundaries.
 

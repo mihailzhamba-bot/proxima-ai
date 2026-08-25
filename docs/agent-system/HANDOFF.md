@@ -8,7 +8,7 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Current task
 
-**PA-13 rollback (2026-08-25, Mike decision) deployed; blocked on a live Analytics token.** Revert of the READ-only enforcement (`fd95fcb`, restores `--allow-analytics-read-write`) passed `make verify` and is deployed on the VPS (detached `fd95fcb`, pre-deploy dump `pre-pa13rw-20260825.dump`). Deployed-code proofs: flagless run rejects RW with `WB token must be read-only`; with the flag the validator passes and WB itself answers 401. Full diagnosis: both Aug-16 batch RW tokens have broken ECDSA signatures in the owner's saved copies (`crypto/ecdsa: verification error`); the transfer channel is proven clean (Statistics/Finance pastes byte-identical to working installed tokens). The only missing input is a freshly created Analytics token from Amirova (copy straight from the creation dialog; read-only preferred - then re-apply the enforcement revert). **Plan 02-02 cancelled by Mike 2026-08-25** (XLSX profiled, no parser code; manual XLSX path dropped from M1). Phase 2 fate (close with descoped criterion №5 vs hold open) awaits Mike's decision.
+**PA-13 closed 2026-08-25 (amend-форма Mike).** Revert `fd95fcb` deployed (PR #17); свежий RW-токен №2 батча 25.08 (`01a03905…`) установлен; заблокированная задача `f1b8892a…` разблокирована по runbook-процедуре «BLOCKED = до ручного разбора» (RESERVED + сброс `sent_at` квота-ивента create/seq1); live-прогон с `--allow-analytics-read-write` = **DOWNLOADED/SUCCESS**: неделя 2026-08-17..23, 11 233 bytes, sha256 `ed58ad60…`, 1 220 строк parsed/staged (первый живой сбор с 2026-08-13). Finance RW из того же батча отклонён (не меняем рабочее READ-only). Хвост (не блокер): READ-only перевыпуск → повторный revert. **Plan 02-02 cancelled by Mike 2026-08-25**; Phase 2 fate (A close / B hold) — ждёт одну букву Mike. Next candidate: PMM-7.
 
 ## Current state
 
@@ -36,7 +36,7 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Blockers
 
-- No live WB Analytics token exists: both Aug-16 batch RW tokens are dead at WB (`crypto/ecdsa: verification error` - broken copies at the cabinet owner, transfer channel proven clean). Need a freshly created token from Amirova (read-only preferred → then re-apply enforcement `267cc3c`).
+- ~~No live WB Analytics token~~ снято 2026-08-25: live-сбор прошёл (см. Current task). Не блокер: READ-only перевыпуск → вернуть enforcement.
 - Phase 2 fate after 02-02 cancellation (close with descoped criterion №5 vs hold open) - Mike's call, asked 2026-08-25, unanswered.
 - First approved data release blocked on Phase 8 Data GO; live deployment blocked on separate Live Deploy GO (STATE.md).
 - No local Docker — DB dev goes through SSH tunnel to staging VPS (Mike decision 2026-08-16).
@@ -63,9 +63,8 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Exact next action
 
-1. **Token:** Mike gets a freshly created Analytics token from Amirova (copy straight from the creation dialog; «только чтение» preferred). Agent verifies signature/scope BEFORE install, installs via the private pipe (`0600 proxima-admin`), runs `wb_async_report.py --tenant-id amirova-test` (flagless for READ-only; with `--allow-analytics-read-write` for RW), closes PA-13. If READ-only lands, re-apply the enforcement by re-reverting `fd95fcb`.
-2. **Phase 2 fate (Mike's one-letter answer):** A = close Phase 2 with descoped criterion №5 (visible facts move to Phase 3/6); B = hold open until API data.
-3. Then resume the pre-existing lane plan (see below).
+1. **Phase 2 fate (Mike's one-letter answer):** A = close Phase 2 with descoped criterion №5 (visible facts move to Phase 3/6); B = hold open until API data.
+2. Then resume the pre-existing lane plan (see below). PA-13 closed; its PR #17 can merge when reviewed.
 
 Sprint 0 progress: PMM-30 done (DEC-006, PR #9); PMM-2 spike merged (PR #10: ADR-0001 + DEC-007, LE-1 pilot entity filled, stays Draft until accountant Q1-Q4 + remaining entities); PMM-9 + PMM-10 done (PR #12: `docs/governance/assumptions-register.md` 11 entries, `risk-register.md` 13 risks, both Jira Done). **PMM-29 = bot lane (claimed, do not duplicate).** Remaining sprint-0 candidates for the Proxima agent: PMM-7 (charter-pointer), PMM-8 (glossary + KPI tree), PMM-11 (exit criteria), PMM-12 (DoD checklist) — pick PMM-7 next unless Mike reorders. PMM-31 needs explicit Mike approval (VPS operations). PMM-2 closes only at ADR Accepted.
 

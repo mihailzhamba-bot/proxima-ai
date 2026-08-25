@@ -4,11 +4,11 @@
 
 ## Active main task
 
-### PA-13 rollback deployed 2026-08-25 — waiting on a live Analytics token
+### None open — PA-13 closed 2026-08-25 (amend-форма Mike)
 
-Revert `fd95fcb` (branch `mihailzhamba-bot/PA-13-rw-optin`) restores the temporary RW exception, `make verify` PASS, deployed to VPS. Deployed proofs done (flagless fail-closed; RW accepted with flag; WB 401 on dead batch tokens documented). Remaining external input: freshly created Analytics token from Amirova (read-only preferred → then re-apply enforcement). Same session: **Plan 02-02 cancelled by Mike** (XLSX profiled to EVIDENCE, no parser code); Phase 2 fate (A close / B hold) awaiting Mike's answer.
+PA-13 закрыт: enforcement отменён решением Mike (revert `fd95fcb`, PR #17), свежий RW-токен установлен, live-сбор Аналитики прошёл (DOWNLOADED, 1 220 строк, неделя 17-23.08). Хвост (не блокер): READ-only перевыпуск → повторный revert. Plan 02-02 отменён тем же днём (Jira Готово + `cancelled`); судьба Phase 2 (A close / B hold) ждёт одну букву от Mike.
 
-Next candidate after token: PMM-7 (charter-pointer) per HANDOFF "Exact next action", unless Mike reorders.
+Next candidate: PMM-7 (charter-pointer) per HANDOFF "Exact next action", unless Mike reorders.
 
 COLLECTOR-WB-BRANCHES (former active task, implementation landed at `1a211c9`..`8b07249`): closure still unconfirmed with Mike in Jira PA (epic PA-36) — kept below in Queue until confirmed.
 
@@ -19,7 +19,7 @@ COLLECTOR-WB-BRANCHES (former active task, implementation landed at `1a211c9`..`
 3. Track B PA-39: **аудит завершён 2026-08-23** - артефакты `docs/audits/pa-39-scenario-engine-audit.md` + `pa-39-import-allowlist.yaml` (27 записей: W1 18 / W2 8 / settings-adaptation 1) + `pa-39-hash-transcript.txt` (27/27 PASS); machine-верификация поймала и закрыла ошибку переноса хэша; reviewer re-check: 0 blockers после фиксов. Ключевые решения grill-сеанса: пин `53b7d604`, PMM-29 проектирует контракты с нуля (PA-41 adaptation-коммитом перепривязывает), PA-41 = W1 (не ждёт PMM-29) + W2 (после PMM-29). Следующий шаг - PA-41 W1 verbatim-import.
 4. ~~Phase 2 `02-02`~~ — **cancelled by Mike 2026-08-25** (see Active main task); Phase 2 fate (A close with descope / B hold) awaiting Mike.
 5. Phase 2 leftovers: CI pipeline green run on the cancellation/revert PRs; observed-XLSX parser больше не нужен (02-02 отменён; машина уезжает в Phase 4).
-6. From Mike (inputs): **свежесозданный Analytics токен от Амировой (копия прямо из диалога создания; read-only preferred)**, production Bogatova token, interview slots, AI-ops analyst onboarding, COGS data; инвентаризация прочих юрлиц для ADR-0001 (Q2) и подтверждение ставок бухгалтером (Q1, Q3, Q4).
+6. From Mike (inputs): READ-only Analytics перевыпуск (не горит; закрывает RW-исключение), production Bogatova token, interview slots, AI-ops analyst onboarding, COGS data; инвентаризация прочих юрлиц для ADR-0001 (Q2) и подтверждение ставок бухгалтером (Q1, Q3, Q4).
 
 ## Done (recent)
 
