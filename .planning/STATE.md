@@ -15,8 +15,8 @@
 ## Current Position
 
 **Phase:** 2 of 8 - Vertical Slice: Immutable Intake to Visible Facts
-**Plan:** 02-01 and early-feedback 02-01A implemented; 02-02 is checkpointed on an official WB XLSX.
-**Status:** Phase 2 in progress; Phase 2.1 end-to-end acceptance and its hosted CI evidence are complete; only the observed XLSX parser remains pending (checkpointed on the official XLSX from Mike).
+**Plan:** 02-01, 02-01A, 02-01B implemented; 02-02 cancelled by Mike 2026-08-25 (manual XLSX path dropped from M1).
+**Status:** Phase 2 in progress; Phase 2.1 end-to-end acceptance complete; 02-02 cancelled; судьба criterion №5 (preview-страница) - открытое решение Mike. Дата-трек ждёт живой Analytics-токен.
 **Progress:** `[#---------] 13%`
 
 ## Performance Metrics
@@ -35,6 +35,8 @@
 
 ### Decisions
 
+- 2026-08-25 (Mike): PA-13 enforcement отменён - временный RW-opt-in для Analytics восстановлен (revert `267cc3c` = `fd95fcb`, задеплоено на VPS `fd95fcb` 2026-08-25). Причина: READ-only Analytics токен так и не создан, а оба имеющихся RW-токена от 2026-08-16 имеют криптографически битые подписи в сохранённых копиях Амировой (WB 401 `crypto/ecdsa: verification error`; канал передачи проверен чистым - вставки Statistics/Finance побайтово идентичны рабочим). Условие закрытия исключения: свежесозданный живой Analytics токен (при READ-only - вернуть enforcement `267cc3c` повторным revert).
+- 2026-08-25 (Mike): Plan 02-02 (XLSX parser → staging → preview) отменён; ручная XLSX-нога исключена из M1. Чекпоинт-файл получен и профилирован (см. EVIDENCE 02-02), parser-код не начинался. SRC-01/03/04 закрыты кодом 02-01; success criterion №5 фазы (preview-страница) остаётся без владельца - судьба Phase 2 (закрыть с descope / держать открытой) ждёт решения Mike.
 - 2026-08-16 (Mike): продуктовое интервью (38 ответов + 12 рекомендаций as-is) - см. PRODUCT-VISION.md. Ключевое: web-first (не Telegram), Decision Inbox в v0, все 11 сценариев волнами W1-W4, Advertising API сразу, полный P&L трек (COGS с онбординга), MPStats-бенчмарки, pricing 10-20k ₽ фикс/кабинет. Гейт V1 = 1 сквозной сигнал (AI нашёл -> AM подтвердил -> клиент получил результат).
 - 2026-08-16: мировой ресёрч `.planning/research/GLOBAL-LANDSCAPE-2026-08-16.md` - 12 рынков, ~30 продуктов. Прямые конкуренты: Sirena AI (490₽+), JVO (22.9-54k). Ниша 10-20k свободна. Заимствования: R-Karte декомпозиция, Anodot seasonal baseline + ₽-impact, Triple Whale Trust Layer, Lebesgue Auditor.
 - 2026-08-15 (Mike, PA-32): coding agents standard регенерирован из фактов репозитория; `CLAUDE.md` - относительный симлинк на `AGENTS.md`; owner Mihail Zhamba, квартальный цикл пересмотра, следующее ревью 2026-11-15.
@@ -81,25 +83,17 @@
 
 ### Blockers
 
-- Phase 2 slice: официальная XLSX-выгрузка из кабинета WB отсутствует - передаёт Mike (см. DATA-SPIKE F4). API-нога закрыта тестовым токеном Амировой 2026-08-12; боевой токен кабинета Богатовой нужен к Phase 4. Планирование Phase 2 не блокировано.
+- Дата-трек: нет ни одного живого WB Analytics токена. Оба RW-токена батча 2026-08-16 мертвы по подписи (WB 401 `crypto/ecdsa: verification error`) - битые копии у владельца кабинета, не канал передачи. Нужен свежесозданный токен от Амировой (копировать прямо из диалога создания; желательно сразу «только чтение» - тогда закрывается и RW-исключение). Statistics/Finance токены живы (побайтово подтверждены 2026-08-25). Боевой токен кабинета Богатовой нужен к Phase 4.
 - First approved data release remains blocked on Phase 8 Data GO evidence.
 - Live deployment remains blocked on separate Live Deploy GO.
 
 ## Session Continuity
 
-**Last action:** 2026-08-17: аудит M2-бэклога. Найдено, что M2 существовал в двух местах: эпик PA-37 имел девять детей, пять из них дублировали срез PMM один-в-один (PA-43 = PMM-21, PA-47 = PMM-5 + PMM-25, PA-46 = PMM-26 + PMM-28, PA-38 п.1 = PMM-20 + PMM-23). Причина: прогон 2026-08-17 строил existing-карту по PA-37…PA-42, а PA-43…PA-48 были созданы 2026-08-16 в 21:04. Решение Mike: **PMM - единственный дом M2/M3**; PA-43/45/46/47/48 закрыты (метка `superseded-by-pmm`, откат обратим), PA-38/39/41/44 остались в PA. Принято **DEC-006**: LLM runtime и client-facing web UI разрешены вне M1-контура при трёх условиях (staging-данные, маркировка `unreleased`, release pointer не двигается) - без него весь W1-срез нарушал DEC-005. Заведены PMM-29…33 под четыре блокера критического пути (контракты сигнала, LLM-доступ, daily-цикл, evals). Метка правок `aios-fix-2026-08-17`. Отчёт: `docs/exec-plans/active/pmm-audit-2026-08-17.md`.
+**Last action:** 2026-08-25 (PA-9 grill → PA-13 rollback): Plan 02-02 отменён решением Mike после разбора ценности (машина parse-run/staging уедет в Phase 4, reconciliation-нога M1 сокращена); чекпоинт-XLSX кабинета Амировой получен и профилирован без коммита байтов. По решению Mike выполнен rollback PA-13: revert `267cc3c` = commit `fd95fcb`, `make verify` PASS (51 pytest + TS-гейты), задеплоено на VPS (pre-deploy dump `pre-pa13rw-20260825.dump` sha256 `000577e0…`, detached `fd95fcb`, npm ci+build green, владение docs/agent-system и scripts/agent исправлено на proxima-admin). Пруфы задеплоенного кода: flagless прогон `wb_async_report.py` отверг RW-токен (`WB token must be read-only`); с флагом валидатор пройден, WB ответил 401. Диагностика до конца: подписание батча 2026-08-16 битое в копиях Амировой (обе Analytics-подписи `crypto/ecdsa: verification error`; Statistics/Finance вставки побайтово идентичны рабочим установленным токенам - канал чист). Установлен одобренный Mike RW-токен №4 (`0600 proxima-admin`), временные файлы с токенами удалены локально и на VPS.
 
-**Last action:** 2026-08-17: прогон `aios-run-2026-08-17` - создан Jira-проект **PMM** «Proxima M2-M3» (id 10043, company-managed) с 28 issue среза M2 при `engineers_fte = 1`; manifest и living plan в `docs/exec-plans/active/pm2-backlog-run.*`. Три верификационных утверждения прогона позже опровергнуты аудитом (см. `verification_correction` в манифесте).
-
-**Last action:** 2026-08-16: продуктовая сессия - PRODUCT-VISION.md утверждён (50 решений), глобальный ресёрч-досье создано, Jira PA: эпики PA-34/35/36/37, задачи PA-38 (web-кабинет v0), PA-43 (Client Passport + PDF + Auditor), PA-44 (источники M2), PA-45 (волна W3), PA-46 (verification-петля), PA-47 (LLM Analyst + reviewer), PA-48 (волна W2); M1-задачи PA-18..24 привязаны к PA-36. *(Соответствие ключей исправлено 2026-08-17: в исходной записи PA-43/44/46/47/48 были перепутаны местами.)*
-**Last action:** 2026-08-15: hosted CI `verify` PASS confirmed on `1a211c9` (run completed 2026-08-14T19:25 UTC) - 02-01A evidence gap closed (PA-12); coding agents standard regenerated and `CLAUDE.md` converted to a relative symlink (PA-32, PR #1, merge `11a7a12`).
-
-**Next action:** Sprint 0 среза M2 в порядке: PMM-30 (DEC-006 уже на `main` через PR #9 `a2a7b12` от `mihailzhamba-bot` - прочитать формулировки и закрыть) → PMM-29 (контракты сигнала) → PMM-31 (LLM-доступ, egress с VPS проверить первым делом). Исполнение PMM-задач - за ботом (решение Mike 2026-08-17), этот агент ведёт бэклог. Параллельно Трек B: аудит scenario engine в Опрос-v2.2 (PA-39) - он теперь blocks PA-41, а PA-41 blocks PMM-5/20/23, то есть весь W1-срез. От Mike: XLSX пилота (Phase 2), боевой токен, интервью-слоты, онбординг AI-ops аналитика, COGS у Богатовой, юрлица и налоговые режимы (вход спайка PMM-2), четыре компонента в UI проекта PMM.
-**Last action:** 2026-08-21 (PA-13): код задеплоен на VPS - detached checkout `6168968` (main с `ed2bbb9`) через git bundle, `npm ci`+build green, pre-deploy dump `pre-pa13-20260821-082129.dump` (sha256 `d35f2e9c…`); задеплоенный код доказал fail-closed офлайн: установленный RW-токен отвергнут (`WB token must be read-only`), флаг - unrecognized argument, dist чист. SSH-доступ восстановлен: ключ `id_ed25519_proxima_selectel_20260813` (passphrase в Keychain) под пользователем `proxima-admin` + passwordless sudo; подключение только без VPN (зафиксировано в runbook, PR #8 `ed2bbb9`).
-
-**Next action (PA-13):** единственная зависимость - READ-only Analytics токен от Амировой (проверено 2026-08-21: на VPS и Mac его физически нет, обе копии - старый RW mask `0x4`). Когда токен получен: `install -m 0600 -o proxima-admin -g proxima-admin <файл> /etc/proxima-ai/secrets/wb_analytics_token` (или bundle через двухаргументный installer) → безфлаговый прогон `wb_async_report.py --tenant-id amirova-test` → PA-13 в «Готово». 2) Mike передает official pilot-cabinet XLSX для Plan 02-02.
+**Next action (по токену):** Mike получает от Амировой свежесозданный Analytics токен (копия прямо из диалога создания; галочка «только чтение» желательна). Агент проверяет подпись/mask до установки, устанавливает приватным пайпом, гоняет `wb_async_report.py --tenant-id amirova-test` (READ-only - без флага). Отдельно ждёт решения Mike: судьба Phase 2 после отмены 02-02 (закрыть с descope criterion №5 / держать открытой).
 
 **Resume context:** Start from `.planning/ROADMAP.md` Phase 2. Treat `.planning/phases/01-architecture-provenance-import-baseline/EVIDENCE.md` as the completed upstream gate and preserve the Phase 1 source/Linear boundaries.
 
 ---
-*Updated: 2026-08-21*
+*Updated: 2026-08-25*
