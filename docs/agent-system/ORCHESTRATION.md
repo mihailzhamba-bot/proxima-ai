@@ -2,7 +2,7 @@
 
 > Документ: как PROXIMA AI работает под постоянным Orca-координатором.
 > Контракт кратко - в `AGENTS.md` (раздел «Orca coordinator protocol»). Здесь - процедура.
-> Updated: 2026-08-25. Status: active. Verified: нет (первый прогон pending).
+> Updated: 2026-08-25 (v2: placement-протокол, base path worktrees/, постоянный координатор-терминал). Status: active. Verified: первый supervised full-cycle 2026-08-25 (docsync, PASS).
 
 ## Роли
 
@@ -28,7 +28,7 @@
 1. **Intake**: классификация по таблице в AGENTS.md. Trivial → inline (в сессии Mike, без Orca). Medium → QUICK-brief, решение об autopilot по размеру.
 2. **Brief**: `task-create` → dispatch briefmaker. Briefmaker спрашивает через `orchestration ask`; координатор оборачивает каждый ask в decision gate для Mike (batch, не по одному). Gate закрыт → briefmaker доводит до READY.
 3. **Gate brief**: Mike утверждает brief (или правит scope). Без этого воркер не стартует.
-4. **Dispatch worker**: `orca worktree create --repo name:PROXIMA AI --name <task-id> --agent <codex|opencode> --prompt <brief-инъекция>`; воркеру передать: «работай под autopilot semi; brief в <path>; verify обязателен». Supervised worker через `orchestration worker-start` (не bare worktree create, когда нужен контроль worker_done).
+4. **Dispatch worker**: `orca worktree create --repo "path:<repo-root>" --name <task-id> --base-branch main` (worktree создастся в `<repo>/worktrees/`; селектор `name:` с пробелами НЕ работает) → `orchestration worker-start --task <id> --worktree "path:<wt-path>" --agent <codex|opencode> --from <coordinator-handle>`; воркеру передать: «работай под autopilot semi; brief в <path>; verify обязателен». Если автоинъекция промпта упала (`agent_prompt_stalled`) - `task-update --status ready` + `dispatch` + ручная `terminal send` с полным заданием и командой worker_done.
 5. **Надзор**: `check --wait --types worker_done,escalation,question --timeout-ms <n>` циклом. Timeout = checkpoint, не провал. Heartbeat = жив, не трогать.
 6. **Verify**: worker_done → `make verify` в worktree воркера; major → `reviewer`; critical → cross-model review (0 blocker / 0 warning).
 7. **Gate merge**: merge только после явного approve Mike (decision gate). irreversible = тот же гейт.
@@ -40,6 +40,13 @@
 - Merge в main, deploy, любые irreversible-операции
 - Изменение lane (этот оркестратор ↔ `mihailzhamba-bot`)
 - Всё из «Жёстких запретов» AGENTS.md
+
+## Расположение и уборка (протокол placement, обновлено 2026-08-25)
+
+- **Постоянный координатор**: терминал `PA-coordinator` (opencode) в main worktree `PROXIMA AI`. НЕ закрывается никогда - это видимое присутствие оркестратора в Orca UI. Run привязан к нему (`run-use`); при пересоздании терминала - перепривязать Run заново.
+- **Воркеры эфемерны**: worktree создаётся под задачу, снимается после `worker_done` + release. Уборка воркера НЕ трогает координаторский терминал.
+- **Base path воркеров**: `<repo>/worktrees/` (project setup Orca; строка `worktrees/` в .gitignore). Старые сироты в `03-startups/один в коде /PROXIMA AI/` (PA-15, PA-39, PA-9) живут по старому пути - не трогать без решения Mike.
+- **Запрет**: не создавать Run/coordinator-инфраструктуру из чужих worktree/терминалов - привязка уходит не туда (инцидент 2026-08-25: Run прибился к терминалу Homeresurs/MK).
 
 ## Режимы работы
 

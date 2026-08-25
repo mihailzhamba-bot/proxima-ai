@@ -34,7 +34,9 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## In progress
 
-- None committed as open by the current agent. Pre-existing dirty tree (other threads, do not stage/commit blindly): `Makefile`, `README.md`, `package.json`, `package-lock.json`, `.planning/STATE.md`, `tools/verify_runtime_boundary.py` (modified); untracked `.mcp.json`, `opencode.json`, `.codex/`, `.planning/PRODUCT-VISION.md`, `.planning/research/GLOBAL-LANDSCAPE-2026-08-16.md`, `services/collector/src/contracts/`, `tools/generate_contract_types.mjs`, `AGENTS.md`, `CLAUDE.md` (AGENTS/CLAUDE now committed by the AI-OS layer). Reviewer-deploy thread (this agent, uncommitted): `AGENTS.md` modified (Delegation protocol + routing row), untracked `.opencode/agents/reviewer.md`, `.claude/agents/reviewer.md`, `.codex/agents/reviewer.toml`.
+- **Orca-координатор (ops-режим, placement v2 2026-08-25):** постоянный терминал `PA-coordinator` (opencode) в main worktree - НЕ закрывать; Run `run_7d2d26245488` перепривязан к нему; воркеры эфемерны, создаются в `<repo>/worktrees/` (project setup base path; gitignore `worktrees/`); автоматизации `pa-morning-status` (будни 08:30) + `pa-evening-verify` (19:15) включены; протокол - `docs/agent-system/ORCHESTRATION.md` (раздел «Расположение и уборка»).
+- **PA-49 warm-precision** - живой параллельный поток (ветка `feat/pa-49-warm-precision` в main worktree, autopilot): токены Warm Precision, Inter+Plex Mono, primitives. Не мешать: один write-воркер на дерево.
+- PR pipeline остатки: #3 (PA-33 pin versions) оставлен открытым намеренно - таблица версий отсутствует в main, закрытие теряет контент.
 
 ## Blockers
 
