@@ -6,7 +6,7 @@
 
 ### PA-49 — Web-кабинет v0 (1/5): каркас webapp (сессия 1 done, деплой = сессия 2)
 
-Ветка `feat/pa-49-webapp-skeleton`. Сессия 1 (2026-08-25): `services/webapp` (Next.js 16 + Better Auth + Tailwind 4, standalone), шелл с GYR-топбаром и unreleased-плашкой, скелеты /brief /inbox /dashboard /admin + /styleguide, ленивые Drizzle-клиенты (схема webapp_auth), vitest 11 тестов, Dockerfile + `infra/webapp.compose.yaml` (overlay, основной compose не тронут) + Caddyfile; `make verify` PASS целиком; smoke standalone зелёный. Living plan: `docs/exec-plans/active/pa-49-webapp-skeleton.md`.
+Коммит `93f0db1` на локальном `main` (не запушен; параллельная сессия переключила ветку mid-work — см. HANDOFF). Сессия 1 (2026-08-25): `services/webapp` (Next.js 16 + Better Auth + Tailwind 4, standalone), шелл с GYR-топбаром и unreleased-плашкой, скелеты /brief /inbox /dashboard /admin + /styleguide, ленивые Drizzle-клиенты (схема webapp_auth), vitest 11 тестов, Dockerfile + `infra/webapp.compose.yaml` (overlay, основной compose не тронут) + Caddyfile; `make verify` PASS целиком; smoke standalone зелёный. Living plan: `docs/exec-plans/active/pa-49-webapp-skeleton.md`.
 
 Сессия 2 (деплой): от Mike — домен + A-запись `app.<домен>` → 135.106.186.210 и подтверждение открытия 80/443 в firewall Selectel; затем на VPS — схема webapp_auth + роли (webapp_auth_writer / webapp_readonly), сборка образа, overlay compose, первый пользователь, серверная валидация сессии вместо cookie-presence. Подзадачи PA-50..53 стартуют после каркаса.
 
