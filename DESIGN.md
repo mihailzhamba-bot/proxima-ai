@@ -97,7 +97,8 @@ components:
 > Spec-before-UI: written before any frontend exists. Colors extracted from the project
 > map artifact (2026-08-22); status hues moved from 600- to 700-step Tailwind for WCAG AA.
 > v2 (2026-08-25): canvas migrated cool → warm ivory per Warm Precision meta-style;
-> chrome grays moved to the warm stone family. Typography is a proposal pending Mike's approval.
+> chrome grays moved to the warm stone family. Typography approved by Mike 2026-08-25:
+> Inter (narrative) + IBM Plex Mono (data).
 > Format: Google DESIGN.md spec (alpha). Validate: `npx @google/design.md lint DESIGN.md`.
 
 ## Overview
@@ -128,7 +129,7 @@ carry over unchanged.
 
 ## Typography
 
-Two families (proposal): **Inter** for interface narrative, **IBM Plex Mono** for all
+Two families (approved): **Inter** for interface narrative, **IBM Plex Mono** for all
 numeric data — SKUs, prices, revenue, dates in tables. Mono numerals align in columns
 and signal "measured value, not marketing copy". Micro-labels are uppercase with wide
 tracking. 2 weights per screen max; data tables use regular weight only.
