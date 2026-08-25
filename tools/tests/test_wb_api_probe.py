@@ -210,16 +210,18 @@ def test_split_token_scope_fails_closed(token: str, message: str) -> None:
         probe.validate_split_token("statistics", claims)
 
 
-def test_analytics_rw_probe_token_is_rejected() -> None:
+def test_analytics_rw_probe_token_requires_explicit_opt_in() -> None:
     probe = load_probe()
     rw_analytics = probe.decode_token_claims(split_token("analytics", read_only=False))
 
     with pytest.raises(probe.WbProbeError, match="read-only"):
         probe.validate_split_token("analytics", rw_analytics)
+    probe.validate_split_token("analytics", rw_analytics, allow_read_write=True)
     with pytest.raises(probe.WbProbeError, match="only the analytics category"):
         probe.validate_split_token(
             "analytics",
-            probe.decode_token_claims(split_token("analytics", read_only=True, extra_bit=3)),
+            probe.decode_token_claims(split_token("analytics", read_only=False, extra_bit=3)),
+            allow_read_write=True,
         )
     rw_statistics = probe.decode_token_claims(split_token("statistics", read_only=False))
     with pytest.raises(probe.WbProbeError, match="read-only"):

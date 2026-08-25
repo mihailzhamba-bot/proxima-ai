@@ -212,7 +212,7 @@ def read_secret(path: Path, *, private_only: bool, label: str) -> str:
     return value
 
 
-def validate_analytics_token(token: str, *, now: datetime) -> None:
+def validate_analytics_token(token: str, *, now: datetime, allow_read_write: bool = False) -> None:
     parts = token.split(".")
     if len(parts) != 3:
         raise WbAsyncReportError("WB Analytics token must use JWT compact format")
@@ -232,7 +232,7 @@ def validate_analytics_token(token: str, *, now: datetime) -> None:
         raise WbAsyncReportError("WB token is missing Analytics scope")
     if mask & ~((1 << 2) | (1 << 30)):
         raise WbAsyncReportError("WB Analytics token must grant only the Analytics category")
-    if not mask & (1 << 30):
+    if not mask & (1 << 30) and not allow_read_write:
         raise WbAsyncReportError("WB token must be read-only")
     expires_at = payload.get("exp")
     if not isinstance(expires_at, int) or isinstance(expires_at, bool) or expires_at <= int(now.timestamp()):
@@ -914,6 +914,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--tenant-id", required=True)
     parser.add_argument("--period", choices=("latest-closed-week",), default="latest-closed-week")
     parser.add_argument("--max-wait-seconds", type=float, default=3600)
+    parser.add_argument(
+        "--allow-analytics-read-write",
+        action="store_true",
+        help="temporary staging exception: accept an exact-category Analytics token without the READ-only bit; remove after the READ-only token is issued",
+    )
     return parser.parse_args(argv)
 
 
@@ -930,7 +935,7 @@ def main(argv: list[str] | None = None) -> int:
         raise WbAsyncReportError("WB_ANALYTICS_TOKEN_FILE and PROXIMA_SPOOL_DIR are required")
     now = datetime.now(MOSCOW)
     token = read_secret(Path(token_path), private_only=True, label="WB Analytics token file")
-    validate_analytics_token(token, now=now)
+    validate_analytics_token(token, now=now, allow_read_write=args.allow_analytics_read_write)
     period_from, period_to = latest_closed_week(now)
     repository = connect_repository(env)
     recorder = DurableRawRecorder(Path(spool_path), repository)
@@ -960,7 +965,7 @@ def main(argv: list[str] | None = None) -> int:
                 "parsed_row_count": result.parsed_row_count,
                 "staged_row_count": result.staged_row_count,
                 "raw_payload_printed": False,
-                "analytics_access": "read-only",
+                "analytics_access": "read-write-temporary" if args.allow_analytics_read_write else "read-only",
             },
             ensure_ascii=False,
             sort_keys=True,
