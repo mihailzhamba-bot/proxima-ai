@@ -29,7 +29,7 @@ Mike получает production-ready read-only data foundation для пило
 ## Phases
 
 - [x] **Phase 1: Architecture & Provenance Import Baseline** - Зафиксировать service boundaries, безопасный provenance-bound импорт и единый verification contract.
-- [ ] **Phase 2: Vertical Slice - Immutable Intake to Visible Facts** - Провести официальный WB XLSX через единый idempotent intake в immutable content-addressed storage и довести вертикальным slice до минимальной localhost-страницы с `order_count` по дням.
+- [x] **Phase 2: Vertical Slice - Immutable Intake to Visible Facts** - Закрыта 2026-08-25 (решение Mike, вариант A): criteria 1-4 выполнены, criterion №5 (preview-страница) descoped - видимые факты переезжают в Phase 3 (staging/facts) и Phase 6 (Data Health UI).
 - [ ] **Phase 3: PostgreSQL Quality & Atomic Releases** - Создать tenant-safe quarantine, lineage, runtime roles и fail-closed atomic domain releases.
 - [ ] **Phase 4: Official WB READ & 90-Day Backfill** - Подключить три official READ источника и выполнить параметризуемый 90-дневный operational backfill на минимальном VPS с базовым daily scheduler.
 - [ ] **Phase 5: order_count Authority & Reconciliation** - Зафиксировать семантику order_count и блокировать release при необъяснённом расхождении.
@@ -61,7 +61,7 @@ Mike получает production-ready read-only data foundation для пило
   3. Повторный intake того же artifact возвращает тот же identity и не создаёт duplicate artifacts или facts.
   4. Crash в любой точке intake можно повторить: raw evidence сохраняется, а partial или duplicate public state не возникает.
   5. (Slice-evidence, без requirement-owner.) Минимальная read-only страница на localhost показывает `order_count` по дням из staging/preview facts реального artifact с явной пометкой `unreleased`; production release pointer в slice не участвует. Полный Data Health (UI-01..03) остаётся в Phase 6, полный quality/release-механизм - в Phase 3.
-**Plans**: 2/3 implemented - `02-01` and early-feedback `02-01A` verified; `02-01A` is deployed, privately seeded and accepted end-to-end after one Telegram `SENT` run from 2026-08-13 and visual founder receipt on 2026-08-14; `02-02` **cancelled by Mike 2026-08-25** (checkpoint XLSX received and profiled, no parser code; manual XLSX path dropped from M1 - src-01/03/04 уже закрыты кодом 02-01, criterion №5 остаётся без владельца, судьба фазы ждёт решения Mike: закрыть с descope или держать открытой до API-данных).
+**Plans**: Phase 2 закрыта 2026-08-25 (решение Mike, вариант A): `02-01` и early-feedback `02-01A` implemented и verified (02-01A задеплоен и принят end-to-end: Telegram `SENT` 2026-08-13 + founder receipt 2026-08-14); `02-01B` (PA-13 enforcement) отменён решением Mike тем же днём - RW-исключение восстановлено, live-сбор Аналитики прошёл (1 220 строк, неделя 17-23.08); `02-02` **cancelled by Mike 2026-08-25** (checkpoint XLSX получен и профилирован, parser-код не начинался; manual XLSX path исключён из M1). SRC-01/03/04 закрыты кодом 02-01; criterion №5 descoped - видимые факты переезжают в Phase 3/6.
 
 ### Phase 3: PostgreSQL Quality & Atomic Releases
 **Goal**: Только полностью проверенные tenant-safe datasets публикуются атомарно, а любой сбой сохраняет last-known-good.

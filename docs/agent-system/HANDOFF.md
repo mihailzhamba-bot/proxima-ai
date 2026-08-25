@@ -8,11 +8,13 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Current task
 
-**PA-13 closed 2026-08-25 (amend-форма Mike).** Revert `fd95fcb` deployed (PR #17); свежий RW-токен №2 батча 25.08 (`01a03905…`) установлен (заменил мёртвый №4); заблокированная задача `f1b8892a…` разблокирована ручной операторской интервенцией - manual dissection (RESERVED + сброс `sent_at` квота-ивента create/seq1; процедура добавлена в runbook 2026-08-25 после review warning); live-прогон с `--allow-analytics-read-write` = **DOWNLOADED/SUCCESS**: неделя 2026-08-17..23, 11 233 bytes, sha256 `ed58ad60…`, 1 220 строк parsed/staged (первый живой сбор с 2026-08-13). Finance RW из того же батча отклонён (не меняем рабочее READ-only). Хвост (не блокер): READ-only перевыпуск → повторный revert. **Plan 02-02 cancelled by Mike 2026-08-25**; Phase 2 fate (A close / B hold) — ждёт одну букву Mike. Next candidate: PMM-7.
+**Phase 2 CLOSED 2026-08-25 (Mike, вариант A).** PA-13: revert `fd95fcb` задеплоен (PR #17), живой RW-токен (`01a03905…`) установлен, live-сбор DOWNLOADED (1 220 строк, sha256 `ed58ad60…`), review 0/1 warning закрыт `60fc7b1`. Plan 02-02 cancelled. Phase 2 закрыта с descope criterion №5 (видимые факты → Phase 3/6); SRC-01/03/04 отмечены Complete. **Ручной хвост Mike:** Jira PA-13 - комментарий + статус «Готово» (текст передан в сессии; MCP-вызов агента был неисправен - guardrail: не ретраить в этой сессии). Next: PMM-7 (charter-pointer) либо планирование Phase 3.
 
 ## Current state
 
-- Phase 2 (Vertical Slice: Immutable Intake to Visible Facts) in progress; plans 02-01/01A implemented, 02-01B enforcement reverted 2026-08-25, 02-02 cancelled 2026-08-25; first live Analytics collection since 2026-08-13 landed (1220 rows). Requirements 6/32 (source: `.planning/STATE.md`, 2026-08-25).
+- Phase 2 CLOSED 2026-08-25 (Mike, вариант A): criteria 1-4 выполнены, №5 descoped в Phase 3/6; requirements 9/32 (source: `.planning/STATE.md`, 2026-08-25).
+- **PA-49 web-кабинет v0** — чужой поток в main worktree (незакоммиченные `Makefile`, `package.json`, `package-lock.json`, `.gitignore` + untracked `services/webapp/`, `infra/Caddyfile`, `infra/webapp.compose.yaml`): не стейджить, не коммитить, не трогать (проверено ops-docsync 2026-08-25; восстановлено после выпадения в merge #17).
+- **Локальный `main` в worktree `!Proxima/PROXIMA AI` может опережать origin/main** (например, Orca-коммит `0faacb5` перед push-гейтом Mike) — всегда `git fetch` и смотреть обе стороны, не считать origin единственной истиной (восстановлено из ops-docsync 2026-08-25).
 - M2 track opened in Jira PMM (sprint-0/1 backlog); PMM-30 (DEC-006) done; PMM-2 spike merged as above.
 - Staging VPS Selectel `135.106.186.210` bootstrapped; host monitor live since 2026-08-15 (Telegram delivery tested, `/etc/hosts` pin for `api.telegram.org` in place). Business data blocked until the backup guardrail (Phase 7).
 - 2026-08-16 planning session: PRODUCT-VISION.md approved, Jira PA epics PA-34/35/36/37 created (source: `.planning/STATE.md`).
@@ -36,8 +38,8 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Blockers
 
-- ~~No live WB Analytics token~~ снято 2026-08-25: live-сбор прошёл (см. Current task). Не блокер: READ-only перевыпуск → вернуть enforcement.
-- Phase 2 fate after 02-02 cancellation (close with descoped criterion №5 vs hold open) - Mike's call, asked 2026-08-25, unanswered.
+- Не горит: READ-only перевыпуск Analytics-токена → вернуть enforcement (повторный revert).
+- Ручной хвост Mike: Jira PA-13 комментарий + статус «Готово» (текст передан 2026-08-25).
 - First approved data release blocked on Phase 8 Data GO; live deployment blocked on separate Live Deploy GO (STATE.md).
 - No local Docker — DB dev goes through SSH tunnel to staging VPS (Mike decision 2026-08-16).
 

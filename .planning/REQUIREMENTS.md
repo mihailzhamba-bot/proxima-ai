@@ -9,10 +9,10 @@
 
 ## Sources and immutable evidence
 
-- [ ] **SRC-01** Manual official WB XLSX проходит один общий intake path и сохраняется byte-for-byte в private content-addressed storage.
+- [x] **SRC-01** Manual official WB XLSX проходит один общий intake path и сохраняется byte-for-byte в private content-addressed storage. (02-01: verify PASS `56ebe000`, CI green.)
 - [ ] **SRC-02** Official WB Statistics, Analytics и Finance READ clients используют отдельные least-privilege SecretRef и никогда не сохраняют token values в Git, БД, logs или alerts.
-- [ ] **SRC-03** Каждый XLSX или gzip JSON artifact имеет SHA-256 manifest с tenant/source/dataset/period/data_as_of/retrieved_at/schema/parser/provenance/locator metadata.
-- [ ] **SRC-04** Повторный intake того же artifact идемпотентен; crash/restart не создаёт duplicate artifacts или facts. (Идемпотентность API pagination/retry - зона Phase 4: SRC-05, SRC-07.)
+- [x] **SRC-03** Каждый XLSX или gzip JSON artifact имеет SHA-256 manifest с tenant/source/dataset/period/data_as_of/retrieved_at/schema/parser/provenance/locator metadata. (02-01.)
+- [x] **SRC-04** Повторный intake того же artifact идемпотентен; crash/restart не создаёт duplicate artifacts или facts. (02-01 тесты idempotence + 4 crash-points.) (Идемпотентность API pagination/retry - зона Phase 4: SRC-05, SRC-07.)
 - [ ] **SRC-05** 90-day operational backfill является параметризованным workflow, а не hardcoded one-off path.
 - [x] **SRC-06** Torgstat adapter остаётся structural-unwired в production; runtime env flag не может включить live session automation.
 - [ ] **SRC-07** Неизвестный cabinet mapping, schema drift, auth failure, 429 exhaustion или неполный source остаются typed blocked/failed attempt.
@@ -68,10 +68,10 @@ Phase 2.1 staging evidence от 2026-08-13 не меняет requirement ownersh
 | ARCH-02 | Phase 1 | Complete |
 | ARCH-03 | Phase 1 | Complete |
 | ARCH-04 | Phase 1 | Complete |
-| SRC-01 | Phase 2 | Pending |
+| SRC-01 | Phase 2 | Complete |
 | SRC-02 | Phase 4 | Pending |
-| SRC-03 | Phase 2 | Pending |
-| SRC-04 | Phase 2 | Pending |
+| SRC-03 | Phase 2 | Complete |
+| SRC-04 | Phase 2 | Complete |
 | SRC-05 | Phase 4 | Pending |
 | SRC-06 | Phase 1 | Complete |
 | SRC-07 | Phase 4 | Pending |
