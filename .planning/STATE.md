@@ -8,24 +8,24 @@
 
 **Product layer (2026-08-16, разделение трекеров уточнено 2026-08-17):** `.planning/PRODUCT-VISION.md` - консолидированное видение M1->M2 (AI Daily Manager)->M3 (SaaS 50+ кабинетов). Четыре трека исполнения, гейты V1/V2/V3. Jira **PA**: эпики PA-36 (Трек A - M1), PA-35 (Трек C - discovery), PA-34 (Трек D - SaaS, заморожен до V3), PA-37 (Трек B - исторический указатель; инфраструктура PA-38/39/41/44 живёт под ним). M1-задачи PA-18..24 привязаны к PA-36. Jira **PMM** «Proxima M2-M3» (id 10043): весь backlog M2/M3 - эпики PMM-3 (W1-срез) и PMM-6 (Governance). Разделение зафиксировано в PRODUCT-VISION.md, раздел «Трекер».
 
-**Current focus:** Phase 2 - Vertical Slice: Immutable Intake to Visible Facts.
+**Current focus:** Phase 3 - PostgreSQL Quality & Atomic Releases (Phase 2 закрыта 2026-08-25, решение Mike вариант A).
 
 **Roadmap:** 8 phases, 32/32 requirements mapped, 0 orphaned, 0 duplicate ownership.
 
 ## Current Position
 
-**Phase:** 2 of 8 - Vertical Slice: Immutable Intake to Visible Facts
-**Plan:** 02-01, 02-01A, 02-01B implemented; 02-02 cancelled by Mike 2026-08-25 (manual XLSX path dropped from M1).
-**Status:** Phase 2 in progress; Phase 2.1 end-to-end acceptance complete; 02-02 cancelled; судьба criterion №5 (preview-страница) - открытое решение Mike. Дата-трек ждёт живой Analytics-токен.
+**Phase:** 2 of 8 - CLOSED 2026-08-25 (вариант A: criteria 1-4 выполнены, №5 descoped в Phase 3/6)
+**Plan:** 02-01, 02-01A implemented; 02-01B enforcement отменён (RW-исключение восстановлено, live-сбор прошёл); 02-02 cancelled.
+**Status:** Phase 2 закрыта. Phase 3 не начата. Дата-трек: живой RW-токен установлен, сбор работает; хвост - READ-only перевыпуск.
 **Progress:** `[#---------] 13%`
 
 ## Performance Metrics
 
 | Metric | Current |
 |--------|---------|
-| Phases complete | 1/8 |
-| Plans complete | 3/3 Phase 1; 2/3 Phase 2 |
-| Requirements complete | 6/32 |
+| Phases complete | 2/8 |
+| Plans complete | 3/3 Phase 1; Phase 2: 2 implemented + 02-01B enforcement reverted + 02-02 cancelled |
+| Requirements complete | 9/32 (SRC-01/03/04 закрыты 02-01 при закрытии Phase 2) |
 | Root verify evidence | 02-01 GitHub PASS on `56ebe000`; 02-01A local PASS on deployed `2d0f6ec` repeated 2026-08-14; hosted CI `verify` PASS on `1a211c9` (main, run completed 2026-08-14T19:25 UTC, observed 2026-08-15 - PA-12) |
 | Independent cross-model reviews | 3/3 Phase 1 plans PASS with 0 blocker / 0 warning |
 | Data GO | Pending separate Mike decision |
@@ -35,6 +35,7 @@
 
 ### Decisions
 
+- 2026-08-25 (Mike, вариант A): Phase 2 закрыта с descope success criterion №5 (минимальная preview-страница) - видимые факты переезжают в Phase 3 (staging/facts) и Phase 6 (Data Health UI). Criteria 1-4 выполнены (02-01/01A verified + задеплоены; идемпотентность и crash-recovery доказаны тестами 02-01). SRC-01/03/04 закрыты кодом 02-01 и отмечены в REQUIREMENTS.md.
 - 2026-08-25 (Mike): PA-13 enforcement отменён - временный RW-opt-in для Analytics восстановлен (revert `267cc3c` = `fd95fcb`, задеплоено на VPS `fd95fcb` 2026-08-25). Причина: READ-only Analytics токен так и не создан, а оба имеющихся RW-токена от 2026-08-16 имеют криптографически битые подписи в сохранённых копиях Амировой (WB 401 `crypto/ecdsa: verification error`; канал передачи проверен чистым - вставки Statistics/Finance побайтово идентичны рабочим). Условие закрытия исключения: свежесозданный живой Analytics токен (при READ-only - вернуть enforcement `267cc3c` повторным revert).
 - 2026-08-25 (Mike): Plan 02-02 (XLSX parser → staging → preview) отменён; ручная XLSX-нога исключена из M1. Чекпоинт-файл получен и профилирован (см. EVIDENCE 02-02), parser-код не начинался. SRC-01/03/04 закрыты кодом 02-01; success criterion №5 фазы (preview-страница) остаётся без владельца - судьба Phase 2 (закрыть с descope / держать открытой) ждёт решения Mike.
 - 2026-08-16 (Mike): продуктовое интервью (38 ответов + 12 рекомендаций as-is) - см. PRODUCT-VISION.md. Ключевое: web-first (не Telegram), Decision Inbox в v0, все 11 сценариев волнами W1-W4, Advertising API сразу, полный P&L трек (COGS с онбординга), MPStats-бенчмарки, pricing 10-20k ₽ фикс/кабинет. Гейт V1 = 1 сквозной сигнал (AI нашёл -> AM подтвердил -> клиент получил результат).
@@ -91,7 +92,7 @@
 
 **Last action:** 2026-08-25 (PA-9 grill → PA-13 rollback): Plan 02-02 отменён решением Mike после разбора ценности (машина parse-run/staging уедет в Phase 4, reconciliation-нога M1 сокращена); чекпоинт-XLSX кабинета Амировой получен и профилирован без коммита байтов. По решению Mike выполнен rollback PA-13: revert `267cc3c` = commit `fd95fcb`, `make verify` PASS (51 pytest + TS-гейты), задеплоено на VPS (pre-deploy dump `pre-pa13rw-20260825.dump` sha256 `000577e0…`, detached `fd95fcb`, npm ci+build green, владение docs/agent-system и scripts/agent исправлено на proxima-admin). Пруфы задеплоенного кода: flagless прогон `wb_async_report.py` отверг RW-токен (`WB token must be read-only`); с флагом валидатор пройден, WB ответил 401. Диагностика до конца: подписание батча 2026-08-16 битое в копиях Амировой (обе Analytics-подписи `crypto/ecdsa: verification error`; Statistics/Finance вставки побайтово идентичны рабочим установленным токенам - канал чист). Установлен одобренный Mike RW-токен №4 (`0600 proxima-admin`), временные файлы с токенами удалены локально и на VPS.
 
-**Next action (по токену):** выполнено 2026-08-25 - свежий RW-токен №2 установлен, live-сбор прошёл (DOWNLOADED, 1 220 строк, подробности в EVIDENCE 02-01B). Не горит: READ-only перевыпуск → вернуть enforcement. Отдельно ждёт решения Mike: судьба Phase 2 после отмены 02-02 (закрыть с descope criterion №5 / держать открытой).
+**Next action:** Phase 2 закрыта (вариант A, 2026-08-25). Дата-трек: живой RW-токен установлен, live-сбор работает; не горит - READ-only перевыпуск от Амировой → вернуть enforcement. Ручной хвост Mike: Jira PA-13 комментарий + статус «Готово» (текст комментария передан в сессии 2026-08-25; MCP-вызов агента в той сессии был неисправен). Далее по плану lane: PMM-7.
 
 **Resume context:** Start from `.planning/ROADMAP.md` Phase 2. Treat `.planning/phases/01-architecture-provenance-import-baseline/EVIDENCE.md` as the completed upstream gate and preserve the Phase 1 source/Linear boundaries.
 
