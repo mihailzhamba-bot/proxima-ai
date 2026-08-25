@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * PROXIMA webapp design tokens (PA-49).
+ * Two themes: light (default) and dark via `.dark` class on <html> (next-themes).
+ * GYR statuses must stay high-contrast in BOTH themes (WCAG AA on their chips).
+ */
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(0.985 0.002 250);
+  --foreground: oklch(0.22 0.02 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.02 260);
+  --muted: oklch(0.96 0.004 250);
+  --muted-foreground: oklch(0.5 0.02 260);
+  --border: oklch(0.91 0.005 250);
+  --input: oklch(0.91 0.005 250);
+  --primary: oklch(0.45 0.14 262);
+  --primary-foreground: oklch(0.985 0.002 250);
+  --accent: oklch(0.95 0.015 262);
+  --accent-foreground: oklch(0.3 0.08 262);
+  --ring: oklch(0.55 0.12 262);
+
+  /* GYR statuses, light theme */
+  --status-green: oklch(0.55 0.15 150);
+  --status-green-foreground: oklch(0.99 0.005 150);
+  --status-yellow: oklch(0.75 0.16 85);
+  --status-yellow-foreground: oklch(0.28 0.06 85);
+  --status-red: oklch(0.5 0.2 25);
+  --status-red-foreground: oklch(0.99 0.005 25);
+  --status-neutral: oklch(0.7 0.01 260);
+  --status-neutral-foreground: oklch(0.25 0.01 260);
+}
+
+.dark {
+  --background: oklch(0.17 0.015 260);
+  --foreground: oklch(0.93 0.005 250);
+  --card: oklch(0.21 0.015 260);
+  --card-foreground: oklch(0.93 0.005 250);
+  --muted: oklch(0.26 0.015 260);
+  --muted-foreground: oklch(0.68 0.01 255);
+  --border: oklch(0.3 0.015 260);
+  --input: oklch(0.3 0.015 260);
+  --primary: oklch(0.7 0.13 262);
+  --primary-foreground: oklch(0.16 0.02 262);
+  --accent: oklch(0.3 0.03 262);
+  --accent-foreground: oklch(0.9 0.03 262);
+  --ring: oklch(0.6 0.1 262);
+
+  /* GYR statuses, dark theme */
+  --status-green: oklch(0.72 0.16 152);
+  --status-green-foreground: oklch(0.2 0.05 152);
+  --status-yellow: oklch(0.82 0.16 88);
+  --status-yellow-foreground: oklch(0.25 0.06 88);
+  --status-red: oklch(0.66 0.2 25);
+  --status-red-foreground: oklch(0.18 0.05 25);
+  --status-neutral: oklch(0.45 0.01 260);
+  --status-neutral-foreground: oklch(0.9 0.01 260);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-ring: var(--ring);
+
+  --color-status-green: var(--status-green);
+  --color-status-green-foreground: var(--status-green-foreground);
+  --color-status-yellow: var(--status-yellow);
+  --color-status-yellow-foreground: var(--status-yellow-foreground);
+  --color-status-red: var(--status-red);
+  --color-status-red-foreground: var(--status-red-foreground);
+  --color-status-neutral: var(--status-neutral);
+  --color-status-neutral-foreground: var(--status-neutral-foreground);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "PT Sans", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+}

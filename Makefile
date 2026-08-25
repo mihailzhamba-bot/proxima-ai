@@ -1,4 +1,4 @@
-.PHONY: agent-toolset apply-migrations architecture boundary business-signal codegen collect-wb-analytics contracts install migrations probe-wb-api provenance secrets test typecheck verify vps
+.PHONY: agent-toolset apply-migrations architecture boundary business-signal codegen collect-wb-analytics contracts install migrations probe-wb-api provenance secrets test typecheck verify vps webapp-build webapp-lint
 
 
 verify: install codegen typecheck test contracts migrations provenance architecture boundary secrets vps business-signal
@@ -12,10 +12,18 @@ codegen:
 
 typecheck:
 	npm --workspace @proxima/collector run typecheck
+	npm --workspace @proxima/webapp run typecheck
 
 test:
 	npm --workspace @proxima/collector test
+	npm --workspace @proxima/webapp test
 	uv run --python 3.14 --project services/control-plane --extra test pytest services/control-plane/tests tools/tests
+
+webapp-lint:
+	npm --workspace @proxima/webapp run lint
+
+webapp-build:
+	npm --workspace @proxima/webapp run build
 
 contracts:
 	uv run --python 3.14 --project services/control-plane --extra test python tools/verify_contracts.py

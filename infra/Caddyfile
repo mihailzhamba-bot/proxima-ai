@@ -1,0 +1,16 @@
+# Caddy: авто-HTTPS от Let's Encrypt на домене Mike (A-запись -> 135.106.186.210).
+# Домен приходит переменной WEBAPP_DOMAIN из окружения compose.
+
+{$WEBAPP_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	reverse_proxy webapp:3000
+}
