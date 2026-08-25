@@ -34,6 +34,7 @@ Do not ask the user "where did we stop". Recover state from repository files fir
 | Мировой ресёрч конкурентов и паттернов | `.planning/research/GLOBAL-LANDSCAPE-2026-08-16.md` |
 | Архитектурные карты (Mermaid) | `docs/architecture/*.mmd` |
 | Architecture Decision Records | `docs/adr/*.md` (ADR-0001+; краткие записи-указатели в `docs/agent-system/DECISIONS.md`) |
+| Дизайн-система платформы (UI-токены, spec-before-UI) | `DESIGN.md` (Google DESIGN.md spec; валидация: `npx @google/design.md lint DESIGN.md`) |
 | Трекер задач | Jira проект PA (zhamba.atlassian.net) |
 | Current state + exact next action (agent handoff) | `docs/agent-system/HANDOFF.md` |
 | Active task snapshot | `docs/agent-system/TASKS.md` |
