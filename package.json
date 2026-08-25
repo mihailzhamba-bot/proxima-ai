@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "services/collector"
+    "services/collector",
+    "services/webapp"
   ],
   "scripts": {
     "architecture:render": "node tools/render_architecture.mjs",
