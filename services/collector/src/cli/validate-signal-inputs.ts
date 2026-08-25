@@ -11,6 +11,7 @@ const REQUIRED_OPTIONS = [
   'products-csv',
   'warehouses-csv',
 ] as const;
+const FLAG_OPTIONS = ['allow-analytics-read-write'] as const;
 
 function args(): Record<string, string> {
   const result: Record<string, string> = {};
@@ -18,6 +19,11 @@ function args(): Record<string, string> {
     const key = process.argv[index];
     if (!key?.startsWith('--') || key === '--') throw new Error('expected named file options');
     const name = key.slice(2);
+    if ((FLAG_OPTIONS as readonly string[]).includes(name)) {
+      if (result[name] !== undefined) throw new Error('unknown or duplicate option');
+      result[name] = 'true';
+      continue;
+    }
     const value = process.argv[index + 1];
     if (!value || value.startsWith('--')) throw new Error('expected named file options');
     if (!(REQUIRED_OPTIONS as readonly string[]).includes(name) || result[name] !== undefined) {
@@ -43,6 +49,7 @@ async function main(): Promise<void> {
     founderChatSource: options['founder-chat-source']!,
     productsCsv: options['products-csv']!,
     warehousesCsv: options['warehouses-csv']!,
+    allowAnalyticsReadWrite: options['allow-analytics-read-write'] === 'true',
   });
   process.stdout.write(`${JSON.stringify({ status: 'valid', ...validation })}\n`);
 }

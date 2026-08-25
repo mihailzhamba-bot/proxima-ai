@@ -7,22 +7,24 @@ import { readFounderChatId, privateDatabasePool } from '../business-signal/runti
 import { readPrivateSecret } from '../business-signal/secrets.js';
 import { TelegramBotApi } from '../business-signal/telegram.js';
 
-function args(): { values: Record<string, string>; send: boolean } {
+function args(): { values: Record<string, string>; send: boolean; allowAnalyticsReadWrite: boolean } {
   const values: Record<string, string> = {};
   let send = false;
+  let allowAnalyticsReadWrite = false;
   for (let index = 2; index < process.argv.length; index += 1) {
     const key = process.argv[index];
     if (key === '--send') { send = true; continue; }
+    if (key === '--allow-analytics-read-write') { allowAnalyticsReadWrite = true; continue; }
     const value = process.argv[index + 1];
     if (!key?.startsWith('--') || !value || value.startsWith('--')) throw new Error('invalid CLI arguments');
     values[key.slice(2)] = value;
     index += 1;
   }
-  return { values, send };
+  return { values, send, allowAnalyticsReadWrite };
 }
 
 async function main(): Promise<void> {
-  const { values, send } = args();
+  const { values, send, allowAnalyticsReadWrite } = args();
   const required = ['tenant', 'database-url-file', 'raw-root', 'statistics-token-file', 'analytics-token-file', 'finance-token-file'];
   if (required.some((key) => !values[key])) throw new Error(`required options: ${required.join(', ')}`);
   const [statisticsToken, analyticsToken, financeToken] = await Promise.all([
@@ -48,6 +50,7 @@ async function main(): Promise<void> {
       statisticsToken,
       analyticsToken,
       financeToken,
+      allowAnalyticsReadWrite,
       ...(telegram ? { send: telegram } : {}),
     });
     process.stdout.write(`${JSON.stringify({

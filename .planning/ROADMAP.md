@@ -61,7 +61,7 @@ Mike получает production-ready read-only data foundation для пило
   3. Повторный intake того же artifact возвращает тот же identity и не создаёт duplicate artifacts или facts.
   4. Crash в любой точке intake можно повторить: raw evidence сохраняется, а partial или duplicate public state не возникает.
   5. (Slice-evidence, без requirement-owner.) Минимальная read-only страница на localhost показывает `order_count` по дням из staging/preview facts реального artifact с явной пометкой `unreleased`; production release pointer в slice не участвует. Полный Data Health (UI-01..03) остаётся в Phase 6, полный quality/release-механизм - в Phase 3.
-**Plans**: 2/3 implemented - `02-01` and early-feedback `02-01A` verified; `02-01A` is deployed, privately seeded and accepted end-to-end after one Telegram `SENT` run from 2026-08-13 and visual founder receipt on 2026-08-14, while CI evidence remains pending; `02-02` waits for the official WB XLSX checkpoint.
+**Plans**: 2/3 implemented - `02-01` and early-feedback `02-01A` verified; `02-01A` is deployed, privately seeded and accepted end-to-end after one Telegram `SENT` run from 2026-08-13 and visual founder receipt on 2026-08-14; `02-02` **cancelled by Mike 2026-08-25** (checkpoint XLSX received and profiled, no parser code; manual XLSX path dropped from M1 - src-01/03/04 уже закрыты кодом 02-01, criterion №5 остаётся без владельца, судьба фазы ждёт решения Mike: закрыть с descope или держать открытой до API-данных).
 
 ### Phase 3: PostgreSQL Quality & Atomic Releases
 **Goal**: Только полностью проверенные tenant-safe datasets публикуются атомарно, а любой сбой сохраняет last-known-good.

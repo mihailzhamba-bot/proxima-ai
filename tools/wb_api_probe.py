@@ -166,10 +166,10 @@ def decode_token_claims(token: str, *, label: str = "WB token") -> dict[str, obj
     }
 
 
-def validate_split_token(category: str, claims: Mapping[str, object]) -> None:
+def validate_split_token(category: str, claims: Mapping[str, object], *, allow_read_write: bool = False) -> None:
     if claims.get("type") != "personal":
         raise WbProbeError(f"Day 1 requires a personal WB token for the {category} category")
-    if claims.get("read_only") is not True:
+    if claims.get("read_only") is not True and not allow_read_write:
         raise WbProbeError(f"Day 1 {category} token must be read-only")
     mask = claims.get("scope_mask")
     allowed_mask = (1 << TOKEN_BIT_BY_CATEGORY[category]) | (1 << READ_ONLY_BIT)
@@ -296,6 +296,7 @@ def run_probe(
     now: datetime,
     client: httpx.Client,
     sleep: Callable[[float], None] = time.sleep,
+    allow_analytics_read_write: bool = False,
 ) -> ProbeResult:
     if now.tzinfo is None:
         raise WbProbeError("now must be timezone-aware")
@@ -306,7 +307,7 @@ def run_probe(
         label = f"WB {category} token"
         token = read_token(token_files[category], label=label)
         claims = decode_token_claims(token, label=label)
-        validate_split_token(category, claims)
+        validate_split_token(category, claims, allow_read_write=allow_analytics_read_write and category == "analytics")
         if datetime.fromisoformat(str(claims["expires_at"])) <= now:
             raise WbProbeError(f"Day 1 {category} token is expired")
         tokens[category] = token
@@ -400,6 +401,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     for category in sorted(DAY1_REQUIRED_CATEGORIES):
         parser.add_argument(f"--{category}-token-file", type=Path)
     parser.add_argument("--output-dir", type=Path)
+    parser.add_argument(
+        "--allow-analytics-read-write",
+        action="store_true",
+        help="temporary staging exception: accept an exact-category Analytics token without the READ-only bit; remove after the READ-only token is issued",
+    )
     return parser.parse_args(argv)
 
 
@@ -432,6 +438,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=output_dir,
             now=datetime.now(MOSCOW),
             client=client,
+            allow_analytics_read_write=args.allow_analytics_read_write,
         )
     print(json.dumps({"receipt": result.receipt, "sales": result.sales}, ensure_ascii=False, sort_keys=True, indent=2))
     return 0
