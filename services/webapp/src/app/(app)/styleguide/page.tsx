@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge, GyrBadge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatRub, formatRubCompact, formatRubPrecise } from "@/lib/format/rub";
+import { FxBadge } from "@/components/ui/fx-badge";
 import { GYR_STATUSES } from "@/lib/gyr";
 
 export const metadata: Metadata = {
@@ -72,10 +73,18 @@ export default function StyleguidePage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-1 font-mono text-sm">
-          <span>{formatRub(1_234_567)}</span>
-          <span>{formatRubPrecise(1234.5)}</span>
-          <span>{formatRubCompact(1_250_000)}</span>
-          <span>{formatRubCompact(145_000)}</span>
+          <span className="inline-flex items-center gap-1.5">
+            {formatRub(1_234_567)} <FxBadge />
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            {formatRubPrecise(1234.5)} <FxBadge />
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            {formatRubCompact(1_250_000)} <FxBadge />
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            {formatRubCompact(145_000)} <FxBadge />
+          </span>
         </CardContent>
       </Card>
 
