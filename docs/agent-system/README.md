@@ -19,6 +19,7 @@ Mapping of the AI Operating System roles to this repository's existing documents
 | Stable facts, pitfalls | `docs/agent-system/MEMORY.md` | |
 | Engineering decisions | `docs/agent-system/DECISIONS.md` | Canonical decision log stays in `.planning/STATE.md` (Russian); DEC file holds pointers + agent-relevant subset |
 | Tools, access, dangerous ops | `docs/agent-system/TOOLS.md` | |
+| Orca coordinator playbook (supervised orchestration) | `docs/agent-system/ORCHESTRATION.md` + briefmaker agent `.opencode/agents/briefmaker.md` | Contract summary in AGENTS.md «Orca coordinator protocol» |
 | Big-task living plans | `docs/exec-plans/active/` → `completed/` | |
 | Operations runbooks | `docs/operations/business-signal-runbook.md` | Extend this dir for future runbooks |
 

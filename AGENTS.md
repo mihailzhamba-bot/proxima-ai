@@ -157,6 +157,42 @@ Parallelism: only read-only research runs in parallel. Write-capable agents neve
 
 Reviewer (`reviewer`): read-only, never fixes, never trusts implementer summaries - verdict format and gates are defined in the agent files (see routing table) and `docs/agent-system/EVALS.md`.
 
+## Orca coordinator protocol (supervised orchestration)
+
+Полный playbook: `docs/agent-system/ORCHESTRATION.md`. Краткий контракт здесь.
+
+Оркестратор (Orca coordinator) - тонкий. Он НЕ делает доменную работу сам (не гриллит, не кодит, не ревьюит). Его задачи, исчерпывающе:
+
+1. Intake и классификация (trivial / medium / major / critical - таблица выше)
+2. Dispatch: `briefmaker` для major/critical → worktree + supervised worker
+3. Ретрансляция вопросов: worker/briefmaker `ask` → decision gate для Mike (оркестратор не генерирует вопросы, только маршрутизирует)
+4. Надзор: `check --wait` на `worker_done` / `escalation` (никакого sleep-polling; молчание воркера ≠ смерть воркера)
+5. Verify-маршрутизация: `make verify`, `reviewer`, cross-model review для critical
+6. Гейты: merge / deploy / irreversible - только явный approve Mike
+7. Состояние: `docs/agent-system/HANDOFF.md` / `TASKS.md` / provenance обновляются на каждом переходе
+
+### Quality pipeline (major/critical)
+
+```
+INTAKE → ORCHESTRATOR: классификация
+  → BRIEFMAKER (.opencode/agents/briefmaker.md): research репо + grill-волны
+    (вопросы к Mike только через оркестраторский gate)
+  → [GATE: brief утверждён Mike]
+  → WORKTREE + WORKER: codex (код) | opencode (доки/аналитика)
+    воркер работает под autopilot semi; brief = контракт
+  → [GATE: worker_done] → make verify (+ reviewer; cross-model для critical)
+  → [GATE: merge - Mike] → CLOSE: HANDOFF/TASKS/provenance
+```
+
+Правила:
+
+- Trivial - мимо пайплайна, inline. Medium - короткий brief (QUICK), autopilot опционален.
+- Воркер не стартует в autopilot без закрытого brief (DISCOVERY_STATUS: READY).
+- Один write-capable воркер на дерево; research читается параллельно.
+- Автоматизации по расписанию (утро/вечер) делают только статус/verify/doc-хвосты;
+  grill и autopilot - интерактивные фазы, требуют Mike в контуре.
+- Full handoff (без надзора) - отдельный режим, только по явному запросу Mike.
+
 ## Dirty-tree note
 
 As of 2026-08-16 the working tree carries pre-existing uncommitted changes (Makefile, README.md, package.json, package-lock.json, `.planning/STATE.md`, `tools/verify_runtime_boundary.py`, untracked `.mcp.json`, `opencode.json`, `.codex/`, planning docs). They belong to other threads. Do not revert, stage blindly (`git add -A` is forbidden) or commit them together with your work. Stage only files you actually changed.
