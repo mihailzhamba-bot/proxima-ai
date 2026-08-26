@@ -223,6 +223,7 @@ def test_migration_verifier_rejects_destructive_statements() -> None:
     allowed = [
         "BEGIN;\nCREATE TABLE t (id int);\nCOMMIT;\n",
         "BEGIN;\nALTER TABLE t ADD COLUMN note text;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE t ENABLE ROW LEVEL SECURITY;\nCOMMIT;\n",
         "BEGIN;\nCREATE INDEX t_note_idx ON t (note);\nCOMMIT;\n",
         "BEGIN;\nCREATE ROLE proxima_x;\nGRANT SELECT ON t TO proxima_x;\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO t (id) VALUES (1); -- drop mentioned only in a comment\nCOMMIT;\n",
@@ -244,6 +245,8 @@ def test_migration_verifier_catches_stripping_order_bypasses() -> None:
         "BEGIN;\n/* don't */ DROP TABLE t;\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO log VALUES ('/*'); DROP TABLE t;\nCOMMIT;\n",
         "BEGIN;\nDO $$ BEGIN DROP TABLE t; END $$;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE fact_order_counts DISABLE ROW LEVEL SECURITY;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE fact_order_counts OWNER TO someone_else;\nCOMMIT;\n",
         "BEGIN;\nDO $$ BEGIN EXECUTE 'DROP TABLE tenants'; END $$;\nCOMMIT;\n",
         "BEGIN;\nexecute 'TRUNCATE ' || 'fact_order_counts';\nCOMMIT;\n",
     ]
