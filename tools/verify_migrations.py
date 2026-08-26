@@ -20,7 +20,7 @@ STATEMENT_HEAD_PATTERN = re.compile(r"[A-Za-z]+")
 ALTER_TABLE_HEAD_PATTERN = re.compile(r"ALTER\s+TABLE\b", re.IGNORECASE)
 ALTER_TABLE_FORBIDDEN = re.compile(r"\b(DROP|TYPE|RENAME)\b", re.IGNORECASE)
 CREATE_OR_REPLACE_PATTERN = re.compile(r"\bCREATE\s+OR\s+REPLACE\b", re.IGNORECASE)
-BLANKET_BANNED_PATTERN = re.compile(r"\b(DROP|TRUNCATE)\b", re.IGNORECASE)
+BLANKET_BANNED_PATTERN = re.compile(r"\b(DROP|TRUNCATE|EXECUTE)\b", re.IGNORECASE)
 
 
 def strip_sql_literals_and_comments(sql: str) -> str:
@@ -83,7 +83,7 @@ def assert_additive_only(sql: str, name: str) -> None:
     if CREATE_OR_REPLACE_PATTERN.search(stripped):
         raise ValueError(f"migration uses banned CREATE OR REPLACE: {name}")
     if BLANKET_BANNED_PATTERN.search(stripped):
-        raise ValueError(f"migration contains DROP/TRUNCATE: {name}")
+        raise ValueError(f"migration contains DROP/TRUNCATE/EXECUTE (dynamic SQL): {name}")
     for statement in stripped.split(";"):
         candidate = statement.strip()
         if not candidate:

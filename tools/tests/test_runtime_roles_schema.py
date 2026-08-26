@@ -177,3 +177,33 @@ def test_row_level_security_enforces_tenant_scope_for_runtime_roles() -> None:
         except psycopg.errors.ForeignKeyViolation:
             raised = True
         assert raised, "tenant mismatch across release/promotion must be rejected by the composite FK"
+
+        # the mirrored path: a tenant-B row (fresh attempt) referencing tenant-A's release must fail
+        fresh_attempt_b = uuid.uuid4()
+        connection.execute(
+            "INSERT INTO fact_attempt_runs (attempt_id, tenant_id, source_family, source_ref, status, finished_at)"
+            " VALUES (%s, %s, 'wb_analytics_task', %s, 'SUCCEEDED', CURRENT_TIMESTAMP)",
+            (fresh_attempt_b, tenants[1], f"task2-{tenants[1]}"),
+        )
+        try:
+            connection.execute(
+                "INSERT INTO release_promoted_facts (release_id, fact_attempt_id, tenant_id)"
+                " VALUES (%s, %s, %s)",
+                (release_id, fresh_attempt_b, tenants[1]),
+            )
+            raised_row = False
+        except psycopg.errors.ForeignKeyViolation:
+            raised_row = True
+        assert raised_row, "tenant-B promotion row must not reference tenant-A's release"
+
+        # fact row of tenant B referencing tenant A's attempt must fail (composite FK)
+        try:
+            connection.execute(
+                "INSERT INTO fact_order_counts (attempt_id, tenant_id, nm_id, calendar_day, order_count)"
+                " VALUES (%s, %s, 102, '2026-08-24', 1)",
+                (attempt_ids[tenants[0]], tenants[1]),
+            )
+            raised_fact = False
+        except psycopg.errors.ForeignKeyViolation:
+            raised_fact = True
+        assert raised_fact, "cross-tenant fact-to-attempt edge must be rejected"

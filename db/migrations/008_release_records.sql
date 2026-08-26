@@ -27,6 +27,8 @@ CREATE TABLE release_promoted_facts (
     tenant_id text NOT NULL REFERENCES tenants(tenant_id) ON DELETE RESTRICT,
     promoted_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (release_id, fact_attempt_id),
+    FOREIGN KEY (tenant_id, release_id)
+        REFERENCES release_attempts (tenant_id, release_id) ON DELETE RESTRICT,
     FOREIGN KEY (tenant_id, fact_attempt_id)
         REFERENCES fact_attempt_runs (tenant_id, attempt_id) ON DELETE RESTRICT
 );
@@ -95,6 +97,6 @@ WHERE p.domain = 'financial';
 
 -- checksum-policy: normalized-self-v1
 INSERT INTO schema_migrations (version, name, sha256)
-VALUES (8, 'release_records', 'f7f7a88c0a34f8cc5b1dccf4d0eab75369d1cbfef1004f4a0a7176fc17719345');
+VALUES (8, 'release_records', '025085596556bdb63a5942a87cd7ba63469ddb6ba023f3245bc8fb006abfc94b');
 
 COMMIT;

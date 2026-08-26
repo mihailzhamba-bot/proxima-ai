@@ -41,7 +41,9 @@ CREATE TABLE stg_quarantine_rows (
     UNIQUE (attempt_id, source_task_id, source_row_number),
     CHECK (source_task_id IS NULL OR source_row_number IS NOT NULL),
     FOREIGN KEY (source_task_id, source_row_number)
-        REFERENCES stg_wb_nm_report_rows (task_id, row_number) ON DELETE RESTRICT
+        REFERENCES stg_wb_nm_report_rows (task_id, row_number) ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, attempt_id)
+        REFERENCES fact_attempt_runs (tenant_id, attempt_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE fact_order_counts (
@@ -52,7 +54,9 @@ CREATE TABLE fact_order_counts (
     calendar_day date NOT NULL,
     order_count integer NOT NULL CHECK (order_count >= 0),
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (attempt_id, tenant_id, nm_id, calendar_day)
+    UNIQUE (attempt_id, tenant_id, nm_id, calendar_day),
+    FOREIGN KEY (tenant_id, attempt_id)
+        REFERENCES fact_attempt_runs (tenant_id, attempt_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX fact_order_counts_grain_idx
@@ -68,7 +72,9 @@ CREATE TABLE fact_lineage_records (
     acquired_via text NOT NULL CHECK (acquired_via IN ('wb_analytics_task', 'manual_xlsx_intake')),
     acquired_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (attempt_id)
+    UNIQUE (attempt_id),
+    FOREIGN KEY (tenant_id, attempt_id)
+        REFERENCES fact_attempt_runs (tenant_id, attempt_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE quality_check_results (
@@ -79,11 +85,13 @@ CREATE TABLE quality_check_results (
     status text NOT NULL CHECK (status IN ('PASS', 'FAIL')),
     detail jsonb NOT NULL CHECK (jsonb_typeof(detail) = 'object'),
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (attempt_id, check_name)
+    UNIQUE (attempt_id, check_name),
+    FOREIGN KEY (tenant_id, attempt_id)
+        REFERENCES fact_attempt_runs (tenant_id, attempt_id) ON DELETE RESTRICT
 );
 
 -- checksum-policy: normalized-self-v1
 INSERT INTO schema_migrations (version, name, sha256)
-VALUES (7, 'quality_lineage_facts', '804a3473fa107c5a5844bba11b434040df326eff968ff3bf87698f6200dbe2c9');
+VALUES (7, 'quality_lineage_facts', 'df2f563aa5c438fa3b6bc0d4fa6e5fbda018e3b7322159c977029b9abca46d07');
 
 COMMIT;

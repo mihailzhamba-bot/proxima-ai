@@ -244,6 +244,8 @@ def test_migration_verifier_catches_stripping_order_bypasses() -> None:
         "BEGIN;\n/* don't */ DROP TABLE t;\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO log VALUES ('/*'); DROP TABLE t;\nCOMMIT;\n",
         "BEGIN;\nDO $$ BEGIN DROP TABLE t; END $$;\nCOMMIT;\n",
+        "BEGIN;\nDO $$ BEGIN EXECUTE 'DROP TABLE tenants'; END $$;\nCOMMIT;\n",
+        "BEGIN;\nexecute 'TRUNCATE ' || 'fact_order_counts';\nCOMMIT;\n",
     ]
     for sql in banned:
         with pytest.raises(ValueError):

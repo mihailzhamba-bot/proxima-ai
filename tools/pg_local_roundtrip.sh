@@ -10,8 +10,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT="${PROXIMA_PG_ROUNDTRIP_PORT:-55432}"
 
 PGBIN=""
-for candidate in "$(dirname "$(command -v initdb 2>/dev/null || true)")" /opt/homebrew/opt/postgresql@16/bin /usr/lib/postgresql/16/bin /usr/local/opt/postgresql@16/bin; do
-  if [[ -x "${candidate}/initdb" ]]; then PGBIN="${candidate}"; break; fi
+# Explicit PG16 locations first: a PATH initdb of another major version must
+# not cause a skip when a real PG16 candidate exists later in the list.
+for candidate in /opt/homebrew/opt/postgresql@16/bin /usr/lib/postgresql/16/bin /usr/local/opt/postgresql@16/bin "$(dirname "$(command -v initdb 2>/dev/null || true)")"; do
+  if [[ -x "${candidate}/initdb" ]] && "${candidate}/initdb" --version 2>/dev/null | grep -qE 'PostgreSQL[)] 16\.'; then PGBIN="${candidate}"; break; fi
 done
 if [[ -z "${PGBIN}" ]]; then
   echo "pg-roundtrip: SKIP (no local initdb found; disposable PostgreSQL 16 unavailable)"
@@ -23,6 +25,15 @@ if ! "${PGBIN}/initdb" --version | grep -qE 'PostgreSQL[)] 16\.'; then
 fi
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/proxima-pg-roundtrip.XXXXXX")"
+
+# Ephemeral port: start from the default and probe until one is free.
+PORT="${PROXIMA_PG_ROUNDTRIP_PORT:-55432}"
+for _ in $(seq 1 20); do
+  if ! "${PGBIN}/pg_isready" -h 127.0.0.1 -p "${PORT}" -t 1 >/dev/null 2>&1; then
+    break
+  fi
+  PORT=$((PORT + 1))
+done
 cleanup() {
   "${PGBIN}/pg_ctl" -D "${WORK}/pgdata" -m immediate -w stop >/dev/null 2>&1 || true
   rm -rf "${WORK}"
