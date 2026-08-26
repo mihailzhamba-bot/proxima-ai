@@ -15,13 +15,16 @@ export function KeyboardHint() {
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-md border border-border bg-card px-4 py-3">
       <Keyboard className="size-4 text-muted-foreground" strokeWidth={1.5} aria-hidden />
+      <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
+        горячие клавиши - заработают в PA-51
+      </p>
       <ul className="flex flex-wrap items-center gap-x-5 gap-y-2">
         {HINTS.map((hint) => (
           <li key={hint.label} className="flex items-center gap-2">
             {hint.keys.map((key) => (
               <kbd
                 key={key}
-                className="inline-flex h-6 min-w-6 items-center justify-center rounded-sm border border-border bg-muted px-1.5 font-mono text-xs text-foreground"
+                className="inline-flex h-6 min-w-6 items-center justify-center rounded-sm border border-muted-foreground/40 bg-transparent px-1.5 font-mono text-xs text-muted-foreground"
               >
                 {key}
               </kbd>
@@ -30,9 +33,6 @@ export function KeyboardHint() {
           </li>
         ))}
       </ul>
-      <p className="ml-auto font-mono text-xs uppercase tracking-wide text-muted-foreground">
-        каркас · заработает в PA-51
-      </p>
     </div>
   );
 }
