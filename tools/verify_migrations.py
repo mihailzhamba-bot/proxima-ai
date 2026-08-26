@@ -12,6 +12,42 @@ SELF_PATTERN = re.compile(
     rb"(VALUES \(([0-9]+), '([a-z][a-z0-9_]{1,63})', ')[0-9a-f]{64}('\);)",
 )
 FILENAME_PATTERN = re.compile(r"^([0-9]{3})_([a-z][a-z0-9_]{1,63})\.sql$")
+LINE_COMMENT_PATTERN = re.compile(r"--[^\n]*")
+BLOCK_COMMENT_PATTERN = re.compile(r"/\*.*?\*/", re.DOTALL)
+STRING_LITERAL_PATTERN = re.compile(r"'(?:[^']|'')*'")
+DOLLAR_STRING_PATTERN = re.compile(r"\$[A-Za-z_]*\$.*?\$[A-Za-z_]*\$", re.DOTALL)
+BANNED_STATEMENT_PREFIXES = ("DROP", "TRUNCATE")
+BANNED_PREFIX_PATTERN = re.compile(r"^[A-Z]+")
+ALTER_TABLE_FORBIDDEN = re.compile(r"\b(DROP|TYPE|RENAME)\b")
+CREATE_OR_REPLACE_PATTERN = re.compile(r"\bCREATE\s+OR\s+REPLACE\b")
+
+
+def strip_sql_literals_and_comments(sql: str) -> str:
+    stripped = BLOCK_COMMENT_PATTERN.sub(" ", sql)
+    stripped = DOLLAR_STRING_PATTERN.sub(" '$' ", stripped)
+    stripped = STRING_LITERAL_PATTERN.sub(" '?' ", stripped)
+    stripped = LINE_COMMENT_PATTERN.sub(" ", stripped)
+    return stripped
+
+
+def assert_additive_only(sql: str, name: str) -> None:
+    """Additive-only doctrine (B6, Phase 3 CONTEXT 2026-08-25): migrations may
+    create and extend objects but never destroy or rewrite them."""
+    stripped = strip_sql_literals_and_comments(sql)
+    if CREATE_OR_REPLACE_PATTERN.search(stripped):
+        raise ValueError(f"migration uses banned CREATE OR REPLACE: {name}")
+    for statement in stripped.split(";"):
+        candidate = statement.strip()
+        if not candidate:
+            continue
+        keyword = BANNED_PREFIX_PATTERN.match(candidate.upper())
+        if keyword is None:
+            continue
+        head = candidate.upper().split(None, 1)[0]
+        if head in BANNED_STATEMENT_PREFIXES or candidate.upper().startswith("DROP "):
+            raise ValueError(f"migration contains destructive statement ({head}): {name}")
+        if re.match(r"ALTER\s+TABLE\b", candidate.upper()) and ALTER_TABLE_FORBIDDEN.search(candidate.upper()):
+            raise ValueError(f"migration contains banned ALTER TABLE rewrite: {name}")
 
 
 def normalized_sha256(content: bytes) -> str:
@@ -44,6 +80,7 @@ def verify() -> None:
             raise ValueError(f"migration ledger identity mismatch: {path.name}")
         if recorded_sha256 != normalized_sha256(content):
             raise ValueError(f"migration self checksum mismatch: {path.name}")
+        assert_additive_only(content.decode("utf-8"), path.name)
 
 
 if __name__ == "__main__":

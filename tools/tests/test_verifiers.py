@@ -203,3 +203,36 @@ def test_host_monitor_escalates_and_recommends_without_resizing() -> None:
     assert by_metric["memory_available_percent"].severity == "urgent"
     assert by_metric["disk_used_percent"].severity == "resize_recommendation"
     assert "manual" in by_metric["disk_used_percent"].action
+
+
+def test_migration_verifier_rejects_destructive_statements() -> None:
+    migrations = load_tool("verify_migrations")
+    banned = [
+        "BEGIN;\nDROP TABLE tenants;\nCOMMIT;\n",
+        "BEGIN;\nTRUNCATE fact_order_counts;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE fact_order_counts DROP COLUMN order_count;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE fact_order_counts ALTER COLUMN order_count TYPE text;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE fact_order_counts RENAME COLUMN order_count TO orders;\nCOMMIT;\n",
+        "BEGIN;\nDROP INDEX IF EXISTS some_index;\nCOMMIT;\n",
+        "BEGIN;\nCREATE OR REPLACE VIEW v AS SELECT 1;\nCOMMIT;\n",
+    ]
+    for sql in banned:
+        with pytest.raises(ValueError, match="migration"):
+            migrations.assert_additive_only(sql, "999_fixture.sql")
+
+    allowed = [
+        "BEGIN;\nCREATE TABLE t (id int);\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE t ADD COLUMN note text;\nCOMMIT;\n",
+        "BEGIN;\nCREATE INDEX t_note_idx ON t (note);\nCOMMIT;\n",
+        "BEGIN;\nCREATE ROLE proxima_x;\nGRANT SELECT ON t TO proxima_x;\nCOMMIT;\n",
+        "BEGIN;\nINSERT INTO t (id) VALUES (1); -- drop mentioned only in a comment\nCOMMIT;\n",
+        "BEGIN;\nINSERT INTO t (id, note) VALUES (2, 'literal mentioning drop and truncate');\nCOMMIT;\n",
+    ]
+    for sql in allowed:
+        migrations.assert_additive_only(sql, "999_fixture.sql")
+
+
+def test_migration_verifier_additive_check_covers_all_existing_migrations() -> None:
+    migrations = load_tool("verify_migrations")
+    for path in sorted((ROOT / "db" / "migrations").glob("*.sql")):
+        migrations.assert_additive_only(path.read_text(encoding="utf-8"), path.name)
