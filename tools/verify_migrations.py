@@ -42,7 +42,7 @@ CREATE_ALLOWED_OBJECTS = re.compile(
     r"^CREATE ((UNIQUE )?INDEX|TABLE|SEQUENCE|POLICY)\b",
     re.IGNORECASE,
 )
-TENANT_GUARD = r"tenant_id\s*=\s*current_setting\s*\(\s*'\?'\s*,\s*true\s*\)"
+TENANT_GUARD = r"tenant_id\s*=\s*current_setting\s*\(\s*<GUC>\s*,\s*true\s*\)"
 CREATE_POLICY_ALLOWED_FORM = re.compile(
     rf"^CREATE\ POLICY\ [A-Za-z_][A-Za-z0-9_]*\ ON\ {IDENTIFIER}"
     r"\ FOR\ (SELECT|ALL|INSERT|UPDATE)\ TO\ proxima_[a-z_]+"
@@ -52,7 +52,7 @@ CREATE_POLICY_ALLOWED_FORM = re.compile(
     r"\ FOR\ SELECT\ TO\ proxima_[a-z_]+"
     r"\ USING\ \(\s*EXISTS\ \(\s*SELECT\ 1\ FROM\ wb_analytics_report_tasks\ t"
     r"\ WHERE\ t\.task_id\s*=\s*[A-Za-z_][A-Za-z0-9_]*\.task_id"
-    rf"\ AND\ t\.tenant_id\s*=\s*current_setting\s*\(\s*'\?'\s*,\s*true\s*\)\s*\)\s*\)\s*$",
+    rf"\ AND\ t\.tenant_id\s*=\s*current_setting\s*\(\s*<GUC>\s*,\s*true\s*\)\s*\)\s*\)\s*$",
     re.IGNORECASE,
 )
 VALUE_TOKEN = r"(\s*'\?'\s*|\s*NULL\s*|\s*TRUE\s*|\s*FALSE\s*|\s*-?[0-9]+(\.[0-9]+)?\s*)"
@@ -177,7 +177,7 @@ def assert_grant_matrix(candidate: str, name: str) -> None:
     if match is None:
         raise ValueError(f"migration contains banned GRANT form: {name}")
     privileges = {part.strip().upper() for part in match.group(1).split(",")}
-    obj = match.group(3).lower()
+    obj = match.group(3).lower().split(".")[-1]
     role = match.group(4).lower()
     if role == "proxima_data_health_read" and privileges - {"SELECT"}:
         raise ValueError(f"migration grants write privileges to the read-only role: {name}")
@@ -193,7 +193,8 @@ def assert_additive_only(sql: str, name: str) -> None:
     below) are accepted; everything else is rejected."""
     if QUOTED_SET_CONFIG_PATTERN.search(sql):
         raise ValueError(f"migration references set_config (quoted or not): {name}")
-    stripped = strip_sql_literals_and_comments(sql)
+    marked = sql.replace("'proxima.tenant_id'", "<GUC>")
+    stripped = strip_sql_literals_and_comments(marked)
     if CREATE_OR_REPLACE_PATTERN.search(stripped):
         raise ValueError(f"migration uses banned CREATE OR REPLACE: {name}")
     if CREATE_RULE_PATTERN.search(stripped):
@@ -233,10 +234,13 @@ def assert_additive_only(sql: str, name: str) -> None:
                 continue
             if not CREATE_ALLOWED_OBJECTS.match(candidate):
                 raise ValueError(f"migration contains banned CREATE object form: {name}")
-            if candidate.upper().startswith("CREATE TABLE ") and not re.search(
-                rf"^CREATE TABLE (IF NOT EXISTS )?{IDENTIFIER} \(", candidate, re.IGNORECASE
-            ):
-                raise ValueError(f"migration uses CREATE TABLE AS (data-copy) form: {name}")
+            if re.search(r"\bCONCURRENTLY\b", candidate, re.IGNORECASE):
+                raise ValueError(f"migration uses CONCURRENTLY (invalid inside a transaction): {name}")
+            if candidate.upper().startswith("CREATE TABLE "):
+                if not re.search(rf"^CREATE TABLE (IF NOT EXISTS )?{IDENTIFIER} \(", candidate, re.IGNORECASE):
+                    raise ValueError(f"migration uses CREATE TABLE AS (data-copy) form: {name}")
+                if re.search(r"\bAS\s+SELECT\b", candidate, re.IGNORECASE):
+                    raise ValueError(f"migration uses CREATE TABLE AS SELECT (data-copy) form: {name}")
             continue
         if keyword == "INSERT":
             if not INSERT_ALLOWED_FORM.match(candidate):
