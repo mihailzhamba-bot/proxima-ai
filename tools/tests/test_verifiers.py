@@ -292,6 +292,10 @@ def test_migration_verifier_rejects_destructive_statements() -> None:
         "BEGIN;\nINSERT INTO seq VALUES (setval('s', 100));\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO t VALUES (lo_unlink(12345));\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO t (id) VALUES (1) ON CONFLICT (id) DO UPDATE SET id = 2;\nCOMMIT;\n",
+        "BEGIN;\nCREATE POLICY p ON t FOR ALL TO proxima_source_publisher USING (tenant_id = current_setting('evil.tenant_id', true)) WITH CHECK (tenant_id = current_setting('proxima.tenant_id', true));\nCOMMIT;\n",
+        "BEGIN;\nGRANT UPDATE ON public.schema_migrations TO proxima_source_publisher;\nCOMMIT;\n",
+        "BEGIN;\nCREATE TABLE leaked (id) AS SELECT secret FROM other;\nCOMMIT;\n",
+        "BEGIN;\nCREATE INDEX CONCURRENTLY i ON t (id);\nCOMMIT;\n",
     ]
     for sql in banned:
         with pytest.raises(ValueError, match="migration"):
