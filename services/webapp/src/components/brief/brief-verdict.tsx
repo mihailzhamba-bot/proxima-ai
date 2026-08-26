@@ -46,7 +46,7 @@ export function BriefVerdict({ dateIso, criticalCount, attentionCount, firstCrit
             <span aria-hidden="true" className="text-muted-foreground">
               /
             </span>
-            <span>
+            <span className="font-normal text-muted-foreground">
               <CountUp value={attentionCount} /> внимания
             </span>
           </>

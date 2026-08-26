@@ -1,3 +1,4 @@
+import { FxBadge } from "@/components/ui/fx-badge";
 import type { BriefDigestItem } from "@/lib/fixtures/brief";
 import { gyrDotClass } from "@/lib/gyr";
 import { cn } from "@/lib/utils";
@@ -6,12 +7,16 @@ type DigestProps = {
   items: readonly BriefDigestItem[];
 };
 
-/** Дайджест дня: 2-3 пункта под hairline-разделителями; без critical занимает их место (R06.1). */
+/** Дайджест дня: 2-3 демо-пункта под hairline-разделителями; без critical занимает их место (R06.1). */
 export function Digest({ items }: DigestProps) {
   return (
     <section aria-labelledby="brief-digest-title" className="flex flex-col">
-      <h2 id="brief-digest-title" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <h2
+        id="brief-digest-title"
+        className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+      >
         Дайджест дня
+        <FxBadge />
       </h2>
       <ul className="mt-1 border-t border-border">
         {items.map((item) => (

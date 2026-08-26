@@ -1,4 +1,3 @@
-import { ChevronRight } from "lucide-react";
 import { FxBadge } from "@/components/ui/fx-badge";
 import { formatRub } from "@/lib/format/rub";
 import type { BriefSignal } from "@/lib/fixtures/brief";
@@ -10,7 +9,7 @@ type SignalRowProps = {
   anchorId?: boolean;
 };
 
-/** Полноширинная critical-строка брифа: 36px, GYR-полоса 3px слева, ₽-оценка mono справа, chevron. */
+/** Полноширинная critical-строка брифа: 36px, GYR-полоса 3px слева, ₽-оценка mono справа; статична. */
 export function SignalRow({ signal, anchorId }: SignalRowProps) {
   return (
     <div
@@ -26,7 +25,6 @@ export function SignalRow({ signal, anchorId }: SignalRowProps) {
         {formatRub(signal.costEstimate)}
         <FxBadge />
       </span>
-      <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
     </div>
   );
 }
