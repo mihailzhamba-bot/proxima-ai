@@ -73,7 +73,7 @@ Mike получает production-ready read-only data foundation для пило
   3. Failed, partial, stale, conflicting или schema-drift attempt оставляет current pointer на last-known-good и виден как отдельный текущий failure.
   4. Из любого public fact reviewer переходит к exact artifact SHA-256, manifest, parser/schema version и acquisition attempt.
   5. Отдельные runtime roles для migration owner, source publisher, release publisher и read-only Data Health проходят cross-tenant, forbidden-write и crash-injection tests.
-**Plans**: TBD
+**Plans**: 4 planned (2026-08-25) - `03-01` schema foundation (migrations 007-009, enforced additive-only verifier, Docker-free PostgreSQL roundtrip runner; DATA-01/10); `03-02` staging→facts promotion with typed quarantine and unified lineage (DATA-01/05); `03-03` atomic domain releases operational/inventory/financial with last-known-good and pointer crash-injection (DATA-02/03/04/10); `03-04` runtime roles + adversarial cross-tenant/forbidden-write/crash matrix + operator docs (DATA-09/10). Waves 1→4 sequential; CONTEXT закрывает B6 (additive-only doctrine). Critical phase: каждый план - cross-model review 0/0.
 
 ### Phase 4: Official WB READ & 90-Day Backfill
 **Goal**: Пилот получает complete official WB evidence через READ-only clients и воспроизводимый 90-дневный operational backfill, выполняемый на минимальном VPS с базовым ежедневным scheduler. (Решение Mike 2026-08-12: VPS и daily-сбор поднимаются здесь, а не big-bang в Phase 7.)

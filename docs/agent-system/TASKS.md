@@ -4,9 +4,9 @@
 
 ## Active main task
 
-### None open — Phase 2 CLOSED 2026-08-25 (Mike, вариант A)
+### Phase 3: planning complete 2026-08-25 → executing 03-01 next
 
-PA-13 закрыт по существу: rollback задеплоен, живой RW-токен установлен, live-сбор Аналитики прошёл (DOWNLOADED, 1 220 строк), PR #17 отревьюен (0/1, warning закрыт `60fc7b1`). Plan 02-02 отменён. Phase 2 закрыта с descope criterion №5; SRC-01/03/04 Complete. Ручной хвост Mike: Jira PA-13 комментарий + «Готово». Next: PMM-7 (charter-pointer) либо планирование Phase 3.
+CONTEXT.md + 4 плана залиты (`.planning/phases/03-postgresql-quality-atomic-releases/`): 03-01 schema foundation (B6 machine-enforced) → 03-02 promotion/quarantine/lineage → 03-03 atomic releases + LKG → 03-04 roles + adversarial matrix. Волны 1→4, autonomous, внешних входов нет. Critical phase: каждый план - cross-model review 0/0. День 2026-08-25 до этого: PA-13 closed (PR #17→#19 `51abc7f`, codex 2/3/1 all fixed), Phase 2 closed (вариант A), 02-02 cancelled, live-сбор Аналитики 1 220 строк.
 
 Next candidate: PMM-7 (charter-pointer) per HANDOFF "Exact next action", unless Mike reorders.
 
