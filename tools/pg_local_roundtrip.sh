@@ -31,7 +31,11 @@ trap cleanup EXIT
 
 echo "pg-roundtrip: initdb disposable cluster (${PGBIN})"
 "${PGBIN}/initdb" -D "${WORK}/pgdata" -U proxima_roundtrip --auth=trust --encoding=UTF8 >/dev/null
-"${PGBIN}/pg_ctl" -D "${WORK}/pgdata" -o "-p ${PORT} -c listen_addresses=localhost" -l "${WORK}/postgres.log" -w start >/dev/null
+if ! "${PGBIN}/pg_ctl" -D "${WORK}/pgdata" -o "-p ${PORT} -k ${WORK} -c listen_addresses=127.0.0.1" -l "${WORK}/postgres.log" -w start >/dev/null; then
+  echo "pg-roundtrip: server start failed; postgres log:" >&2
+  cat "${WORK}/postgres.log" >&2 || true
+  exit 1
+fi
 "${PGBIN}/createdb" -h 127.0.0.1 -p "${PORT}" -U proxima_roundtrip proxima
 
 printf 'proxima_roundtrip\n' > "${WORK}/postgres_user"
