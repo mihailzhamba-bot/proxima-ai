@@ -66,13 +66,15 @@ export function MetricCard({ metric }: { metric: FixtureMetric }) {
               </span>
               <FxBadge />
             </span>
-            <span
-              className={`mt-2 font-mono text-xs tabular-nums ${deltaTone(metric)}`}
-              title="Сравнение с тем же днём прошлой недели"
-            >
-              {metric.deltaPercent === null ? "—" : formatDelta(metric.deltaPercent)}
-              <span className="ml-1 font-sans text-muted-foreground">vs 7 дн</span>
-            </span>
+            {metric.deltaPercent !== null && (
+              <span
+                className={`mt-2 font-mono text-xs tabular-nums ${deltaTone(metric)}`}
+                title="Сравнение с тем же днём прошлой недели"
+              >
+                {formatDelta(metric.deltaPercent)}
+                <span className="ml-1 font-sans text-muted-foreground">vs 7 дн</span>
+              </span>
+            )}
           </>
         ) : (
           <span className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
