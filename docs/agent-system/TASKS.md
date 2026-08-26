@@ -4,9 +4,9 @@
 
 ## Active main task
 
-### Phase 3: planning complete 2026-08-25 → executing 03-01 next
+### Phase 3: 03-01 DONE (PR #21 `0a7b2c6`, cross-model 0/0 ×12 rounds) → 03-02 promotion next
 
-CONTEXT.md + 4 плана залиты (`.planning/phases/03-postgresql-quality-atomic-releases/`): 03-01 schema foundation (B6 machine-enforced) → 03-02 promotion/quarantine/lineage → 03-03 atomic releases + LKG → 03-04 roles + adversarial matrix. Волны 1→4, autonomous, внешних входов нет. Critical phase: каждый план - cross-model review 0/0. День 2026-08-25 до этого: PA-13 closed (PR #17→#19 `51abc7f`, codex 2/3/1 all fixed), Phase 2 closed (вариант A), 02-02 cancelled, live-сбор Аналитики 1 220 строк.
+03-01 delivered: migrations 007-009, enforced additive-only verifier (92+15 fixtures), `make pg-roundtrip` (disposable local PG16, runs in CI), RLS 23 policies / 11 tables, 4 NOLOGIN roles. Full review history in `.planning/phases/03-postgresql-quality-atomic-releases/EVIDENCE.md`. Branch `mihailzhamba-bot/PA-03-02-promotion` on `0a7b2c6` ready for the 03-02 plan (staging→facts promotion, quarantine, lineage, crash-injection). Then 03-03 (releases/LKG), 03-04 (roles matrix).
 
 Next candidate: PMM-7 (charter-pointer) per HANDOFF "Exact next action", unless Mike reorders. **PMM-11 approved 2026-08-27** (Mike, чат): exit-критерии W1-среза в `docs/exec-plans/active/w1-slice-exit-criteria.md` (Approved, codex re-review 0/0, PR #22); Jira-фиксация (описание+чек-лист, статус «В работе», R-14 в risk-register) выполнена тем же днём. **PMM-12 done 2026-08-27** (DoD-чеклист среза: `docs/governance/dod-checklist.md`, PR #23).
 
