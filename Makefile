@@ -1,7 +1,7 @@
-.PHONY: agent-toolset apply-migrations architecture boundary business-signal codegen collect-wb-analytics contracts install migrations probe-wb-api provenance secrets test typecheck verify vps webapp-build webapp-lint
+.PHONY: agent-toolset apply-migrations architecture boundary business-signal codegen collect-wb-analytics contracts install migrations pg-roundtrip probe-wb-api provenance secrets test typecheck verify vps webapp-build webapp-lint
 
 
-verify: install codegen typecheck test contracts migrations provenance architecture boundary secrets vps business-signal
+verify: install codegen typecheck test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal
 
 install:
 	npm ci
@@ -30,6 +30,9 @@ contracts:
 
 migrations:
 	uv run --python 3.14 python tools/verify_migrations.py
+
+pg-roundtrip:
+	bash tools/pg_local_roundtrip.sh
 
 provenance:
 	uv run --python 3.14 python tools/verify_provenance.py
