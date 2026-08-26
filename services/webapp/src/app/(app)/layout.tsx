@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/shell/app-sidebar";
-import { AppTopbar } from "@/components/shell/app-topbar";
+import { MetricStrip } from "@/components/metrics/metric-strip";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UnreleasedBanner } from "@/components/shell/unreleased-banner";
 
@@ -27,7 +27,7 @@ export default async function AppLayout({
     <div className="flex min-h-screen flex-col">
       <UnreleasedBanner />
       <div className="flex flex-1">
-        <aside className="hidden w-56 shrink-0 border-r border-border bg-card md:block">
+        <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-card md:flex">
           <div className="flex h-14 items-center gap-2 border-b border-border px-5">
             <span className="text-sm font-bold tracking-tight">PROXIMA</span>
             <span className="ml-auto">
@@ -37,7 +37,7 @@ export default async function AppLayout({
           <AppSidebar />
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-          <AppTopbar />
+          <MetricStrip />
           <main className="flex-1 p-4 lg:p-6">{children}</main>
         </div>
       </div>
