@@ -215,6 +215,26 @@ def test_migration_verifier_rejects_destructive_statements() -> None:
         "BEGIN;\nALTER TABLE fact_order_counts RENAME COLUMN order_count TO orders;\nCOMMIT;\n",
         "BEGIN;\nDROP INDEX IF EXISTS some_index;\nCOMMIT;\n",
         "BEGIN;\nCREATE OR REPLACE VIEW v AS SELECT 1;\nCOMMIT;\n",
+        "BEGIN;\ncreate or replace view v as select 1;\nCOMMIT;\n",
+        "BEGIN;\nalter table t alter column c type text;\nCOMMIT;\n",
+        "BEGIN;\n/* don't */ DROP TABLE t;\nCOMMIT;\n",
+        "BEGIN;\nINSERT INTO log VALUES ('/*'); DROP TABLE t;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE fact_order_counts DISABLE ROW LEVEL SECURITY;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE fact_order_counts OWNER TO someone_else;\nCOMMIT;\n",
+        "BEGIN;\nDO $$ BEGIN DROP TABLE t; END $$;\nCOMMIT;\n",
+        "BEGIN;\nDO $$ BEGIN EXECUTE 'DROP TABLE tenants'; END $$;\nCOMMIT;\n",
+        "BEGIN;\nexecute 'TRUNCATE ' || 'fact_order_counts';\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE fact_order_counts SET UNLOGGED;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE fact_order_counts SET SCHEMA elsewhere;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE parents DETACH PARTITION kids;\nCOMMIT;\n",
+        "BEGIN;\nALTER POLICY tenant_isolation ON fact_order_counts USING (true);\nCOMMIT;\n",
+        "BEGIN;\nALTER VIEW public_order_counts_operational RENAME TO leaked;\nCOMMIT;\n",
+        "BEGIN;\nALTER ROLE proxima_data_health_read BYPASSRLS;\nCOMMIT;\n",
+        "BEGIN;\nREVOKE SELECT ON fact_order_counts FROM proxima_data_health_read;\nCOMMIT;\n",
+        "BEGIN;\nCREATE RULE r AS ON SELECT TO t DO INSTEAD SELECT 1;\nCOMMIT;\n",
+        "BEGIN;\nCOMMENT ON TABLE t IS 'overwritten';\nCOMMIT;\n",
+        "BEGIN;\nCALL some_procedure();\nCOMMIT;\n",
+        "BEGIN;\nLOCK TABLE t IN ACCESS EXCLUSIVE MODE;\nCOMMIT;\n",
     ]
     for sql in banned:
         with pytest.raises(ValueError, match="migration"):
@@ -223,11 +243,15 @@ def test_migration_verifier_rejects_destructive_statements() -> None:
     allowed = [
         "BEGIN;\nCREATE TABLE t (id int);\nCOMMIT;\n",
         "BEGIN;\nALTER TABLE t ADD COLUMN note text;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE t ADD CONSTRAINT c CHECK (id > 0);\nCOMMIT;\n",
         "BEGIN;\nALTER TABLE t ENABLE ROW LEVEL SECURITY;\nCOMMIT;\n",
         "BEGIN;\nCREATE INDEX t_note_idx ON t (note);\nCOMMIT;\n",
         "BEGIN;\nCREATE ROLE proxima_x;\nGRANT SELECT ON t TO proxima_x;\nCOMMIT;\n",
+        "BEGIN;\nCREATE POLICY p ON t FOR SELECT USING (true);\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO t (id) VALUES (1); -- drop mentioned only in a comment\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO t (id, note) VALUES (2, 'literal mentioning drop and truncate');\nCOMMIT;\n",
+        "BEGIN;\nSET LOCAL search_path = public;\nCOMMIT;\n",
+        "BEGIN;\nSELECT 1;\nCOMMIT;\n",
     ]
     for sql in allowed:
         migrations.assert_additive_only(sql, "999_fixture.sql")
@@ -237,19 +261,3 @@ def test_migration_verifier_additive_check_covers_all_existing_migrations() -> N
     migrations = load_tool("verify_migrations")
     for path in sorted((ROOT / "db" / "migrations").glob("*.sql")):
         migrations.assert_additive_only(path.read_text(encoding="utf-8"), path.name)
-def test_migration_verifier_catches_stripping_order_bypasses() -> None:
-    migrations = load_tool("verify_migrations")
-    banned = [
-        "BEGIN;\ncreate or replace view v as select 1;\nCOMMIT;\n",
-        "BEGIN;\nalter table t alter column c type text;\nCOMMIT;\n",
-        "BEGIN;\n/* don't */ DROP TABLE t;\nCOMMIT;\n",
-        "BEGIN;\nINSERT INTO log VALUES ('/*'); DROP TABLE t;\nCOMMIT;\n",
-        "BEGIN;\nDO $$ BEGIN DROP TABLE t; END $$;\nCOMMIT;\n",
-        "BEGIN;\nALTER TABLE fact_order_counts DISABLE ROW LEVEL SECURITY;\nCOMMIT;\n",
-        "BEGIN;\nALTER TABLE fact_order_counts OWNER TO someone_else;\nCOMMIT;\n",
-        "BEGIN;\nDO $$ BEGIN EXECUTE 'DROP TABLE tenants'; END $$;\nCOMMIT;\n",
-        "BEGIN;\nexecute 'TRUNCATE ' || 'fact_order_counts';\nCOMMIT;\n",
-    ]
-    for sql in banned:
-        with pytest.raises(ValueError):
-            migrations.assert_additive_only(sql, "999_fixture.sql")

@@ -15,12 +15,17 @@ FILENAME_PATTERN = re.compile(r"^([0-9]{3})_([a-z][a-z0-9_]{1,63})\.sql$")
 LINE_COMMENT_START = "--"
 BLOCK_COMMENT_START = "/*"
 BLOCK_COMMENT_END = "*/"
-BANNED_HEAD_PREFIXES = ("DROP", "TRUNCATE")
 STATEMENT_HEAD_PATTERN = re.compile(r"[A-Za-z]+")
-ALTER_TABLE_HEAD_PATTERN = re.compile(r"ALTER\s+TABLE\b", re.IGNORECASE)
-ALTER_TABLE_FORBIDDEN = re.compile(r"\b(DROP|TYPE|RENAME|DISABLE|FORCE|OWNER|REPLICA|INHERIT|CLUSTER|VALIDATE)\b", re.IGNORECASE)
 CREATE_OR_REPLACE_PATTERN = re.compile(r"\bCREATE\s+OR\s+REPLACE\b", re.IGNORECASE)
+CREATE_RULE_PATTERN = re.compile(r"\bCREATE\s+(RULE|EVENT\s+TRIGGER)\b", re.IGNORECASE)
 BLANKET_BANNED_PATTERN = re.compile(r"\b(DROP|TRUNCATE|EXECUTE)\b", re.IGNORECASE)
+# Fail-closed allowlist (B6): every statement head NOT in this set is banned,
+# and ALTER TABLE is additionally restricted to purely additive/RLS-enabling forms.
+ALLOWED_HEADS = frozenset({"BEGIN", "COMMIT", "CREATE", "GRANT", "INSERT", "SELECT", "SET", "RESET"})
+ALTER_TABLE_ALLOWED_FORM = re.compile(
+    r"^ALTER TABLE \S+ (ADD COLUMN\b.*|ADD CONSTRAINT\b.*|ENABLE ROW LEVEL SECURITY)$",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def strip_sql_literals_and_comments(sql: str) -> str:
@@ -78,24 +83,30 @@ def strip_sql_literals_and_comments(sql: str) -> str:
 
 def assert_additive_only(sql: str, name: str) -> None:
     """Additive-only doctrine (B6, Phase 3 CONTEXT 2026-08-25): migrations may
-    create and extend objects but never destroy or rewrite them."""
+    create and extend objects but never destroy or rewrite them. Fail-closed:
+    only the statement forms in ALLOWED_HEADS (plus the ALTER TABLE allowlist
+    below) are accepted; everything else is rejected."""
     stripped = strip_sql_literals_and_comments(sql)
     if CREATE_OR_REPLACE_PATTERN.search(stripped):
         raise ValueError(f"migration uses banned CREATE OR REPLACE: {name}")
+    if CREATE_RULE_PATTERN.search(stripped):
+        raise ValueError(f"migration uses banned CREATE RULE/EVENT TRIGGER: {name}")
     if BLANKET_BANNED_PATTERN.search(stripped):
         raise ValueError(f"migration contains DROP/TRUNCATE/EXECUTE (dynamic SQL): {name}")
     for statement in stripped.split(";"):
-        candidate = statement.strip()
+        candidate = " ".join(statement.split())
         if not candidate:
             continue
         head = STATEMENT_HEAD_PATTERN.match(candidate)
         if head is None:
-            continue
+            raise ValueError(f"migration statement is not recognizable SQL: {name}")
         keyword = head.group(0).upper()
-        if keyword in BANNED_HEAD_PREFIXES:
-            raise ValueError(f"migration contains destructive statement ({keyword}): {name}")
-        if ALTER_TABLE_HEAD_PATTERN.match(candidate) and ALTER_TABLE_FORBIDDEN.search(candidate):
-            raise ValueError(f"migration contains banned ALTER TABLE rewrite: {name}")
+        if keyword == "ALTER":
+            if not ALTER_TABLE_ALLOWED_FORM.match(candidate):
+                raise ValueError(f"migration contains banned ALTER statement: {name}")
+            continue
+        if keyword not in ALLOWED_HEADS:
+            raise ValueError(f"migration contains non-additive statement ({keyword}): {name}")
 
 
 def normalized_sha256(content: bytes) -> str:
