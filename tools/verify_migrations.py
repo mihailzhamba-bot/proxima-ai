@@ -17,11 +17,16 @@ BLOCK_COMMENT_START = "/*"
 BLOCK_COMMENT_END = "*/"
 STATEMENT_HEAD_PATTERN = re.compile(r"[A-Za-z]+")
 CREATE_OR_REPLACE_PATTERN = re.compile(r"\bCREATE\s+OR\s+REPLACE\b", re.IGNORECASE)
-CREATE_RULE_PATTERN = re.compile(r"\bCREATE\s+(RULE|EVENT\s+TRIGGER)\b", re.IGNORECASE)
-BLANKET_BANNED_PATTERN = re.compile(r"\b(DROP|TRUNCATE|EXECUTE)\b", re.IGNORECASE)
+CREATE_RULE_PATTERN = re.compile(r"\bCREATE\s+(RULE|EVENT\s+TRIGGER|FUNCTION|PROCEDURE|EXTENSION|SUBSCRIPTION|PUBLICATION|FOREIGN\s+DATA\s+WRAPPER|DATABASE)\b", re.IGNORECASE)
+BLANKET_BANNED_PATTERN = re.compile(r"\b(DROP|TRUNCATE|EXECUTE)\b|\bDO\s+UPDATE\b|\bSET\s+(ROLE|SESSION\s+AUTHORIZATION)\b", re.IGNORECASE)
 # Fail-closed allowlist (B6): every statement head NOT in this set is banned,
 # and ALTER TABLE is additionally restricted to purely additive/RLS-enabling forms.
 ALLOWED_HEADS = frozenset({"BEGIN", "COMMIT", "CREATE", "GRANT", "INSERT", "SELECT", "SET", "RESET"})
+GRANT_ALLOWED_FORM = re.compile(
+    r"^GRANT [A-Za-z, ]+ ON (SEQUENCE )?[A-Za-z_][A-Za-z0-9_.]* TO proxima_[a-z_]+$",
+    re.IGNORECASE,
+)
+CREATE_ROLE_ALLOWED_FORM = re.compile(r"^CREATE ROLE proxima_[a-z_]+ NOLOGIN$", re.IGNORECASE)
 ALTER_TABLE_ALLOWED_FORM = re.compile(
     r"^ALTER TABLE \S+ (ADD COLUMN\b.*|ADD CONSTRAINT\b.*|ENABLE ROW LEVEL SECURITY)$",
     re.IGNORECASE | re.DOTALL,
@@ -104,6 +109,14 @@ def assert_additive_only(sql: str, name: str) -> None:
         if keyword == "ALTER":
             if not ALTER_TABLE_ALLOWED_FORM.match(candidate):
                 raise ValueError(f"migration contains banned ALTER statement: {name}")
+            continue
+        if keyword == "GRANT":
+            if not GRANT_ALLOWED_FORM.match(candidate):
+                raise ValueError(f"migration contains banned GRANT form: {name}")
+            continue
+        if candidate.upper().startswith("CREATE ROLE "):
+            if not CREATE_ROLE_ALLOWED_FORM.match(candidate):
+                raise ValueError(f"migration contains banned CREATE ROLE form: {name}")
             continue
         if keyword not in ALLOWED_HEADS:
             raise ValueError(f"migration contains non-additive statement ({keyword}): {name}")

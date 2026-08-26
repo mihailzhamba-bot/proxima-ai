@@ -235,6 +235,14 @@ def test_migration_verifier_rejects_destructive_statements() -> None:
         "BEGIN;\nCOMMENT ON TABLE t IS 'overwritten';\nCOMMIT;\n",
         "BEGIN;\nCALL some_procedure();\nCOMMIT;\n",
         "BEGIN;\nLOCK TABLE t IN ACCESS EXCLUSIVE MODE;\nCOMMIT;\n",
+        "BEGIN;\nCREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$ BEGIN NULL; END $$ SECURITY DEFINER;\nCOMMIT;\n",
+        "BEGIN;\nCREATE EXTENSION dblink;\nCOMMIT;\n",
+        "BEGIN;\nGRANT ALL ON DATABASE proxima TO PUBLIC;\nCOMMIT;\n",
+        "BEGIN;\nGRANT proxima_migration_owner TO proxima_source_publisher;\nCOMMIT;\n",
+        "BEGIN;\nCREATE ROLE oops LOGIN SUPERUSER BYPASSRLS;\nCOMMIT;\n",
+        "BEGIN;\nINSERT INTO t (id) VALUES (1) ON CONFLICT (id) DO UPDATE SET id = 2;\nCOMMIT;\n",
+        "BEGIN;\nSET ROLE proxima_migration_owner;\nCOMMIT;\n",
+        "BEGIN;\nSET SESSION AUTHORIZATION proxima_migration_owner;\nCOMMIT;\n",
     ]
     for sql in banned:
         with pytest.raises(ValueError, match="migration"):
@@ -246,12 +254,13 @@ def test_migration_verifier_rejects_destructive_statements() -> None:
         "BEGIN;\nALTER TABLE t ADD CONSTRAINT c CHECK (id > 0);\nCOMMIT;\n",
         "BEGIN;\nALTER TABLE t ENABLE ROW LEVEL SECURITY;\nCOMMIT;\n",
         "BEGIN;\nCREATE INDEX t_note_idx ON t (note);\nCOMMIT;\n",
-        "BEGIN;\nCREATE ROLE proxima_x;\nGRANT SELECT ON t TO proxima_x;\nCOMMIT;\n",
+        "BEGIN;\nCREATE ROLE proxima_x NOLOGIN;\nGRANT SELECT ON t TO proxima_x;\nCOMMIT;\n",
         "BEGIN;\nCREATE POLICY p ON t FOR SELECT USING (true);\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO t (id) VALUES (1); -- drop mentioned only in a comment\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO t (id, note) VALUES (2, 'literal mentioning drop and truncate');\nCOMMIT;\n",
         "BEGIN;\nSET LOCAL search_path = public;\nCOMMIT;\n",
         "BEGIN;\nSELECT 1;\nCOMMIT;\n",
+        "BEGIN;\nINSERT INTO t (id) VALUES (3) ON CONFLICT (id) DO NOTHING;\nCOMMIT;\n",
     ]
     for sql in allowed:
         migrations.assert_additive_only(sql, "999_fixture.sql")

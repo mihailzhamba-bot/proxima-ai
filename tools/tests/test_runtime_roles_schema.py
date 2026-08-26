@@ -86,7 +86,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND rowsecurity"
             ).fetchall()
         }
-        assert expected_tables <= secured
+        assert secured == expected_tables
         policy_count = connection.execute(
             "SELECT count(*) AS n FROM pg_policies WHERE schemaname = 'public'"
         ).fetchone()["n"]
