@@ -6,6 +6,7 @@ WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY services/collector/package.json services/collector/
 COPY services/webapp/package.json services/webapp/
+ENV PUPPETEER_SKIP_DOWNLOAD=1
 RUN npm ci --workspace @proxima/webapp --include-workspace-root
 
 FROM node:22-bookworm-slim AS builder

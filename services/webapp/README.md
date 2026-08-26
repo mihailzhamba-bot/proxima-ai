@@ -24,6 +24,33 @@ make webapp-build                              # продакшн-сборка
 | `WEBAPP_AUTH_DATABASE_URI` | Роль `webapp_auth_writer`: пишет только в схему `webapp_auth` |
 | `WEBAPP_DATA_DATABASE_URI` | Роль `webapp_readonly`: чтение доменных данных, мутации запрещены ролью |
 
+## Staging (VPS через туннель)
+
+Кабинет доступен с любой машины Mike через SSH-туннель; публичные порты не открываются.
+
+Посмотреть:
+
+```bash
+ssh -N proxima-app        # держать открытым (LocalForward 3000)
+# → http://localhost:3000
+```
+
+Контейнер `proxima-webapp-staging` на VPS: порт опубликован только на `127.0.0.1:3000`, `restart: unless-stopped`, `WEBAPP_REQUIRE_AUTH=false` (fixtures, без БД и секретов). Checkout - `~/proxima-webapp-staging/repo` (detached, из git bundle - паттерн PA-13); основной compose-стек VPS не затрагивается.
+
+Обновить на новый коммит (с машины разработки):
+
+```bash
+git bundle create /tmp/pa49-head.bundle HEAD
+scp /tmp/pa49-head.bundle proxima:/tmp/
+ssh proxima 'cd ~/proxima-webapp-staging/repo && git fetch -q /tmp/pa49-head.bundle HEAD && git checkout -q FETCH_HEAD \
+  && sudo docker build -f services/webapp/Dockerfile.staging -t proxima-webapp-staging:latest . \
+  && sudo docker rm -f proxima-webapp-staging \
+  && sudo docker run -d --name proxima-webapp-staging --restart unless-stopped \
+       -p 127.0.0.1:3000:3000 -e WEBAPP_REQUIRE_AUTH=false proxima-webapp-staging:latest'
+```
+
+`Dockerfile.staging` - дериват `services/webapp/Dockerfile` с одной строкой `ENV PUPPETEER_SKIP_DOWNLOAD=1` (postinstall puppeteer от root-devDep mermaid-cli падает в slim-образе без unzip; живёт только в staging-каталоге VPS).
+
 ## Границы
 
 - Миграции webapp - в собственном контуре (`drizzle/`), M1-ледарь `db/` не затрагивается; additive-only (DEC B6).
