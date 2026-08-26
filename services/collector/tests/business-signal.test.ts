@@ -97,6 +97,8 @@ test('allows an exact-category Analytics RW token only through explicit temporar
   assert.throws(() => assertLeastPrivilegeToken(analyticsReadWrite, 'analytics', now), { code: 'TOKEN_SCOPE_INVALID' });
   assert.doesNotThrow(() => assertLeastPrivilegeToken(analyticsReadWrite, 'analytics', now, { allowReadWrite: true }));
   assert.throws(() => assertLeastPrivilegeToken(jwt(2, 1, false), 'analytics', now, { allowReadWrite: true }), { code: 'TOKEN_SCOPE_INVALID' });
+  assert.throws(() => assertLeastPrivilegeToken(jwt(5, undefined, false), 'statistics', now, { allowReadWrite: true }), { code: 'TOKEN_SCOPE_INVALID' });
+  assert.throws(() => assertLeastPrivilegeToken(jwt(13, undefined, false), 'finance', now, { allowReadWrite: true }), { code: 'TOKEN_SCOPE_INVALID' });
 });
 
 test('validates a complete private signal input bundle without returning secret values', async () => {
