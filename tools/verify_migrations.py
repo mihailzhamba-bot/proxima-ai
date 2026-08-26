@@ -239,8 +239,9 @@ def assert_additive_only(sql: str, name: str) -> None:
             if candidate.upper().startswith("CREATE TABLE "):
                 if not re.search(rf"^CREATE TABLE (IF NOT EXISTS )?{IDENTIFIER} \(", candidate, re.IGNORECASE):
                     raise ValueError(f"migration uses CREATE TABLE AS (data-copy) form: {name}")
-                if re.search(r"\bAS\s+SELECT\b", candidate, re.IGNORECASE):
-                    raise ValueError(f"migration uses CREATE TABLE AS SELECT (data-copy) form: {name}")
+                outside_parens = PAREN_PATTERN.sub(" ", candidate[candidate.index("("):])
+                if re.search(r"\bAS\b", outside_parens, re.IGNORECASE):
+                    raise ValueError(f"migration uses a top-level AS query form (CTAS) in CREATE TABLE: {name}")
             continue
         if keyword == "INSERT":
             if not INSERT_ALLOWED_FORM.match(candidate):

@@ -296,6 +296,10 @@ def test_migration_verifier_rejects_destructive_statements() -> None:
         "BEGIN;\nGRANT UPDATE ON public.schema_migrations TO proxima_source_publisher;\nCOMMIT;\n",
         "BEGIN;\nCREATE TABLE leaked (id) AS SELECT secret FROM other;\nCOMMIT;\n",
         "BEGIN;\nCREATE INDEX CONCURRENTLY i ON t (id);\nCOMMIT;\n",
+        "BEGIN;\nCREATE TABLE leaked (id) AS VALUES (1);\nCOMMIT;\n",
+        "BEGIN;\nCREATE TABLE leaked (id) AS TABLE source_table;\nCOMMIT;\n",
+        "BEGIN;\nCREATE TABLE leaked (id) AS (SELECT secret FROM other);\nCOMMIT;\n",
+        "BEGIN;\nCREATE TABLE leaked (id) AS WITH c AS (SELECT 1) SELECT * FROM c;\nCOMMIT;\n",
     ]
     for sql in banned:
         with pytest.raises(ValueError, match="migration"):
