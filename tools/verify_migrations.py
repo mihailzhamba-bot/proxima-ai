@@ -42,6 +42,27 @@ CREATE_ALLOWED_OBJECTS = re.compile(
     r"^CREATE ((UNIQUE )?INDEX|TABLE|SEQUENCE|POLICY)\b",
     re.IGNORECASE,
 )
+TENANT_GUARD = r"tenant_id\s*=\s*current_setting\s*\(\s*'\?'\s*,\s*true\s*\)"
+CREATE_POLICY_ALLOWED_FORM = re.compile(
+    rf"^CREATE\ POLICY\ [A-Za-z_][A-Za-z0-9_]*\ ON\ {IDENTIFIER}"
+    r"\ FOR\ (SELECT|ALL|INSERT|UPDATE)\ TO\ proxima_[a-z_]+"
+    rf"\ USING\ \(\s*{TENANT_GUARD}\s*\)"
+    rf"(\ WITH\ CHECK\ \(\s*{TENANT_GUARD}\s*\))?$"
+    r"|^CREATE\ POLICY\ [A-Za-z_][A-Za-z0-9_]*\ ON\ [A-Za-z_][A-Za-z0-9_.]*"
+    r"\ FOR\ SELECT\ TO\ proxima_[a-z_]+"
+    r"\ USING\ \(\s*EXISTS\ \(\s*SELECT\ 1\ FROM\ wb_analytics_report_tasks\ t"
+    r"\ WHERE\ t\.task_id\s*=\s*[A-Za-z_][A-Za-z0-9_]*\.task_id"
+    rf"\ AND\ t\.tenant_id\s*=\s*current_setting\s*\(\s*'\?'\s*,\s*true\s*\)\s*\)\s*\)\s*$",
+    re.IGNORECASE,
+)
+VALUE_TOKEN = r"(\s*'\?'\s*|\s*NULL\s*|\s*TRUE\s*|\s*FALSE\s*|\s*-?[0-9]+(\.[0-9]+)?\s*)"
+INSERT_ALLOWED_FORM = re.compile(
+    rf"^INSERT INTO {IDENTIFIER}\s*(\(\s*[A-Za-z_][A-Za-z0-9_]*(\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*\s*\))?\s*"
+    rf"VALUES\s*\({VALUE_TOKEN}(\s*,\s*{VALUE_TOKEN})*\s*\)"
+    rf"(\s*,\s*\({VALUE_TOKEN}(\s*,\s*{VALUE_TOKEN})*\s*\)\s*)*"
+    r"(\s+ON CONFLICT\s*\(\s*[A-Za-z_][A-Za-z0-9_]*(\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*\s*\)\s+DO NOTHING\s*)?\s*$",
+    re.IGNORECASE,
+)
 CREATE_VIEW_ALLOWED_FORM = re.compile(
     rf"^CREATE VIEW {IDENTIFIER} WITH \(security_invoker = true\) AS .*$",
     re.IGNORECASE | re.DOTALL,
@@ -207,8 +228,8 @@ def assert_additive_only(sql: str, name: str) -> None:
                     raise ValueError(f"migration contains banned CREATE VIEW form (security_invoker = true required): {name}")
                 continue
             if candidate.upper().startswith("CREATE POLICY "):
-                if "current_setting" not in candidate:
-                    raise ValueError(f"migration creates a policy without the tenant current_setting guard: {name}")
+                if not CREATE_POLICY_ALLOWED_FORM.match(candidate):
+                    raise ValueError(f"migration creates a policy outside the canonical tenant-isolation template: {name}")
                 continue
             if not CREATE_ALLOWED_OBJECTS.match(candidate):
                 raise ValueError(f"migration contains banned CREATE object form: {name}")
@@ -218,8 +239,8 @@ def assert_additive_only(sql: str, name: str) -> None:
                 raise ValueError(f"migration uses CREATE TABLE AS (data-copy) form: {name}")
             continue
         if keyword == "INSERT":
-            if " SELECT " in f" {candidate} " or not re.search(r"\bVALUES\b", candidate, re.IGNORECASE):
-                raise ValueError(f"migration uses INSERT without a plain VALUES list: {name}")
+            if not INSERT_ALLOWED_FORM.match(candidate):
+                raise ValueError(f"migration uses INSERT outside the plain literal-VALUES form: {name}")
             continue
         if keyword not in ALLOWED_HEADS:
             raise ValueError(f"migration contains non-additive statement ({keyword}): {name}")

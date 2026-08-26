@@ -285,6 +285,13 @@ def test_migration_verifier_rejects_destructive_statements() -> None:
         "BEGIN;\nALTER TABLE t ADD COLUMN x int, ENABLE ROW LEVEL SECURITY;\nCOMMIT;\n",
         "CREATE TABLE t (id int);\nBEGIN;\nCOMMIT;\n",
         "BEGIN;\nCOMMIT;\nBEGIN;\nCOMMIT;\n",
+        "BEGIN;\nCREATE POLICY current_setting ON t FOR SELECT USING (true);\nCOMMIT;\n",
+        "BEGIN;\nCREATE POLICY p ON t FOR SELECT USING ('mentions current_setting in a string');\nCOMMIT;\n",
+        "BEGIN;\nCREATE POLICY p ON t FOR ALL TO proxima_source_publisher WITH CHECK (tenant_id = current_setting('proxima.tenant_id', true));\nCOMMIT;\n",
+        "BEGIN;\nINSERT INTO t (id) VALUES ((SELECT secret FROM other LIMIT 1));\nCOMMIT;\n",
+        "BEGIN;\nINSERT INTO seq VALUES (setval('s', 100));\nCOMMIT;\n",
+        "BEGIN;\nINSERT INTO t VALUES (lo_unlink(12345));\nCOMMIT;\n",
+        "BEGIN;\nINSERT INTO t (id) VALUES (1) ON CONFLICT (id) DO UPDATE SET id = 2;\nCOMMIT;\n",
     ]
     for sql in banned:
         with pytest.raises(ValueError, match="migration"):
@@ -302,9 +309,10 @@ def test_migration_verifier_rejects_destructive_statements() -> None:
         "BEGIN;\nINSERT INTO t (id) VALUES (3) ON CONFLICT (id) DO NOTHING;\nCOMMIT;\n",
         "BEGIN;\nCREATE VIEW safe_v WITH (security_invoker = true) AS SELECT id FROM t;\nCOMMIT;\n",
         "BEGIN;\nALTER TABLE t ADD COLUMN a int, ADD COLUMN b text;\nCOMMIT;\n",
-        "BEGIN;\nCREATE POLICY tenant_isolation ON t FOR SELECT USING (tenant_id = current_setting('proxima.tenant_id', true));\nCOMMIT;\n",
         "BEGIN;\nGRANT SELECT, INSERT ON fact_order_counts TO proxima_source_publisher;\nCOMMIT;\n",
         "BEGIN;\nGRANT SELECT, INSERT, UPDATE ON schema_migrations TO proxima_migration_owner;\nCOMMIT;\n",
+        "BEGIN;\nCREATE POLICY tenant_isolation ON t FOR SELECT TO proxima_data_health_read USING (tenant_id = current_setting('proxima.tenant_id', true));\nCOMMIT;\n",
+        "BEGIN;\nCREATE POLICY tenant_isolation ON t FOR ALL TO proxima_source_publisher USING (tenant_id = current_setting('proxima.tenant_id', true)) WITH CHECK (tenant_id = current_setting('proxima.tenant_id', true));\nCOMMIT;\n",
     ]
     for sql in allowed:
         migrations.assert_additive_only(sql, "999_fixture.sql")
