@@ -16,20 +16,22 @@ LINE_COMMENT_START = "--"
 BLOCK_COMMENT_START = "/*"
 BLOCK_COMMENT_END = "*/"
 STATEMENT_HEAD_PATTERN = re.compile(r"[A-Za-z]+")
+IDENTIFIER = r"[A-Za-z_][A-Za-z0-9_.]*"
+PAREN_PATTERN = re.compile(r"\([^)]*\)")
 CREATE_OR_REPLACE_PATTERN = re.compile(r"\bCREATE\s+OR\s+REPLACE\b", re.IGNORECASE)
 CREATE_RULE_PATTERN = re.compile(
     r"\bCREATE\s+(OR\s+REPLACE\s+)?(RULE|EVENT\s+TRIGGER|FUNCTION|PROCEDURE|EXTENSION|SUBSCRIPTION|PUBLICATION|FOREIGN\s+DATA\s+WRAPPER|FOREIGN\s+TABLE|DATABASE|USER|GROUP|LANGUAGE|ACCESS\s+METHOD|AGGREGATE|CAST|SERVER|TYPE|DOMAIN|OPERATOR|COLLATION|CONVERSION|TRANSFORM|PROCEDURAL|TEXT\s+SEARCH)\b",
     re.IGNORECASE,
 )
 BLANKET_BANNED_PATTERN = re.compile(
-    r"\b(DROP|TRUNCATE|EXECUTE)\b"
+    r"\b(DROP|TRUNCATE|EXECUTE|SET_CONFIG)\b"
     r"|\bDO\s+UPDATE\b"
     r"|\b(SET|RESET)\s+(LOCAL\s+|SESSION\s+)?(ROLE|SESSION\s+AUTHORIZATION)\b",
     re.IGNORECASE,
 )
 # Fail-closed allowlist (B6): every statement head NOT in this set is banned,
 # and ALTER TABLE is additionally restricted to purely additive/RLS-enabling forms.
-ALLOWED_HEADS = frozenset({"BEGIN", "COMMIT", "CREATE", "GRANT", "INSERT", "SELECT", "SET", "RESET"})
+ALLOWED_HEADS = frozenset({"BEGIN", "COMMIT", "CREATE", "GRANT", "INSERT"})
 GRANT_ALLOWED_FORM = re.compile(
     r"^GRANT (SELECT|INSERT|UPDATE|USAGE)(, (SELECT|INSERT|UPDATE|USAGE))*"
     r" ON (SEQUENCE )?[A-Za-z_][A-Za-z0-9_.]* TO proxima_[a-z_]+$",
@@ -37,20 +39,45 @@ GRANT_ALLOWED_FORM = re.compile(
 )
 CREATE_ROLE_ALLOWED_FORM = re.compile(r"^CREATE ROLE proxima_[a-z_]+ NOLOGIN$", re.IGNORECASE)
 CREATE_ALLOWED_OBJECTS = re.compile(
-    r"^CREATE ((UNIQUE )?INDEX|TABLE|VIEW|MATERIALIZED VIEW|SEQUENCE|POLICY)\b",
+    r"^CREATE ((UNIQUE )?INDEX|TABLE|MATERIALIZED VIEW|SEQUENCE|POLICY)\b",
     re.IGNORECASE,
 )
-CREATE_SCHEMA_ALLOWED_FORM = re.compile(r"^CREATE SCHEMA [A-Za-z_][A-Za-z0-9_]*$", re.IGNORECASE)
-ALTER_TAIL_FORBIDDEN = re.compile(
-    r"\b(ALTER\s+COLUMN|DROP|DISABLE|RENAME|OWNER|DETACH|VALIDATE|CLUSTER|INHERIT|REPLICA|SET)\b",
-    re.IGNORECASE,
-)
-ALTER_TABLE_ALLOWED_FORM = re.compile(
-    r"^ALTER TABLE \S+ ADD COLUMN (?!.*\b(ALTER\s+COLUMN|DROP|DISABLE|RENAME|OWNER|DETACH|VALIDATE|CLUSTER|INHERIT|REPLICA|SET)\b).*$"
-    r"|^ALTER TABLE \S+ ADD CONSTRAINT (?!.*\b(ALTER\s+COLUMN|DROP|DISABLE|RENAME|OWNER|DETACH|VALIDATE|CLUSTER|INHERIT|REPLICA|SET|ENABLE)\b).*$"
-    r"|^ALTER TABLE \S+ ENABLE ROW LEVEL SECURITY$",
+CREATE_VIEW_ALLOWED_FORM = re.compile(
+    rf"^CREATE VIEW {IDENTIFIER} WITH \(security_invoker = true\) AS .*$",
     re.IGNORECASE | re.DOTALL,
 )
+CREATE_SCHEMA_ALLOWED_FORM = re.compile(r"^CREATE SCHEMA [A-Za-z_][A-Za-z0-9_]*$", re.IGNORECASE)
+PAREN_PATTERN = re.compile(r"\([^)]*\)")
+ALTER_TABLE_ALLOWED_FORM = re.compile(
+    rf"^ALTER TABLE {IDENTIFIER} ADD COLUMN {IDENTIFIER} .*$"
+    rf"|^ALTER TABLE {IDENTIFIER} ADD CONSTRAINT {IDENTIFIER}"
+    r" (CHECK|UNIQUE|PRIMARY KEY|FOREIGN KEY|EXCLUDE)\b.*$"
+    rf"|^ALTER TABLE {IDENTIFIER} ENABLE ROW LEVEL SECURITY$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+ALTER_ACTION_ALLOWED = re.compile(
+    r"^(ADD COLUMN \S+ .*$"
+    r"|ADD CONSTRAINT \S+ (CHECK|UNIQUE|PRIMARY KEY|FOREIGN KEY|EXCLUDE)\b.*$"
+    r"|ENABLE ROW LEVEL SECURITY)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def assert_single_action_alter(candidate: str, name: str) -> None:
+    """After removing parenthesized expressions, split the action list on
+    commas; every action must be purely additive (ADD COLUMN / ADD
+    CONSTRAINT), or the sole action ENABLE ROW LEVEL SECURITY."""
+    head = re.match(rf"^(ALTER TABLE {IDENTIFIER}) (.*)$", candidate, re.IGNORECASE | re.DOTALL)
+    if head is None:
+        raise ValueError(f"migration contains banned ALTER statement: {name}")
+    actions = [part.strip() for part in PAREN_PATTERN.sub(" ", head.group(2)).split(",") if part.strip()]
+    if not actions:
+        raise ValueError(f"migration contains banned ALTER statement: {name}")
+    for action in actions:
+        if not ALTER_ACTION_ALLOWED.match(action):
+            raise ValueError(f"migration contains banned ALTER action ({' '.join(action.split()[:3])}): {name}")
 
 
 def strip_sql_literals_and_comments(sql: str) -> str:
@@ -127,8 +154,7 @@ def assert_additive_only(sql: str, name: str) -> None:
             raise ValueError(f"migration statement is not recognizable SQL: {name}")
         keyword = head.group(0).upper()
         if keyword == "ALTER":
-            if not ALTER_TABLE_ALLOWED_FORM.match(candidate):
-                raise ValueError(f"migration contains banned ALTER statement: {name}")
+            assert_single_action_alter(candidate, name)
             continue
         if keyword == "GRANT":
             if not GRANT_ALLOWED_FORM.match(candidate):
@@ -143,6 +169,10 @@ def assert_additive_only(sql: str, name: str) -> None:
                 raise ValueError(f"migration contains banned CREATE SCHEMA form: {name}")
             continue
         if keyword == "CREATE":
+            if candidate.upper().startswith("CREATE VIEW "):
+                if not CREATE_VIEW_ALLOWED_FORM.match(candidate):
+                    raise ValueError(f"migration contains banned CREATE VIEW form (security_invoker = true required): {name}")
+                continue
             if not CREATE_ALLOWED_OBJECTS.match(candidate):
                 raise ValueError(f"migration contains banned CREATE object form: {name}")
             continue

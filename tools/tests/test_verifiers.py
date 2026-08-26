@@ -264,6 +264,16 @@ def test_migration_verifier_rejects_destructive_statements() -> None:
         "BEGIN;\nGRANT REFERENCES ON t TO proxima_x;\nCOMMIT;\n",
         "BEGIN;\nCREATE SCHEMA extra AUTHORIZATION proxima_migration_owner;\nCOMMIT;\n",
         "BEGIN;\nCREATE SCHEMA extra CREATE TABLE t (id int) GRANT SELECT ON t TO PUBLIC;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE t ADD COLUMN x int DEFAULT (1), NO FORCE ROW LEVEL SECURITY;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE t ATTACH PARTITION p FOR VALUES FROM (1) TO (2);\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE t RESET (fillfactor);\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE t ADD COLUMN x int, ALTER COLUMN y TYPE text;\nCOMMIT;\n",
+        "BEGIN;\nSET LOCAL session_replication_role = replica;\nCOMMIT;\n",
+        "BEGIN;\nSET LOCAL \"role\" = 'proxima_migration_owner';\nCOMMIT;\n",
+        "BEGIN;\nSELECT pg_catalog.set_config('role', 'proxima_migration_owner', true);\nCOMMIT;\n",
+        "BEGIN;\nINSERT INTO t (id) VALUES (set_config('role', 'oops', true));\nCOMMIT;\n",
+        "BEGIN;\nCREATE VIEW leaky AS SELECT * FROM fact_order_counts;\nCOMMIT;\n",
+        "BEGIN;\nCREATE VIEW leaky WITH (security_invoker = false) AS SELECT * FROM fact_order_counts;\nCOMMIT;\n",
     ]
     for sql in banned:
         with pytest.raises(ValueError, match="migration"):
@@ -279,9 +289,9 @@ def test_migration_verifier_rejects_destructive_statements() -> None:
         "BEGIN;\nCREATE POLICY p ON t FOR SELECT USING (true);\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO t (id) VALUES (1); -- drop mentioned only in a comment\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO t (id, note) VALUES (2, 'literal mentioning drop and truncate');\nCOMMIT;\n",
-        "BEGIN;\nSET LOCAL search_path = public;\nCOMMIT;\n",
-        "BEGIN;\nSELECT 1;\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO t (id) VALUES (3) ON CONFLICT (id) DO NOTHING;\nCOMMIT;\n",
+        "BEGIN;\nCREATE VIEW safe_v WITH (security_invoker = true) AS SELECT id FROM t;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE t ADD COLUMN a int, ADD COLUMN b text;\nCOMMIT;\n",
     ]
     for sql in allowed:
         migrations.assert_additive_only(sql, "999_fixture.sql")

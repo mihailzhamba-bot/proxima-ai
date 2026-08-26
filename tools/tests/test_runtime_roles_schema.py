@@ -91,6 +91,15 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
             "SELECT count(*) AS n FROM pg_policies WHERE schemaname = 'public'"
         ).fetchone()["n"]
         assert policy_count == 23
+        non_invoker_views = [
+            row["relname"]
+            for row in connection.execute(
+                "SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
+                " WHERE n.nspname = 'public' AND c.relkind = 'v'"
+                " AND NOT ('security_invoker=true' = ANY (c.reloptions))"
+            ).fetchall()
+        ]
+        assert non_invoker_views == [], f"views without security_invoker=true: {non_invoker_views}"
 
 
 @pytest.mark.skipif(not os.environ.get("PROXIMA_TEST_POSTGRES_DSN"), reason="dedicated PostgreSQL DSN not configured")
