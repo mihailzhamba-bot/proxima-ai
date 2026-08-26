@@ -17,18 +17,38 @@ BLOCK_COMMENT_START = "/*"
 BLOCK_COMMENT_END = "*/"
 STATEMENT_HEAD_PATTERN = re.compile(r"[A-Za-z]+")
 CREATE_OR_REPLACE_PATTERN = re.compile(r"\bCREATE\s+OR\s+REPLACE\b", re.IGNORECASE)
-CREATE_RULE_PATTERN = re.compile(r"\bCREATE\s+(RULE|EVENT\s+TRIGGER|FUNCTION|PROCEDURE|EXTENSION|SUBSCRIPTION|PUBLICATION|FOREIGN\s+DATA\s+WRAPPER|DATABASE)\b", re.IGNORECASE)
-BLANKET_BANNED_PATTERN = re.compile(r"\b(DROP|TRUNCATE|EXECUTE)\b|\bDO\s+UPDATE\b|\bSET\s+(ROLE|SESSION\s+AUTHORIZATION)\b", re.IGNORECASE)
+CREATE_RULE_PATTERN = re.compile(
+    r"\bCREATE\s+(OR\s+REPLACE\s+)?(RULE|EVENT\s+TRIGGER|FUNCTION|PROCEDURE|EXTENSION|SUBSCRIPTION|PUBLICATION|FOREIGN\s+DATA\s+WRAPPER|FOREIGN\s+TABLE|DATABASE|USER|GROUP|LANGUAGE|ACCESS\s+METHOD|AGGREGATE|CAST|SERVER|TYPE|DOMAIN|OPERATOR|COLLATION|CONVERSION|TRANSFORM|PROCEDURAL|TEXT\s+SEARCH)\b",
+    re.IGNORECASE,
+)
+BLANKET_BANNED_PATTERN = re.compile(
+    r"\b(DROP|TRUNCATE|EXECUTE)\b"
+    r"|\bDO\s+UPDATE\b"
+    r"|\b(SET|RESET)\s+(LOCAL\s+|SESSION\s+)?(ROLE|SESSION\s+AUTHORIZATION)\b",
+    re.IGNORECASE,
+)
 # Fail-closed allowlist (B6): every statement head NOT in this set is banned,
 # and ALTER TABLE is additionally restricted to purely additive/RLS-enabling forms.
 ALLOWED_HEADS = frozenset({"BEGIN", "COMMIT", "CREATE", "GRANT", "INSERT", "SELECT", "SET", "RESET"})
 GRANT_ALLOWED_FORM = re.compile(
-    r"^GRANT [A-Za-z, ]+ ON (SEQUENCE )?[A-Za-z_][A-Za-z0-9_.]* TO proxima_[a-z_]+$",
+    r"^GRANT (SELECT|INSERT|UPDATE|USAGE)(, (SELECT|INSERT|UPDATE|USAGE))*"
+    r" ON (SEQUENCE )?[A-Za-z_][A-Za-z0-9_.]* TO proxima_[a-z_]+$",
     re.IGNORECASE,
 )
 CREATE_ROLE_ALLOWED_FORM = re.compile(r"^CREATE ROLE proxima_[a-z_]+ NOLOGIN$", re.IGNORECASE)
+CREATE_ALLOWED_OBJECTS = re.compile(
+    r"^CREATE ((UNIQUE )?INDEX|TABLE|VIEW|MATERIALIZED VIEW|SEQUENCE|POLICY)\b",
+    re.IGNORECASE,
+)
+CREATE_SCHEMA_ALLOWED_FORM = re.compile(r"^CREATE SCHEMA [A-Za-z_][A-Za-z0-9_]*$", re.IGNORECASE)
+ALTER_TAIL_FORBIDDEN = re.compile(
+    r"\b(ALTER\s+COLUMN|DROP|DISABLE|RENAME|OWNER|DETACH|VALIDATE|CLUSTER|INHERIT|REPLICA|SET)\b",
+    re.IGNORECASE,
+)
 ALTER_TABLE_ALLOWED_FORM = re.compile(
-    r"^ALTER TABLE \S+ (ADD COLUMN\b.*|ADD CONSTRAINT\b.*|ENABLE ROW LEVEL SECURITY)$",
+    r"^ALTER TABLE \S+ ADD COLUMN (?!.*\b(ALTER\s+COLUMN|DROP|DISABLE|RENAME|OWNER|DETACH|VALIDATE|CLUSTER|INHERIT|REPLICA|SET)\b).*$"
+    r"|^ALTER TABLE \S+ ADD CONSTRAINT (?!.*\b(ALTER\s+COLUMN|DROP|DISABLE|RENAME|OWNER|DETACH|VALIDATE|CLUSTER|INHERIT|REPLICA|SET|ENABLE)\b).*$"
+    r"|^ALTER TABLE \S+ ENABLE ROW LEVEL SECURITY$",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -117,6 +137,14 @@ def assert_additive_only(sql: str, name: str) -> None:
         if candidate.upper().startswith("CREATE ROLE "):
             if not CREATE_ROLE_ALLOWED_FORM.match(candidate):
                 raise ValueError(f"migration contains banned CREATE ROLE form: {name}")
+            continue
+        if candidate.upper().startswith("CREATE SCHEMA "):
+            if not CREATE_SCHEMA_ALLOWED_FORM.match(candidate):
+                raise ValueError(f"migration contains banned CREATE SCHEMA form: {name}")
+            continue
+        if keyword == "CREATE":
+            if not CREATE_ALLOWED_OBJECTS.match(candidate):
+                raise ValueError(f"migration contains banned CREATE object form: {name}")
             continue
         if keyword not in ALLOWED_HEADS:
             raise ValueError(f"migration contains non-additive statement ({keyword}): {name}")
