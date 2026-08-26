@@ -52,6 +52,34 @@ ALTER TABLE release_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE release_promoted_facts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE domain_release_pointers ENABLE ROW LEVEL SECURITY;
 
+-- Inherited WB evidence tables: ENABLE only (table owner - the live
+-- business-signal runtime - bypasses RLS and is unaffected); the shared
+-- source-publisher role becomes tenant-scoped instead of all-tenant.
+ALTER TABLE wb_analytics_report_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE raw_wb_analytics_responses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stg_wb_nm_report_rows ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation_source ON wb_analytics_report_tasks
+    FOR ALL TO proxima_source_publisher
+    USING (tenant_id = current_setting('proxima.tenant_id', true))
+    WITH CHECK (tenant_id = current_setting('proxima.tenant_id', true));
+
+CREATE POLICY tenant_isolation_source ON raw_wb_analytics_responses
+    FOR SELECT TO proxima_source_publisher
+    USING (EXISTS (
+        SELECT 1 FROM wb_analytics_report_tasks t
+        WHERE t.task_id = raw_wb_analytics_responses.task_id
+          AND t.tenant_id = current_setting('proxima.tenant_id', true)
+    ));
+
+CREATE POLICY tenant_isolation_source ON stg_wb_nm_report_rows
+    FOR SELECT TO proxima_source_publisher
+    USING (EXISTS (
+        SELECT 1 FROM wb_analytics_report_tasks t
+        WHERE t.task_id = stg_wb_nm_report_rows.task_id
+          AND t.tenant_id = current_setting('proxima.tenant_id', true)
+    ));
+
 CREATE POLICY tenant_isolation_source ON fact_attempt_runs
     FOR ALL TO proxima_source_publisher
     USING (tenant_id = current_setting('proxima.tenant_id', true))
@@ -92,6 +120,22 @@ CREATE POLICY tenant_isolation_release ON domain_release_pointers
     USING (tenant_id = current_setting('proxima.tenant_id', true))
     WITH CHECK (tenant_id = current_setting('proxima.tenant_id', true));
 
+CREATE POLICY tenant_isolation_release_read ON fact_attempt_runs
+    FOR SELECT TO proxima_release_publisher
+    USING (tenant_id = current_setting('proxima.tenant_id', true));
+
+CREATE POLICY tenant_isolation_release_read ON fact_order_counts
+    FOR SELECT TO proxima_release_publisher
+    USING (tenant_id = current_setting('proxima.tenant_id', true));
+
+CREATE POLICY tenant_isolation_release_read ON fact_lineage_records
+    FOR SELECT TO proxima_release_publisher
+    USING (tenant_id = current_setting('proxima.tenant_id', true));
+
+CREATE POLICY tenant_isolation_release_read ON quality_check_results
+    FOR SELECT TO proxima_release_publisher
+    USING (tenant_id = current_setting('proxima.tenant_id', true));
+
 CREATE POLICY tenant_isolation_read ON fact_attempt_runs
     FOR SELECT TO proxima_data_health_read
     USING (tenant_id = current_setting('proxima.tenant_id', true));
@@ -126,6 +170,6 @@ CREATE POLICY tenant_isolation_read ON domain_release_pointers
 
 -- checksum-policy: normalized-self-v1
 INSERT INTO schema_migrations (version, name, sha256)
-VALUES (9, 'runtime_roles', '2313786148d11fbbf69eca33a44b18fb906af2db213635325a9306d644dd1585');
+VALUES (9, 'runtime_roles', 'c2abd444d90f8bd870d07238dc2a0e3ef4ea42dd2796304ba1abe4a0a6fc24aa');
 
 COMMIT;

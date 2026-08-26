@@ -12,22 +12,68 @@ SELF_PATTERN = re.compile(
     rb"(VALUES \(([0-9]+), '([a-z][a-z0-9_]{1,63})', ')[0-9a-f]{64}('\);)",
 )
 FILENAME_PATTERN = re.compile(r"^([0-9]{3})_([a-z][a-z0-9_]{1,63})\.sql$")
-LINE_COMMENT_PATTERN = re.compile(r"--[^\n]*")
-BLOCK_COMMENT_PATTERN = re.compile(r"/\*.*?\*/", re.DOTALL)
-STRING_LITERAL_PATTERN = re.compile(r"'(?:[^']|'')*'")
-DOLLAR_STRING_PATTERN = re.compile(r"\$[A-Za-z_]*\$.*?\$[A-Za-z_]*\$", re.DOTALL)
-BANNED_STATEMENT_PREFIXES = ("DROP", "TRUNCATE")
-BANNED_PREFIX_PATTERN = re.compile(r"^[A-Z]+")
-ALTER_TABLE_FORBIDDEN = re.compile(r"\b(DROP|TYPE|RENAME)\b")
-CREATE_OR_REPLACE_PATTERN = re.compile(r"\bCREATE\s+OR\s+REPLACE\b")
+LINE_COMMENT_START = "--"
+BLOCK_COMMENT_START = "/*"
+BLOCK_COMMENT_END = "*/"
+BANNED_HEAD_PREFIXES = ("DROP", "TRUNCATE")
+STATEMENT_HEAD_PATTERN = re.compile(r"[A-Za-z]+")
+ALTER_TABLE_HEAD_PATTERN = re.compile(r"ALTER\s+TABLE\b", re.IGNORECASE)
+ALTER_TABLE_FORBIDDEN = re.compile(r"\b(DROP|TYPE|RENAME)\b", re.IGNORECASE)
+CREATE_OR_REPLACE_PATTERN = re.compile(r"\bCREATE\s+OR\s+REPLACE\b", re.IGNORECASE)
+BLANKET_BANNED_PATTERN = re.compile(r"\b(DROP|TRUNCATE)\b", re.IGNORECASE)
 
 
 def strip_sql_literals_and_comments(sql: str) -> str:
-    stripped = BLOCK_COMMENT_PATTERN.sub(" ", sql)
-    stripped = DOLLAR_STRING_PATTERN.sub(" '$' ", stripped)
-    stripped = STRING_LITERAL_PATTERN.sub(" '?' ", stripped)
-    stripped = LINE_COMMENT_PATTERN.sub(" ", stripped)
-    return stripped
+    """Single-pass scanner: emits SQL code, replaces comments (line/block)
+    and string/dollar-quoted literals with spaces. Order-of-stripping
+    bypasses (quotes inside comments, comment markers inside strings) are
+    impossible by construction."""
+    out: list[str] = []
+    index = 0
+    length = len(sql)
+    while index < length:
+        if sql.startswith(LINE_COMMENT_START, index):
+            end = sql.find("\n", index)
+            index = length if end == -1 else end
+            out.append(" ")
+            continue
+        if sql.startswith(BLOCK_COMMENT_START, index):
+            end = sql.find(BLOCK_COMMENT_END, index + 2)
+            index = length if end == -1 else end + 2
+            out.append(" ")
+            continue
+        char = sql[index]
+        if char == "'":
+            next_index = index + 1
+            while next_index < length:
+                if sql[next_index] == "'":
+                    if next_index + 1 < length and sql[next_index + 1] == "'":
+                        next_index += 2
+                        continue
+                    next_index += 1
+                    break
+                next_index += 1
+            index = next_index
+            out.append(" '?' ")
+            continue
+        if char == '"':
+            next_index = index + 1
+            while next_index < length:
+                if sql[next_index] == '"':
+                    if next_index + 1 < length and sql[next_index + 1] == '"':
+                        next_index += 2
+                        continue
+                    next_index += 1
+                    break
+                next_index += 1
+            index = next_index
+            out.append(' "id" ')
+            continue
+        # Dollar-quoted bodies ($$...$$) are deliberately NOT stripped:
+        # DO/plpgsql bodies are executable code and must stay scannable.
+        out.append(char)
+        index += 1
+    return "".join(out)
 
 
 def assert_additive_only(sql: str, name: str) -> None:
@@ -36,17 +82,19 @@ def assert_additive_only(sql: str, name: str) -> None:
     stripped = strip_sql_literals_and_comments(sql)
     if CREATE_OR_REPLACE_PATTERN.search(stripped):
         raise ValueError(f"migration uses banned CREATE OR REPLACE: {name}")
+    if BLANKET_BANNED_PATTERN.search(stripped):
+        raise ValueError(f"migration contains DROP/TRUNCATE: {name}")
     for statement in stripped.split(";"):
         candidate = statement.strip()
         if not candidate:
             continue
-        keyword = BANNED_PREFIX_PATTERN.match(candidate.upper())
-        if keyword is None:
+        head = STATEMENT_HEAD_PATTERN.match(candidate)
+        if head is None:
             continue
-        head = candidate.upper().split(None, 1)[0]
-        if head in BANNED_STATEMENT_PREFIXES or candidate.upper().startswith("DROP "):
-            raise ValueError(f"migration contains destructive statement ({head}): {name}")
-        if re.match(r"ALTER\s+TABLE\b", candidate.upper()) and ALTER_TABLE_FORBIDDEN.search(candidate.upper()):
+        keyword = head.group(0).upper()
+        if keyword in BANNED_HEAD_PREFIXES:
+            raise ValueError(f"migration contains destructive statement ({keyword}): {name}")
+        if ALTER_TABLE_HEAD_PATTERN.match(candidate) and ALTER_TABLE_FORBIDDEN.search(candidate):
             raise ValueError(f"migration contains banned ALTER TABLE rewrite: {name}")
 
 

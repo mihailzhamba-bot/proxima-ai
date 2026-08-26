@@ -236,3 +236,15 @@ def test_migration_verifier_additive_check_covers_all_existing_migrations() -> N
     migrations = load_tool("verify_migrations")
     for path in sorted((ROOT / "db" / "migrations").glob("*.sql")):
         migrations.assert_additive_only(path.read_text(encoding="utf-8"), path.name)
+def test_migration_verifier_catches_stripping_order_bypasses() -> None:
+    migrations = load_tool("verify_migrations")
+    banned = [
+        "BEGIN;\ncreate or replace view v as select 1;\nCOMMIT;\n",
+        "BEGIN;\nalter table t alter column c type text;\nCOMMIT;\n",
+        "BEGIN;\n/* don't */ DROP TABLE t;\nCOMMIT;\n",
+        "BEGIN;\nINSERT INTO log VALUES ('/*'); DROP TABLE t;\nCOMMIT;\n",
+        "BEGIN;\nDO $$ BEGIN DROP TABLE t; END $$;\nCOMMIT;\n",
+    ]
+    for sql in banned:
+        with pytest.raises(ValueError):
+            migrations.assert_additive_only(sql, "999_fixture.sql")

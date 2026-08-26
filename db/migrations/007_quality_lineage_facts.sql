@@ -6,11 +6,14 @@ CREATE TABLE fact_attempt_runs (
     source_family text NOT NULL CHECK (source_family IN ('wb_analytics_task', 'file_artifact')),
     source_ref text NOT NULL CHECK (char_length(source_ref) BETWEEN 1 AND 256),
     status text NOT NULL CHECK (status IN ('RUNNING', 'SUCCEEDED', 'FAILED')),
-    failure_code text,
+    failure_code text CHECK (
+        failure_code IS NULL OR failure_code IN ('ALL_ROWS_QUARANTINED', 'SOURCE_UNREADABLE', 'CRASHED')
+    ),
     started_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     finished_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (tenant_id, source_family, source_ref),
+    UNIQUE (tenant_id, attempt_id),
     CHECK (status <> 'SUCCEEDED' OR finished_at IS NOT NULL),
     CHECK (status <> 'FAILED' OR failure_code IS NOT NULL)
 );
@@ -36,7 +39,9 @@ CREATE TABLE stg_quarantine_rows (
     detail jsonb NOT NULL CHECK (jsonb_typeof(detail) = 'object'),
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (attempt_id, source_task_id, source_row_number),
-    CHECK (source_task_id IS NULL OR source_row_number IS NOT NULL)
+    CHECK (source_task_id IS NULL OR source_row_number IS NOT NULL),
+    FOREIGN KEY (source_task_id, source_row_number)
+        REFERENCES stg_wb_nm_report_rows (task_id, row_number) ON DELETE RESTRICT
 );
 
 CREATE TABLE fact_order_counts (
@@ -79,6 +84,6 @@ CREATE TABLE quality_check_results (
 
 -- checksum-policy: normalized-self-v1
 INSERT INTO schema_migrations (version, name, sha256)
-VALUES (7, 'quality_lineage_facts', 'e7481977bbe4c7c20c2a3345158152d9de18ba7073a7de9f6cdcc71a17f50c5d');
+VALUES (7, 'quality_lineage_facts', '804a3473fa107c5a5844bba11b434040df326eff968ff3bf87698f6200dbe2c9');
 
 COMMIT;
