@@ -274,6 +274,17 @@ def test_migration_verifier_rejects_destructive_statements() -> None:
         "BEGIN;\nINSERT INTO t (id) VALUES (set_config('role', 'oops', true));\nCOMMIT;\n",
         "BEGIN;\nCREATE VIEW leaky AS SELECT * FROM fact_order_counts;\nCOMMIT;\n",
         "BEGIN;\nCREATE VIEW leaky WITH (security_invoker = false) AS SELECT * FROM fact_order_counts;\nCOMMIT;\n",
+        "BEGIN;\nCREATE TABLE leaked AS SELECT * FROM fact_order_counts;\nCOMMIT;\n",
+        "BEGIN;\nCREATE MATERIALIZED VIEW leaked_mv AS SELECT * FROM fact_order_counts;\nCOMMIT;\n",
+        "BEGIN;\nINSERT INTO log VALUES (pg_catalog.\"set_config\"('role', 'oops', true));\nCOMMIT;\n",
+        "BEGIN;\nGRANT INSERT, UPDATE ON schema_migrations TO proxima_data_health_read;\nCOMMIT;\n",
+        "BEGIN;\nGRANT UPDATE ON fact_order_counts TO proxima_data_health_read;\nCOMMIT;\n",
+        "BEGIN;\nCREATE POLICY open_sesame ON t FOR SELECT USING (true);\nCOMMIT;\n",
+        "BEGIN;\nCREATE POLICY p2 ON t FOR SELECT USING (tenant_id = 1);\nCOMMIT;\n",
+        "BEGIN;\nINSERT INTO t SELECT * FROM other;\nCOMMIT;\n",
+        "BEGIN;\nALTER TABLE t ADD COLUMN x int, ENABLE ROW LEVEL SECURITY;\nCOMMIT;\n",
+        "CREATE TABLE t (id int);\nBEGIN;\nCOMMIT;\n",
+        "BEGIN;\nCOMMIT;\nBEGIN;\nCOMMIT;\n",
     ]
     for sql in banned:
         with pytest.raises(ValueError, match="migration"):
@@ -286,12 +297,14 @@ def test_migration_verifier_rejects_destructive_statements() -> None:
         "BEGIN;\nALTER TABLE t ENABLE ROW LEVEL SECURITY;\nCOMMIT;\n",
         "BEGIN;\nCREATE INDEX t_note_idx ON t (note);\nCOMMIT;\n",
         "BEGIN;\nCREATE ROLE proxima_x NOLOGIN;\nGRANT SELECT ON t TO proxima_x;\nCOMMIT;\n",
-        "BEGIN;\nCREATE POLICY p ON t FOR SELECT USING (true);\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO t (id) VALUES (1); -- drop mentioned only in a comment\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO t (id, note) VALUES (2, 'literal mentioning drop and truncate');\nCOMMIT;\n",
         "BEGIN;\nINSERT INTO t (id) VALUES (3) ON CONFLICT (id) DO NOTHING;\nCOMMIT;\n",
         "BEGIN;\nCREATE VIEW safe_v WITH (security_invoker = true) AS SELECT id FROM t;\nCOMMIT;\n",
         "BEGIN;\nALTER TABLE t ADD COLUMN a int, ADD COLUMN b text;\nCOMMIT;\n",
+        "BEGIN;\nCREATE POLICY tenant_isolation ON t FOR SELECT USING (tenant_id = current_setting('proxima.tenant_id', true));\nCOMMIT;\n",
+        "BEGIN;\nGRANT SELECT, INSERT ON fact_order_counts TO proxima_source_publisher;\nCOMMIT;\n",
+        "BEGIN;\nGRANT SELECT, INSERT, UPDATE ON schema_migrations TO proxima_migration_owner;\nCOMMIT;\n",
     ]
     for sql in allowed:
         migrations.assert_additive_only(sql, "999_fixture.sql")

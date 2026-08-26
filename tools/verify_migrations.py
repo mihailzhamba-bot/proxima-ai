@@ -39,7 +39,7 @@ GRANT_ALLOWED_FORM = re.compile(
 )
 CREATE_ROLE_ALLOWED_FORM = re.compile(r"^CREATE ROLE proxima_[a-z_]+ NOLOGIN$", re.IGNORECASE)
 CREATE_ALLOWED_OBJECTS = re.compile(
-    r"^CREATE ((UNIQUE )?INDEX|TABLE|MATERIALIZED VIEW|SEQUENCE|POLICY)\b",
+    r"^CREATE ((UNIQUE )?INDEX|TABLE|SEQUENCE|POLICY)\b",
     re.IGNORECASE,
 )
 CREATE_VIEW_ALLOWED_FORM = re.compile(
@@ -78,6 +78,8 @@ def assert_single_action_alter(candidate: str, name: str) -> None:
     for action in actions:
         if not ALTER_ACTION_ALLOWED.match(action):
             raise ValueError(f"migration contains banned ALTER action ({' '.join(action.split()[:3])}): {name}")
+    if len(actions) > 1 and any(action.upper() == "ENABLE ROW LEVEL SECURITY" for action in actions):
+        raise ValueError(f"migration combines ENABLE ROW LEVEL SECURITY with other actions: {name}")
 
 
 def strip_sql_literals_and_comments(sql: str) -> str:
@@ -133,11 +135,43 @@ def strip_sql_literals_and_comments(sql: str) -> str:
     return "".join(out)
 
 
+QUOTED_SET_CONFIG_PATTERN = re.compile(r"[\"']\s*set_config\s*[\"']", re.IGNORECASE)
+GRANT_PARSED_PATTERN = re.compile(
+    r"^GRANT ((?:SELECT|INSERT|UPDATE|USAGE)(?:, (?:SELECT|INSERT|UPDATE|USAGE))*)"
+    r" ON (SEQUENCE )?([A-Za-z_][A-Za-z0-9_.]*) TO (proxima_[a-z_]+)$",
+    re.IGNORECASE,
+)
+
+
+def assert_single_transaction(statements: list[str], name: str) -> None:
+    heads = [STATEMENT_HEAD_PATTERN.match(x).group(0).upper() for x in statements if x]
+    if heads.count("BEGIN") != 1 or heads.count("COMMIT") != 1:
+        raise ValueError(f"migration must be exactly one BEGIN..COMMIT transaction: {name}")
+    if heads[0] != "BEGIN" or heads[-1] != "COMMIT":
+        raise ValueError(f"migration transaction markers misplaced: {name}")
+
+
+def assert_grant_matrix(candidate: str, name: str) -> None:
+    match = GRANT_PARSED_PATTERN.match(candidate)
+    if match is None:
+        raise ValueError(f"migration contains banned GRANT form: {name}")
+    privileges = {part.strip().upper() for part in match.group(1).split(",")}
+    obj = match.group(3).lower()
+    role = match.group(4).lower()
+    if role == "proxima_data_health_read" and privileges - {"SELECT"}:
+        raise ValueError(f"migration grants write privileges to the read-only role: {name}")
+    if obj == "schema_migrations":
+        if role != "proxima_migration_owner" or privileges - {"SELECT", "INSERT", "UPDATE"}:
+            raise ValueError(f"migration grants schema_migrations outside the migration owner: {name}")
+
+
 def assert_additive_only(sql: str, name: str) -> None:
     """Additive-only doctrine (B6, Phase 3 CONTEXT 2026-08-25): migrations may
     create and extend objects but never destroy or rewrite them. Fail-closed:
     only the statement forms in ALLOWED_HEADS (plus the ALTER TABLE allowlist
     below) are accepted; everything else is rejected."""
+    if QUOTED_SET_CONFIG_PATTERN.search(sql):
+        raise ValueError(f"migration references set_config (quoted or not): {name}")
     stripped = strip_sql_literals_and_comments(sql)
     if CREATE_OR_REPLACE_PATTERN.search(stripped):
         raise ValueError(f"migration uses banned CREATE OR REPLACE: {name}")
@@ -145,10 +179,10 @@ def assert_additive_only(sql: str, name: str) -> None:
         raise ValueError(f"migration uses banned CREATE RULE/EVENT TRIGGER: {name}")
     if BLANKET_BANNED_PATTERN.search(stripped):
         raise ValueError(f"migration contains DROP/TRUNCATE/EXECUTE (dynamic SQL): {name}")
-    for statement in stripped.split(";"):
-        candidate = " ".join(statement.split())
-        if not candidate:
-            continue
+    candidates = [" ".join(statement.split()) for statement in stripped.split(";")]
+    candidates = [c for c in candidates if c]
+    assert_single_transaction(candidates, name)
+    for candidate in candidates:
         head = STATEMENT_HEAD_PATTERN.match(candidate)
         if head is None:
             raise ValueError(f"migration statement is not recognizable SQL: {name}")
@@ -157,8 +191,7 @@ def assert_additive_only(sql: str, name: str) -> None:
             assert_single_action_alter(candidate, name)
             continue
         if keyword == "GRANT":
-            if not GRANT_ALLOWED_FORM.match(candidate):
-                raise ValueError(f"migration contains banned GRANT form: {name}")
+            assert_grant_matrix(candidate, name)
             continue
         if candidate.upper().startswith("CREATE ROLE "):
             if not CREATE_ROLE_ALLOWED_FORM.match(candidate):
@@ -173,8 +206,20 @@ def assert_additive_only(sql: str, name: str) -> None:
                 if not CREATE_VIEW_ALLOWED_FORM.match(candidate):
                     raise ValueError(f"migration contains banned CREATE VIEW form (security_invoker = true required): {name}")
                 continue
+            if candidate.upper().startswith("CREATE POLICY "):
+                if "current_setting" not in candidate:
+                    raise ValueError(f"migration creates a policy without the tenant current_setting guard: {name}")
+                continue
             if not CREATE_ALLOWED_OBJECTS.match(candidate):
                 raise ValueError(f"migration contains banned CREATE object form: {name}")
+            if candidate.upper().startswith("CREATE TABLE ") and not re.search(
+                rf"^CREATE TABLE (IF NOT EXISTS )?{IDENTIFIER} \(", candidate, re.IGNORECASE
+            ):
+                raise ValueError(f"migration uses CREATE TABLE AS (data-copy) form: {name}")
+            continue
+        if keyword == "INSERT":
+            if " SELECT " in f" {candidate} " or not re.search(r"\bVALUES\b", candidate, re.IGNORECASE):
+                raise ValueError(f"migration uses INSERT without a plain VALUES list: {name}")
             continue
         if keyword not in ALLOWED_HEADS:
             raise ValueError(f"migration contains non-additive statement ({keyword}): {name}")
