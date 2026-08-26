@@ -8,7 +8,7 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Current task
 
-**Phase 2 CLOSED 2026-08-25 (Mike, вариант A).** PA-13: revert `fd95fcb` задеплоен (PR #17), живой RW-токен (`01a03905…`) установлен, live-сбор DOWNLOADED (1 220 строк, sha256 `ed58ad60…`), review 0/1 warning закрыт `60fc7b1`. Plan 02-02 cancelled. Phase 2 закрыта с descope criterion №5 (видимые факты → Phase 3/6); SRC-01/03/04 отмечены Complete. **Ручной хвост Mike:** Jira PA-13 - комментарий + статус «Готово» (текст передан в сессии; MCP-вызов агента был неисправен - guardrail: не ретраить в этой сессии). Next: PMM-7 (charter-pointer) либо планирование Phase 3.
+**Phase 3 planning complete (2026-08-25); execution starts at 03-01.** CONTEXT.md + 4 плана в `.planning/phases/03-postgresql-quality-atomic-releases/` (волны 1→4, autonomous). B6 закрыт: additive-only доктрина зафиксирована и станет machine-enforced в 03-01. Ключевое: единый lineage поверх двух семей evidence (SHA-256 якорь), disposable local pg16 roundtrip (без Docker/VPS), роли миграциями 007-009, reconciliation - Phase 5. Critical phase: каждый план - cross-model review 0/0. Предыстория дня: PA-13 closed (revert `fd95fcb` deployed, live-сбор 1 220 строк, cross-model цикл PR #17→#19 `51abc7f`: codex 2/3/1 → все закрыты); Phase 2 closed (вариант A); Plan 02-02 cancelled.
 
 ## Current state
 
@@ -66,8 +66,8 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Exact next action
 
-1. **Phase 3 planning** (PostgreSQL Quality & Atomic Releases) - Phase 2 closed 2026-08-25 (variant A), Phase 3 owns staging/facts/quality/releases and the descoped visible-facts work. Read `.planning/ROADMAP.md` Phase 3 + Phase 3 CONTEXT before starting.
-2. In parallel on Track A/B per the lane plan below (PMM-7 next sprint-0 candidate).
+1. **Phase 3 execution, план 03-01** на свежей ветке: миграции 007-009 + enforced additive-only verifier + `make pg-roundtrip` (disposable local PostgreSQL 16). Затем 03-02 → 03-03 → 03-04. Каждый план: `make verify` + CI + independent cross-model review 0/0 (критическая фаза).
+2. In parallel on Track A/B per the lane plan below (PMM-7 next sprint-0 candidate; PMM-29 = bot lane).
 3. Ручной хвост Mike: Jira PA-13 комментарий + статус «Готово» (текст передан 2026-08-25).
 
 Sprint 0 progress: PMM-30 done (DEC-006, PR #9); PMM-2 spike merged (PR #10: ADR-0001 + DEC-007, LE-1 pilot entity filled, stays Draft until accountant Q1-Q4 + remaining entities); PMM-9 + PMM-10 done (PR #12: `docs/governance/assumptions-register.md` 11 entries, `risk-register.md` 13 risks, both Jira Done). **PMM-29 = bot lane (claimed, do not duplicate).** Remaining sprint-0 candidates for the Proxima agent: PMM-7 (charter-pointer), PMM-8 (glossary + KPI tree), PMM-11 (exit criteria), PMM-12 (DoD checklist) — pick PMM-7 next unless Mike reorders. PMM-31 needs explicit Mike approval (VPS operations). PMM-2 closes only at ADR Accepted.
