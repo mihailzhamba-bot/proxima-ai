@@ -177,7 +177,7 @@ Mike получает production-ready read-only data foundation для пило
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Architecture & Provenance Import Baseline | 3/3 | Complete | 2026-08-12 |
-| 2. Vertical Slice - Immutable Intake to Visible Facts | 2/3 | In progress | - |
+| 2. Vertical Slice - Immutable Intake to Visible Facts | 2 implemented + 01B reverted + 02-02 cancelled | Complete (criterion №5 descoped to Phase 3/6, решение Mike вариант A) | 2026-08-25 |
 | 3. PostgreSQL Quality & Atomic Releases | 0/TBD | Not started | - |
 | 4. Official WB READ & 90-Day Backfill | 0/TBD | Not started | - |
 | 5. order_count Authority & Reconciliation | 0/TBD | Not started | - |

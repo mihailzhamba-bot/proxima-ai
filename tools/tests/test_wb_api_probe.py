@@ -226,6 +226,8 @@ def test_analytics_rw_probe_token_requires_explicit_opt_in() -> None:
     rw_statistics = probe.decode_token_claims(split_token("statistics", read_only=False))
     with pytest.raises(probe.WbProbeError, match="read-only"):
         probe.validate_split_token("statistics", rw_statistics)
+    with pytest.raises(probe.WbProbeError, match="read-only"):
+        probe.validate_split_token("statistics", rw_statistics, allow_read_write=True)
 
 
 def test_expired_split_token_fails_closed(tmp_path: Path) -> None:

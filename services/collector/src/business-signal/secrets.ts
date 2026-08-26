@@ -62,6 +62,7 @@ export function assertLeastPrivilegeToken(
   now = new Date(),
   options: { allowReadWrite?: boolean } = {},
 ): void {
+  const allowReadWrite = options.allowReadWrite === true && requiredCategory === 'analytics';
   const payload = decodeJwtPayload(token);
   if (typeof payload.s !== 'number' || !Number.isSafeInteger(payload.s)) {
     throw new BusinessSignalError('TOKEN_INVALID', 'WB token scope claim is missing');
@@ -71,8 +72,8 @@ export function assertLeastPrivilegeToken(
   const allowedMask = (1 << categoryBit) | (1 << READ_ONLY_BIT);
   const isReadOnly = (scopes & (1 << READ_ONLY_BIT)) !== 0;
   const grantsOnlyCategory = scopes >= 0 && scopes < 2 ** 31 && (scopes & (1 << categoryBit)) !== 0 && (scopes & ~allowedMask) === 0;
-  if ((!isReadOnly && !options.allowReadWrite) || !grantsOnlyCategory) {
-    const access = options.allowReadWrite ? 'grant only its category' : 'be READ-only and grant only its category';
+  if ((!isReadOnly && !allowReadWrite) || !grantsOnlyCategory) {
+    const access = allowReadWrite ? 'grant only its category' : 'be READ-only and grant only its category';
     throw new BusinessSignalError('TOKEN_SCOPE_INVALID', `WB ${requiredCategory} token must ${access}`);
   }
   if (typeof payload.exp !== 'number' || payload.exp * 1000 <= now.getTime()) {
