@@ -4,11 +4,11 @@
 
 ## Active main task
 
-### PA-41 W1 verbatim import — in progress (2026-08-27)
+### PA-41 W1 + SCN-008 adapter slice — implementation done (2026-08-27)
 
 Главная цель: V1-сигнал. PA-41 W1 импортирован из source pin `53b7d604` строго по 18-файловому allowlist; destination SHA-256 совпадает 18/18. `pydantic==2.13.4` добавлен в control-plane и `uv.lock` обновлён.
 
-Проверка: `make verify` PASS (130 тестов, 1 skip); W1 evidence приведён к фактическому срезу без claims о неимпортированных W2/DB поверхностях. Следующий кусок PA-41 - SCN-008 adapter slice на импортированном fixture.
+Проверка: `make verify` PASS (131 тест, 1 skip); W1 evidence приведён к фактическому срезу без claims о неимпортированных W2/DB поверхностях. SCN-008 adapter slice на импортированном fixture завершён и покрыт e2e-тестом; W2 остаётся за PMM-29.
 
 COLLECTOR-WB-BRANCHES (former active task, implementation landed at `1a211c9`..`8b07249`): closure still unconfirmed with Mike in Jira PA (epic PA-36) — kept below in Queue until confirmed.
 
@@ -16,7 +16,7 @@ COLLECTOR-WB-BRANCHES (former active task, implementation landed at `1a211c9`..`
 
 1. COLLECTOR-WB-BRANCHES closure: confirm with Mike / Jira PA (epic PA-36), then move to Done. Implementation arc `99fea05` → `dc68839` → `1a211c9` (+`8b07249`), verify green 2026-08-18.
 2. PMM (M2/M3 backlog среза): **PMM-29** остаётся за `mihailzhamba-bot`; не дублировать. После успешного PA-41 W1 - PMM-11, PMM-8, PMM-12.
-3. Track B PA-39: **аудит завершён 2026-08-23** - артефакты `docs/audits/pa-39-scenario-engine-audit.md` + `pa-39-import-allowlist.yaml` (27 записей: W1 18 / W2 8 / settings-adaptation 1) + `pa-39-hash-transcript.txt` (27/27 PASS); machine-верификация поймала и закрыла ошибку переноса хэша; reviewer re-check: 0 blockers после фиксов. Ключевые решения grill-сеанса: пин `53b7d604`, PMM-29 проектирует контракты с нуля (PA-41 adaptation-коммитом перепривязывает), PA-41 = W1 (не ждёт PMM-29) + W2 (после PMM-29). W1 verbatim импортирован 2026-08-27; следующий кусок - SCN-008 adapter slice.
+3. Track B PA-39: **аудит завершён 2026-08-23** - артефакты `docs/audits/pa-39-scenario-engine-audit.md` + `pa-39-import-allowlist.yaml` (27 записей: W1 18 / W2 8 / settings-adaptation 1) + `pa-39-hash-transcript.txt` (27/27 PASS); machine-верификация поймала и закрыла ошибку переноса хэша; reviewer re-check: 0 blockers после фиксов. Ключевые решения grill-сеанса: пин `53b7d604`, PMM-29 проектирует контракты с нуля (PA-41 adaptation-коммитом перепривязывает), PA-41 = W1 (не ждёт PMM-29) + W2 (после PMM-29). W1 verbatim импортирован и SCN-008 adapter slice завершён 2026-08-27; W2 ждёт PMM-29.
 4. ~~Phase 2 `02-02`~~ — **cancelled by Mike 2026-08-25**; выбран вариант A: закрыть Phase 2 с descope criterion №5 и перенести visible facts в Phase 3/6. Документальный синк и Jira-переход ещё не выполнены.
 5. Phase 2 leftovers: CI pipeline green run on the cancellation/revert PRs; observed-XLSX parser больше не нужен (02-02 отменён; машина уезжает в Phase 4).
 6. From Mike (inputs): READ-only Analytics перевыпуск (не горит; закрывает RW-исключение), production Bogatova token, interview slots, AI-ops analyst onboarding, COGS data; инвентаризация прочих юрлиц для ADR-0001 (Q2) и подтверждение ставок бухгалтером (Q1, Q3, Q4).
