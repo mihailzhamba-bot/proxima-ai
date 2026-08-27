@@ -8,7 +8,7 @@
 
 CONTEXT.md + 4 плана залиты (`.planning/phases/03-postgresql-quality-atomic-releases/`): 03-01 schema foundation (B6 machine-enforced) → 03-02 promotion/quarantine/lineage → 03-03 atomic releases + LKG → 03-04 roles + adversarial matrix. Волны 1→4, autonomous, внешних входов нет. Critical phase: каждый план - cross-model review 0/0. День 2026-08-25 до этого: PA-13 closed (PR #17→#19 `51abc7f`, codex 2/3/1 all fixed), Phase 2 closed (вариант A), 02-02 cancelled, live-сбор Аналитики 1 220 строк.
 
-Next candidate: PMM-7 (charter-pointer) per HANDOFF "Exact next action", unless Mike reorders.
+Next candidate: PMM-7 (charter-pointer) per HANDOFF "Exact next action", unless Mike reorders. **PMM-11 approved 2026-08-27** (Mike, чат): exit-критерии W1-среза в `docs/exec-plans/active/w1-slice-exit-criteria.md` (Approved, codex re-review 0/0, PR #22); Jira-фиксация (описание+чек-лист, статус «В работе», R-14 в risk-register) выполнена тем же днём.
 
 COLLECTOR-WB-BRANCHES (former active task, implementation landed at `1a211c9`..`8b07249`): closure still unconfirmed with Mike in Jira PA (epic PA-36) — kept below in Queue until confirmed.
 
