@@ -8,7 +8,7 @@
 
 CONTEXT.md + 4 плана залиты (`.planning/phases/03-postgresql-quality-atomic-releases/`): 03-01 schema foundation (B6 machine-enforced) → 03-02 promotion/quarantine/lineage → 03-03 atomic releases + LKG → 03-04 roles + adversarial matrix. Волны 1→4, autonomous, внешних входов нет. Critical phase: каждый план - cross-model review 0/0. День 2026-08-25 до этого: PA-13 closed (PR #17→#19 `51abc7f`, codex 2/3/1 all fixed), Phase 2 closed (вариант A), 02-02 cancelled, live-сбор Аналитики 1 220 строк.
 
-Next candidate: PMM-7 (charter-pointer) per HANDOFF "Exact next action", unless Mike reorders.
+PMM-8 completed 2026-08-27 by explicit Mike reorder: `docs/governance/m2-glossary-kpi.md` fixes the M2 glossary and KPI tree, while numeric thresholds remain `UNKNOWN` until baseline. Next candidate: PMM-7 (charter-pointer).
 
 COLLECTOR-WB-BRANCHES (former active task, implementation landed at `1a211c9`..`8b07249`): closure still unconfirmed with Mike in Jira PA (epic PA-36) — kept below in Queue until confirmed.
 
@@ -23,6 +23,7 @@ COLLECTOR-WB-BRANCHES (former active task, implementation landed at `1a211c9`..`
 
 ## Done (recent)
 
+- 2026-08-27 PMM-8 glossary + KPI tree: canonical `docs/governance/m2-glossary-kpi.md` records 14 terms and 7 PV §8 metrics. Owner = Mike; contribution remains `UNKNOWN` pending ADR-0001/FIN-001; revenue-based value is separately marked. All product decisions from the grill are recorded in the document; `scripts/agent/verify` and full `make verify` PASS. Jira closure remains pending because this checkout exposes read-only Jira MCP tools.
 - 2026-08-25 PA-13 rollback: revert `fd95fcb` (`make verify` PASS) + VPS deploy + полная диагностика токенов (батч 2026-08-16 мёртв по подписям, канал чист) + RW №4 установлен; Plan 02-02 cancelled решением Mike.
 - 2026-08-18 PMM-2 (SPIKE tax regimes) merged PR #10 (`7acd0a8`): ADR-0001 + DEC-007, LE-1 (пилот) заполнен; ADR Draft до Q1-Q4 и инвентаризации прочих юрлиц. Post-merge review: 0 blockers / 3 warnings (doc-tails, закрыты в PR `docs/pmm2-postmerge-review`).
 - 2026-08-17 Аудит M2-бэклога: снят двойной бэклог M2 (PA-37 имел 9 детей, пять дублировали срез — PA-43/45/46/47/48 закрыты, метка `superseded-by-pmm`, откат обратим); DEC-006 снял конфликт с DEC-005; заведены PMM-29…33 под четыре блокера критического пути; сироты разведены по эпикам, достроен граф связей, проставлены метки спринтов. Отчёт: `docs/exec-plans/active/pmm-audit-2026-08-17.md`; rollback JQL `labels = "aios-fix-2026-08-17"`.
