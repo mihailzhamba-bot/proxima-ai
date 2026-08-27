@@ -26,6 +26,7 @@ English distillation of the binding rules. Canonical Russian source: `AGENTS.md`
 - Unknown fact → write `UNKNOWN`; never guess metrics, dates, Jira keys.
 - Read a file before changing it; route to `.planning/STATE.md` instead of duplicating its content.
 - Raw evidence stays immutable, content-addressed, outside Git.
+- A new PMM slice task description references the DoD checklist (`docs/governance/dod-checklist.md`); if omitted at creation, refinement adds the link.
 
 ## MAY (allowed variants)
 

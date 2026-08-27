@@ -19,7 +19,8 @@ skip() { echo "==> $1: SKIP ($2)"; }
 step "required files exist" bash -c '
   for f in AGENTS.md CLAUDE.md docs/agent-system/HANDOFF.md docs/agent-system/TASKS.md \
            docs/agent-system/README.md docs/agent-system/RULES.md docs/agent-system/EVALS.md \
-           docs/agent-system/MEMORY.md docs/agent-system/DECISIONS.md docs/agent-system/TOOLS.md; do
+           docs/agent-system/MEMORY.md docs/agent-system/DECISIONS.md docs/agent-system/TOOLS.md \
+           docs/governance/dod-checklist.md; do
     [ -f "$f" ] || { echo "missing: $f"; exit 1; }
   done'
 step "exec-plans dirs exist" bash -c '
