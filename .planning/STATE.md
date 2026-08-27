@@ -8,7 +8,7 @@
 
 **Product layer (2026-08-16, разделение трекеров уточнено 2026-08-17):** `.planning/PRODUCT-VISION.md` - консолидированное видение M1->M2 (AI Daily Manager)->M3 (SaaS 50+ кабинетов). Четыре трека исполнения, гейты V1/V2/V3. Jira **PA**: эпики PA-36 (Трек A - M1), PA-35 (Трек C - discovery), PA-34 (Трек D - SaaS, заморожен до V3), PA-37 (Трек B - исторический указатель; инфраструктура PA-38/39/41/44 живёт под ним). M1-задачи PA-18..24 привязаны к PA-36. Jira **PMM** «Proxima M2-M3» (id 10043): весь backlog M2/M3 - эпики PMM-3 (W1-срез) и PMM-6 (Governance). Разделение зафиксировано в PRODUCT-VISION.md, раздел «Трекер».
 
-**Current focus:** V1-сигнал; PA-41 W1 verbatim import, при сохранении M1 read-only гейтов.
+**Current focus:** V1-сигнал; PA-41 W1 + SCN-008 adapter slice завершены, при сохранении M1 read-only гейтов.
 
 **Roadmap:** 8 phases, 32/32 requirements mapped, 0 orphaned, 0 duplicate ownership.
 
@@ -16,7 +16,7 @@
 
 **Phase:** 2 of 8 - Vertical Slice: Immutable Intake to Visible Facts
 **Plan:** 02-01, 02-01A, 02-01B implemented; 02-02 cancelled by Mike 2026-08-25 (manual XLSX path dropped from M1).
-**Status:** Phase 2 закрывается с descope criterion №5 по решению Mike 2026-08-27; visible facts переносятся в Phase 3/6. PA-41 W1 импортирован, verification blocked тремя тестами на исключённые allowlist-артефакты.
+**Status:** Phase 2 закрывается с descope criterion №5 по решению Mike 2026-08-27; visible facts переносятся в Phase 3/6. PA-41 W1 и SCN-008 adapter slice импортированы/проверены; W2 ждёт PMM-29.
 **Progress:** `[#---------] 13%`
 
 ## Performance Metrics
@@ -35,7 +35,7 @@
 
 ### Decisions
 
-- 2026-08-27 (Mike): V1-сигнал выбран главной целью на 30 дней; Phase 2 закрывается с descope criterion №5, visible facts переносятся в Phase 3/6. PA-41 W1 - единственная текущая инженерная очередь; PMM-29 остаётся за `mihailzhamba-bot`.
+- 2026-08-27 (Mike): V1-сигнал выбран главной целью на 30 дней; Phase 2 закрывается с descope criterion №5, visible facts переносятся в Phase 3/6. PA-41 W1 + SCN-008 adapter slice завершены; Jira reconciliation pending; PMM-29 остаётся за `mihailzhamba-bot`.
 
 - 2026-08-25 (Mike): PA-13 enforcement отменён - временный RW-opt-in для Analytics восстановлен (revert `267cc3c` = `fd95fcb`, задеплоено на VPS `fd95fcb` 2026-08-25). Причина: READ-only Analytics токен так и не создан, а оба имеющихся RW-токена от 2026-08-16 имеют криптографически битые подписи в сохранённых копиях Амировой (WB 401 `crypto/ecdsa: verification error`; канал передачи проверен чистым - вставки Statistics/Finance побайтово идентичны рабочим). Условие закрытия исключения: свежесозданный живой Analytics токен (при READ-only - вернуть enforcement `267cc3c` повторным revert).
 - 2026-08-25 (Mike): Plan 02-02 (XLSX parser → staging → preview) отменён; ручная XLSX-нога исключена из M1. Чекпоинт-файл получен и профилирован (см. EVIDENCE 02-02), parser-код не начинался. SRC-01/03/04 закрыты кодом 02-01; 2026-08-27 Mike выбрал закрытие Phase 2 с descope criterion №5, а visible facts перенёс в Phase 3/6.
