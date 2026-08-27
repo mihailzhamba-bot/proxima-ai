@@ -8,13 +8,15 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Current task
 
-**PA-13 closed 2026-08-25 (amend-форма Mike).** Revert `fd95fcb` deployed (PR #17); свежий RW-токен №2 батча 25.08 (`01a03905…`) установлен (заменил мёртвый №4); заблокированная задача `f1b8892a…` разблокирована ручной операторской интервенцией - manual dissection (RESERVED + сброс `sent_at` квота-ивента create/seq1; процедура добавлена в runbook 2026-08-25 после review warning); live-прогон с `--allow-analytics-read-write` = **DOWNLOADED/SUCCESS**: неделя 2026-08-17..23, 11 233 bytes, sha256 `ed58ad60…`, 1 220 строк parsed/staged (первый живой сбор с 2026-08-13). Finance RW из того же батча отклонён (не меняем рабочее READ-only). Хвост (не блокер): READ-only перевыпуск → повторный revert. **Plan 02-02 cancelled by Mike 2026-08-25**; Phase 2 fate (A close / B hold) — ждёт одну букву Mike. Next candidate: PMM-7.
+**PA-13 enforcement rollback оставлен по решению Mike 2026-08-25;** live Jira всё ещё «В работе» и требует ручной актуализации: исходная цель superseded, successor = READ-only Analytics token → повторный revert. **Plan 02-02 cancelled; выбран Phase 2 вариант A (close with descope), Jira-переход ещё не выполнен.**
+
+**PA-41 W1 verbatim import выполнен 2026-08-27.** 18/18 allowlist SHA-256 совпали с source pin `53b7d604`; добавлены `src/proxima` и `pydantic==2.13.4`, обновлён `services/control-plane/uv.lock`. `make verify` PASS: 130 passed, 1 skipped. Следующий кусок - SCN-008 adapter slice.
 
 **PA-49 Warm Precision сдан 2026-08-26 (autopilot interview deep polish, этот worktree, ветка `feat/pa-49-warm-precision`, коммиты 0dbfa71..12651e4 + gitignore-хвост; в main НЕ мержено - ждёт Mike: новый PR или прямой merge; №17 занят rollback-PR PA-13).** Редизайн webapp по DESIGN.md: тёплые токены обеих тем, Inter+IBM Plex Mono, метрическая полоса 5 карточек (GYR/выручка/заказы/OOS/свежесть) с FX-бейджами на демо-цифрах, редакционный /brief (вердикт-строка, critical-строки 36px, ₽ mono, CountUp+reduced-motion), спроектированные скелеты inbox/dashboard/admin с per-секционными error-boundaries, стайлгайд-эталон; staging-контейнер proxima-webapp-staging на VPS (только 127.0.0.1:3000; смотреть: `ssh -N proxima-app` → http://localhost:3000); фикс Dockerfile PUPPETEER_SKIP_DOWNLOAD (ADR-0006/D01); ADR 0002-0006; память AGENTS.md между autopilot-маркерами; Jira PA-49 комментарий 10334 (статус не менялся). Verify: make verify PASS end-to-end, vitest 26, lint 0, build зелёный. G4 слепая приёмка 16/18 (2 процессных); доводка 1 круг: 6 найдено, 5 закрыто, 1 отклонено (violet-подложка активного пункта - буква R04). Запись: `.autopilot/2026-08-25-pa49-warm-precision/`. После решения по ветке: PA-50 (контракт сигнала - PMM-29 bot lane); PA-49 закрывается деплой-сессией 2 (домен + 80/443).
 
 ## Current state
 
-- Phase 2 (Vertical Slice: Immutable Intake to Visible Facts) in progress; plans 02-01/01A implemented, 02-01B enforcement reverted 2026-08-25, 02-02 cancelled 2026-08-25; first live Analytics collection since 2026-08-13 landed (1220 rows). Requirements 6/32 (source: `.planning/STATE.md`, 2026-08-25).
+- Phase 2 (Vertical Slice: Immutable Intake to Visible Facts): выбран close with descope 2026-08-27; criterion visible facts переносится в Phase 3/6, документальный и Jira-синк pending.
 - M2 track opened in Jira PMM (sprint-0/1 backlog); PMM-30 (DEC-006) done; PMM-2 spike merged as above.
 - Staging VPS Selectel `135.106.186.210` bootstrapped; host monitor live since 2026-08-15 (Telegram delivery tested, `/etc/hosts` pin for `api.telegram.org` in place). Business data blocked until the backup guardrail (Phase 7).
 - 2026-08-16 planning session: PRODUCT-VISION.md approved, Jira PA epics PA-34/35/36/37 created (source: `.planning/STATE.md`).
@@ -39,8 +41,8 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Blockers
 
-- ~~No live WB Analytics token~~ снято 2026-08-25: live-сбор прошёл (см. Current task). Не блокер: READ-only перевыпуск → вернуть enforcement.
-- Phase 2 fate after 02-02 cancellation (close with descoped criterion №5 vs hold open) - Mike's call, asked 2026-08-25, unanswered.
+- ~~No live WB Analytics token~~ снято 2026-08-25: live-сбор прошёл. READ-only перевыпуск → вернуть enforcement остаётся successor, не текущая инженерная очередь.
+- Jira write operations are unavailable in the current MCP session; live status/links need a Chrome session or manual Mike action.
 - First approved data release blocked on Phase 8 Data GO; live deployment blocked on separate Live Deploy GO (STATE.md).
 - No local Docker — DB dev goes through SSH tunnel to staging VPS (Mike decision 2026-08-16).
 
@@ -66,14 +68,14 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Exact next action
 
-1. **Phase 2 fate (Mike's one-letter answer):** A = close Phase 2 with descoped criterion №5 (visible facts move to Phase 3/6); B = hold open until API data.
-2. Then resume the pre-existing lane plan (see below). PA-13 closed; its PR #17 can merge when reviewed.
+1. Implement and test the SCN-008 adapter slice on `tests/fixtures/scenario_engine/scn_008_partial.json`; keep deterministic engine output and SourceRef boundaries intact.
+2. Reconcile Jira status/links in Chrome for PA-13, PA-15, PA-17, PA-38, PA-41, PA-49, PA-50, PA-55, PMM-2 and PMM-29.
 
 Sprint 0 progress: PMM-30 done (DEC-006, PR #9); PMM-2 spike merged (PR #10: ADR-0001 + DEC-007, LE-1 pilot entity filled, stays Draft until accountant Q1-Q4 + remaining entities); PMM-9 + PMM-10 done (PR #12: `docs/governance/assumptions-register.md` 11 entries, `risk-register.md` 13 risks, both Jira Done). **PMM-29 = bot lane (claimed, do not duplicate).** Remaining sprint-0 candidates for the Proxima agent: PMM-7 (charter-pointer), PMM-8 (glossary + KPI tree), PMM-11 (exit criteria), PMM-12 (DoD checklist) — pick PMM-7 next unless Mike reorders. PMM-31 needs explicit Mike approval (VPS operations). PMM-2 closes only at ADR Accepted.
 
 **Coordination note (2026-08-17, updated 2026-08-18).** This repo has a second executor: `mihailzhamba-bot` opens PRs against Jira PMM issues (PR #9 was the first). Mike's lane split, resolved 2026-08-18: **PMM-29 (contracts) = bot lane**, claimed in the PMM-29 Jira comment; the Proxima agent does NOT start it. Proxima agent completed PMM-9 + PMM-10 (governance registers, PR #12, merge `4a6b23a`, both Jira issues Done). Always `git fetch` before assuming local `main` is current; never run the same PMM task on both lanes.
 
-In parallel on Track A: confirm closure of COLLECTOR-WB-BRANCHES with Mike in Jira PA (epic PA-36); if DONE, move it to TASKS "Done". **PA-39 audit complete (2026-08-23, see Completed) - next on this track is PA-41 W1 verbatim-import** (does not wait for PMM-29; ~0.5 day + SCN-008 slice 0.5-1 day), which unblocks PMM-5/20/23.
+In parallel on Track A: confirm closure of COLLECTOR-WB-BRANCHES with Mike in Jira PA (epic PA-36); if DONE, move it to TASKS "Done". **PA-39 audit complete (2026-08-23, see Completed); PA-41 W1 verbatim-import is done, next is the SCN-008 slice** (does not wait for PMM-29; ~0.5-1 day), which unblocks PMM-5/20/23.
 
 Two things need Mike before they can move: the pilot XLSX (Phase 2 plan 02-02) and four Jira components in the PMM UI (`governance`, `w1-slice`, `delivery`, `finance`) — the MCP has no endpoint for creating them.
 
@@ -87,4 +89,4 @@ Note for anyone touching the LLM layer: DEC-006 now permits LLM runtime and clie
 
 ---
 
-Last updated: 2026-08-25
+Last updated: 2026-08-27

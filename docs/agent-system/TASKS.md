@@ -4,20 +4,20 @@
 
 ## Active main task
 
-### None open — PA-13 closed 2026-08-25 (amend-форма Mike)
+### PA-41 W1 verbatim import — in progress (2026-08-27)
 
-PA-13 закрыт: enforcement отменён решением Mike (revert `fd95fcb`, PR #17), свежий RW-токен установлен, live-сбор Аналитики прошёл (DOWNLOADED, 1 220 строк, неделя 17-23.08). Хвост (не блокер): READ-only перевыпуск → повторный revert. Plan 02-02 отменён тем же днём (Jira Готово + `cancelled`); судьба Phase 2 (A close / B hold) ждёт одну букву от Mike.
+Главная цель: V1-сигнал. PA-41 W1 импортирован из source pin `53b7d604` строго по 18-файловому allowlist; destination SHA-256 совпадает 18/18. `pydantic==2.13.4` добавлен в control-plane и `uv.lock` обновлён.
 
-Next candidate: PMM-7 (charter-pointer) per HANDOFF "Exact next action", unless Mike reorders.
+Проверка: `make verify` PASS (130 тестов, 1 skip); W1 evidence приведён к фактическому срезу без claims о неимпортированных W2/DB поверхностях. Следующий кусок PA-41 - SCN-008 adapter slice на импортированном fixture.
 
 COLLECTOR-WB-BRANCHES (former active task, implementation landed at `1a211c9`..`8b07249`): closure still unconfirmed with Mike in Jira PA (epic PA-36) — kept below in Queue until confirmed.
 
 ## Queue
 
 1. COLLECTOR-WB-BRANCHES closure: confirm with Mike / Jira PA (epic PA-36), then move to Done. Implementation arc `99fea05` → `dc68839` → `1a211c9` (+`8b07249`), verify green 2026-08-18.
-2. PMM (M2/M3 backlog среза), Sprint 0 после PMM-2: **PMM-29** (контракты signal/diagnosis/decision-record + codegen) — ждёт решения Mike о lane (этот агент или бот; HANDOFF 2026-08-18) → **PMM-31** (LLM-доступ: проверить egress с VPS ДО выбора моделей). Исполнение PMM-задач за `mihailzhamba-bot` (решение Mike 2026-08-17); этот агент ведёт бэклог. Спайк **PMM-14** (Build vs Buy, ≤3 дня) ждёт вердикта Mike. Exit-критерии среза — PMM-11. Manifest: `docs/exec-plans/active/pm2-backlog-run.manifest.yaml`; отчёт аудита: `docs/exec-plans/active/pmm-audit-2026-08-17.md`.
-3. Track B PA-39: **аудит завершён 2026-08-23** - артефакты `docs/audits/pa-39-scenario-engine-audit.md` + `pa-39-import-allowlist.yaml` (27 записей: W1 18 / W2 8 / settings-adaptation 1) + `pa-39-hash-transcript.txt` (27/27 PASS); machine-верификация поймала и закрыла ошибку переноса хэша; reviewer re-check: 0 blockers после фиксов. Ключевые решения grill-сеанса: пин `53b7d604`, PMM-29 проектирует контракты с нуля (PA-41 adaptation-коммитом перепривязывает), PA-41 = W1 (не ждёт PMM-29) + W2 (после PMM-29). Следующий шаг - PA-41 W1 verbatim-import.
-4. ~~Phase 2 `02-02`~~ — **cancelled by Mike 2026-08-25** (see Active main task); Phase 2 fate (A close with descope / B hold) awaiting Mike.
+2. PMM (M2/M3 backlog среза): **PMM-29** остаётся за `mihailzhamba-bot`; не дублировать. После успешного PA-41 W1 - PMM-11, PMM-8, PMM-12.
+3. Track B PA-39: **аудит завершён 2026-08-23** - артефакты `docs/audits/pa-39-scenario-engine-audit.md` + `pa-39-import-allowlist.yaml` (27 записей: W1 18 / W2 8 / settings-adaptation 1) + `pa-39-hash-transcript.txt` (27/27 PASS); machine-верификация поймала и закрыла ошибку переноса хэша; reviewer re-check: 0 blockers после фиксов. Ключевые решения grill-сеанса: пин `53b7d604`, PMM-29 проектирует контракты с нуля (PA-41 adaptation-коммитом перепривязывает), PA-41 = W1 (не ждёт PMM-29) + W2 (после PMM-29). W1 verbatim импортирован 2026-08-27; следующий кусок - SCN-008 adapter slice.
+4. ~~Phase 2 `02-02`~~ — **cancelled by Mike 2026-08-25**; выбран вариант A: закрыть Phase 2 с descope criterion №5 и перенести visible facts в Phase 3/6. Документальный синк и Jira-переход ещё не выполнены.
 5. Phase 2 leftovers: CI pipeline green run on the cancellation/revert PRs; observed-XLSX parser больше не нужен (02-02 отменён; машина уезжает в Phase 4).
 6. From Mike (inputs): READ-only Analytics перевыпуск (не горит; закрывает RW-исключение), production Bogatova token, interview slots, AI-ops analyst onboarding, COGS data; инвентаризация прочих юрлиц для ADR-0001 (Q2) и подтверждение ставок бухгалтером (Q1, Q3, Q4).
 

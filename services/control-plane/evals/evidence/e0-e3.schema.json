@@ -1,0 +1,472 @@
+{
+  "$defs": {
+    "CriticalFailureEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "failure_id": {
+          "enum": [
+            "CF-01",
+            "CF-02",
+            "CF-03",
+            "CF-04",
+            "CF-05",
+            "CF-06",
+            "CF-07",
+            "CF-08",
+            "CF-09",
+            "CF-10"
+          ],
+          "title": "Failure Id",
+          "type": "string"
+        },
+        "occurrences": {
+          "minimum": 0,
+          "title": "Occurrences",
+          "type": "integer"
+        },
+        "evidence_locators": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Locators",
+          "type": "array"
+        }
+      },
+      "required": [
+        "failure_id",
+        "occurrences",
+        "evidence_locators"
+      ],
+      "title": "CriticalFailureEvidence",
+      "type": "object"
+    },
+    "GateBlocker": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "owner": {
+          "minLength": 1,
+          "title": "Owner",
+          "type": "string"
+        },
+        "next_evidence": {
+          "minLength": 1,
+          "title": "Next Evidence",
+          "type": "string"
+        },
+        "due_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Due At"
+        }
+      },
+      "required": [
+        "code",
+        "owner",
+        "next_evidence"
+      ],
+      "title": "GateBlocker",
+      "type": "object"
+    },
+    "GateCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check_id": {
+          "minLength": 1,
+          "title": "Check Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "MISSING"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "evidence_locators": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Locators",
+          "type": "array"
+        }
+      },
+      "required": [
+        "check_id",
+        "status",
+        "evidence_locators"
+      ],
+      "title": "GateCheck",
+      "type": "object"
+    },
+    "GateId": {
+      "enum": [
+        "E0",
+        "E1",
+        "E2",
+        "E3"
+      ],
+      "type": "string"
+    },
+    "GateRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "gate_id": {
+          "$ref": "#/$defs/GateId"
+        },
+        "status": {
+          "$ref": "#/$defs/GateStatus"
+        },
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/GateCheck"
+          },
+          "title": "Checks",
+          "type": "array"
+        },
+        "blockers": {
+          "items": {
+            "$ref": "#/$defs/GateBlocker"
+          },
+          "title": "Blockers",
+          "type": "array"
+        },
+        "evaluated_at": {
+          "format": "date-time",
+          "title": "Evaluated At",
+          "type": "string"
+        },
+        "evaluator": {
+          "minLength": 1,
+          "title": "Evaluator",
+          "type": "string"
+        },
+        "validator_version": {
+          "minLength": 1,
+          "title": "Validator Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "gate_id",
+        "status",
+        "checks",
+        "blockers",
+        "evaluated_at",
+        "evaluator",
+        "validator_version"
+      ],
+      "title": "GateRecord",
+      "type": "object"
+    },
+    "GateStatus": {
+      "enum": [
+        "NOT_EVALUATED",
+        "BLOCKED",
+        "READY"
+      ],
+      "type": "string"
+    },
+    "IncidentReadiness": {
+      "additionalProperties": false,
+      "properties": {
+        "incident_owner": {
+          "minLength": 1,
+          "title": "Incident Owner",
+          "type": "string"
+        },
+        "owner_source_ref": {
+          "minLength": 1,
+          "title": "Owner Source Ref",
+          "type": "string"
+        },
+        "runbook_version": {
+          "minLength": 1,
+          "title": "Runbook Version",
+          "type": "string"
+        },
+        "runbook_locator": {
+          "minLength": 1,
+          "title": "Runbook Locator",
+          "type": "string"
+        }
+      },
+      "required": [
+        "incident_owner",
+        "owner_source_ref",
+        "runbook_version",
+        "runbook_locator"
+      ],
+      "title": "IncidentReadiness",
+      "type": "object"
+    },
+    "Phase3ExitStatus": {
+      "enum": [
+        "BLOCKED",
+        "E3_READY_G1_CANDIDATE"
+      ],
+      "type": "string"
+    },
+    "PreflightEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "g0_decision_locator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "G0 Decision Locator"
+        },
+        "g0_evidence_locator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "G0 Evidence Locator"
+        },
+        "phase2_release_locator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Phase2 Release Locator"
+        },
+        "client_passport_locator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Client Passport Locator"
+        },
+        "validated_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Validated At"
+        }
+      },
+      "required": [
+        "g0_decision_locator",
+        "g0_evidence_locator",
+        "phase2_release_locator",
+        "client_passport_locator",
+        "validated_at"
+      ],
+      "title": "PreflightEvidence",
+      "type": "object"
+    },
+    "ThresholdEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        },
+        "baseline_source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline Source"
+        },
+        "baseline_date": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline Date"
+        },
+        "approved_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approved By"
+        },
+        "approved_at": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approved At"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ThresholdEvidence",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "record_version": {
+      "const": "1.0",
+      "title": "Record Version",
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "phase": {
+      "const": "03",
+      "title": "Phase",
+      "type": "string"
+    },
+    "candidate_version": {
+      "minLength": 1,
+      "title": "Candidate Version",
+      "type": "string"
+    },
+    "candidate_tree_hash": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{40}$|^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Candidate Tree Hash"
+    },
+    "preflight_evidence": {
+      "$ref": "#/$defs/PreflightEvidence"
+    },
+    "gates": {
+      "items": {
+        "$ref": "#/$defs/GateRecord"
+      },
+      "title": "Gates",
+      "type": "array"
+    },
+    "thresholds": {
+      "items": {
+        "$ref": "#/$defs/ThresholdEvidence"
+      },
+      "title": "Thresholds",
+      "type": "array"
+    },
+    "critical_failures": {
+      "items": {
+        "$ref": "#/$defs/CriticalFailureEvidence"
+      },
+      "title": "Critical Failures",
+      "type": "array"
+    },
+    "incident_readiness": {
+      "$ref": "#/$defs/IncidentReadiness"
+    },
+    "phase3_exit": {
+      "$ref": "#/$defs/Phase3ExitStatus"
+    },
+    "g1_owner": {
+      "const": "Mike",
+      "title": "G1 Owner",
+      "type": "string"
+    },
+    "g1_decision_locator": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "G1 Decision Locator"
+    }
+  },
+  "required": [
+    "record_version",
+    "generated_at",
+    "phase",
+    "candidate_version",
+    "preflight_evidence",
+    "gates",
+    "thresholds",
+    "critical_failures",
+    "incident_readiness",
+    "phase3_exit",
+    "g1_owner",
+    "g1_decision_locator"
+  ],
+  "title": "PROXIMA Phase 3 deterministic gate evidence",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proxima.internal/evals/e0-e3.schema.json"
+}

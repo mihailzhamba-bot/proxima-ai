@@ -1,0 +1,447 @@
+{
+  "$defs": {
+    "Adjudication": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "not_required",
+            "pending",
+            "resolved"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "disagreement_visible": {
+          "const": true,
+          "title": "Disagreement Visible",
+          "type": "boolean"
+        },
+        "actor_id": {
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "source_ref": {
+          "minLength": 1,
+          "title": "Source Ref",
+          "type": "string"
+        },
+        "rationale": {
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "disagreement_visible",
+        "actor_id",
+        "source_ref",
+        "rationale"
+      ],
+      "title": "Adjudication",
+      "type": "object"
+    },
+    "DeterministicCalculation": {
+      "additionalProperties": false,
+      "properties": {
+        "calculation_id": {
+          "minLength": 1,
+          "title": "Calculation Id",
+          "type": "string"
+        },
+        "formula_version": {
+          "minLength": 1,
+          "title": "Formula Version",
+          "type": "string"
+        },
+        "expected_value": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "source_ref_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Source Ref Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "calculation_id",
+        "formula_version",
+        "expected_value",
+        "source_ref_ids"
+      ],
+      "title": "DeterministicCalculation",
+      "type": "object"
+    },
+    "FrozenInput": {
+      "additionalProperties": false,
+      "properties": {
+        "snapshot_id": {
+          "minLength": 1,
+          "title": "Snapshot Id",
+          "type": "string"
+        },
+        "snapshot_checksum": {
+          "minLength": 1,
+          "title": "Snapshot Checksum",
+          "type": "string"
+        },
+        "input_hash": {
+          "minLength": 1,
+          "title": "Input Hash",
+          "type": "string"
+        },
+        "source_refs": {
+          "items": {
+            "$ref": "#/$defs/FrozenSourceRef"
+          },
+          "minItems": 1,
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "passport_version": {
+          "minLength": 1,
+          "title": "Passport Version",
+          "type": "string"
+        },
+        "policy_version": {
+          "minLength": 1,
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "formula_version": {
+          "minLength": 1,
+          "title": "Formula Version",
+          "type": "string"
+        },
+        "prompt_version": {
+          "minLength": 1,
+          "title": "Prompt Version",
+          "type": "string"
+        },
+        "model_version": {
+          "minLength": 1,
+          "title": "Model Version",
+          "type": "string"
+        },
+        "tool_versions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Tool Versions",
+          "type": "object"
+        },
+        "open_decision_state_hash": {
+          "minLength": 1,
+          "title": "Open Decision State Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "snapshot_id",
+        "snapshot_checksum",
+        "input_hash",
+        "source_refs",
+        "passport_version",
+        "policy_version",
+        "formula_version",
+        "prompt_version",
+        "model_version",
+        "tool_versions",
+        "open_decision_state_hash"
+      ],
+      "title": "FrozenInput",
+      "type": "object"
+    },
+    "FrozenSourceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "source_ref_id": {
+          "minLength": 1,
+          "title": "Source Ref Id",
+          "type": "string"
+        },
+        "locator": {
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "checksum": {
+          "minLength": 1,
+          "title": "Checksum",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_ref_id",
+        "locator",
+        "checksum"
+      ],
+      "title": "FrozenSourceRef",
+      "type": "object"
+    },
+    "GoldLabels": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_states": {
+          "items": {
+            "enum": [
+              "NO_ACTION",
+              "ACTIONS_READY",
+              "AWAITING_APPROVAL",
+              "BLOCKED",
+              "INCIDENT"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Allowed States",
+          "type": "array"
+        },
+        "allowed_causes": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Allowed Causes",
+          "type": "array"
+        },
+        "allowed_actions": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Allowed Actions",
+          "type": "array"
+        },
+        "required_evidence_ref_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Required Evidence Ref Ids",
+          "type": "array"
+        },
+        "forbidden_claims": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Forbidden Claims",
+          "type": "array"
+        },
+        "forbidden_actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Forbidden Actions",
+          "type": "array"
+        },
+        "deterministic_calculations": {
+          "items": {
+            "$ref": "#/$defs/DeterministicCalculation"
+          },
+          "minItems": 1,
+          "title": "Deterministic Calculations",
+          "type": "array"
+        },
+        "primary_label": {
+          "$ref": "#/$defs/LabelReview"
+        },
+        "second_review": {
+          "$ref": "#/$defs/LabelReview"
+        },
+        "adjudication": {
+          "$ref": "#/$defs/Adjudication"
+        }
+      },
+      "required": [
+        "allowed_states",
+        "allowed_causes",
+        "allowed_actions",
+        "required_evidence_ref_ids",
+        "forbidden_claims",
+        "forbidden_actions",
+        "deterministic_calculations",
+        "primary_label",
+        "second_review",
+        "adjudication"
+      ],
+      "title": "GoldLabels",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "LabelReview": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "actor_role": {
+          "minLength": 1,
+          "title": "Actor Role",
+          "type": "string"
+        },
+        "source_ref": {
+          "minLength": 1,
+          "title": "Source Ref",
+          "type": "string"
+        },
+        "labeled_at": {
+          "format": "date-time",
+          "title": "Labeled At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "actor_id",
+        "actor_role",
+        "source_ref",
+        "labeled_at"
+      ],
+      "title": "LabelReview",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "deidentified_practitioner_case",
+            "synthetic_generator"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "source_locator": {
+          "minLength": 1,
+          "title": "Source Locator",
+          "type": "string"
+        },
+        "source_date": {
+          "format": "date",
+          "title": "Source Date",
+          "type": "string"
+        },
+        "collected_by": {
+          "minLength": 1,
+          "title": "Collected By",
+          "type": "string"
+        },
+        "approval_locator": {
+          "minLength": 1,
+          "title": "Approval Locator",
+          "type": "string"
+        },
+        "deidentified": {
+          "title": "Deidentified",
+          "type": "boolean"
+        },
+        "deidentification_method": {
+          "minLength": 1,
+          "title": "Deidentification Method",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "source_locator",
+        "source_date",
+        "collected_by",
+        "approval_locator",
+        "deidentified",
+        "deidentification_method"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "record_version": {
+      "const": "1.0",
+      "title": "Record Version",
+      "type": "string"
+    },
+    "case_id": {
+      "minLength": 1,
+      "title": "Case Id",
+      "type": "string"
+    },
+    "dataset_version": {
+      "minLength": 1,
+      "title": "Dataset Version",
+      "type": "string"
+    },
+    "split": {
+      "enum": [
+        "engineering",
+        "calibration",
+        "regression",
+        "holdout",
+        "production_replay"
+      ],
+      "title": "Split",
+      "type": "string"
+    },
+    "scenario_id": {
+      "enum": [
+        "SCN-001",
+        "SCN-002",
+        "SCN-003",
+        "SCN-004",
+        "SCN-005",
+        "SCN-006",
+        "SCN-007",
+        "SCN-008"
+      ],
+      "title": "Scenario Id",
+      "type": "string"
+    },
+    "edge_classes": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Edge Classes",
+      "type": "array"
+    },
+    "accepted_alternative_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Accepted Alternative Ids",
+      "type": "array"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "frozen_input": {
+      "$ref": "#/$defs/FrozenInput"
+    },
+    "gold_labels": {
+      "$ref": "#/$defs/GoldLabels"
+    }
+  },
+  "required": [
+    "record_version",
+    "case_id",
+    "dataset_version",
+    "split",
+    "scenario_id",
+    "edge_classes",
+    "accepted_alternative_ids",
+    "provenance",
+    "frozen_input",
+    "gold_labels"
+  ],
+  "title": "PROXIMA frozen reference case",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proxima.internal/evals/reference-case.schema.json"
+}
