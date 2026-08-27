@@ -37,6 +37,10 @@ GRANT_ALLOWED_FORM = re.compile(
     r" ON (SEQUENCE )?[A-Za-z_][A-Za-z0-9_.]* TO proxima_[a-z_]+$",
     re.IGNORECASE,
 )
+TERMINAL_ATTEMPT_UPDATE_GRANT = re.compile(
+    r"^GRANT UPDATE \(status, failure_code, finished_at\) ON fact_attempt_runs TO proxima_source_publisher$",
+    re.IGNORECASE,
+)
 CREATE_ROLE_ALLOWED_FORM = re.compile(r"^CREATE ROLE proxima_[a-z_]+ NOLOGIN$", re.IGNORECASE)
 CREATE_ALLOWED_OBJECTS = re.compile(
     r"^CREATE ((UNIQUE )?INDEX|TABLE|SEQUENCE|POLICY)\b",
@@ -173,10 +177,13 @@ def assert_single_transaction(statements: list[str], name: str) -> None:
 
 
 def assert_grant_matrix(candidate: str, name: str) -> None:
+    if TERMINAL_ATTEMPT_UPDATE_GRANT.match(candidate):
+        return
     match = GRANT_PARSED_PATTERN.match(candidate)
     if match is None:
         raise ValueError(f"migration contains banned GRANT form: {name}")
-    privileges = {part.strip().upper() for part in match.group(1).split(",")}
+    raw_privileges = {part.strip().upper() for part in match.group(1).split(",")}
+    privileges = raw_privileges
     obj = match.group(3).lower().split(".")[-1]
     role = match.group(4).lower()
     if role == "proxima_data_health_read" and privileges - {"SELECT"}:

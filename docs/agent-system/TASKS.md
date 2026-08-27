@@ -4,11 +4,14 @@
 
 ## Active main task
 
-### Phase 3: 03-01 DONE (PR #21 `0a7b2c6`, cross-model 0/0 ×12 rounds) → 03-02 promotion next
+### Phase 3: 03-01 DONE (PR #21 `0a7b2c6`) → 03-02 implementation local PASS, CI/PR/Mike merge pending
 
-03-01 delivered: migrations 007-009, enforced additive-only verifier (92+15 fixtures), `make pg-roundtrip` (disposable local PG16, runs in CI), RLS 23 policies / 11 tables, 4 NOLOGIN roles. Full review history in `.planning/phases/03-postgresql-quality-atomic-releases/EVIDENCE.md`. Branch `mihailzhamba-bot/PA-03-02-promotion` on `0a7b2c6` ready for the 03-02 plan (staging→facts promotion, quarantine, lineage, crash-injection). Then 03-03 (releases/LKG), 03-04 (roles matrix).
+03-02 on `mihailzhamba-bot/PA-03-02-promotion`: migration 010 narrowly grants only terminal attempt columns; promotion writes facts, typed quarantine, quality and immutable lineage atomically, with crash injection and CLI argument validation. Local `make verify` PASS 2026-08-27, disposable PG16 promotion suite 6/6, ledger 10/10, independent cross-model review 0/0. Current gate: CI, PR and Mike merge. Then 03-03 (releases/LKG), 03-04 (roles matrix).
 
 Next candidate: PMM-7 (charter-pointer) per HANDOFF "Exact next action", unless Mike reorders. **PMM-11 approved 2026-08-27** (Mike, чат): exit-критерии W1-среза в `docs/exec-plans/active/w1-slice-exit-criteria.md` (Approved, codex re-review 0/0, PR #22); Jira-фиксация (описание+чек-лист, статус «В работе», R-14 в risk-register) выполнена тем же днём. **PMM-12 done 2026-08-27** (DoD-чеклист среза: `docs/governance/dod-checklist.md`, PR #23).
+## Immediate next action
+
+Close 03-02 CI/PR/Mike merge gates; do not start 03-03 before Mike merge approval.
 
 COLLECTOR-WB-BRANCHES (former active task, implementation landed at `1a211c9`..`8b07249`): closure still unconfirmed with Mike in Jira PA (epic PA-36) — kept below in Queue until confirmed.
 

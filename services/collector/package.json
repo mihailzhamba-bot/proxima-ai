@@ -14,6 +14,7 @@
     "build": "tsc -p tsconfig.build.json",
     "discover-founder-chat": "node dist/cli/discover-founder-chat.js",
     "manual-wb-xlsx-intake": "node dist/cli/manual-wb-xlsx-intake.js",
+    "promote-order-counts": "node dist/cli/promote-order-counts.js",
     "seed-signal-config": "node dist/cli/seed-signal-config.js",
     "validate-signal-inputs": "node dist/cli/validate-signal-inputs.js",
     "stockout-signal": "node dist/cli/stockout-signal.js",

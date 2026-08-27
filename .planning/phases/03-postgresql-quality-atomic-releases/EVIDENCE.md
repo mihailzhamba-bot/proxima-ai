@@ -1,5 +1,12 @@
 # Phase 3 Evidence - PostgreSQL Quality & Atomic Releases
 
+## Plan 03-02 - Atomic staging-to-order-count promotion
+
+- **Implementation status:** local implementation complete on `mihailzhamba-bot/PA-03-02-promotion`; CI/PR/Mike merge remain pending.
+- **Scope:** migration 010 permits `proxima_source_publisher` to update only `fact_attempt_runs.status`, `failure_code`, and `finished_at`; the migration verifier accepts only that exact column grant and rejects mixed grants. The collector promotes accepted staging rows, persists typed quarantine/quality/lineage in one transaction, and exposes a fail-closed CLI parser.
+- **Local verification (2026-08-27):** `make verify` PASS - collector 50 pass / 4 PostgreSQL-gated skips, webapp 11 pass, Python 53 pass / 4 skipped, disposable PostgreSQL 16 promotion suite 6/6, migration ledger 10/10, plus contracts, provenance, architecture, runtime-boundary, secret, VPS-contract and business-signal checks.
+- **Review gate:** final independent cross-model re-review PASS 0 blockers / 0 warnings after verifier hardening. CI, PR, merge and deployment remain unclaimed.
+
 ## Plan 03-01 - Schema foundation: migrations 007-009, enforced additive-only, disposable pg16 roundtrip
 
 - **Implementation commits:** `3a470e0` -> review-fix chain `64becfc` (R1), `e82987a` (CI bind), `ef92c85` (R2), `79ba719` (R3), `4ae8a81` (R4), `e7f2c7a` (R5), `b59b615` (R6), `e92c604` (R7), `f9a4428` (R8), `10ba90c` (R9), `92b935c`+`dc2d3eb` (R10), `286f4f7` (R11) + evidence commits `046e8bf`/`e6e3081`/`52fad8d`/`c0effe0`/`05bb3a4`/`7e62f6f`/`2af5d74`/`c422201`. PR #21.

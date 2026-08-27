@@ -46,3 +46,17 @@ export { completedSignalWindow, isInsideWindow, moscowWindowBounds } from './bus
 export { runBusinessSignal } from './business-signal/pipeline.js';
 export { formatStockoutMessage, preflightAndSend, TelegramBotApi } from './business-signal/telegram.js';
 export { BusinessSignalError } from './business-signal/types.js';
+export {
+  makeLineageReference,
+  persistLineageReference,
+  promoteOrderCounts,
+  PromotionError,
+  validateStagedRows,
+  type LineageReference,
+  type PromotionFaultPoint,
+  type PromotionHooks,
+  type PromotionInput,
+  type PromotionResult,
+  type PersistLineageInput,
+  type QuarantineReason,
+} from './facts/promote-order-counts.js';

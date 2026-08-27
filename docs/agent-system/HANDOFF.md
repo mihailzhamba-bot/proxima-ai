@@ -6,10 +6,15 @@
 
 Ship M1 — a production-ready read-only data foundation for one pilot WB cabinet (Bogatova Belle Robe) with SHA-256 provenance from official WB evidence to PostgreSQL domain releases (Phase 2 of 8 CLOSED 2026-08-25; Phase 3 next).
 
-## Current task
+## Recent task history
 
 **Phase 3 execution continues; PMM-12 (DoD-чеклист среза) done 2026-08-27** in this worktree: `docs/governance/dod-checklist.md` — канонический операционный DoD для задач Jira PMM (7 пунктов, указатели на канон AGENTS/RULES/DEC-006, шаблон аудита). Guardrail: `docs/governance/dod-checklist.md` в required-files `scripts/agent/verify`. Указатели: `AGENTS.md` §Definition of Done (чеклист операционный, канон выигрывает) + `RULES.md` §SHOULD (новая PMM-задача ссылается на чеклист). Ретро-аудиты PMM-30/PMM-9/PMM-10 — в Jira-комментариях; PMM-12 закрывается по своему же чеклисту (self-аудит в комментарии). CONTEXT.md + 4 плана в `.planning/phases/03-postgresql-quality-atomic-releases/` (волны 1→4, autonomous). B6 закрыт: additive-only доктрина зафиксирована и станет machine-enforced в 03-01. Ключевое: единый lineage поверх двух семей evidence (SHA-256 якорь), disposable local pg16 roundtrip (без Docker/VPS), роли миграциями 007-009, reconciliation - Phase 5. Critical phase: каждый план - cross-model review 0/0. Предыстория дня: PA-13 closed (revert `fd95fcb` deployed, live-сбор 1 220 строк, cross-model цикл PR #17→#19 `51abc7f`: codex 2/3/1 → все закрыты); Phase 2 closed (вариант A); Plan 02-02 cancelled.
 **Plan 03-01 MERGED (PR #21 `0a7b2c6`, 2026-08-26) - critical-phase cross-model gate PASSED 0/0 after 12 codex rounds** (R1 7/2/1 → ... → R11 1/0 → R12 0/0; full narrative in Phase 3 EVIDENCE.md). Delivered: migrations 007-009 (facts/quarantine/lineage/quality, releases+pointers+invoker views, 4 NOLOGIN roles + RLS 23 policies on 11 tables), machine-enforced additive-only B6 (single-transaction; statement allowlist; canonical policy/INSERT/GRANT/VIEW/ROLE templates; 92+15 fixtures), `make pg-roundtrip` on disposable local PG16 in the verify chain (CI executes it too). Next: **03-02 promotion** (branch `mihailzhamba-bot/PA-03-02-promotion` ready), then 03-03 releases, 03-04 roles matrix. Pre-03-01 context: PA-13 closed (revert deployed, live 1 220-row Analytics collection), Phase 2 closed (variant A), 02-02 cancelled.
+**Plan 03-02 implementation complete locally (branch `mihailzhamba-bot/PA-03-02-promotion`, 2026-08-27) - CI/PR/Mike merge pending.** Delivered: migration 010 gives the source publisher only terminal attempt-status columns; one-transaction staging-to-order-count promotion with typed quarantine, quality checks, immutable WB/file-artifact lineage and crash injection; CLI accepts only complete unique input. Local `make verify` PASS, including disposable PostgreSQL 16 promotion suite 6/6 and migration ledger 10/10; final independent cross-model review PASS 0/0. Next gate: CI/PR/Mike merge; only after merge starts 03-03 releases. Pre-03-01 context: PA-13 closed (revert deployed, live 1 220-row Analytics collection), Phase 2 closed (variant A), 02-02 cancelled.
+
+## Current task
+
+**Plan 03-02 implementation complete locally (branch `mihailzhamba-bot/PA-03-02-promotion`, 2026-08-27).** `make verify` PASS; disposable PostgreSQL 16 promotion suite 6/6; final cross-model review 0/0. CI, PR and Mike merge remain pending; do not start 03-03 before merge approval.
 
 ## Current state
 
@@ -67,7 +72,7 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Exact next action
 
-1. **Phase 3 execution, план 03-01** на свежей ветке: миграции 007-009 + enforced additive-only verifier + `make pg-roundtrip` (disposable local PostgreSQL 16). Затем 03-02 → 03-03 → 03-04. Каждый план: `make verify` + CI + independent cross-model review 0/0 (критическая фаза).
+1. **Phase 3, план 03-02:** local implementation, `make verify` and independent cross-model review 0/0 PASS; next gate is CI/PR/Mike merge. После merge - 03-03 releases, затем 03-04 roles matrix.
 2. In parallel on Track A/B per the lane plan below (PMM-7 next sprint-0 candidate; PMM-29 = bot lane).
 3. Ручной хвост Mike: Jira PA-13 комментарий + статус «Готово» (текст передан 2026-08-25).
 
@@ -89,4 +94,4 @@ Note for anyone touching the LLM layer: DEC-006 now permits LLM runtime and clie
 
 ---
 
-Last updated: 2026-08-25
+Last updated: 2026-08-27
