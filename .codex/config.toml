@@ -19,16 +19,12 @@ required = true
 enabled_tools = ["js"]
 default_tools_approval_mode = "approve"
 
+# Выключенные серверы: блок без transport валиден ТОЛЬКО для имён, определённых
+# в ~/.codex/config.toml (transport наследуется оттуда). Голый блок неизвестного
+# имени (бывший granola) роняет загрузку всего конфига: invalid transport.
+# Проверка: `codex mcp list` из корня репо (без вызова модели).
+
 [mcp_servers.computer-use]
-enabled = false
-
-[mcp_servers.granola]
-enabled = false
-
-[mcp_servers.klaviyo]
-enabled = false
-
-[mcp_servers.linear]
 enabled = false
 
 [mcp_servers.notebooklm]
@@ -38,9 +34,6 @@ enabled = false
 enabled = false
 
 [mcp_servers.openaiDeveloperDocs]
-enabled = false
-
-[mcp_servers.shopify-storefront]
 enabled = false
 
 [mcp_servers.web-reader]

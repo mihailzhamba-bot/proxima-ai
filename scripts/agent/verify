@@ -30,6 +30,15 @@ step "CLAUDE.md is an adapter importing AGENTS.md" bash -c '
   grep -q "@AGENTS.md" CLAUDE.md || { echo "CLAUDE.md does not import @AGENTS.md"; exit 1; }'
 step "no placeholder UNKNOWN-as-template left in agent docs" bash -c '
   ! grep -rqE "^<.*>$" docs/agent-system/ || { echo "template placeholder found"; exit 1; }'
+# Guardrail (bit PA-39, PA-41, PMM-12): codex validates project .codex/config.toml on
+# every launch; a bare [mcp_servers.<name>] block whose name is unknown to the global
+# config has no transport and kills the whole config ("invalid transport").
+# `codex mcp list` parses the config without any model call - cheap fail-closed canary.
+if command -v codex >/dev/null 2>&1; then
+  step "codex project config parses (mcp_servers entries need a transport)" bash -c 'codex mcp list >/dev/null'
+else
+  skip "codex project config" "codex not installed"
+fi
 
 # --- Node layer (collector) ---
 if [ -f package.json ]; then
