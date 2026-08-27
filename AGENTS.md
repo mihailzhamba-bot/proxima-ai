@@ -200,4 +200,26 @@ As of 2026-08-16 the working tree carries pre-existing uncommitted changes (Make
 
 ## Definition of Done
 
-Done = implemented + `scripts/agent/verify` passes (structural + typecheck + TS tests + pytest) + `make verify` green where the task touches code + no known regressions + review performed (independent cross-model review 0 blocker / 0 warning for critical phases 3, 4, 7) + routing-table docs updated if needed + `docs/agent-system/TASKS.md` / `HANDOFF.md` / ExecPlan updated.
+Done = implemented + `scripts/agent/verify` passes (structural + typecheck + TS tests + pytest) + `make verify` green where the task touches code + no known regressions + review performed (independent cross-model review 0 blocker / 0 warning for critical phases 3, 4, 7) + routing-table docs updated if needed + `docs/agent-system/TASKS.md` / `HANDOFF.md` / ExecPlan updated. PMM slice tasks additionally pass `docs/governance/dod-checklist.md` (PMM-12); that checklist is operational, the canon above wins on conflict.
+
+<!-- autopilot:start -->
+# PROXIMA AI — заметки Autopilot
+
+Приватная data-платформа Proxima для WB-кабинетов; срез M2/M3 ведётся в Jira-проекте PMM. Этот блок ведёт навык /autopilot и не заменяет контракт выше.
+
+## Команды
+
+| Команда | Что делает |
+|---------|------------|
+| `make verify` | Полный verify-гейт репо (канонический, fail-closed) |
+| `scripts/agent/verify` | Быстрый структурный subset для агента |
+
+## Как здесь работает Autopilot
+
+Сборка ведётся навыком `/autopilot`. Требования, спецификация и таски — в `.autopilot/`.
+Прогресс — `.autopilot/dashboard.html`. Правило: требование из `manifest.md`
+может снять только пользователь.
+
+Если работа продолжается — скажи «продолжи автопилот»: состояние поднимется
+из `.autopilot/state.js`, переспрашивать ничего не нужно.
+<!-- autopilot:end -->
