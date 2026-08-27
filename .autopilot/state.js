@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "AGENTS.md",
   "skillDir": "/Users/mikezhamba/.agents/skills/autopilot",
   "startedAt": "2026-08-27T19:47:40+03:00",
-  "updatedAt": "2026-08-27T19:56:56+03:00",
+  "updatedAt": "2026-08-27T20:16:34+03:00",
   "finishedAt": null,
   "stages": [
     { "id": "preflight", "status": "done", "startedAt": "2026-08-27T19:47:40+03:00", "finishedAt": "2026-08-27T19:50:14+03:00" },
@@ -19,9 +19,9 @@ window.STATE =
     { "id": "briefing",  "status": "done", "finishedAt": "2026-08-27T19:50:14+03:00" },
     { "id": "spec",      "status": "done", "startedAt": "2026-08-27T19:47:40+03:00", "finishedAt": "2026-08-27T19:55:55+03:00" },
     { "id": "plan",      "status": "skipped", "note": "ярус T0 - без разбивки на таски" },
-    { "id": "build",     "status": "active", "startedAt": "2026-08-27T19:56:56+03:00" },
-    { "id": "review",    "status": "pending" },
-    { "id": "final",     "status": "pending" }
+    { "id": "build",     "status": "done", "startedAt": "2026-08-27T19:56:56+03:00", "finishedAt": "2026-08-27T20:16:34+03:00" },
+    { "id": "review",    "status": "done", "startedAt": "2026-08-27T20:16:34+03:00", "finishedAt": "2026-08-27T20:16:34+03:00", "note": "T0 inline + independent reviewer: 0 blocking, 3 non-blocking -> concerns" },
+    { "id": "final",     "status": "active", "startedAt": "2026-08-27T20:16:34+03:00" }
   ],
   "requirements": {
     "total": 12, "done": 0, "inTicket": 0, "inSpec": 0,
@@ -33,7 +33,7 @@ window.STATE =
   "debt": { "placeholders": [], "assumptions": [], "emptyEnv": [] },
   "additions": [],
   "coverage": {"findings": 8, "missing": 1, "half": 0, "extra": 7, "action": "missing: parent/relates PMM-12 добавлены в spec+manifest R10; extra: 7 craft/факты репо - легитимны (depth normal)"},
-  "concerns": [],
+  "concerns": ["review: state.js закоммичен WIP-снимком - финальный снимок будет в закрывающем коммите приёмки", "review: R09/R10 утверждали Jira-шаги до их выполнения - закрываются в этом же прогоне"],
   "reviewers": { "manifestSpec": null, "craft": null },
   "blind": null
 }
