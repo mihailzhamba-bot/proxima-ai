@@ -16,8 +16,8 @@
 | 3 | Каждый факт LLM-вывода со SourceRef; unsupported claim = reviewer BLOCK; LLM не считает метрики | `AGENTS.md` §Жёсткие запреты №6; `RULES.md` §MUST |
 | 4 | Изменения схем/контрактов - только через `contracts/*.schema.json` + `make codegen`; сгенерированные типы руками не правятся | `RULES.md` §MUST; `AGENTS.md` §Конвенции кода |
 | 5 | Документация, затронутая задачей, обновлена (routing-table, TASKS/HANDOFF, ADR) | `AGENTS.md` §Definition of Done |
-| 6 | Новый сигнал/диагноз из задачи имеет метрику - хотя бы счётчик | `make verify` business-signal шаг |
-| 7 | Зависимости задачи в Jira актуализированы: blocks/blocked-by (и parent/relates) отражают реальность | `AGENTS.md` §Рабочий ритм (Jira PA/PMM) |
+| 6 | Новый сигнал/диагноз из задачи имеет метрику - хотя бы счётчик | Пока канона нет: этот пункт его и задаёт; при появлении observability-стандарта M2 - заменить указатель (`make verify` business-signal шаг проверяет только существующий stockout-контур) |
+| 7 | Зависимости задачи в Jira актуализированы: blocks/blocked-by (и parent/relates) отражают реальность | `AGENTS.md` §Рабочий ритм (PA-эпики); для PMM-зависимостей - секция «Применение» п.3 этого чеклиста |
 
 ## Приоритет
 
