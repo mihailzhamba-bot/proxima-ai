@@ -13,3 +13,4 @@ raw/
 secrets/
 business-signal-private/
 worktrees/
+.autopilot/serve.*
