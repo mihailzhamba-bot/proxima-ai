@@ -47,6 +47,7 @@ Do not ask the user "where did we stop". Recover state from repository files fir
 | SSH к VPS не работает - диагностика | `infra/ssh-doctor` (read-only), раздел «SSH-доступ к VPS» ниже |
 | Big-task living plans | `docs/exec-plans/active/<task-id>.md` |
 | Reviewer subagent (opencode / Claude Code / Codex) | `.opencode/agents/reviewer.md`, `.claude/agents/reviewer.md`, `.codex/agents/reviewer.toml` |
+| Release Gate (gate-отчёты, Scope lock) | `docs/release-gates/` + `.opencode/agents/release-critic.md` |
 
 ## Verify-контракт (главная команда)
 
@@ -165,8 +166,8 @@ Reviewer (`reviewer`): read-only, never fixes, never trusts implementer summarie
 Оркестратор (Orca coordinator) - тонкий. Он НЕ делает доменную работу сам (не гриллит, не кодит, не ревьюит). Его задачи, исчерпывающе:
 
 1. Intake и классификация (trivial / medium / major / critical - таблица выше)
-2. Dispatch: `briefmaker` для major/critical → worktree + supervised worker
-3. Ретрансляция вопросов: worker/briefmaker `ask` → decision gate для Mike (оркестратор не генерирует вопросы, только маршрутизирует)
+2. Dispatch: `release-critic` (Release Gate через `/release-gate`) для major/critical → worktree + supervised worker
+3. Ретрансляция вопросов: worker/release-critic `ask` → decision gate для Mike (оркестратор не генерирует вопросы, только маршрутизирует)
 4. Надзор: `check --wait` на `worker_done` / `escalation` (никакого sleep-polling; молчание воркера ≠ смерть воркера)
 5. Verify-маршрутизация: `make verify`, `reviewer`, cross-model review для critical
 6. Гейты: merge / deploy / irreversible - только явный approve Mike
@@ -176,9 +177,10 @@ Reviewer (`reviewer`): read-only, never fixes, never trusts implementer summarie
 
 ```
 INTAKE → ORCHESTRATOR: классификация
-  → BRIEFMAKER (.opencode/agents/briefmaker.md): research репо + grill-волны
-    (вопросы к Mike только через оркестраторский gate)
-  → [GATE: brief утверждён Mike]
+  → RELEASE-CRITIC (.opencode/agents/release-critic.md + /release-gate): research репо+Jira
+    → отчёт Release Gate (вердикт + handoff-status + DISCOVERY_STATUS-строка;
+    решения к Mike только через оркестраторский gate)
+  → [GATE: gate утверждён Mike]
   → WORKTREE + WORKER: codex (код) | opencode (доки/аналитика)
     воркер работает под autopilot semi; brief = контракт
   → [GATE: worker_done] → make verify (+ reviewer; cross-model для critical)
@@ -194,6 +196,19 @@ INTAKE → ORCHESTRATOR: классификация
   grill и autopilot - интерактивные фазы, требуют Mike в контуре.
 - Full handoff (без надзора) - отдельный режим, только по явному запросу Mike.
 
+<!-- release-gate:start -->
+## Release Gate
+
+Major/critical work passes a Release Gate before Autopilot starts implementation. The gate is run by the read-only subagent `release-critic` (`.opencode/agents/release-critic.md`) following the `release-cutter` skill (`.opencode/skills/release-cutter/SKILL.md`).
+
+- `/release-gate <task>` - audit only: returns a Release Gate report (verdict KEEP / REUSE / SHRINK / DEFER / DROP / BLOCKED, handoff-status, DISCOVERY_STATUS line). Never starts Autopilot. Inputs: task text, epic, roadmap, Jira key (`PA-XX`/`PMM-XX`, pulled read-only via Jira MCP), `@file`.
+- `/release-task <task>` - orchestration: Release Gate → handle handoff-status (grill via `grill-me` when NEEDS_INPUT, max one Gate→Grill→Gate cycle) → approved Scope lock → restricted Autopilot brief (section 12 only).
+
+Mandatory for major/critical tasks and new epics; one approved gate per epic covers child tasks while they stay inside its Scope lock. Exempt (no gate): typo fixes, formatting, test-only changes, narrow bugfixes that change no behavior/contracts/architecture/data/dependencies/security/scope. Do not run a full gate on every technical sub-step - if the plan is already minimal, the critic returns KEEP / READY_AUTO.
+
+Approved gate reports live in `docs/release-gates/<YYYY-MM-DD>-<slug>.md` with Gate ID `RG-<YYYYMMDD>-<slug>`; child tasks reference the Gate ID. `docs/agent-system/DECISIONS.md`, `docs/adr/*` and approved M1 phase contracts are inviolable for the critic: revisiting them requires handoff-status NEEDS_APPROVAL with an explicit reference. See `docs/release-gates/README.md`.
+<!-- release-gate:end -->
+
 ## Dirty-tree note
 
 As of 2026-08-16 the working tree carries pre-existing uncommitted changes (Makefile, README.md, package.json, package-lock.json, `.planning/STATE.md`, `tools/verify_runtime_boundary.py`, untracked `.mcp.json`, `opencode.json`, `.codex/`, planning docs). They belong to other threads. Do not revert, stage blindly (`git add -A` is forbidden) or commit them together with your work. Stage only files you actually changed.
@@ -203,6 +218,72 @@ As of 2026-08-16 the working tree carries pre-existing uncommitted changes (Make
 Done = implemented + `scripts/agent/verify` passes (structural + typecheck + TS tests + pytest) + `make verify` green where the task touches code + no known regressions + review performed (independent cross-model review 0 blocker / 0 warning for critical phases 3, 4, 7) + routing-table docs updated if needed + `docs/agent-system/TASKS.md` / `HANDOFF.md` / ExecPlan updated.
 
 <!-- autopilot:start -->
+## Control-plane: LLM-диагноз (PMM-5, прогон сдан)
+
+Построен слой LLM-диагноза сигналов WB в `services/control-plane` (пакет `proxima_control_plane.diagnosis`): сигнал (payload + context_extracts + source_refs) → промпт → LLM-клиент (mock по умолчанию) → диагноз по JSON-Schema с детерминированной проверкой, что все числа и source_refs взяты из входа → батч-артефакт + JSONL-аудит. Для агентов, дорабатывающих diagnosis (далее по плану: реальный LLM-провайдер и eval-пайплайн). Срез M2/M3 ведётся в Jira-проекте PMM.
+
+## Команды
+
+| Команда | Что делает |
+|---------|------------|
+| `make verify` | Полный verify-гейт репо (канонический, fail-closed) |
+| `scripts/agent/verify` | Быстрый структурный subset для агента |
+
+Тесты diagnosis (голый `uv run pytest` от корня НЕ работает):
+```bash
+uv run --python 3.14 --project services/control-plane --extra test pytest services/control-plane/tests -q
+```
+
+CLI batch run (`diagnosis.toml` ищется от cwd вверх, не найден - дефолты):
+```bash
+uv run --python 3.14 --project services/control-plane python -m proxima_control_plane.diagnosis run --input signals.json --output diagnoses.json [--config diagnosis.toml]
+```
+
+CLI eval (печатает pass-rate; полный гейт 0.80 - в `eval_runner.py`):
+```bash
+uv run --python 3.14 --project services/control-plane python -m proxima_control_plane.diagnosis eval --dataset services/control-plane/tests/diagnosis/data/eval/cases.json
+```
+
+## Структура
+
+```
+services/control-plane/                         - Python-пакет proxima-control-plane (uv, Python >=3.14; deps: jsonschema)
+  src/proxima_control_plane/diagnosis/          - вся построенная диагностика
+    models.py                                   - DiagnosisInput/Diagnosis/BatchItem/BatchResult; parse_signal (сценарии SCN-001/005/008, trust=unreleased, source_refs непустой)
+    schema/diagnosis.draft.v1.json              - draft-JSON-Schema диагноза; каноническая строится в PMM-29/contracts - НЕ переносить
+    validator.py                                - validate_diagnosis(obj) -> list[str] (пусто = ок), jsonschema Draft 2020-12
+    adapters/                                   - Protocol LLMClient, детерминированный MockLLMClient, factory.create_client (провайдера кроме mock нет)
+    prompts/                                    - system.v1.md (анти-инъекция + запрет считать метрики) + builder.build_messages (DATA-блоки, справка DIAGNOSIS_INPUT, PROMPT_VERSION v1)
+    service.py                                  - run_batch: retry невалидного ответа (max 2), timeout без retry, rollback-флаг llm_enabled, детерминизм-проверки чисел/ссылок, аудит
+    audit.py / config.py / cli.py               - JSONL-аудит (глотает OSError); TOML-конфиг с дефолтами (provider=mock, timeout 90); CLI run|eval, exit 0/2
+  tests/diagnosis/                              - pytest по каждому модулю + eval_runner.py (полные критерии) + data/eval/cases.json (12 кейсов: standard/closed_numbers/adversarial)
+contracts/, services/collector/, db/, tools/    - другие треки; зона diagnosis-задач - только services/control-plane
+```
+
+## Подводные камни
+
+- Python только через uv (3.14); системный 3.9 не подходит.
+- MockLLMClient парсит блок DIAGNOSIS_INPUT из user-сообщения: перед `client.diagnose()` всегда звать `build_messages(signal)`, иначе ValueError.
+- Детерминизм-проверка чисел: regex сканирует только текстовые поля (hypothesis/question/why_it_matters/confidence_note); числа из индексов списков входа (`payload.x[0].value` → токен «0») дают ложное срабатывание - в fixtures числовые значения JSON заменены SYNTH-строками.
+- Timeout - финал без retry; retry только когда ответ невалиден по схеме или детерминизму.
+- CLI возвращает 0, даже если часть сигналов failed (изоляция per-signal); exit 2 - только ошибка конфига/входа; битый envelope становится item failed, а не падением.
+- `provider` отличный от mock → ValueError в factory; реального провайдера ещё нет (optional-группа `llm` в pyproject пустая, зарезервирована).
+- Секретов нет: в конфиге только ИМЯ env-переменной `api_key_env` (по умолчанию PROXIMA_LLM_API_KEY), значение нигде не задаётся.
+- Дефолтный audit_path `logs/diagnosis-audit.jsonl` - вне git (`logs/` в .gitignore).
+- Не трогать: `contracts/` (PMM-29), `services/collector/`, `services/control-plane/src/proxima/` (verbatim-дерево PA-41), sibling-worktrees.
+- Тексты диагноза и системный промпт - на русском; идентификаторы кода - английские.
+
+## Как здесь работает Autopilot
+
+Сборка ведётся навыком `/autopilot`. Требования, спецификация и таски — в `.autopilot/`.
+Прогресс — `.autopilot/dashboard.html`. Правило: требование из `manifest.md`
+может снять только пользователь.
+
+Если работа продолжается — скажи «продолжи автопилот»: состояние поднимется
+из `.autopilot/state.js`, переспрашивать ничего не нужно.
+
+---
+
 ## Web-кабинет (services/webapp) - память яруса T2
 
 Приватный UI Proxima: Next.js 16.3 App Router + Tailwind 4 + TS strict + vitest; данные - только демо-fixtures, экран под плашкой unreleased (DEC-006). Прогон PA-49 Warm Precision сдан (vitest 26 passed, make verify PASS, build зелёный).
@@ -283,7 +364,47 @@ ssh -N proxima-app                           # staging: http://localhost:3000, �
 
 ### Как здесь работает Autopilot
 
-Прогон PA-49 Warm Precision (режим interview) сдан. Спека и таски - в `.autopilot/2026-08-25-pa49-warm-precision--wip/`, прогресс - `.autopilot/dashboard.html`.
+Прогон PA-49 Warm Precision (режим interview) сдан. Спека и таски - в `.autopilot/2026-08-25-pa49-warm-precision/`, прогресс - `.autopilot/dashboard.html`.
 Продолжение работы: сказать «продолжи автопилот» - состояние поднимется из `.autopilot/state.js`, переспрашивать не нужно.
 Правило неизменно: требование из `manifest.md` может снять только пользователь.
+
+## Release Gate-слой - память яруса T1
+
+Прогон 2026-08-27 release-cutter сдан. Read-only шлюз между планированием и Autopilot: критик доказательно ищет самый дешёвый безопасный путь до проверяемого релиза и имеет право сказать «задача не нужна» - с доказательствами, не вкусом модели.
+
+### Пайплайн
+
+Три слоя: `grill-me` (что именно делаем, какие решения не приняты) → `release-cutter` (нужно ли вообще, можно ли дешевле/переиспользовать) → `autopilot` (реализует только согласованный минимум). В пайплайне Orca major/critical `release-critic` занял место briefmaker (решение Mike): research репо + Jira → отчёт Release Gate.
+
+### Команды
+
+- `/release-gate <задача|PA-XX|PMM-XX|@файл>` - только аудит, НИКОГДА не запускает Autopilot; ключ Jira критик сам тянет через jira-atlassian MCP read-only.
+- `/release-task <задача>` - оркестрация: gate → handoff-ветки (NEEDS_INPUT → реальный скилл grill-me, максимум один цикл Gate→Grill→Gate) → сохранение gate → Autopilot получает только раздел 12 отчёта + поля Scope lock.
+
+### Структура
+
+- `.opencode/skills/release-cutter/SKILL.md` - методология: workflow 8 шагов, вердикты, handoff, шаблон отчёта (13 секций)
+- `.opencode/agents/release-critic.md` - субагент: deny-all + read/glob/grep/list/skill/webfetch/websearch, bash только git-readonly, Jira/Confluence только чтение
+- `.opencode/commands/release-gate.md`, `.opencode/commands/release-task.md` - slash-команды
+- `docs/release-gates/` - утверждённые gate-отчёты + README.md (вердикты, handoff, exemption-список); живой пример: `docs/release-gates/2026-08-27-pmm-7-dry-run.md`
+
+### Контракты
+
+- Gate ID `RG-<YYYYMMDD>-<slug>`; файл отчёта `docs/release-gates/<YYYY-MM-DD>-<slug>.md`; дочерние задачи ссылаются на Gate ID.
+- Вердикты: KEEP / REUSE / SHRINK / DEFER / DROP / BLOCKED. Handoff-status: READY_AUTO / NEEDS_APPROVAL / NEEDS_INPUT / BLOCKED.
+- Строка `DISCOVERY_STATUS: ...` - в шапке `## Gate` и последней строкой отчёта, парсится Orca-координатором: READY_AUTO→READY; DROP/DEFER→NOT_NEEDED; NEEDS_APPROVAL/NEEDS_INPUT/BLOCKED→напрямую.
+- Один gate на epic покрывает дочерние задачи, пока они не выходят за Scope lock.
+
+### Подводные камни
+
+- `.opencode/agents/briefmaker.md` - legacy, не вызывать и не изменять (решение Mike); в major/critical диспетчеризуется release-critic.
+- release-critic read-only: edit/write запрещены permissions, bash только `git status|log|show|diff|branch --show-current|rev-parse`, секреты не читает.
+- Языки: SKILL.md и команды - русские; шаблон отчёта и секция «Release Gate» в AGENTS.md - английские; `docs/release-gates/README.md` - русский.
+- Gate не нужен (exemption): typo, форматирование, test-only, узкий bugfix без изменения поведения/контрактов/архитектуры/данных/зависимостей/security/scope.
+- `docs/agent-system/DECISIONS.md`, `docs/adr/*`, утверждённые фазовые контракты M1 критик не DROP/DEFER молча - только NEEDS_APPROVAL с явной ссылкой.
+
+### Проверка
+
+- Frontmatter (4 файла): `python3 -c "import yaml;[yaml.safe_load(open(f).read().split('---')[1]) for f in ['.opencode/skills/release-cutter/SKILL.md','.opencode/agents/release-critic.md','.opencode/commands/release-gate.md','.opencode/commands/release-task.md']]"`
+- Маркеры AGENTS.md (паттерн якорим к началу строки, иначе grep считает сам этот блок): `grep -c '^<!-- autopilot:start -->' AGENTS.md` → 1; `grep -c '^<!-- release-gate:start -->' AGENTS.md` → 1.
 <!-- autopilot:end -->

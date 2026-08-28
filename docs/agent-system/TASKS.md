@@ -22,6 +22,7 @@ COLLECTOR-WB-BRANCHES (former active task, implementation landed at `1a211c9`..`
 6. From Mike (inputs): READ-only Analytics перевыпуск (не горит; закрывает RW-исключение), production Bogatova token, interview slots, AI-ops analyst onboarding, COGS data; инвентаризация прочих юрлиц для ADR-0001 (Q2) и подтверждение ставок бухгалтером (Q1, Q3, Q4).
 
 ## Done (recent)
+- 2026-08-28 PMM-5 (LLM Analyst W1) done: `proxima_control_plane.diagnosis` (fixtures-first, mock LLM, draft-схема, DATA anti-injection, fail-closed retry/timeout, rollback-флаг, JSONL-аудит, CLI run/eval) + eval 12/12; PR #29 merged `6c29398`, make verify PASS, Jira Готово (DoD PMM-12). Известные ограничения PMM-31 - в Jira-комментарии 10377. Грилль-бриф: `docs/exec-plans/active/pmm-5-llm-analyst-w1.md`.
 
 - 2026-08-25 PA-13 rollback: revert `fd95fcb` (`make verify` PASS) + VPS deploy + полная диагностика токенов (батч 2026-08-16 мёртв по подписям, канал чист) + RW №4 установлен; Plan 02-02 cancelled решением Mike.
 - 2026-08-18 PMM-2 (SPIKE tax regimes) merged PR #10 (`7acd0a8`): ADR-0001 + DEC-007, LE-1 (пилот) заполнен; ADR Draft до Q1-Q4 и инвентаризации прочих юрлиц. Post-merge review: 0 blockers / 3 warnings (doc-tails, закрыты в PR `docs/pmm2-postmerge-review`).

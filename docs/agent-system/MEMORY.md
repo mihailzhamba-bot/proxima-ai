@@ -35,4 +35,4 @@
 
 ## Recurring agent mistakes
 
-- None recorded yet (file created 2026-08-16). Add an entry + a guardrail each time a mistake repeats.
+- Codex fails to start in any repo worktree with `Error loading config.toml: invalid transport in mcp_servers.<name>` when the project `.codex/config.toml` has a bare `enabled = false` block for a server unknown to the global `~/.codex/config.toml` (bit PA-39, PA-41, PMM-12; codex validates project config on every launch). Guardrail: `scripts/agent/verify` runs `codex mcp list` as a fail-closed canary. Fix pattern: remove stale blocks (no global definition = nothing to disable); keep bare blocks only for names that exist globally (transport is inherited).

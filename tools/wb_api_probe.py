@@ -169,7 +169,7 @@ def decode_token_claims(token: str, *, label: str = "WB token") -> dict[str, obj
 def validate_split_token(category: str, claims: Mapping[str, object], *, allow_read_write: bool = False) -> None:
     if claims.get("type") != "personal":
         raise WbProbeError(f"Day 1 requires a personal WB token for the {category} category")
-    if claims.get("read_only") is not True and not allow_read_write:
+    if claims.get("read_only") is not True and not (allow_read_write and category == "analytics"):
         raise WbProbeError(f"Day 1 {category} token must be read-only")
     mask = claims.get("scope_mask")
     allowed_mask = (1 << TOKEN_BIT_BY_CATEGORY[category]) | (1 << READ_ONLY_BIT)
