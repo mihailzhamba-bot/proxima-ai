@@ -1,0 +1,73 @@
+# PA-56: GlitchTip error collection (self-hosted, closed network, решение Mike 2026-08-28).
+# v1 = только серверные ошибки webapp; клиентские - после снятия DEC-006 (tunnel-роут).
+# Стек самостоятельный: своя сеть, свой postgres - наблюдаемость не зависит от наблюдаемого.
+# Основной infra/compose.yaml не трогается: boundary-гейт проверяет его построчно.
+# Бэкапа glitchtip-pgdata нет: история ошибок - расходный материал (runbook, PA-56 Phase 4).
+# Деплой на VPS: /srv/proxima-ai/glitchtip/docker-compose.yaml (зеркало этого файла) + .env 0600.
+# Доступ: только loopback VPS; UI и REST - через `ssh -N proxima-errors` (LocalForward 18080).
+
+x-environment: &default-environment
+  DATABASE_URL: postgres://glitchtip:${GLITCHTIP_POSTGRES_PASSWORD:?set in .env on VPS}@postgres:5432/glitchtip
+  REDIS_URL: redis://redis:6379/0
+  SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?set in .env on VPS}
+  GLITCHTIP_DOMAIN: http://localhost:8080
+  # v6.2.6: gunicorn в образе слушает 8000, loopback-маппинг ждёт 8080
+  PORT: "8080"
+  # SMTP нет: админ через createsuperuser, алерты ошибок - не email (runbook)
+  EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
+
+services:
+  web:
+    image: glitchtip/glitchtip:6.2.6
+    ports:
+      - "127.0.0.1:${GLITCHTIP_PORT:-8080}:8080"
+    environment: *default-environment
+    networks:
+      default:
+        aliases:
+          # стабильный DSN-хост: http://<key>@glitchtip:8080/<project_id>
+          - glitchtip
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+  migrations:
+    image: glitchtip/glitchtip:6.2.6
+    command: ./manage.py migrate --no-input
+    environment: *default-environment
+    depends_on:
+      - postgres
+      - redis
+    restart: "no"
+
+  worker:
+    image: glitchtip/glitchtip:6.2.6
+    # v6: django-q удалён (crash-loop с Unknown command); celery внутри runworker
+    command: bin/run-worker.sh
+    environment: *default-environment
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16.10-alpine
+    environment:
+      POSTGRES_DB: glitchtip
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: ${GLITCHTIP_POSTGRES_PASSWORD:?set in .env on VPS}
+    volumes:
+      - glitchtip-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4.11-alpine
+    restart: unless-stopped
+
+volumes:
+  glitchtip-pgdata:
+
+networks:
+  default:
+    name: proxima-ai-glitchtip

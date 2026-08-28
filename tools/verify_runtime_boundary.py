@@ -67,6 +67,26 @@ def verify() -> None:
     if "postgres:16" not in compose or "name: proxima-ai-private" not in compose:
         violations.append("infra/compose.yaml: PostgreSQL 16 isolated bridge boundary missing")
 
+    glitchtip_path = ROOT / "infra" / "glitchtip.compose.yaml"
+    if not glitchtip_path.is_file():
+        violations.append("infra/glitchtip.compose.yaml: error collector compose missing (PA-56)")
+    else:
+        glitchtip = glitchtip_path.read_text(encoding="utf-8")
+        if re.search(r"TORGSTAT|LIVE[_-]?SESSION", glitchtip, re.IGNORECASE):
+            violations.append("infra/glitchtip.compose.yaml: forbidden live adapter flag")
+        if "0.0.0.0" in glitchtip:
+            violations.append("infra/glitchtip.compose.yaml: must not bind 0.0.0.0")
+        if '"127.0.0.1:${GLITCHTIP_PORT:-8080}:8080"' not in glitchtip:
+            violations.append("infra/glitchtip.compose.yaml: GlitchTip web must bind configurable loopback only")
+        if "name: proxima-ai-glitchtip" not in glitchtip:
+            violations.append("infra/glitchtip.compose.yaml: isolated bridge network missing")
+        if "qcluster" in glitchtip:
+            violations.append("infra/glitchtip.compose.yaml: removed qcluster worker command (v6 uses run-worker.sh)")
+        if "POSTGRES_PASSWORD: ${GLITCHTIP_POSTGRES_PASSWORD" not in glitchtip:
+            violations.append("infra/glitchtip.compose.yaml: postgres password must come from environment")
+        if "GLITCHTIP_SECRET_KEY" not in glitchtip:
+            violations.append("infra/glitchtip.compose.yaml: SECRET_KEY must come from environment")
+
     exports = manifest.get("exports", {})
     if not isinstance(exports, dict) or "import" not in exports:
         violations.append("services/collector/package.json: built import export missing")
