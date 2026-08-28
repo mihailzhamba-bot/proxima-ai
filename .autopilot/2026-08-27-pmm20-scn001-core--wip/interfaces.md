@@ -36,3 +36,11 @@
 - Канонический гейт: `make verify` из корня репо. Быстрые тесты ядра: `uv run pytest` внутри `services/control-plane`. Коммитить может только оркестратор.
 - Недостающая зависимость или недоступная инфраструктура возвращается как `BLOCKED` с кодом, не молча и не самодеятельной установкой.
 - Что не трогать: sibling-worktree (Опрос-v2.2, torgstat-collector), `.env`, секреты; ветка этого рана — единственное место коммитов.
+
+## Из таска 02 — loader
+
+- `parse_payload_row(payload, column_registry=COLUMN_MAP) -> DailyMetrics` — чистая функция, fail-closed: отсутствующая колонка / нечисловое / NaN-Infinity → `PayloadParseError` с именем колонки
+- `load_bundle(db, d, window=28) -> tuple[MetricBundle, tuple[str, ...]]` — резолвит DOWNLOADED task'и (winners по (row_date, nm_id), sorted+unique), возвращает бандл + резолвнутые task_ids; SQL фильтрует NULL row_date/nm_id (+ Python-гард)
+- `attach_source_refs(result, source_refs) -> Scn001RunResult` — заполняет source_refs и пересчитывает run_fingerprint правилом detect()
+- `db_from_env(uri=None)` — ленивый psycopg, DATABASE_URI по имени; `COLUMN_MAP` — имена WB-колонок UNKNOWN до smoke R16
+- `smoke.py` — read-only, одна строка payload, сверка PRESENT/MISSING; без DATABASE_URI → UNKNOWN, exit 0; в make verify не входит

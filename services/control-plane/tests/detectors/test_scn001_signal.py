@@ -368,11 +368,17 @@ def test_detector_core_has_no_llm_or_io_imports():
         "socket",
         "llm",
     )
+    # spec «Loader»/«Smoke»: psycopg (единственный шов к БД) разрешён только в этих файлах;
+    # LLM/сетевые импорты запрещены во всём пакете (R15).
+    db_seam_files = {"loader.py", "smoke.py"}
     for path in Path(pkg.__file__).parent.rglob("*.py"):
+        checked = (
+            tuple(t for t in forbidden if t != "psycopg") if path.name in db_seam_files else forbidden
+        )
         for line in path.read_text(encoding="utf-8").splitlines():
             if line.strip().startswith(("import ", "from ")):
                 low = line.lower()
-                assert not any(token in low for token in forbidden), f"{path}: {line}"
+                assert not any(token in low for token in checked), f"{path}: {line}"
 
 
 def test_canonical_hash_stable_across_python_hash_seeds():
