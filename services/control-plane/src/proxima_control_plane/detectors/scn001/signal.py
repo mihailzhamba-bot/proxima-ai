@@ -83,6 +83,7 @@ class BlockedEntry:
     evaluation_date: date
     detail: str = ""
     trust_marking: str = TRUST_MARKING
+    source_refs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -382,12 +383,6 @@ def detect(
                 result_dedup[pair] = replace(entry, last_seen_date=evaluation_date)
                 continue
         accepted.append(candidate)
-        result_dedup[pair] = DedupEntry(
-            level=candidate.level,
-            key=candidate.key,
-            opened_at=evaluation_date,
-            last_seen_date=evaluation_date,
-        )
 
     filtered_by_rub = 0
     finalists: list[_Candidate] = []
@@ -399,6 +394,15 @@ def detect(
     finalists.sort(key=lambda c: (-c.outcome.revenue_delta, c.level, c.key))
     emitted = finalists[: config.top_n]
     filtered_by_rank = len(finalists) - len(emitted)
+    # Dedup records are created ONLY for emitted signals (after the rub floor and
+    # top-N): a run that emits nothing must not open records that suppress future signals.
+    for candidate in emitted:
+        result_dedup[(candidate.level, candidate.key)] = DedupEntry(
+            level=candidate.level,
+            key=candidate.key,
+            opened_at=evaluation_date,
+            last_seen_date=evaluation_date,
+        )
     signals = tuple(
         _to_signal(c, snapshot_id, bundle, evaluation_date, config) for c in emitted
     )

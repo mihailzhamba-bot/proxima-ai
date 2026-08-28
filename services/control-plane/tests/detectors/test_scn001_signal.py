@@ -6,10 +6,12 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from helpers import run_detect, synth_bundle, synth_row
 from proxima_control_plane.detectors.scn001 import DedupEntry
 from proxima_control_plane.detectors.scn001.clock import MOSCOW_TZ, default_evaluation_date
-from proxima_control_plane.detectors.scn001.metrics import MetricBundle
+from proxima_control_plane.detectors.scn001.metrics import DailyMetrics, MetricBundle
 
 EVAL = date(2026, 8, 27)
 SKU = "SYNTH-SKU-1"
@@ -63,6 +65,28 @@ def test_drop_without_corroboration_does_not_fire():
 
     assert result.signals == ()
     assert result.blocked == ()
+
+
+def test_dedup_entries_created_only_for_emitted_signals():
+    eval_date = date(2026, 8, 27)
+
+    class HugeFloorSource:
+        def drop_threshold(self) -> Decimal:
+            return Decimal("0.20")
+
+        def rub_floor(self) -> Decimal:
+            return Decimal("1000000000")
+
+    bundle = synth_bundle(eval_date, [{"sku": SKU, "orders": 65}])
+    filtered = run_detect(bundle, eval_date, source=HugeFloorSource())
+
+    assert filtered.signals == ()
+    assert filtered.dedup_state == (), "no dedup records when every candidate is filtered"
+
+    rerun = run_detect(bundle, eval_date, dedup_state=filtered.dedup_state)
+    assert any(s.level == "sku" for s in rerun.signals), (
+        "later significant signals must not be suppressed by phantom dedup records"
+    )
 
 
 def test_dedup_lifecycle_suppress_recovery_midzone_cooldown():
@@ -196,6 +220,34 @@ def test_cabinet_signal_on_distributed_drop_below_floor():
     assert signal.delta_28 == Decimal("-0.5")
     assert signal.revenue_delta_orders.value == Decimal("15000")
     assert signal.revenue_delta_orders.value >= Decimal("3000")
+
+
+def test_maturity_fallback_without_evaluation_date_keeps_full_series():
+    eval_date = date(2026, 8, 27)
+    rows21 = [synth_row(SKU, eval_date - timedelta(days=o), 100) for o in range(21, 0, -1)]
+    bundle = MetricBundle.build(rows21)
+    assert bundle.panel == (SKU,)
+    assert bundle.excluded == ()
+
+    rows20 = [synth_row(SKU, eval_date - timedelta(days=o), 100) for o in range(20, 0, -1)]
+    bundle20 = MetricBundle.build(rows20)
+    assert bundle20.panel == ()
+    assert bundle20.excluded == (SKU,)
+
+
+def test_maturity_window_excludes_evaluation_day_strictly():
+    eval_date = date(2026, 8, 27)
+    rows = [synth_row(SKU, eval_date - timedelta(days=o), 100) for o in range(20, 0, -1)]
+    rows.append(synth_row(SKU, eval_date, 65))
+    bundle = MetricBundle.build(rows, evaluation_date=eval_date)
+
+    assert bundle.panel == ()
+    assert bundle.excluded == (SKU,)
+
+    result = run_detect(bundle, eval_date)
+    blocked = {(e.level, e.key): e.reason for e in result.blocked}
+    assert blocked.get(("sku", SKU)) == "INSUFFICIENT_HISTORY"
+    assert result.signals == (), "cabinet signal must not fire from an out-of-panel SKU"
 
 
 def test_blocked_reasons_insufficient_history_invalid_baseline_invalid_input():
@@ -437,7 +489,40 @@ def test_dedup_entry_removed_at_exact_recovery_threshold():
     assert r2.dedup_state == ()
 
 
+def test_non_finite_decimal_rejected_at_input_not_deep_invalid_operation():
+    with pytest.raises(ValueError) as nan_exc:
+        DailyMetrics(
+            sku="SYNTH-NAN",
+            date=EVAL,
+            orders=Decimal("NaN"),
+            open_card=Decimal("200"),
+            orders_sum_rub=Decimal("0"),
+            buyouts=Decimal("0"),
+        )
+    assert "finite" in str(nan_exc.value)
+    with pytest.raises(ValueError):
+        DailyMetrics(
+            sku="SYNTH-INF",
+            date=EVAL,
+            orders=Decimal("1"),
+            open_card=Decimal("200"),
+            orders_sum_rub=Decimal("Infinity"),
+            buyouts=Decimal("0"),
+        )
+    with pytest.raises(ValueError):
+        DailyMetrics(
+            sku="SYNTH-NANSTR",
+            date=EVAL,
+            orders="NaN",
+            open_card=Decimal("200"),
+            orders_sum_rub=Decimal("0"),
+            buyouts=Decimal("0"),
+        )
+
+
 def test_default_evaluation_date_helper_returns_yesterday_moscow():
+    # Asserts only on injected `now` cases: comparing two live now() calls is
+    # flaky across the Moscow midnight boundary (repair W3).
     assert default_evaluation_date(datetime(2026, 8, 28, 1, 30, tzinfo=MOSCOW_TZ)) == date(2026, 8, 27)
     assert default_evaluation_date(datetime(2026, 8, 28, 0, 30, tzinfo=timezone.utc)) == date(2026, 8, 27)
-    assert default_evaluation_date() == datetime.now(MOSCOW_TZ).date() - timedelta(days=1)
+    assert default_evaluation_date(datetime(2026, 1, 1, 0, 0, tzinfo=MOSCOW_TZ)) == date(2025, 12, 31)

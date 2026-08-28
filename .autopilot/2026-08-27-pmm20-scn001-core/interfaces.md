@@ -18,7 +18,7 @@
 ## Из таска 01 — ядро детектора
 
 - `detect(bundle, config, threshold_source=None, dedup_state=(), *, evaluation_date) -> Scn001RunResult` — единственный шов ядра; evaluation_date обязателен (keyword-only), wall-clock живёт только в `clock.py: default_evaluation_date(now=None)` (вчера Europe/Moscow)
-- `MetricBundle.build(rows, maturity_min_days=21, maturity_window_days=28)`, `.panel_daily()`, `.metric_series(sku, field)`; `DailyMetrics(sku, date, orders, open_card, orders_sum_rub, buyouts)`
+- `MetricBundle.build(rows, maturity_min_days=21, maturity_window_days=28, *, evaluation_date=None)`, `.panel_daily()`, `.metric_series(sku, field)`; `DailyMetrics(sku, date, orders, open_card, orders_sum_rub, buyouts)`; история строго ДО evaluation_date, fallback reference = max(date)+1 день (весь ряд - история); `to_decimal` отклоняет non-finite (NaN/Infinity)
 - `weekday_index/expected/history_status(series, d, window)`; `decompose(u0,cvr0,aov0,u1,cvr1,aov1) -> Contributions(total(), dominant())`; collapse-ветка при нулевой базе даёт точную сумму
 - `Scn001RunResult(evaluation_date, snapshot_id, signals, blocked, counters, dedup_state, trust_marking, run_fingerprint)`; `Scn001Signal` (delta_7/14/28, revenue_delta_orders MoneyDelta(value, method="revenue"), contributions, dominant_factor, factors_baseline/actual, source_refs, context, panel_size/excluded_count); `BlockedEntry(reason, level, key, detail)`; `RunCounters(candidates, filtered_by_rub, filtered_by_rank, dedup_suppressed, blocked_by_reason)`
 - Конвенции: revenue_delta/contributions — loss-positive (плюс = потеря); snapshot_id = hash({evaluation_date, метрики панели, определение панели}) без excluded; dedup: снятие при recovered `>=` порога или cooldown от last_seen_date (обновляется при повторных срабатываниях)
@@ -40,7 +40,7 @@
 ## Из таска 02 — loader
 
 - `parse_payload_row(payload, column_registry=COLUMN_MAP) -> DailyMetrics` — чистая функция, fail-closed: отсутствующая колонка / нечисловое / NaN-Infinity → `PayloadParseError` с именем колонки
-- `load_bundle(db, d, window=28) -> tuple[MetricBundle, tuple[str, ...]]` — резолвит DOWNLOADED task'и (winners по (row_date, nm_id), sorted+unique), возвращает бандл + резолвнутые task_ids; SQL фильтрует NULL row_date/nm_id (+ Python-гард)
-- `attach_source_refs(result, source_refs) -> Scn001RunResult` — заполняет source_refs и пересчитывает run_fingerprint правилом detect()
+- `load_bundle(db, d, window=28, *, tenant_id: str) -> tuple[MetricBundle, tuple[str, ...]]` — tenant_id обязателен keyword-only (fail-closed), SQL фильтрует t.tenant_id и NULL row_date/nm_id (+ Python-гард); резолвит DOWNLOADED task'и (winners по (row_date, nm_id), sorted+unique), возвращает бандл + резолвнутые task_ids
+- `attach_source_refs(result, source_refs) -> Scn001RunResult` — заполняет source_refs у signals И blocked, пересчитывает run_fingerprint правилом detect(); `BlockedEntry(..., source_refs: tuple[str, ...] = ())`
 - `db_from_env(uri=None)` — ленивый psycopg, DATABASE_URI по имени; `COLUMN_MAP` — имена WB-колонок UNKNOWN до smoke R16
-- `smoke.py` — read-only, одна строка payload, сверка PRESENT/MISSING; без DATABASE_URI → UNKNOWN, exit 0; в make verify не входит
+- `smoke.py` — read-only, одна строка payload, сверка PRESENT/MISSING; без DATABASE_URI/БД недостижима → UNKNOWN exit 0; MISMATCH → exit 2; SQL-сбой после подключения → exit 3; в make verify не входит; артефакт прогона: evidence-r16-smoke.md

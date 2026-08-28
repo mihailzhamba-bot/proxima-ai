@@ -39,13 +39,16 @@ def main(uri: str | None = None, stream: Any = None) -> int:
     try:
         db = db_from_env(uri)
     except Exception as exc:
+        # Connection phase failure (missing DATABASE_URI, tunnel down, psycopg
+        # OperationalError) → environment not reachable → UNKNOWN, exit 0.
         print(f"SMOKE R16: UNKNOWN ({type(exc).__name__})", file=out)
         return 0
     try:
         task_id, row_number, payload = _fetch_smoke_row(db)
     except Exception as exc:
-        print(f"SMOKE R16: UNKNOWN ({type(exc).__name__})", file=out)
-        return 0
+        # Connected, but the SQL/answer failed → real smoke failure, exit 3.
+        print(f"SMOKE R16: DB_ERROR ({type(exc).__name__})", file=out)
+        return 3
     finally:
         close = getattr(db, "close", None)
         if callable(close):
@@ -61,8 +64,10 @@ def main(uri: str | None = None, stream: Any = None) -> int:
             print(f"  field={field:<14} column={column!r:<16} MISSING", file=out)
     extra = sorted(str(k) for k in payload if k not in registry_columns)
     print(f"payload keys not in registry: {extra if extra else 'none'}", file=out)
-    status = "OK" if not missing else f"MISMATCH (missing: {', '.join(missing)})"
-    print(f"SMOKE R16: REGISTRY STATUS {status}", file=out)
+    if missing:
+        print(f"SMOKE R16: REGISTRY STATUS MISMATCH (missing: {', '.join(missing)})", file=out)
+        return 2
+    print("SMOKE R16: REGISTRY STATUS OK", file=out)
     return 0
 
 

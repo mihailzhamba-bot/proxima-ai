@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Mapping, Sequence
 
 CABINET_SKU = "__cabinet__"
@@ -14,14 +14,21 @@ METRIC_FIELDS = ("orders", "open_card", "orders_sum_rub", "buyouts")
 
 def to_decimal(value: object) -> Decimal:
     if isinstance(value, Decimal):
-        return value
-    if isinstance(value, bool) or value is None or isinstance(value, float):
+        parsed = value
+    elif isinstance(value, bool) or value is None or isinstance(value, float):
         raise TypeError(f"metric value must be Decimal, int or str, got {type(value).__name__}")
-    if isinstance(value, int):
-        return Decimal(value)
-    if isinstance(value, str):
-        return Decimal(value)
-    raise TypeError(f"metric value must be Decimal, int or str, got {type(value).__name__}")
+    elif isinstance(value, int):
+        parsed = Decimal(value)
+    elif isinstance(value, str):
+        try:
+            parsed = Decimal(value)
+        except InvalidOperation as exc:
+            raise ValueError(f"metric value is not a valid Decimal: {value!r}") from exc
+    else:
+        raise TypeError(f"metric value must be Decimal, int or str, got {type(value).__name__}")
+    if not parsed.is_finite():
+        raise ValueError(f"metric value must be a finite Decimal, got {parsed}")
+    return parsed
 
 
 @dataclass(frozen=True)
@@ -50,7 +57,15 @@ class MetricBundle:
         rows: Sequence[DailyMetrics],
         maturity_min_days: int = 21,
         maturity_window_days: int = 28,
+        *,
+        evaluation_date: date | None = None,
     ) -> MetricBundle:
+        """Build a bundle; maturity/history days are counted STRICTLY BEFORE the evaluation date.
+
+        The evaluation day itself never counts toward the maturity window (and the
+        baseline series excludes it too, see baseline._window_pairs), so a SKU can
+        never be "in the panel and BLOCKED INSUFFICIENT_HISTORY at the same time".
+        """
         grouped: dict[str, dict[date, DailyMetrics]] = {}
         for row in rows:
             days = grouped.setdefault(row.sku, {})
@@ -61,7 +76,14 @@ class MetricBundle:
             sku: tuple(sorted(days.values(), key=lambda r: r.date))
             for sku, days in grouped.items()
         }
-        reference = max((r.date for r in rows), default=None)
+        if evaluation_date is not None:
+            reference = evaluation_date
+        else:
+            # Fallback (no evaluation date given): the whole available series is
+            # history — reference is the day AFTER the latest row, so a series of
+            # exactly maturity_min_days is not wrongly shortened by one day.
+            latest = max((r.date for r in rows), default=None)
+            reference = latest + timedelta(days=1) if latest is not None else None
         window_start = (
             reference - timedelta(days=maturity_window_days) if reference is not None else None
         )
@@ -69,7 +91,9 @@ class MetricBundle:
         excluded: list[str] = []
         for sku in sorted(rows_by_sku):
             recent = sum(
-                1 for r in rows_by_sku[sku] if window_start is None or r.date > window_start
+                1
+                for r in rows_by_sku[sku]
+                if window_start is None or window_start <= r.date < reference
             )
             (panel if recent >= maturity_min_days else excluded).append(sku)
         return cls(rows_by_sku=rows_by_sku, panel=tuple(panel), excluded=tuple(excluded))
