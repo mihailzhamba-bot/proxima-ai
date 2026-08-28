@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "AGENTS.md",
   "skillDir": "/Users/mikezhamba/.agents/skills/autopilot",
   "startedAt": "2026-08-27T21:08:18+03:00",
-  "updatedAt": "2026-08-27T22:33:25+03:00",
+  "updatedAt": "2026-08-28T04:29:53+03:00",
   "finishedAt": null,
   "stages": [
     { "id": "preflight", "status": "done", "startedAt": "2026-08-27T21:08:18+03:00", "finishedAt": "2026-08-27T21:09:30+03:00" },
@@ -25,7 +25,7 @@ window.STATE =
     { "id": "final",     "status": "pending" }
   ],
   "requirements": {
-    "total": 20, "done": 16, "inTicket": 3, "inSpec": 1,
+    "total": 20, "done": 19, "inTicket": 0, "inSpec": 1,
     "placeholder": 0, "deferred": 0, "dropped": 0
   },
   "tickets": [
@@ -38,13 +38,16 @@ window.STATE =
       "retries": 0, "repairs": 2, "handoffs": 0,
       "repairFindings": ["R05: знак revenue_delta_orders = Expected−Actual", "R06: снятие дедупа только по recovery (ratio_28 ≥ порога) или cooldown", "R19i: негативные метрики → INVALID_INPUT; exp_u=0 ломает точность суммы Шепли", "filtered_by_rub: только floor-отсечения", "snapshot_id: без excluded-SKU (по спеке)", "_encode: сортировать множества (PYTHONHASHSEED)", "убрать wall-clock default_evaluation_date", "тесты: точность Шепли на ≥2 факторах, collapse-ветка без исключения, явный ассерт delta_14"] },
     { "id": "02", "title": "Loader staging-данных + smoke + verify-гейт", "requirements": ["R09","R11","R16","R18"],
-      "blockedBy": ["01"], "wave": 2, "zone": ["services/control-plane/src/proxima_control_plane/detectors/scn001/loader.py", "services/control-plane/src/proxima_control_plane/detectors/scn001/smoke.py"], "status": "repair",
+      "blockedBy": ["01"], "wave": 2, "zone": ["services/control-plane/src/proxima_control_plane/detectors/scn001/loader.py", "services/control-plane/src/proxima_control_plane/detectors/scn001/smoke.py"], "status": "done",
       "startedAt": "2026-08-27T22:33:25+03:00",
+      "finishedAt": "2026-08-28T04:29:53+03:00",
+      "tests": { "passed": 33, "failed": 0 },
+      "commit": "9b7df98",
       "retries": 0, "repairs": 1, "handoffs": 0,
       "repairFindings": ["R11: load_bundle возвращает резолвнутые task_id (без ручного списка)", "R11: run_fingerprint пересчитывается после attach_source_refs", "R09: _parse_metric отклоняет NaN/Infinity", "R09: SQL фильтрует NULL row_date/nm_id (fail-closed)"] }
   ],
   "singlePass": null,
-  "tests": null,
+  "tests": { "passed": 33, "failed": 0 },
   "debt": { "placeholders": [], "assumptions": [], "emptyEnv": [] },
   "additions": [],
   "coverage": {"findings": 8, "missing": 0, "half": 4, "extra": 4, "action": "half: дефолты конфига вписаны, гистерезис заменён на «выше порога» из брифа, граница snapshot_id/run_fingerprint определена, source_refs=task_id зафиксировано; extra: A01 легитимно (parent R01), R19.1/19.2 трассируются в R19i брифа («не крэш и не NaN»), ₽-фильтр уточнён по уровню сигнала"},
