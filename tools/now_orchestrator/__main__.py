@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 from .core import load_snapshot, render, select
 from .core.snapshot import first_run_snapshot
 from .jira import ExecutionContract, JiraIntent, JiraLedger, JiraReconciliation, JiraResult
+from .runtime import ClaimStore, GoCommand, advance
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -51,12 +53,25 @@ def _result(data: dict[str, object]) -> JiraResult:
     return JiraResult(intent_id, success, remote_evidence_id)
 
 
+def _common_dir() -> Path:
+    completed = subprocess.run(["git", "rev-parse", "--git-common-dir"], check=True, text=True, capture_output=True)
+    return Path(completed.stdout.strip()).resolve()
+
+
+def _snapshot_argument(command_parser: argparse.ArgumentParser) -> None:
+    command_parser.add_argument("snapshot", type=Path, nargs="?", help="path to fresh normalized snapshot JSON")
+    command_parser.add_argument("--stdin", action="store_true", help="read fresh normalized snapshot JSON from stdin")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Render a deterministic read-only /now snapshot", allow_abbrev=False)
     subparsers = parser.add_subparsers(dest="command")
     render_parser = subparsers.add_parser("render", help="render a normalized snapshot JSON")
-    render_parser.add_argument("snapshot", type=Path, nargs="?", help="path to normalized snapshot JSON")
-    render_parser.add_argument("--stdin", action="store_true", help="read normalized snapshot JSON from stdin")
+    _snapshot_argument(render_parser)
+    go_parser = subparsers.add_parser("go", help="validate a fresh selected key and return a non-dispatching ActionPlan")
+    go_parser.add_argument("key", help="exact fresh selected Jira key")
+    go_parser.add_argument("--owner", default="Mike", help="claim owner token")
+    _snapshot_argument(go_parser)
     jira_parser = subparsers.add_parser("jira", help="authorize or record a non-network Jira audit event")
     jira_subparsers = jira_parser.add_subparsers(dest="jira_command", required=True)
     authorize_parser = jira_subparsers.add_parser("authorize", help="classify and append a Jira intent before a client MCP write")
@@ -77,6 +92,15 @@ def main() -> int:
             data = json.loads(raw)
             print(render(select(load_snapshot(data))), end="")
         except (OSError, ValueError, json.JSONDecodeError) as error:
+            parser.error(str(error))
+    if args.command == "go":
+        try:
+            if args.stdin == (args.snapshot is not None):
+                parser.error("provide exactly one snapshot path or --stdin")
+            raw = sys.stdin.read() if args.stdin else args.snapshot.read_text(encoding="utf-8")
+            plan = advance(GoCommand(args.key, args.owner), load_snapshot(json.loads(raw)), ClaimStore(_common_dir()))
+            print(json.dumps(plan.as_dict(), sort_keys=True, separators=(",", ":")))
+        except (OSError, ValueError, json.JSONDecodeError, subprocess.CalledProcessError) as error:
             parser.error(str(error))
     if args.command == "jira":
         try:

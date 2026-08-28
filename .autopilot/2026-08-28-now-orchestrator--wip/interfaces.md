@@ -54,3 +54,16 @@
 - Executable Jira mutation требует полный execution contract: Mike owner identity, lane, blockers, AC, DoD, Gate ID, evidence locators и file zones.
 - Ledger сам повторно авторизует intent и связывает outcome с intent digest; forged caller decision не является authority.
 - Повторный outcome допустим только после failed outcome и отдельного evidence-backed reconciliation event; success требует remote evidence ID.
+
+## Из таска 03 - claims и lifecycle
+
+- `claim(request) -> ClaimResult` и owner-token release управляют atomic track/zone claims в Git common-dir.
+- Один global integration lease сериализует integration; stale recovery требует отдельного audit evidence.
+- `advance(command, snapshot) -> ActionPlan` fail closed проводит lifecycle и запрещает `DONE` без merge + source convergence.
+- `/now go <KEY>` во всех трёх facade возвращает один deterministic `ActionPlan`; фактический Orca dispatch остаётся T04.
+- Resume разрешён только при exact immutable identity: key, owner, track, zones, run/task/worker provenance и snapshot identity.
+- Stale recovery и `DONE` принимают typed evidence с locators; caller booleans и free text не являются доказательством.
+- T03 `/now go` заканчивается `CONFIRMED` с `should_dispatch`; переход `DISPATCHED` выполняет только T04 после фактического worker dispatch.
+- Claim связывается с canonical SHA-256 полного normalized snapshot; одинаковые timestamps не разрешают resume изменённого content.
+- `ClaimRequest.snapshot_digest` обязателен, canonical lower 64-hex и входит в token material; synthetic default отсутствует.
+- Stale lease recovery использует bounded typed liveness evidence и write-ahead intent/outcome audit вокруг удаления.
