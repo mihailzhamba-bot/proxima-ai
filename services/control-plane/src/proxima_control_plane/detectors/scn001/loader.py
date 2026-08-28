@@ -21,9 +21,10 @@ from proxima_control_plane.detectors.scn001.metrics import (
 from proxima_control_plane.detectors.scn001.signal import canonical_hash
 
 # Registry: canonical DailyMetrics field -> WB report column name in payload jsonb.
-# Real WB column names are UNKNOWN until smoke runs against staging (R16):
-# the entries below are the most probable candidates.
-# verify via smoke (R16)
+# Verified against a real staging payload by smoke R16 on 2026-08-28: all six
+# columns PRESENT (task f1b8892a, row 1). Unmapped payload keys observed:
+# addToCartConversion, addToCartCount, addToWishlist, buyoutPercent,
+# buyoutsSumRub, cancelCount, cancelSumRub, cartToOrderConversion, currency.
 COLUMN_MAP: Mapping[str, str] = {
     "sku": "nmID",
     "date": "dt",

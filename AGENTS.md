@@ -252,7 +252,7 @@ smoke.py          # R16: сверка COLUMN_MAP против реального
 
 ### Подводные камни
 
-- Имена WB-колонок в `COLUMN_MAP` - UNKNOWN до smoke против реального payload (R16).
+- Имена WB-колонок в `COLUMN_MAP` верифицированы smoke 2026-08-28 против реального payload (task f1b8892a): nmID, dt, ordersCount, openCardCount, ordersSumRub, buyoutsCount - все PRESENT. Вне реестра: addToCartCount, buyoutsSumRub, cancelCount/SumRub, конверсии, currency.
 - `revenue_delta`/`contributions` loss-positive: плюс = потеря денег.
 - `detect()` требует `evaluation_date` keyword-only явно; wall-clock только в `clock.py`.
 - Ноль новых зависимостей (pydantic приедет с PA-41 W1); деньги и метрики - только `Decimal`.

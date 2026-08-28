@@ -13,7 +13,7 @@
 | R06 | «дедуп между окнами baseline» - открытый сигнал блокирует новые до восстановления выше порога или cooldown 7 дней | done | 1569a6e (T01, 2 раунда ревью) | T01 |
 | R07 | «по SKU/кабинету» - SKU (nmID) + кабинет по зрелой панели (≥21/28), исключённые в payload (panel_size, excluded_count) | done | 1569a6e (T01, 2 раунда ревью) | T01 |
 | R08 | «исторически низкой активностью… сезонный коэффициент применён» + новые SKU: <21/28 дней → BLOCKED INSUFFICIENT_HISTORY, счётчик в observability, не молчаливый пропуск | done | 1569a6e (T01, 2 раунда ревью) | T01 |
-| R09 | Чистое ядро (ноль БД/сети) + отдельный loader (резолв DOWNLOADED task_id, реестр маппинга колонок, fail-closed на отсутствующую) | done | T02 (loader/smoke, ревью 0 blocking) | T02 |
+| R09 | Чистое ядро (ноль БД/сети) + отдельный loader (резолв DOWNLOADED task_id, реестр маппинга колонок, fail-closed на отсутствующую) | done | T02 + smoke 2026-08-28 против реального payload: REGISTRY STATUS OK (task f1b8892a) | T02 |
 | R10 | «день оценки D = вчера полный по Europe/Moscow», параметр для replay/backtest | done | 1569a6e (T01, 2 раунда ревью) | T01 |
 | R11 | «воспроизводимость сигнала по snapshot_id… результат идентичен» - snapshot_id = sha256 канонического JSON входного бандла, source_refs на task_id | done | 1569a6e (T01: snapshot_id в ядре; source_refs дозаполнит T02) | T01+T02 |
 | R12 | DetectorResult типизирован 1:1 под минимальный набор PMM-29: scenario_code=SCN-001, snapshot_id, source_refs[], trust_marking=unreleased, ₽-дельта с method, + fingerprint=canonical_hash | done | 1569a6e (T01, 2 раунда ревью) | T01 |
