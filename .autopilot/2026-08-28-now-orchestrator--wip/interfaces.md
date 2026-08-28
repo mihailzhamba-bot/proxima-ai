@@ -44,3 +44,13 @@
 - `select(snapshot) -> NowDecision` - hard-rule selector без LLM scoring.
 - `render(decision) -> str` - byte-stable B/C/A cards и D FROZEN.
 - CLI `scripts/agent/now` - read-only render entry point; Jira и network writes отсутствуют.
+
+## Из таска 02 - Jira safe repair
+
+- `authorize(intent) -> JiraDecision` - pure policy для `AUTO`, `APPROVAL_REQUIRED` и `DENY` до remote write.
+- Append-only ledger в Git common-dir хранит safe intent digest до write и outcome только для ранее авторизованного intent.
+- Jira adapter seam выполняет audit-before-write; live Jira mutation не запускалась без designated throwaway issue.
+- CLI `scripts/agent/now` поддерживает Jira authorize/record flow; три facade используют один policy contract.
+- Executable Jira mutation требует полный execution contract: Mike owner identity, lane, blockers, AC, DoD, Gate ID, evidence locators и file zones.
+- Ledger сам повторно авторизует intent и связывает outcome с intent digest; forged caller decision не является authority.
+- Повторный outcome допустим только после failed outcome и отдельного evidence-backed reconciliation event; success требует remote evidence ID.

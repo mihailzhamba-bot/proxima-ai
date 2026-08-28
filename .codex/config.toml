@@ -11,6 +11,9 @@ enabled_tools = [
   "getJiraIssue",
   "searchJiraIssuesUsingJql",
 ]
+# 2026-08-28: `codex mcp list` / runtime tool discovery expose no installed
+# Jira write tool. Keep the allowlist read-only; `/now` must return BLOCKED
+# rather than inventing a write tool name.
 default_tools_approval_mode = "approve"
 
 [mcp_servers.node_repl]
