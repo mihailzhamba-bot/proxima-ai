@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "DRAFT (internal to control-plane, PMM-5 W1). Canonical diagnosis schema is built in PMM-29 under contracts/ - do NOT move this file there. schema_version enables evolution to the canonical shape.",
+  "title": "Diagnosis draft v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "signal_id",
+    "scenario_id",
+    "trust",
+    "primary_cause",
+    "alternatives",
+    "unknowns",
+    "confidence_note",
+    "model",
+    "prompt_version",
+    "generated_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "diagnosis.draft.v1" },
+    "signal_id": { "type": "string", "minLength": 1 },
+    "scenario_id": { "enum": ["SCN-001", "SCN-005", "SCN-008"] },
+    "trust": { "const": "unreleased" },
+    "primary_cause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hypothesis", "source_refs"],
+      "properties": {
+        "hypothesis": { "type": "string", "minLength": 1 },
+        "source_refs": { "$ref": "#/$defs/sourceRefs" }
+      }
+    },
+    "alternatives": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["hypothesis", "source_refs"],
+        "properties": {
+          "hypothesis": { "type": "string", "minLength": 1 },
+          "source_refs": { "$ref": "#/$defs/sourceRefs" }
+        }
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question", "why_it_matters"],
+        "properties": {
+          "question": { "type": "string", "minLength": 1 },
+          "why_it_matters": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "confidence_note": { "type": "string", "minLength": 1 },
+    "model": { "type": "string", "minLength": 1 },
+    "prompt_version": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "sourceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

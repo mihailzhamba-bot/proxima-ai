@@ -21,3 +21,4 @@
 |---|---|---|---|
 | 2026-08-27 | `2026-08-27-w1-exit-criteria` | сдан | Draft exit-критериев W1-среза создан и ушёл на утверждение Mike в PMM-11 (комментарий 10367); прогон 2 — после «утверждено» |
 | 2026-08-27 | `2026-08-27-pmm12-dod-checklist` | сдан | DoD-чеклист среза в репо: `docs/governance/dod-checklist.md` (7 пунктов + guardrail в verify) + ретро-аудиты PMM-30/9/10 и закрытие PMM-12 (PR #23) |
+| 2026-08-27 | `2026-08-27-pmm-5-llm-analyst-w1` | сдан | LLM-диагноз сигналов SCN-008/001/005: пакет diagnosis в control-plane (адаптер+mock, draft-схема, DATA-промпт, fail-closed retry/timeout, JSONL-аудит, rollback-флаг, CLI run/eval) + eval 12 кейсов 12/12, гейт ≥80% |

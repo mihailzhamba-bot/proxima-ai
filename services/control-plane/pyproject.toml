@@ -6,10 +6,12 @@ build-backend = "hatchling.build"
 name = "proxima-control-plane"
 version = "0.1.0"
 requires-python = ">=3.14,<3.15"
-dependencies = []
+dependencies = ["jsonschema==4.25.1"]
 
 [project.optional-dependencies]
-test = ["httpx==0.28.1", "jsonschema==4.25.1", "psycopg[binary]==3.3.4", "pytest==8.4.2"]
+# `llm` зарезервирована под SDK реального провайдера (PMM-31); сознательно пустая.
+llm = []
+test = ["httpx==0.28.1", "psycopg[binary]==3.3.4", "pytest==8.4.2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

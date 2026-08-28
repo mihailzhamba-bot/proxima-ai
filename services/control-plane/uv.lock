@@ -145,11 +145,13 @@ wheels = [
 name = "proxima-control-plane"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "jsonschema" },
+]
 
 [package.optional-dependencies]
 test = [
     { name = "httpx" },
-    { name = "jsonschema" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pytest" },
 ]
@@ -157,11 +159,11 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", marker = "extra == 'test'", specifier = "==0.28.1" },
-    { name = "jsonschema", marker = "extra == 'test'", specifier = "==4.25.1" },
+    { name = "jsonschema", specifier = "==4.25.1" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'test'", specifier = "==3.3.4" },
     { name = "pytest", marker = "extra == 'test'", specifier = "==8.4.2" },
 ]
-provides-extras = ["test"]
+provides-extras = ["llm", "test"]
 
 [[package]]
 name = "psycopg"
