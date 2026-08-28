@@ -8,11 +8,15 @@ description: Gather a live read-only /now snapshot and render the shared card.
 3. Build the normalized JSON in memory and pipe it to the single core:
 
 ```bash
-scripts/agent/now render --stdin
+scripts/agent/now facade codex --stdin
 ```
 
 This adapter is read-only. It contains no ranking or mutation logic and returns the CLI output unchanged.
 
-For an explicit confirmation, send the same fresh normalized JSON to `scripts/agent/now go <KEY> --stdin`. Return its deterministic `ActionPlan` unchanged; T03 creates only an ephemeral claim and plan, while actual Orca dispatch is T04. Never execute merge, deploy, destructive work, or a Jira write from this path.
+For an explicit confirmation, send the same fresh normalized JSON to `scripts/agent/now go <KEY> --stdin`. Dispatch requires the exact T03 persisted claim and `scripts/agent/now dispatch --plan <plan.json> --gate docs/release-gates/<approved>.md`; core reads the report, proves one READY status, digests Scope lock, binds it to task and snapshot, reconciles Orca task/dispatch/worker, then accepts only exact `worker_done` evidence. Never execute merge, deploy, destructive work, or a Jira write from this path.
 
-For every executable Jira task write, the payload must carry the full execution contract: Mike owner/account identity, lane, blockers, AC, DoD, Gate ID, evidence locators and declared file zones. Run `scripts/agent/now jira authorize --intent <intent.json>` first; only `AUTO` may reach Jira MCP, then run `scripts/agent/now jira record --result <result.json>`. After a failed write, perform a live Jira readback, record it with `scripts/agent/now jira reconcile --result <readback.json>`, and retry only when that evidence says the effect is absent. The installed Codex allowlist currently exposes only read tools, so a write remains `BLOCKED` until a confirmed installed write tool is explicitly allowlisted.
+For every executable Jira task write, the payload must carry the full execution contract: Mike owner/account identity, lane, blockers, AC, DoD, Gate ID, evidence locators and declared file zones. Run `scripts/agent/now jira authorize --intent <intent.json>` first; only `AUTO` may reach Jira MCP, then run `scripts/agent/now jira record --result <result.json>`. After a failed write, perform a live Jira readback, record it with `scripts/agent/now jira reconcile --result <readback.json>`, and retry only when that evidence says the effect is absent.
+
+Close JSON is a request, never authority. `scripts/agent/now close --client codex --evidence <close.json>` validates the exact schema but has no Jira write port, so its only honest result is `BLOCKED_EXTERNAL`. Codex must not execute Jira close, merge, Orca release or ops-sync from caller receipts and must never claim `DONE` from a caller 0/0 string.
+
+The installed Codex allowlist currently exposes only read tools, so a write remains `BLOCKED` until a confirmed installed write tool is explicitly allowlisted.

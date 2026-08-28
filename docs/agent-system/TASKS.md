@@ -4,6 +4,10 @@
 
 ## Active main task
 
+### `/now` project orchestrator: T04 READY_COMMIT
+
+T01-T03 закоммичены; T04 остаётся uncommitted в isolated worktree. Repair-cycle 3: targeted `tools/tests/test_now_*.py` 118 passed; full `make verify` exit 0, 264 passed / 4 skipped; independent final re-review 0 blockers / 0 warnings. Live Jira/Orca/GitHub effects, commit/push/PR/merge не выполнялись. Next: local atomic commit only for owned T04 paths; PR/merge/deploy require Mike gate.
+
 ### Phase 3: planning complete 2026-08-25 → executing 03-01 next
 
 CONTEXT.md + 4 плана залиты (`.planning/phases/03-postgresql-quality-atomic-releases/`): 03-01 schema foundation (B6 machine-enforced) → 03-02 promotion/quarantine/lineage → 03-03 atomic releases + LKG → 03-04 roles + adversarial matrix. Волны 1→4, autonomous, внешних входов нет. Critical phase: каждый план - cross-model review 0/0. День 2026-08-25 до этого: PA-13 closed (PR #17→#19 `51abc7f`, codex 2/3/1 all fixed), Phase 2 closed (вариант A), 02-02 cancelled, live-сбор Аналитики 1 220 строк.

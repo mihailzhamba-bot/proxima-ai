@@ -73,6 +73,14 @@ class JiraReconciliation:
 
 
 @dataclass(frozen=True)
+class JiraReadback:
+    intent_id: str
+    issue_key: str
+    status: str
+    remote_evidence_id: str
+
+
+@dataclass(frozen=True)
 class JiraRepairPlan:
     action: Literal["link_current", "update_backlog", "create_backlog", "proposal"]
     reason: str

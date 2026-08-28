@@ -50,6 +50,56 @@ class ClaimRequest:
 class Claim:
     token: str; key: str; track: str; zones: tuple[str, ...]; owner: str; run_id: str; task_id: str; worker_id: str; snapshot_version: str; captured_at: str; snapshot_digest: str; created_at: str
 
+
+def _claim_token(claim: Claim) -> str:
+    return sha256(
+        "\0".join(
+            (
+                claim.key,
+                claim.track,
+                *claim.zones,
+                claim.owner,
+                claim.run_id,
+                claim.task_id,
+                claim.worker_id,
+                claim.snapshot_version,
+                claim.captured_at,
+                claim.snapshot_digest,
+                claim.created_at,
+            )
+        ).encode()
+    ).hexdigest()
+
+
+def _validated_claim(data: object, expected_token: str) -> Claim:
+    if not isinstance(data, dict) or set(data) != {
+        "token", "key", "track", "zones", "owner", "run_id", "task_id",
+        "worker_id", "snapshot_version", "captured_at", "snapshot_digest", "created_at",
+    }:
+        raise ValueError("invalid claim evidence")
+    zones = data.get("zones")
+    if type(zones) is not list or not zones or any(type(zone) is not str or not zone for zone in zones):
+        raise ValueError("invalid claim evidence zones")
+    try:
+        claim = Claim(**{**data, "zones": tuple(data["zones"])})
+    except (TypeError, ValueError, KeyError) as error:
+        raise ValueError("invalid claim evidence") from error
+    values = (
+        claim.token, claim.key, claim.track, *claim.zones, claim.owner, claim.run_id,
+        claim.task_id, claim.worker_id, claim.snapshot_version, claim.captured_at,
+        claim.snapshot_digest, claim.created_at,
+    )
+    if (
+        claim.token != expected_token
+        or not _TOKEN.fullmatch(claim.token)
+        or not all(isinstance(value, str) and value for value in values)
+        or claim.track not in {"A", "B", "C"}
+        or tuple(normalize_zones(claim.zones)) != claim.zones
+        or _claim_token(claim) != claim.token
+    ):
+        raise ValueError("invalid claim evidence")
+    return claim
+
 @dataclass(frozen=True)
 class ClaimResult:
     claim: Claim | None; reason: str | None = None; resumed: bool = False
@@ -92,7 +142,8 @@ class ClaimStore:
                 except FileExistsError: _no_symlink(directory)
                 _fsync_dir(directory.parent)
         self.audit_path, self.lease_path, self.lock_path = self.root / "audit.jsonl", self.root / "integration.json", self.root / "lock"
-        self._reject_residue()
+        with self._locked():
+            pass
 
     def _reject_residue(self) -> None:
         for directory in (self.root, self.claims_dir):
@@ -143,11 +194,25 @@ class ClaimStore:
         for path in sorted(self.claims_dir.iterdir()):
             if path.name.endswith(".tmp"): raise ValueError("crash residue in runtime evidence")
             if path.is_symlink() or path.suffix != ".json" or self._child(self.claims_dir, path.stem) != path: raise ValueError("invalid claim evidence")
-            try: claim = Claim(**{**json.loads(path.read_text(encoding="utf-8")), "zones": tuple(json.loads(path.read_text(encoding="utf-8"))["zones"])})
+            try: claim = _validated_claim(json.loads(path.read_text(encoding="utf-8")), path.stem)
             except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError) as error: raise ValueError("invalid claim evidence") from error
-            if claim.token != path.stem or not _TOKEN.fullmatch(claim.token): raise ValueError("invalid claim evidence")
             result.append(claim)
         return tuple(result)
+
+    def lookup(self, token: str) -> Claim | None:
+        """Read one durable claim by its canonical token without changing runtime state."""
+        path = self._child(self.claims_dir, token)
+        if path is None:
+            return None
+        with self._locked():
+            if not path.is_file() or path.is_symlink():
+                return None
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                claim = _validated_claim(data, token)
+            except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
+                raise ValueError("invalid claim evidence")
+            return claim if claim.token == token else None
 
     def claim(self, request: ClaimRequest) -> ClaimResult:
         if request.track not in {"A", "B", "C"} or not request.key or not all(isinstance(value, str) and value for value in (request.owner, request.run_id, request.task_id, request.worker_id, request.snapshot_version, request.captured_at)) or not _TOKEN.fullmatch(request.snapshot_digest): return ClaimResult(None, "claim identity is invalid")
@@ -167,8 +232,10 @@ class ClaimStore:
                         if _overlap(left, right):
                             first, second = (left, right) if len(left.split("/")) <= len(right.split("/")) else (right, left)
                             return ClaimResult(None, f"zone overlap: {first} <-> {second}")
-            token = sha256("\0".join((request.key, request.track, *zones, request.owner, request.run_id, request.task_id, request.worker_id, request.snapshot_version, request.captured_at, request.snapshot_digest)).encode()).hexdigest()
-            claim = Claim(token, *identity, _now()); path = self._child(self.claims_dir, token); assert path
+            created_at = request.captured_at
+            unsigned = Claim("0" * 64, *identity, created_at)
+            token = _claim_token(unsigned)
+            claim = Claim(token, *identity, created_at); path = self._child(self.claims_dir, token); assert path
             if not self._publish(self.claims_dir, path, {**asdict(claim), "zones": list(claim.zones)}): return ClaimResult(None, "claim token collision")
             self._audit("claim_created", token=token, key=request.key, track=request.track); return ClaimResult(claim)
 
@@ -178,7 +245,8 @@ class ClaimStore:
         with self._locked():
             if not path.is_file() or path.is_symlink(): return False
             data = json.loads(path.read_text(encoding="utf-8"))
-            if data.get("token") != token or data.get("owner") != owner: return False
+            claim = _validated_claim(data, token)
+            if claim.owner != owner: return False
             path.unlink(); _fsync_dir(self.claims_dir); self._audit("claim_released", token=token, owner=owner); return True
 
     def acquire_integration(self, owner: str, run_id: str, task_id: str, worker_id: str) -> LeaseResult:
@@ -187,8 +255,11 @@ class ClaimStore:
             if self.lease_path.exists():
                 if self.lease_path.is_symlink(): raise ValueError("invalid integration evidence")
                 lease = Lease(**json.loads(self.lease_path.read_text(encoding="utf-8")))
-                return LeaseResult(lease) if (lease.owner, lease.run_id, lease.task_id, lease.worker_id) == (owner, run_id, task_id, worker_id) else LeaseResult(None, "integration lease active")
-            token = sha256(f"integration\0{owner}\0{run_id}\0{task_id}\0{worker_id}".encode()).hexdigest(); lease = Lease(token, owner, run_id, task_id, worker_id, _now())
+                if (lease.owner, lease.run_id, lease.task_id, lease.worker_id) == (owner, run_id, task_id, worker_id):
+                    self._audit("integration_resumed", token=lease.token, owner=owner, run_id=run_id)
+                    return LeaseResult(lease)
+                return LeaseResult(None, "integration lease active")
+            token = sha256(f"integration\0{owner}\0{run_id}\0{task_id}\0{worker_id}\0{uuid4().hex}".encode()).hexdigest(); lease = Lease(token, owner, run_id, task_id, worker_id, _now())
             if not self._publish(self.root, self.lease_path, asdict(lease)): return LeaseResult(None, "integration lease active")
             self._audit("integration_acquired", token=token, owner=owner, run_id=run_id); return LeaseResult(lease)
 

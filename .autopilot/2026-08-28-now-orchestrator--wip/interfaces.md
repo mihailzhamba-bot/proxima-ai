@@ -67,3 +67,12 @@
 - Claim связывается с canonical SHA-256 полного normalized snapshot; одинаковые timestamps не разрешают resume изменённого content.
 - `ClaimRequest.snapshot_digest` обязателен, canonical lower 64-hex и входит в token material; synthetic default отсутствует.
 - Stale lease recovery использует bounded typed liveness evidence и write-ahead intent/outcome audit вокруг удаления.
+
+## Из таска 04 - integration и close
+
+- `ReleaseGateReport.read(repo_root, report_path, gate_id, task_key, snapshot_digest)` читает approved Markdown, требует единственный READY header + READY tail и связывает SHA-256 Scope lock с task/snapshot; caller booleans отсутствуют.
+- `IntegrationCoordinator.dispatch(DispatchInput)` повторно читает exact persisted claim, ведёт append-only WAL intent/outcome, reconcile-ит Orca task + dispatch + worker и принимает только exact `result.messages[]` worker_done. Integration lease имеет одноразовый fencing token и снимается в `finally` на каждом terminal error.
+- `ReviewerCoordinator.verify_and_review(ReviewInput)` независимо читает Orca placement, Git common-dir + reviewed HEAD, запускает captured `make verify` и reviewer в exact worker cwd и выдаёт durable digest-bound receipt; caller 0/0 не авторитетен.
+- `CloseCoordinator.close(CloseInput)` перечитывает review/Mike/merged-ops receipts через trusted ports; gh связывает repo/base/head/merge ancestry, Jira - issue/transition/payload digest и readback-first retry, Orca - exact released identity, repo convergence - blob SHA канонических HANDOFF/TASKS/active ExecPlan из ops commit. Codex без port возвращает `BLOCKED_EXTERNAL`; Claude/opencode CLI выдаёт только side-effect plan.
+- `OpsRepoSync.sync(OpsSyncInput)` требует independent Mike approval, ведёт WAL по worktree/write/stage/commit/push/PR, reconciles retry before effect и пишет через dirfd/no-follow. `git add -A`, automatic merge и path escape отсутствуют.
+- `claude_entry`, `codex_entry`, `opencode_entry` вызывают один `_entry` core; CLI routes `facade <client>` проверяются на byte-identical full stdout.

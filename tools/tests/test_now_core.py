@@ -175,7 +175,7 @@ def test_supported_adapters_gather_and_reconcile_live_sources_before_delegating(
         ROOT / ".opencode/commands/now.md",
     )
 
-    for path in adapter_paths:
+    for path, client in zip(adapter_paths, ("claude", "codex", "opencode"), strict=True):
         text = path.read_text(encoding="utf-8")
         assert "Jira MCP" in text
         assert "Git/PR/worktrees" in text
@@ -183,7 +183,7 @@ def test_supported_adapters_gather_and_reconcile_live_sources_before_delegating(
         assert "HANDOFF" in text
         assert "TASKS" in text
         assert "ExecPlans" in text
-        assert "scripts/agent/now render --stdin" in text
+        assert f"scripts/agent/now facade {client} --stdin" in text
         assert "read-only" in text.lower()
         assert "Jira priority" not in text
         assert "select(" not in text

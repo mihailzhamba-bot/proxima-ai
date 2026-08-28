@@ -103,6 +103,15 @@ def test_resume_requires_exact_immutable_identity(tmp_path: Path) -> None:
     assert store.claim(request(owner="Other")).reason == "claim provenance conflict"
 
 
+def test_integration_lease_resumes_only_for_the_exact_same_identity(tmp_path: Path) -> None:
+    store = ClaimStore(git_dir(tmp_path))
+    first = store.acquire_integration("Mike", "run-1", "task-1", "worker-1")
+    resumed = store.acquire_integration("Mike", "run-1", "task-1", "worker-1")
+    foreign = store.acquire_integration("Mike", "run-1", "task-1", "worker-2")
+    assert first.lease is not None and resumed.lease == first.lease
+    assert foreign.lease is None and foreign.reason == "integration lease active"
+
+
 def test_snapshot_digest_is_required_canonical_and_changes_claim_token(tmp_path: Path) -> None:
     with pytest.raises(TypeError):
         ClaimRequest("PMM-2", "B", ("tools/runtime",), "Mike", "run-1", "task-1", "worker-1", "now.snapshot.v1", "2026-08-28T10:00:00+00:00")
@@ -197,7 +206,7 @@ def test_done_requires_typed_true_convergence_and_fixed_golden_json(tmp_path: Pa
     assert plan.transition(LifecycleState.DONE, ConvergenceEvidence("merge-1", "yes", True, True, True, True, True, "jira", "orca", "git", "handoff", "tasks", "plan")).blocked
     done = plan.transition(LifecycleState.DONE, ConvergenceEvidence("merge-1", True, True, True, True, True, True, "jira", "orca", "git", "handoff", "tasks", "plan"))
     assert done.state is LifecycleState.DONE
-    golden = '{"blocked":false,"claim_token":"ac7bedab3a5290234ce9a9106b6a83c40598dfab9b2ef4b1c10c657d7ada39f7","dispatch":false,"key":"PMM-2","reason":null,"run_id":"now-75cb99899085e6e815a01de8c233a5ac","should_dispatch":false,"state":"DONE","task_id":"task-75cb99899085e6e815a01de8c233a5ac","track":"B","worker_id":"worker-75cb99899085e6e815a01de8c233a5ac"}'
+    golden = '{"blocked":false,"claim_token":"57d541eda2037627abde60ad3d8d5af7fe395958f6c94b1cfa45467c639f7593","dispatch":false,"key":"PMM-2","reason":null,"run_id":"now-75cb99899085e6e815a01de8c233a5ac","should_dispatch":false,"state":"DONE","task_id":"task-75cb99899085e6e815a01de8c233a5ac","track":"B","worker_id":"worker-75cb99899085e6e815a01de8c233a5ac"}'
     assert json.dumps(done.as_dict(), sort_keys=True, separators=(",", ":")) == golden
     for facade in (".claude/commands/now.md", ".codex/skills/now/SKILL.md", ".opencode/commands/now.md"):
         assert "scripts/agent/now go <KEY>" in (ROOT / facade).read_text(encoding="utf-8")

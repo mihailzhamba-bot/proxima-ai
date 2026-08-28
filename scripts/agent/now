@@ -2,4 +2,8 @@
 set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT"
+VENV_PYTHON="$ROOT/services/control-plane/.venv/bin/python"
+if [[ -x "$VENV_PYTHON" ]]; then
+  exec "$VENV_PYTHON" -m tools.now_orchestrator "$@"
+fi
 exec uv run --python 3.14 --project services/control-plane python -m tools.now_orchestrator "$@"

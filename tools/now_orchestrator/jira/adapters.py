@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .ledger import JiraLedger
-from .policy import JiraDecision, JiraIntent, JiraResult, authorize
+from .policy import JiraDecision, JiraIntent, JiraReadback, JiraResult
 
 
 class AuditBeforeWriteAdapter:
@@ -17,3 +17,6 @@ class AuditBeforeWriteAdapter:
 
     def record(self, result: JiraResult) -> None:
         self.ledger.record(result)
+
+    def record_readback(self, readback: JiraReadback) -> None:
+        self.ledger.record_readback(readback)

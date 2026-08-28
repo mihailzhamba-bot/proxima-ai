@@ -2,13 +2,14 @@
 
 from .adapters import AuditBeforeWriteAdapter
 from .ledger import JiraLedger, ledger_path
-from .policy import ExecutionContract, JiraDecision, JiraIntent, JiraReconciliation, JiraRepairPlan, JiraResult, authorize, classify_gap, validate_write_intent
+from .policy import ExecutionContract, JiraDecision, JiraIntent, JiraReadback, JiraReconciliation, JiraRepairPlan, JiraResult, authorize, classify_gap, validate_write_intent
 
 __all__ = [
     "AuditBeforeWriteAdapter",
     "ExecutionContract",
     "JiraDecision",
     "JiraIntent",
+    "JiraReadback",
     "JiraLedger",
     "JiraReconciliation",
     "JiraRepairPlan",
