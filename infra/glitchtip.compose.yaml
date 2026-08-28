@@ -22,6 +22,11 @@ services:
     ports:
       - "127.0.0.1:${GLITCHTIP_PORT:-8080}:8080"
     environment: *default-environment
+    networks:
+      default:
+        aliases:
+          # стабильный DSN-хост: http://<key>@glitchtip:8080/<project_id>
+          - glitchtip
     depends_on:
       - postgres
       - redis
