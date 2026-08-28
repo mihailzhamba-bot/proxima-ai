@@ -2,7 +2,7 @@
 
 **Требования:** R04, R05, R07, R08, R09, R10, R11, R12, R13, R14, R15, R23, A01, R26
 **Blocked by:** 02
-**Зона:** `services/control-plane/tests/diagnosis/` (data/eval/, eval_runner.py)
+**Зона:** `services/control-plane/tests/diagnosis/` (data/eval/, eval_runner.py); + корневой `.gitignore` (ровно одна строка: `logs/` - владелец по ревью T02, дефолтный audit_path не должен попадать в git)
 **Волна:** 3
 **Status:** ready
 

@@ -58,3 +58,22 @@ Config (TOML)  = llm_enabled(bool, default true), provider(str, default "mock"),
 - Тест-команда каноническая: `uv run --python 3.14 --project services/control-plane --extra test pytest services/control-plane/tests -q` (голый `uv run pytest` от корня НЕ работает)
 - ВАЖНО для service.py (таск 02): mock берёт данные из блока DIAGNOSIS_INPUT - перед diagnose() всегда звать build_messages(signal) и передавать user в diagnose
 
+## Из таска 02 - сервис, аудит, CLI
+
+- `service.run_batch(signals, config, *, client=None) -> BatchResult`; client=None → create_client(config), создаётся только при llm_enabled
+- `audit.AuditLog(path).record(entry: dict) -> None` (глотает OSError); строка: {ts, signal_id, scenario_id, input_sha256 (sha256 json.dumps(asdict(signal), sort_keys, ensure_ascii=False)), model, prompt_version, outcome, attempts, latency_ms}
+- `cli.main(argv) -> int` + entry `python -m proxima_control_plane.diagnosis run|eval`; exit 0 - батч обработан (вкл. per-signal failed), 2 - ошибка входа/конфига; вход - массив сигналов или {"signals": [...]}; битый envelope → изолированный item failed, не exit 2
+- Поиск diagnosis.toml: cwd и вверх по родителям, не найден - дефолты (владелец - CLI)
+- Timeout - без retry (retry только для невалидного ответа); числа сканируются в текстовых полях диагноза (hypothesis/question/why_it_matters/confidence_note), метаданные не сканируются; regex `\d+(?:\.\d+)?`
+- Eval (таск 03): переиспользуй run_batch с инжекцией client; pass-rate считай по BatchItem.status=="ok" + пер-сценарные asserts над diagnosis
+
+## Из таска 03 - eval
+
+- `tests/diagnosis/data/eval/cases.json`: `{dataset_version: "eval.w1.v1", cases: [{case_id, kind: standard|closed_numbers|adversarial, injection_markers?, signal}]}` (12 кейсов)
+- `eval_runner.run_eval(cases: dict|list, client) -> EvalReport{dataset_version, generated_at, latency_ms, total, passed, pass_rate, unsupported_numbers, cases[]}`; `EvalReport.to_dict()`, `load_cases(path)`; PASS_RATE_GATE=0.80, LATENCY_BUDGET_MS=300000
+- CLI: `eval --dataset <path> [--config]` → exit 0/2, печатает pass-rate (по BatchItem.status; полные критерии - в eval_runner)
+- .gitignore: добавлена строка logs/ (дефолтный audit_path вне git)
+- Ограничение детерминизм-проверки: в тексте гипотез числа в путях списков (`payload.x[0].value` → токен «0») дают ложное срабатывание - в SCN-008 fixtures числовые значения JSON заменены SYNTH-строками; актуально для PMM-31 с реальным LLM
+
+
+

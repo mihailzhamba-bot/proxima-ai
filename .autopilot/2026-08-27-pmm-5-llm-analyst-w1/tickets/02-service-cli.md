@@ -29,5 +29,5 @@
 - [ ] Детерминированные проверки: все числа в строках диагноза ∈ числа входа (regex-извлечение); source_refs ⊆ input.source_refs; нарушение → fail-closed
 - [ ] `llm_enabled=false`: все items status=skipped_flag, LLM не вызывается (mock считает вызовы), форма артефакта совместима
 - [ ] `audit.py`: JSONL-строка на сигнал {ts, signal_id, scenario_id, input_sha256, model, prompt_version, outcome, attempts, latency_ms}; ошибка записи не роняет диагноз
-- [ ] `cli.py`: `run --input signals.json --output diagnoses.json [--config x.toml]`; exit 0 - батч обработан, 2 - ошибка входа/конфига; output парсится: {generated_at, items: [{signal_id, status, diagnosis?|error?}]}
+- [ ] `cli.py`: `run --input signals.json --output diagnoses.json [--config x.toml]`; без --config - поиск diagnosis.toml рядом с cwd, не найден - встроенные дефолты (владелец поиска файла - CLI); exit 0 - батч обработан, 2 - ошибка входа/конфига; output парсится: {generated_at, items: [{signal_id, status, diagnosis?|error?}]}
 - [ ] Тесты через шов LLMClient: битый JSON → failed после retry×2; медленный клиент → timeout; флаг off → skipped_flag; аудит-поля присутствуют
