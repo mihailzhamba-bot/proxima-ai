@@ -222,4 +222,41 @@ Done = implemented + `scripts/agent/verify` passes (structural + typecheck + TS 
 
 Если работа продолжается — скажи «продолжи автопилот»: состояние поднимется
 из `.autopilot/state.js`, переспрашивать ничего не нужно.
+
+## Детектор SCN-001 (PMM-20)
+
+Детерминированный детектор падения продаж (U x CVR x AOV, декомпозиция Шепли) в control-plane; код: `services/control-plane/src/proxima_control_plane/detectors/scn001/`.
+
+### Команды (прогон 2026-08-28)
+
+```bash
+cd services/control-plane && uv run --extra test pytest tests/ -q   # 33 passed
+make verify                                                         # полный verify-гейт, PASS
+cd services/control-plane && uv run --extra test python -m proxima_control_plane.detectors.scn001.smoke  # read-only; без DATABASE_URI печатает UNKNOWN, exit 0
+```
+
+### Структура detectors/scn001/
+
+```
+metrics.py        # канонический вход: DailyMetrics, MetricBundle.build (панель/исключённые по зрелости 21/28)
+baseline.py       # сезонный бейзлайн: weekday_index, expected (MA x weekday index), history_status
+decomposition.py  # Шепли: decompose(u, cvr, aov) -> Contributions, collapse-ветка при нулевой базе
+signal.py         # ядро: detect() -> Scn001RunResult, canonical_hash, ₽-фильтр, дедуп, top_n
+config.py         # Scn001Config (default: окна 7/14/28, trigger 28, drop 0.20, rub_floor 3000, top_n 10), ThresholdSource
+loader.py         # COLUMN_MAP, parse_payload_row (fail-closed), load_bundle (winners по row_date+nm_id), db_from_env
+clock.py          # default_evaluation_date - вчера Europe/Moscow; единственное место wall-clock
+smoke.py          # R16: сверка COLUMN_MAP против реального payload, read-only
+```
+
+Тесты: `services/control-plane/tests/detectors/` (`test_scn001_signal.py`, `test_scn001_loader.py`, `helpers.py` с SYNTH-фикстурами).
+
+### Подводные камни
+
+- Имена WB-колонок в `COLUMN_MAP` - UNKNOWN до smoke против реального payload (R16).
+- `revenue_delta`/`contributions` loss-positive: плюс = потеря денег.
+- `detect()` требует `evaluation_date` keyword-only явно; wall-clock только в `clock.py`.
+- Ноль новых зависимостей (pydantic приедет с PA-41 W1); деньги и метрики - только `Decimal`.
+- Только `loader` касается psycopg/`DATABASE_URI`; ядро (metrics/baseline/decomposition/signal/config) не знает про БД.
+- LLM в числах нет: R15 закреплён boundary-тестом `tests/detectors/test_scn001_signal.py:358`.
+- Все поля несут `trust_marking="unreleased"`; ничего не релизнуто.
 <!-- autopilot:end -->

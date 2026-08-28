@@ -1,7 +1,7 @@
 window.STATE =
 {
   "slug": "pmm20-scn001-core",
-  "dir": "2026-08-27-pmm20-scn001-core--wip",
+  "dir": "2026-08-27-pmm20-scn001-core",
   "title": "PMM-20: ядро детектора SCN-001 (baseline 7/14/28 + сезонность, Шепли U×CVR×AOV, ₽-фильтр)",
   "mode": "semi",
   "depth": "normal",
@@ -11,21 +11,20 @@ window.STATE =
   "memoryFile": "AGENTS.md",
   "skillDir": "/Users/mikezhamba/.agents/skills/autopilot",
   "startedAt": "2026-08-27T21:08:18+03:00",
-  "updatedAt": "2026-08-28T04:29:53+03:00",
-  "finishedAt": null,
+  "updatedAt": "2026-08-28T04:35:10+03:00",
+  "finishedAt": "2026-08-28T04:35:10+03:00",
   "stages": [
     { "id": "preflight", "status": "done", "startedAt": "2026-08-27T21:08:18+03:00", "finishedAt": "2026-08-27T21:09:30+03:00" },
     { "id": "manifest",  "status": "done", "startedAt": "2026-08-27T21:09:30+03:00", "finishedAt": "2026-08-27T21:10:14+03:00" },
     { "id": "briefing",  "status": "done", "startedAt": "2026-08-27T21:10:14+03:00", "finishedAt": "2026-08-27T21:10:14+03:00", "note": "semi: бриф полон после грилля (9 решений утверждены), вопросов нет" },
     { "id": "spec",      "status": "done", "startedAt": "2026-08-27T21:10:14+03:00", "finishedAt": "2026-08-27T21:14:00+03:00" },
     { "id": "plan",      "status": "done", "startedAt": "2026-08-27T21:14:00+03:00", "finishedAt": "2026-08-27T21:18:30+03:00", "note": "2 таска, ярус T1, 2 волны" },
-    { "id": "build",     "status": "active", "startedAt": "2026-08-27T21:18:30+03:00" },
-    { "id": "build",     "status": "pending" },
-    { "id": "review",    "status": "pending" },
-    { "id": "final",     "status": "pending" }
+    { "id": "build",     "status": "done", "startedAt": "2026-08-27T21:18:30+03:00", "finishedAt": "2026-08-28T04:29:53+03:00", "note": "2 из 2 тасков готовы (T01: 2 repair, T02: 1 repair)" },
+    { "id": "review",    "status": "done", "startedAt": "2026-08-27T21:21:00+03:00", "finishedAt": "2026-08-28T04:29:53+03:00", "note": "оба таска: manifest+spec и craft ревьюеры, 0 blocking после ремонтов" },
+    { "id": "final",     "status": "done", "startedAt": "2026-08-28T04:29:53+03:00", "finishedAt": "2026-08-28T04:35:10+03:00", "note": "слепая приёмка: без drift; Jira-гейт R17 исполнен" }
   ],
   "requirements": {
-    "total": 20, "done": 19, "inTicket": 0, "inSpec": 1,
+    "total": 20, "done": 20, "inTicket": 0, "inSpec": 0,
     "placeholder": 0, "deferred": 0, "dropped": 0
   },
   "tickets": [
@@ -49,9 +48,9 @@ window.STATE =
   "singlePass": null,
   "tests": { "passed": 33, "failed": 0 },
   "debt": { "placeholders": [], "assumptions": [], "emptyEnv": [] },
-  "additions": [],
+  "additions": ["A01: dominant_factor в сигнале (максимальный вклад в потерю) - ради R01: AM видит причину одним глазом"],
   "coverage": {"findings": 8, "missing": 0, "half": 4, "extra": 4, "action": "half: дефолты конфига вписаны, гистерезис заменён на «выше порога» из брифа, граница snapshot_id/run_fingerprint определена, source_refs=task_id зафиксировано; extra: A01 легитимно (parent R01), R19.1/19.2 трассируются в R19i брифа («не крэш и не NaN»), ₽-фильтр уточнён по уровню сигнала"},
-  "concerns": ["test_default_evaluation_date: ассерт на живом now() - гонка на московской полуночи (craft, не блокер)"],
+  "concerns": [{"finding": "test_default_evaluation_date: ассерт на живом now() - гонка на московской полуночи", "verdict": "report", "reason": "не блокер, флейк раз в сутки максимум; фикс отдельным таском при желании"}],
   "reviewers": { "manifestSpec": "ses_fbb620321ffefBedYDnYVQpXYX", "craft": "ses_fbb61e44bffePuZ5ar89eG9Dr5" },
   "blind": null
 }
