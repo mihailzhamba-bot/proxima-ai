@@ -11,8 +11,8 @@ window.STATE =
   "memoryFile": "AGENTS.md",
   "skillDir": "/Users/mikezhamba/.agents/skills/autopilot",
   "startedAt": "2026-08-27T21:08:18+03:00",
-  "updatedAt": "2026-08-28T10:45:00+03:00",
-  "finishedAt": null,
+  "updatedAt": "2026-08-28T08:27:30+03:00",
+  "finishedAt": "2026-08-28T08:27:30+03:00",
   "stages": [
     { "id": "preflight", "status": "done", "startedAt": "2026-08-27T21:08:18+03:00", "finishedAt": "2026-08-27T21:09:30+03:00" },
     { "id": "manifest",  "status": "done", "startedAt": "2026-08-27T21:09:30+03:00", "finishedAt": "2026-08-27T21:10:14+03:00" },
@@ -21,7 +21,7 @@ window.STATE =
     { "id": "plan",      "status": "done", "startedAt": "2026-08-27T21:14:00+03:00", "finishedAt": "2026-08-27T21:18:30+03:00", "note": "2 таска, ярус T1, 2 волны" },
     { "id": "build",     "status": "done", "startedAt": "2026-08-27T21:18:30+03:00", "finishedAt": "2026-08-28T04:29:53+03:00", "note": "2 из 2 тасков готовы (T01: 2 repair, T02: 1 repair)" },
     { "id": "review",    "status": "done", "startedAt": "2026-08-27T21:21:00+03:00", "finishedAt": "2026-08-28T04:29:53+03:00", "note": "оба таска: manifest+spec и craft ревьюеры, 0 blocking после ремонтов" },
-    { "id": "final",     "status": "active", "startedAt": "2026-08-28T04:29:53+03:00", "note": "переоткрыт: codex 6 blockers/3 warnings - repair T03" }
+    { "id": "final",     "status": "done", "startedAt": "2026-08-28T04:29:53+03:00", "finishedAt": "2026-08-28T08:27:30+03:00", "note": "codex-гейт пройден: раунд 1 6B/3W, раунд 3 0B/0W; коммит 9d5d9ec" }
   ],
   "requirements": {
     "total": 20, "done": 20, "inTicket": 0, "inSpec": 0,
@@ -39,6 +39,9 @@ window.STATE =
     { "id": "03", "title": "Repair: находки codex (tenant, зрелость, dedup, SourceRef, smoke)", "requirements": ["R04","R06","R07","R09","R11","R16","R18"],
       "blockedBy": [], "wave": 1, "zone": ["services/control-plane/src/proxima_control_plane/detectors/scn001/", "services/control-plane/tests/detectors/"], "status": "in-progress",
       "startedAt": "2026-08-28T10:45:00+03:00",
+      "finishedAt": "2026-08-28T08:27:30+03:00",
+      "tests": { "passed": 43, "failed": 0 },
+      "commit": "9d5d9ec",
       "retries": 0, "repairs": 0, "handoffs": 0 },
     { "id": "02", "title": "Loader staging-данных + smoke + verify-гейт", "requirements": ["R09","R11","R16","R18"],
       "blockedBy": ["01"], "wave": 2, "zone": ["services/control-plane/src/proxima_control_plane/detectors/scn001/loader.py", "services/control-plane/src/proxima_control_plane/detectors/scn001/smoke.py"], "status": "done",
