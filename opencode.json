@@ -4,11 +4,14 @@
     "jira-atlassian": {
       "type": "local",
       "command": [
-        "npx",
+        "/Users/mikezhamba/.local/bin/npx",
         "-y",
         "mcp-remote@0.1.38",
         "https://mcp.atlassian.com/v1/mcp"
-      ]
+      ],
+      "environment": {
+        "PATH": "/Users/mikezhamba/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+      }
     },
     "node_repl": {
       "type": "local",
