@@ -38,9 +38,19 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
             ).fetchone()
             return bool(row["ok"])
 
+        def can_update_column(role: str, table: str, column: str) -> bool:
+            row = connection.execute(
+                "SELECT has_column_privilege(%s, %s, %s, 'UPDATE') AS ok",
+                (role, table, column),
+            ).fetchone()
+            return bool(row["ok"])
+
         # source publisher: writes facts family, reads evidence, never pointers/schema ledger
         assert can("proxima_source_publisher", "INSERT", "fact_order_counts")
         assert can("proxima_source_publisher", "INSERT", "stg_quarantine_rows")
+        assert can_update_column("proxima_source_publisher", "fact_attempt_runs", "status")
+        assert can_update_column("proxima_source_publisher", "fact_attempt_runs", "finished_at")
+        assert not can_update_column("proxima_source_publisher", "fact_attempt_runs", "source_ref")
         assert can("proxima_source_publisher", "SELECT", "stg_wb_nm_report_rows")
         assert not can("proxima_source_publisher", "UPDATE", "domain_release_pointers")
         assert not can("proxima_source_publisher", "SELECT", "schema_migrations")
@@ -49,6 +59,7 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
         assert can("proxima_release_publisher", "UPDATE", "domain_release_pointers")
         assert can("proxima_release_publisher", "INSERT", "release_attempts")
         assert not can("proxima_release_publisher", "INSERT", "fact_order_counts")
+        assert not can("proxima_release_publisher", "UPDATE", "fact_attempt_runs")
         assert not can("proxima_release_publisher", "SELECT", "schema_migrations")
 
         # data health: read-only everywhere it needs, writes nowhere

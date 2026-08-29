@@ -162,6 +162,10 @@ GRANT_PARSED_PATTERN = re.compile(
     r" ON (SEQUENCE )?([A-Za-z_][A-Za-z0-9_.]*) TO (proxima_[a-z_]+)$",
     re.IGNORECASE,
 )
+COLUMN_UPDATE_GRANT_PATTERN = re.compile(
+    r"^GRANT UPDATE \(status, finished_at\) ON fact_attempt_runs TO proxima_source_publisher$",
+    re.IGNORECASE,
+)
 
 
 def assert_single_transaction(statements: list[str], name: str) -> None:
@@ -173,6 +177,8 @@ def assert_single_transaction(statements: list[str], name: str) -> None:
 
 
 def assert_grant_matrix(candidate: str, name: str) -> None:
+    if COLUMN_UPDATE_GRANT_PATTERN.match(candidate):
+        return
     match = GRANT_PARSED_PATTERN.match(candidate)
     if match is None:
         raise ValueError(f"migration contains banned GRANT form: {name}")

@@ -63,6 +63,7 @@ EOF
 echo "pg-roundtrip: real-PostgreSQL pytest subset (applies all migrations on the fresh cluster)"
 export PROXIMA_TEST_POSTGRES_DSN="postgresql://proxima_roundtrip@127.0.0.1:${PORT}/proxima"
 (cd "${REPO_ROOT}" && uv run --python 3.14 --project services/control-plane --extra test pytest tools/tests/test_wb_async_report_postgres.py tools/tests/test_runtime_roles_schema.py -q)
+(cd "${REPO_ROOT}" && npm --workspace @proxima/collector exec tsx --test tests/facts-promotion.test.ts)
 
 echo "pg-roundtrip: canonical apply path proves idempotence"
 SECOND="$(cd "${REPO_ROOT}" && uv run --python 3.14 --project services/control-plane --extra test python tools/apply_migrations.py --env-file "${WORK}/roundtrip.env")"

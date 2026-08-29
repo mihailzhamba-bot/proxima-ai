@@ -8,7 +8,7 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Current task
 
-**Phase 3 planning complete (2026-08-25); execution starts at 03-01.** CONTEXT.md + 4 плана в `.planning/phases/03-postgresql-quality-atomic-releases/` (волны 1→4, autonomous). B6 закрыт: additive-only доктрина зафиксирована и станет machine-enforced в 03-01. Ключевое: единый lineage поверх двух семей evidence (SHA-256 якорь), disposable local pg16 roundtrip (без Docker/VPS), роли миграциями 007-009, reconciliation - Phase 5. Critical phase: каждый план - cross-model review 0/0. Предыстория дня: PA-13 closed (revert `fd95fcb` deployed, live-сбор 1 220 строк, cross-model цикл PR #17→#19 `51abc7f`: codex 2/3/1 → все закрыты); Phase 2 closed (вариант A); Plan 02-02 cancelled.
+**Phase 3: 03-01 merged in `0a7b2c6`; 03-02 implementation awaits independent critical review.** Promotion/quarantine/lineage is proven by a disposable local PostgreSQL 16 roundtrip; no production or VPS action occurred. Do not start 03-03 until review reports 0 blockers / 0 warnings.
 
 ## Current state
 
@@ -66,7 +66,7 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Exact next action
 
-1. **Phase 3 execution, план 03-01** на свежей ветке: миграции 007-009 + enforced additive-only verifier + `make pg-roundtrip` (disposable local PostgreSQL 16). Затем 03-02 → 03-03 → 03-04. Каждый план: `make verify` + CI + independent cross-model review 0/0 (критическая фаза).
+1. **Independent critical review of 03-02**: promotion/quarantine/lineage must receive 0 blockers / 0 warnings, then commit its atomic slice. Only then execute 03-03 → 03-04; each plan requires `make verify` + independent cross-model review 0/0.
 2. In parallel on Track A/B per the lane plan below (PMM-7 next sprint-0 candidate; PMM-29 = bot lane).
 3. Ручной хвост Mike: Jira PA-13 комментарий + статус «Готово» (текст передан 2026-08-25).
 
@@ -88,4 +88,4 @@ Note for anyone touching the LLM layer: DEC-006 now permits LLM runtime and clie
 
 ---
 
-Last updated: 2026-08-25
+Last updated: 2026-08-27
