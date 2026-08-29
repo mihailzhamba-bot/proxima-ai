@@ -8,7 +8,7 @@ import { Decimal } from 'decimal.js';
 
 import type { HttpTransport } from '../../src/business-signal/http.js';
 import { runBusinessSignal } from '../../src/business-signal/pipeline.js';
-import type { ProductConfig, RawArtifactRecord, SignalCandidate, SignalRepository, SignalWindow, WarehouseMap } from '../../src/business-signal/types.js';
+import type { ClientPassportConfig, ProductConfig, RawArtifactRecord, SignalCandidate, SignalRepository, SignalWindow, SupplyPlanRecord, WarehouseMap } from '../../src/business-signal/types.js';
 
 function jwt(categoryBit: number): string {
   const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
@@ -30,6 +30,8 @@ class ChildRepository implements SignalRepository {
   async createRun(_runId: string, _tenantId: string, _window: SignalWindow): Promise<void> { this.status = 'RUNNING'; }
   async loadProductConfig(): Promise<ProductConfig[]> { return [product]; }
   async loadWarehouseMap(): Promise<WarehouseMap[]> { return [warehouse]; }
+  async loadClientPassport(): Promise<ClientPassportConfig | null> { return null; }
+  async loadSupplyPlans(): Promise<SupplyPlanRecord[]> { return []; }
   async recordRawArtifact(_record: RawArtifactRecord): Promise<void> {}
   async completeRun(_runId: string, status: 'NO_SIGNAL' | 'BLOCKED'): Promise<void> { if (this.status === 'RUNNING') this.status = status; }
   async markReady(_runId: string, _candidate: SignalCandidate): Promise<void> { this.status = 'READY'; }
