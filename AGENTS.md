@@ -345,6 +345,7 @@ ssh -N proxima-app                           # staging: http://localhost:3000, �
 ### Окружение (имена, не значения)
 
 - `WEBAPP_REQUIRE_AUTH` - гейт auth на `(app)`, читается в `src/app/(app)/layout.tsx:18`
+- `WEBAPP_DATA_MODE` - источник данных: `fixtures` (дефолт) | `postgres`, читается в `src/lib/data/provider.ts`; неизвестное значение = ошибка, не откат. Канон таблицы переменных - `services/webapp/README.md`
 - `WEBAPP_DATA_DATABASE_URI` (fallback `DATABASE_URI`) - данные, `src/lib/db/client.ts:45,55`
 - `AUTH_SECRET`, `AUTH_DATABASE_URI` - better-auth (`src/lib/auth.ts:11`, `src/lib/db/client.ts:33`)
 - `NEXT_TELEMETRY_DISABLED`, `PUPPETEER_SKIP_DOWNLOAD` - выставлены в `Dockerfile`

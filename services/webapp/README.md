@@ -19,6 +19,7 @@ make webapp-build                              # продакшн-сборка
 | Переменная | Назначение |
 |---|---|
 | `WEBAPP_REQUIRE_AUTH` | `true` в проде: без сессионной cookie - редирект на /login. Локально `false` (fixtures-режим) |
+| `WEBAPP_DATA_MODE` | Источник данных экрана: `fixtures` (по умолчанию) или `postgres`. Не задана или пустая - `fixtures`; любое другое значение роняет рендер намеренно, молчаливого отката нет. Режим `postgres` пока fail-closed: ждёт контракт PMM-29 и роль `webapp_readonly` |
 | `BETTER_AUTH_SECRET` | Секрет подписи сессий Better Auth |
 | `BETTER_AUTH_URL` | Публичный URL (`https://app.<домен>`) |
 | `WEBAPP_AUTH_DATABASE_URI` | Роль `webapp_auth_writer`: пишет только в схему `webapp_auth` |

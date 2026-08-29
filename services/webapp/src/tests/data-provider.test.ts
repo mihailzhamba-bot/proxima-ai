@@ -42,6 +42,12 @@ describe("getDataProvider — выбор провайдера", () => {
     expect(getDataProvider().mode).toBe("postgres");
   });
 
+  it("опечатка в режиме роняет получение провайдера, а не подменяет источник", () => {
+    process.env[DATA_MODE_ENV] = "postgress";
+    resetDataProvider();
+    expect(() => getDataProvider()).toThrow(/не поддерживается/);
+  });
+
   it("провайдер кэшируется на процесс: режим — свойство деплоя", () => {
     process.env[DATA_MODE_ENV] = "fixtures";
     resetDataProvider();

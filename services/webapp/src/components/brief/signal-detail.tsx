@@ -3,13 +3,6 @@ import { FxBadge } from "@/components/ui/fx-badge";
 import type { BriefSignal, SignalHypothesis } from "@/lib/data/types";
 import { formatRub } from "@/lib/format/rub";
 
-const RISK_HINTS: Record<BriefSignal["riskLevel"], string> = {
-  R0: "обратимо, решение не требует согласования",
-  R1: "обратимо, влияет на один товар или кампанию",
-  R2: "влияет на юнит-экономику позиции",
-  R3: "необратимо или затрагивает весь кабинет",
-};
-
 function MetaCell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
@@ -19,10 +12,21 @@ function MetaCell({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  badge,
+  children,
+}: {
+  title: string;
+  badge?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <section className="flex flex-col gap-1.5">
-      <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title}</h3>
+      <h3 className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {title}
+        {badge && <FxBadge />}
+      </h3>
       {children}
     </section>
   );
@@ -58,12 +62,9 @@ export function SignalDetail({ signal }: { signal: BriefSignal }) {
           </span>
         </MetaCell>
         <MetaCell label="Уровень риска">
-          <span className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="outline" className="font-mono">
-              {signal.riskLevel}
-            </Badge>
-            <span className="text-muted-foreground">{RISK_HINTS[signal.riskLevel]}</span>
-          </span>
+          <Badge variant="outline" className="font-mono">
+            {signal.riskLevel}
+          </Badge>
         </MetaCell>
       </dl>
 
@@ -100,7 +101,7 @@ export function SignalDetail({ signal }: { signal: BriefSignal }) {
         </ul>
       </Section>
 
-      <Section title="Источники">
+      <Section title="Источники" badge>
         <ul className="flex flex-col border-t border-border">
           {signal.sourceRefs.map((ref) => (
             <li
