@@ -8,6 +8,10 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Current task
 
+**PA-50 (2/5) вариант А сдан 2026-08-29** (эта зона, ветка `ai/pa-50`, коммит `4f5d6c1`, не запушен — креденшелов GitHub в зоне нет, push за Mike). Слой провайдера данных `services/webapp/src/lib/data/`: `DataProvider` (async с первого дня), выбор источника через `WEBAPP_DATA_MODE` (`fixtures` | `postgres`; дефолт fixtures; неизвестное значение — ошибка, не молчаливый откат), fixtures-провайдер поверх существующих геттеров, postgres-провайдер fail-closed до PMM-29 и роли `webapp_readonly`. Карточка сигнала укомплектована по PA-38 (период, primary-причина + 2-3 альтернативы со ссылками на источники, рекомендация, R-уровень по `proxima/ai/contracts.py:30`, «что неизвестно», SourceRef на каждый факт), раскрывается нативным `details` — свёрнутая строка брифа остаётся 36px. Verify: `make verify` PASS end-to-end, vitest 41 (было 26), lint 0, build зелёный. Критерии приёмки PA-50 №1-№4 выполнены; открытым остаётся **вариант Б** — типы в `lib/data/types.ts` временно локальны и заменяются adaptation-коммитом после приёмки контракта PMM-29 (bot lane). Независимый reviewer по срезу не запускался.
+
+**Поправка к записи ниже (проверено 2026-08-29):** `feat/pa-49-warm-precision` **влита в main** (merge `c412a27`, сейчас в `db56429`) — `git merge-base --is-ancestor` подтверждает. Утверждение «в main НЕ мержено — ждёт Mike» устарело.
+
 **PA-13 enforcement rollback оставлен по решению Mike 2026-08-25;** live Jira всё ещё «В работе» и требует ручной актуализации: исходная цель superseded, successor = READ-only Analytics token → повторный revert. **Plan 02-02 cancelled; выбран Phase 2 вариант A (close with descope), Jira-переход ещё не выполнен.**
 
 **PA-41 W1 verbatim import и SCN-008 adapter slice выполнены 2026-08-27.** 18/18 allowlist SHA-256 совпали с source pin `53b7d604`; добавлены `src/proxima` и `pydantic==2.13.4`, обновлён `services/control-plane/uv.lock`. `make verify` PASS: 131 passed, 1 skipped. W2 остаётся после PMM-29.
@@ -45,7 +49,9 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 ## Blockers
 
 - ~~No live WB Analytics token~~ снято 2026-08-25: live-сбор прошёл. READ-only перевыпуск → вернуть enforcement остаётся successor, не текущая инженерная очередь.
-- Jira write operations are unavailable in the current MCP session; live status/links need a Chrome session or manual Mike action.
+- ~~Jira write operations are unavailable in the current MCP session~~ снято 2026-08-29 для зоны OpenHands: MCP `mcp-atlassian` действительно мёртв (ходит через `HTTPS_PROXY`, а `atlassian.net` вне `NO_PROXY` → `500 Internal Privoxy Error`), но CLI `/srv/openhands/persistence/bin/jira` ходит мимо прокси и умеет `comment` / `move` / `jql`. Рабочий email — `mihail.zhamba@gmail.com`.
+- В зоне OpenHands нет креденшелов GitHub (`gh` не установлен, токен не задан): агент коммитит в `ai/*`, push и merge выполняет Mike с хоста.
+- `make verify` в чистой зоне требует `PUPPETEER_SKIP_DOWNLOAD=1` при `npm ci` и отдельного `chrome-headless-shell` для цели `architecture` (Mermaid): `PUPPETEER_CACHE_DIR=<dir> npx puppeteer browsers install chrome-headless-shell` с обнулённым прокси, дальше `make verify` с тем же `PUPPETEER_CACHE_DIR`.
 - First approved data release blocked on Phase 8 Data GO; live deployment blocked on separate Live Deploy GO (STATE.md).
 - No local Docker — DB dev goes through SSH tunnel to staging VPS (Mike decision 2026-08-16).
 

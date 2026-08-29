@@ -310,7 +310,8 @@ ssh -N proxima-app                           # staging: http://localhost:3000, �
 - `src/components/brief/` - SignalRow BriefVerdict Digest CountUp
 - `src/components/shell/` - app-sidebar (w-64) cabinet-switcher unreleased-banner
 - `src/components/empty/` - InboxWorkflow KeyboardHint FutureBlock AdminModuleStub (6 модулей)
-- `src/lib/fixtures/` - metrics brief shell: единственный источник демо-данных (getMetrics/getBrief, префикс fixture-)
+- `src/lib/data/` - шов данных (PA-50): `DataProvider`, выбор источника по `WEBAPP_DATA_MODE` (`fixtures` | `postgres`), доменные типы. Страницы ходят сюда, а не в fixtures напрямую
+- `src/lib/fixtures/` - metrics brief shell: источник демо-данных за провайдером (getMetrics/getBrief, префикс fixture-)
 - `src/lib/` - gyr.ts fx.ts format/rub.ts utils.ts (семантика и форматирование)
 - `src/lib/auth.ts`, `src/lib/auth-client.ts`, `src/lib/db/` - auth + drizzle/pg, запретная зона
 - `src/tests/` - fx gyr rub metrics brief-fixtures (5 файлов)

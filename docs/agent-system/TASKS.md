@@ -4,6 +4,30 @@
 
 ## Active main task
 
+### PA-50 Web-кабинет v0 (2/5) — вариант А, слой провайдера сдан (2026-08-29)
+
+Ветка `ai/pa-50`, коммит `4f5d6c1` (не запушен: в этой зоне нет креденшелов GitHub, push за Mike).
+
+Сделано: `services/webapp/src/lib/data/` — `DataProvider` (async с первого дня), выбор источника
+через `WEBAPP_DATA_MODE` (`fixtures` | `postgres`, дефолт fixtures, неизвестное значение = ошибка),
+fixtures-провайдер поверх существующих геттеров, postgres-провайдер fail-closed до PMM-29 и роли
+`webapp_readonly`. Карточка сигнала укомплектована по PA-38: период сравнения, primary-причина +
+2-3 альтернативы со ссылками на источники, рекомендация, R-уровень (`RiskLevel` из
+`services/control-plane/src/proxima/ai/contracts.py:30`), «что неизвестно», SourceRef на каждый факт;
+раскрывается нативным `details`, свёрнутая строка брифа остаётся 36px.
+
+Verify: `make verify` PASS end-to-end (webapp vitest 41 passed — было 26; pytest 202 passed / 4 skipped;
+typecheck, lint 0, next build зелёные; pg-roundtrip SKIP — локального Postgres нет).
+
+Критерии приёмки PA-50: №1 (бриф на fixtures с полными карточками), №2 (unreleased), №3 (провайдер
+абстрагирован), №4 (verify) — выполнены. Остаётся **вариант Б**: типы сигнала в `lib/data/types.ts`
+временно локальны и подлежат замене adaptation-коммитом, когда PMM-29 (bot lane) примет канонический
+контракт в `contracts/` + codegen. Имена полей заранее выровнены по `diagnosis.draft.v1.json`.
+
+Не сделано осознанно: `cabinet-switcher` (клиентский компонент, один fixture-кабинет) и `/styleguide`
+оставлены на прямых fixtures — стайлгайд обязан рендериться независимо от режима данных.
+Независимый reviewer по этому срезу не запускался.
+
 ### PA-41 W1 + SCN-008 adapter slice — implementation done (2026-08-27)
 
 Главная цель: V1-сигнал. PA-41 W1 импортирован из source pin `53b7d604` строго по 18-файловому allowlist; destination SHA-256 совпадает 18/18. `pydantic==2.13.4` добавлен в control-plane и `uv.lock` обновлён.
