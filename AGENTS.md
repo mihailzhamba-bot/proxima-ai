@@ -407,4 +407,11 @@ ssh -N proxima-app                           # staging: http://localhost:3000, �
 
 - Frontmatter (4 файла): `python3 -c "import yaml;[yaml.safe_load(open(f).read().split('---')[1]) for f in ['.opencode/skills/release-cutter/SKILL.md','.opencode/agents/release-critic.md','.opencode/commands/release-gate.md','.opencode/commands/release-task.md']]"`
 - Маркеры AGENTS.md (паттерн якорим к началу строки, иначе grep считает сам этот блок): `grep -c '^<!-- autopilot:start -->' AGENTS.md` → 1; `grep -c '^<!-- release-gate:start -->' AGENTS.md` → 1.
+
+## Product contracts v1 (PMM-29, 2026-08-29)
+
+- Реализованы три канонические JSON Schema Draft 2020-12 в `contracts/`: `signal`, `diagnosis`, `decision-record`; примеры включают позитивные и `-bad-` негативные fixtures.
+- `tools/verify_contracts.py` проверяет все схемы через glob, валидные examples и негативные `-bad-` examples с указанием поля; также проверяет positional `diagnosis.source_refs`.
+- `make codegen` генерирует TS-типы с `AUTO-GENERATED` banner; Ajv contract tests покрывают positive/negative cases для всех трёх схем.
+- Атомарные implementation commits: `f0fbc70`, `17c2d51`, `b20e2e9`. На момент записи `make verify` проходит.
 <!-- autopilot:end -->
