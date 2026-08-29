@@ -18,6 +18,7 @@ Ship M1 — a production-ready read-only data foundation for one pilot WB cabine
 
 ## Current state
 
+- Состояние на 2026-08-29: разработка мигрирована на VPS `135.106.186.210` в изолированную зону OpenHands под пользователем `openhands-agent`; используется rootless Docker с лимитами 2 CPU/4 GB. Исходящий LLM-трафик идёт через SOCKS/HTTP-прокси на NL-сервер. Git-flow: агент коммитит в ветки `ai/*`, а push и merge выполняет человек с хоста.
 - Phase 2 (Vertical Slice: Immutable Intake to Visible Facts): выбран close with descope 2026-08-27; criterion visible facts переносится в Phase 3/6, документальный и Jira-синк pending.
 - M2 track opened in Jira PMM (sprint-0/1 backlog); PMM-30 (DEC-006) done; PMM-2 spike merged as above.
 - Staging VPS Selectel `135.106.186.210` bootstrapped; host monitor live since 2026-08-15 (Telegram delivery tested, `/etc/hosts` pin for `api.telegram.org` in place). Business data blocked until the backup guardrail (Phase 7).
@@ -91,4 +92,4 @@ Note for anyone touching the LLM layer: DEC-006 now permits LLM runtime and clie
 
 ---
 
-Last updated: 2026-08-27
+Last updated: 2026-08-29

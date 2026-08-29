@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proxima.local/contracts/supply-plan/v1",
+  "title": "SupplyPlanV1",
+  "description": "Planned inbound supply, phase A of the OQ-2 decision (PMM-34): manual AM entry. Status labels in Russian: PLAN=план, SHIPPED=отгружено, ACCEPTED=принято, CANCELLED=отменено; stored ASCII per DB convention. Phase B (PMM-36) automates ACCEPTED via WB Supplies API factDate - additive-compatible.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "supply_id",
+    "tenant_id",
+    "nm_id",
+    "quantity",
+    "order_date",
+    "expected_arrival_date",
+    "status",
+    "entered_by",
+    "entered_at"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "supply_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{3,127}$" },
+    "tenant_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{2,63}$" },
+    "nm_id": { "type": "string", "pattern": "^[0-9]{1,18}$" },
+    "quantity": { "type": "integer", "minimum": 1 },
+    "order_date": { "type": "string", "format": "date" },
+    "expected_arrival_date": { "type": "string", "format": "date" },
+    "status": { "enum": ["PLAN", "SHIPPED", "ACCEPTED", "CANCELLED"] },
+    "entered_by": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._@-]{1,63}$" },
+    "entered_at": { "type": "string", "format": "date-time" }
+  }
+}

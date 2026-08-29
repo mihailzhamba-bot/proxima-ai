@@ -9,7 +9,7 @@
 | Роль | Кто | Что делает |
 |---|---|---|
 | Coordinator | Orca orchestration run + opencode terminal в main worktree | intake, dispatch, ретрансляция ask→gate, `check --wait`, verify-маршрутизация, состояние. НЕ гриллит, НЕ кодит, НЕ ревьюит |
-| Briefmaker | `.opencode/agents/briefmaker.md` (opencode subagent) | research репо + grill-волны 3-5 вопросов с рекомендациями → Task Brief (`DISCOVERY_STATUS`-формат) |
+| Release-critic | `.opencode/agents/release-critic.md` (opencode subagent) | read-only аудит: research репо+Jira → Release Gate-отчёт (вердикт + handoff-status + DISCOVERY_STATUS-строка) |
 | Worker (code) | worktree + `--agent codex` | реализация под autopilot semi; brief = контракт |
 | Worker (docs/analytics) | worktree + `--agent opencode` | то же для доков/аналитики |
 | Reviewer | `.opencode/agents/reviewer.md` (+ аналоги Claude/Codex) | read-only вердикт по EVALS.md; cross-model для critical |
@@ -26,17 +26,19 @@
 ## Цикл задачи (major/critical)
 
 1. **Intake**: классификация по таблице в AGENTS.md. Trivial → inline (в сессии Mike, без Orca). Medium → QUICK-brief, решение об autopilot по размеру.
-2. **Brief**: `task-create` → dispatch briefmaker. Briefmaker спрашивает через `orchestration ask`; координатор оборачивает каждый ask в decision gate для Mike (batch, не по одному). Gate закрыт → briefmaker доводит до READY.
-3. **Gate brief**: Mike утверждает brief (или правит scope). Без этого воркер не стартует.
-4. **Dispatch worker**: `orca worktree create --repo "path:<repo-root>" --name <task-id> --base-branch main` (worktree создастся в `<repo>/worktrees/`; селектор `name:` с пробелами НЕ работает) → `orchestration worker-start --task <id> --worktree "path:<wt-path>" --agent <codex|opencode> --from <coordinator-handle>`; воркеру передать: «работай под autopilot semi; brief в <path>; verify обязателен». Если автоинъекция промпта упала (`agent_prompt_stalled`) - `task-update --status ready` + `dispatch` + ручная `terminal send` с полным заданием и командой worker_done.
+2. **Release Gate**: `task-create` → dispatch release-critic (через `/release-gate` или task tool, read-only). Release-critic делает research репо+Jira и возвращает Release Gate-отчёт; вопросы и решения, меняющие scope, идут через оркестраторский decision gate для Mike (batch, не по одному).
+3. **Gate brief**: Mike утверждает gate/Scope lock (или правит scope). Без этого воркер не стартует.
+4. **Dispatch worker**: `orca worktree create --repo name:PROXIMA AI --name <task-id> --agent <codex|opencode> --prompt <brief-инъекция>`; воркеру передать: «работаю под autopilot semi; brief в <path>; verify обязателен». Supervised worker через `orchestration worker-start` (не bare worktree create, когда нужен контроль worker_done). Нюансы из практики: селектор `name:` с пробелами НЕ работает - используй `path:<repo-root>`; при `agent_prompt_stalled` - `task-update --status ready` + `dispatch` + ручная `terminal send` с полным заданием и worker_done.
 5. **Надзор**: `check --wait --types worker_done,escalation,question --timeout-ms <n>` циклом. Timeout = checkpoint, не провал. Heartbeat = жив, не трогать.
 6. **Verify**: worker_done → `make verify` в worktree воркера; major → `reviewer`; critical → cross-model review (0 blocker / 0 warning).
 7. **Gate merge**: merge только после явного approve Mike (decision gate). irreversible = тот же гейт.
 8. **Close**: merge → `docs/agent-system/HANDOFF.md` + `TASKS.md` обновлены → worktree rm (после release output) → `task-update` settled.
 
+Словарь DISCOVERY_STATUS (последняя строка gate-отчёта, контракт Orca-парсера): READY | NEEDS_APPROVAL | NEEDS_INPUT | NOT_NEEDED | BLOCKED (NEEDS_APPROVAL добавлен 2026-08-27, решение «Двойной формат»).
+
 ## Решения, которые всегда за Mike (gates)
 
-- Утверждение Task Brief (scope/requirements)
+- Утверждение Release Gate / Scope lock (scope/requirements)
 - Merge в main, deploy, любые irreversible-операции
 - Изменение lane (этот оркестратор ↔ `mihailzhamba-bot`)
 - Всё из «Жёстких запретов» AGENTS.md

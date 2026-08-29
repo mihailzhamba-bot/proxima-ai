@@ -13,7 +13,7 @@ import { cancellationError, sleep } from '../src/business-signal/cancellation.js
 import { RecordedHttpClient, type HttpTransport } from '../src/business-signal/http.js';
 import { runBusinessSignal } from '../src/business-signal/pipeline.js';
 import { BusinessSignalRawStore } from '../src/business-signal/raw-store.js';
-import type { ProductConfig, RawArtifactRecord, SignalCandidate, SignalRepository, SignalWindow, WarehouseMap } from '../src/business-signal/types.js';
+import type { ClientPassportConfig, ProductConfig, RawArtifactRecord, SignalCandidate, SignalRepository, SignalWindow, SupplyPlanRecord, WarehouseMap } from '../src/business-signal/types.js';
 import { WbSignalClient } from '../src/business-signal/wb-client.js';
 
 const product: ProductConfig = {
@@ -47,6 +47,8 @@ class TimedRepository implements SignalRepository {
   async createRun(_runId: string, _tenantId: string, _window: SignalWindow): Promise<void> { this.status = 'RUNNING'; }
   async loadProductConfig(): Promise<ProductConfig[]> { return [product]; }
   async loadWarehouseMap(): Promise<WarehouseMap[]> { return [warehouse]; }
+  async loadClientPassport(): Promise<ClientPassportConfig | null> { return null; }
+  async loadSupplyPlans(): Promise<SupplyPlanRecord[]> { return []; }
   async recordRawArtifact(record: RawArtifactRecord): Promise<void> { this.raw.push({ record, at: Date.now() }); }
   async completeRun(_runId: string, status: 'NO_SIGNAL' | 'BLOCKED', reason: string): Promise<void> {
     if (this.status === 'RUNNING') { this.status = status; this.reason = reason; this.completedAt = Date.now(); }

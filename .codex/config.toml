@@ -19,13 +19,13 @@ required = true
 enabled_tools = ["js"]
 default_tools_approval_mode = "approve"
 
-# Выключенные серверы: блок без transport валиден ТОЛЬКО для имён, определённых
-# в ~/.codex/config.toml (transport наследуется оттуда). Голый блок неизвестного
-# имени (бывший granola) роняет загрузку всего конфига: invalid transport.
-# Проверка: `codex mcp list` из корня репо (без вызова модели).
-
 [mcp_servers.computer-use]
 enabled = false
+
+# NOTE (2026-08-27): не объявляйте [mcp_servers.X] с "enabled = false" без
+# command/url, если X не определён в ~/.codex/config.toml - Codex v0.150.x
+# валидирует транспорт у всех объявленных серверов и падает с
+# "invalid transport" (ловилось на granola/klaviyo/linear/shopify-storefront).
 
 [mcp_servers.notebooklm]
 enabled = false
@@ -47,7 +47,3 @@ enabled = false
 
 [mcp_servers.zread]
 enabled = false
-
-# Codex MCP-конфиг проекта PROXIMA AI (project-scoped).
-# DATABASE_URI берётся из окружения запускающего shell (туннель к VPS - см. AGENTS.md);
-# секреты никогда не коммитятся. Эквивалент CLI-добавления:

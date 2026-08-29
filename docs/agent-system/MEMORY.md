@@ -4,6 +4,10 @@
 
 ## Project specifics
 
+- OpenHands-зона разработки изолирована на VPS; рабочие процессы выполняются под `openhands-agent` в rootless Docker с лимитами 2 CPU/4 GB (evidence: operating runbook, 2026-08-29).
+- Dev-БД `proxima-dev` работает внутри зоны и доступна по адресу `172.17.0.2:5432` (evidence: zone network configuration, 2026-08-29).
+- Резервные копии хранятся в S3-бакете `proxima-backups` в регионе `ru-3` (evidence: backup policy, 2026-08-29).
+- Для аварийной остановки зоны используется kill switch `stop-openhands-safe`; мониторинг зоны выполняется каждые 5 минут (evidence: operations runbook, 2026-08-29).
 - Monorepo: npm workspace `@proxima/collector` (TypeScript, Node >=22 <23) + uv-managed Python 3.14 control-plane; canonical JSON Schemas in `contracts/*.schema.json`; migration ledger in `db/` (evidence: repo layout, 2026-08-16).
 - Test layout: TS tests in `services/collector/tests/`; Python tests in `services/control-plane/tests` + `tools/tests` (evidence: Makefile `test` target).
 - Jira PA is the task tracker; epics PA-34 (Track D, frozen until V3), PA-35 (Track C), PA-36 (Track A / M1), PA-37 (Track B) (evidence: `.planning/STATE.md`, 2026-08-16).
@@ -26,6 +30,7 @@
 - WB test Analytics token may be read-write; while so, the documented `--allow-analytics-read-write` flag must be passed (README.md).
 - Official WB XLSX bytes stay outside Git; tests use synthetic structural fixtures only (STATE.md todos).
 - `package-lock.json` / `Makefile` / `README.md` etc. carry foreign uncommitted changes as of 2026-08-16 — never stage blindly (HANDOFF "Dirty-tree note").
+- Codex v0.150.x validates transport for **every** declared `mcp_servers.*` entry, including `enabled = false` ones. A project `.codex/config.toml` block `[mcp_servers.X] enabled = false` without `command`/`url` is fatal (`Error loading config.toml: invalid transport in mcp_servers.X`) unless X is also defined in `~/.codex/config.toml`. Caught 2026-08-27 on `granola`/`klaviyo`/`linear`/`shopify-storefront` across 7 configs; fixed by deleting those blocks. Rule: in project configs only declare servers that exist globally; disable via `enabled = false` never via transport-less stubs. Verify with `codex mcp list` in the project dir after touching `.codex/config.toml`.
 
 ## User preferences (stable)
 

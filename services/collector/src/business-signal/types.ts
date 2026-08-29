@@ -5,6 +5,40 @@ export const SIGNAL_WINDOW_DAYS = 14;
 
 export type SignalSource = 'official_wb_statistics' | 'official_wb_analytics' | 'official_wb_finance';
 export type SignalRunStatus = 'RUNNING' | 'NO_SIGNAL' | 'BLOCKED' | 'READY' | 'SENT' | 'SEND_FAILED';
+export type CogsStatus = 'complete' | 'top_sku' | 'missing';
+export type SupplyStatus = 'PLAN' | 'SHIPPED' | 'ACCEPTED' | 'CANCELLED';
+
+export interface PassportContact {
+  role: 'owner' | 'manager';
+  channel: 'telegram' | 'email';
+  value: string;
+}
+
+export interface ClientPassportConfig {
+  tenantId: string;
+  effectiveFrom: string;
+  salesDropThresholdPct: number;
+  daysCoverThresholdDays: number;
+  leadTimeDays: number;
+  safetyBufferDays: number;
+  cogsStatus: CogsStatus;
+  priorityCategories: string[];
+  warehouses: string[];
+  weekendDays: string[];
+  contacts: PassportContact[];
+}
+
+export interface SupplyPlanRecord {
+  supplyId: string;
+  tenantId: string;
+  nmId: bigint;
+  quantity: number;
+  orderDate: string;
+  expectedArrivalDate: string;
+  status: SupplyStatus;
+  enteredBy: string;
+  enteredAt: string;
+}
 
 export interface ProductConfig {
   tenantId: string;
@@ -63,6 +97,8 @@ export interface SignalRepository {
   createRun(runId: string, tenantId: string, window: SignalWindow): Promise<void>;
   loadProductConfig(tenantId: string, asOf: string): Promise<ProductConfig[]>;
   loadWarehouseMap(tenantId: string, asOf: string): Promise<WarehouseMap[]>;
+  loadClientPassport(tenantId: string, asOf: string): Promise<ClientPassportConfig | null>;
+  loadSupplyPlans(tenantId: string, statuses: SupplyStatus[]): Promise<SupplyPlanRecord[]>;
   recordRawArtifact(record: RawArtifactRecord): Promise<void>;
   completeRun(runId: string, status: Extract<SignalRunStatus, 'NO_SIGNAL' | 'BLOCKED'>, reason: string): Promise<void>;
   markReady(runId: string, candidate: SignalCandidate): Promise<void>;

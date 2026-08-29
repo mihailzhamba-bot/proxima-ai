@@ -12,7 +12,6 @@ node_modules/
 raw/
 secrets/
 business-signal-private/
-worktrees/
 .autopilot/serve.*
+worktrees/
 logs/
-

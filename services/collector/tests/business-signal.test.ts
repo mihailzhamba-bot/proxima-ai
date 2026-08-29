@@ -16,7 +16,7 @@ import { assertLeastPrivilegeToken } from '../src/business-signal/secrets.js';
 import { writeFounderChatId } from '../src/business-signal/runtime.js';
 import { formatStockoutMessage, preflightAndSend, type TelegramTransport } from '../src/business-signal/telegram.js';
 import { discoverFounderChatId } from '../src/business-signal/telegram-setup.js';
-import type { ProductConfig, RawArtifactRecord, SignalCandidate, SignalRepository, SignalWindow, WarehouseMap } from '../src/business-signal/types.js';
+import type { ClientPassportConfig, ProductConfig, RawArtifactRecord, SignalCandidate, SignalRepository, SignalWindow, SupplyPlanRecord, WarehouseMap } from '../src/business-signal/types.js';
 import { WbSignalClient, type WbSale } from '../src/business-signal/wb-client.js';
 
 const product: ProductConfig = {
@@ -60,6 +60,8 @@ class MemoryRepository implements SignalRepository {
   async createRun(_runId: string, _tenantId: string, _window: SignalWindow): Promise<void> { this.status = 'RUNNING'; }
   async loadProductConfig(): Promise<ProductConfig[]> { return this.products; }
   async loadWarehouseMap(): Promise<WarehouseMap[]> { return this.warehouses; }
+  async loadClientPassport(): Promise<ClientPassportConfig | null> { return null; }
+  async loadSupplyPlans(): Promise<SupplyPlanRecord[]> { return []; }
   async recordRawArtifact(record: RawArtifactRecord): Promise<void> { this.raw.push(record); }
   async completeRun(_runId: string, status: 'NO_SIGNAL' | 'BLOCKED', reason: string): Promise<void> {
     if (this.status === 'RUNNING') { this.status = status; this.reason = reason; }

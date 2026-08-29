@@ -16,6 +16,7 @@ services:
       - ../db/migrations:/docker-entrypoint-initdb.d:ro
     ports:
       - "127.0.0.1:${PROXIMA_POSTGRES_PORT:-5432}:5432"
+      - "172.17.0.1:5432:5432"
     networks:
       - private
     healthcheck:

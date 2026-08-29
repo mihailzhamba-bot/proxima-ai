@@ -31,7 +31,7 @@ def must_reject(checker: Draft202012Validator, value: dict, label: str) -> None:
 
 
 def verify() -> None:
-    names = ("source-artifact", "acquisition-attempt", "domain-release")
+    names = ("source-artifact", "acquisition-attempt", "domain-release", "client-passport", "supply-plan")
     values: dict[str, dict] = {}
     for name in names:
         value = load(CONTRACTS / "examples" / f"{name}.synthetic.json")
@@ -60,6 +60,26 @@ def verify() -> None:
         release = copy.deepcopy(values["domain-release"])
         release[field] = invalid
         must_reject(validator("domain-release"), release, f"invalid {field}")
+
+    passport = copy.deepcopy(values["client-passport"])
+    del passport["cogs_status"]
+    must_reject(validator("client-passport"), passport, "passport without cogs_status")
+    passport = copy.deepcopy(values["client-passport"])
+    passport["sales_drop_threshold_pct"] = 0
+    must_reject(validator("client-passport"), passport, "passport with zero sales drop threshold")
+    passport = copy.deepcopy(values["client-passport"])
+    passport["weekend_days"] = ["monday"]
+    must_reject(validator("client-passport"), passport, "passport with invalid weekday")
+
+    supply = copy.deepcopy(values["supply-plan"])
+    supply["status"] = "принято"
+    must_reject(validator("supply-plan"), supply, "supply with non-ascii status")
+    supply = copy.deepcopy(values["supply-plan"])
+    supply["quantity"] = 0
+    must_reject(validator("supply-plan"), supply, "supply with zero quantity")
+    supply = copy.deepcopy(values["supply-plan"])
+    del supply["entered_by"]
+    must_reject(validator("supply-plan"), supply, "supply without actor")
 
 
 if __name__ == "__main__":

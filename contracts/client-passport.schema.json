@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proxima.local/contracts/client-passport/v1",
+  "title": "ClientPassportV1",
+  "description": "Per-tenant cabinet parameters for signal personalization (PMM-21). Threshold values are per-client overrides; global starting defaults live in Policy Layer config and are calibrated by PMM-35 (OQ-1/OQ-4). Versioned by effective_from; additive-only evolution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "passport_id",
+    "tenant_id",
+    "effective_from",
+    "timezone",
+    "sales_drop_threshold_pct",
+    "days_cover_threshold_days",
+    "lead_time_days",
+    "safety_buffer_days",
+    "cogs_status",
+    "priority_categories",
+    "warehouses",
+    "weekend_days",
+    "contacts"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "passport_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{7,127}$" },
+    "tenant_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{2,63}$" },
+    "effective_from": { "type": "string", "format": "date" },
+    "timezone": { "const": "Europe/Moscow" },
+    "sales_drop_threshold_pct": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 100,
+      "description": "Sales drop vs baseline (percent) that triggers SCN-001; global starting default 20, calibrated by PMM-35 (OQ-4)."
+    },
+    "days_cover_threshold_days": { "type": "integer", "minimum": 1 },
+    "lead_time_days": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Tenant-level default full replenishment lead time; per-SKU override lives in products.csv. Policy Layer orients: ~60 days production in China up to 4 months complex goods (status: external reference)."
+    },
+    "safety_buffer_days": { "type": "integer", "minimum": 0 },
+    "cogs_status": { "enum": ["complete", "top_sku", "missing"] },
+    "priority_categories": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "maxItems": 64
+    },
+    "warehouses": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "maxItems": 256
+    },
+    "weekend_days": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] },
+      "description": "Stored since v1 (decision No. 29); weekend skip behavior is out of W1 scope."
+    },
+    "contacts": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "channel", "value"],
+        "properties": {
+          "role": { "enum": ["owner", "manager"] },
+          "channel": { "enum": ["telegram", "email"] },
+          "value": { "type": "string", "minLength": 3, "maxLength": 128 }
+        }
+      }
+    }
+  }
+}

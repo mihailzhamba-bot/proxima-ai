@@ -21,7 +21,4 @@
 | Начат | Папка | Статус | Итог |
 |---|---|---|---|
 | 2026-08-25 | `2026-08-25-pa49-warm-precision` | сдан | Редизайн веб-кабинета по канону Warm Precision: тёплые токены обеих тем, Inter+Plex Mono, метрическая полоса 5 карточек с FX-бейджами, редакционный /brief, спроектированные скелетные экраны, стайлгайд, staging на VPS за туннелем |
-| 2026-08-27 | `2026-08-27-w1-exit-criteria` | сдан | Draft exit-критериев W1-среза создан и ушёл на утверждение Mike в PMM-11 (комментарий 10367); прогон 2 — после «утверждено» |
-| 2026-08-27 | `2026-08-27-pmm12-dod-checklist` | сдан | DoD-чеклист среза в репо: `docs/governance/dod-checklist.md` (7 пунктов + guardrail в verify) + ретро-аудиты PMM-30/9/10 и закрытие PMM-12 (PR #23) |
-| 2026-08-27 | `2026-08-27-pmm-5-llm-analyst-w1` | сдан | LLM-диагноз сигналов SCN-008/001/005: пакет diagnosis в control-plane (адаптер+mock, draft-схема, DATA-промпт, fail-closed retry/timeout, JSONL-аудит, rollback-флаг, CLI run/eval) + eval 12 кейсов 12/12, гейт ≥80% |
->>>>>>> origin/main
+| 2026-08-27 | `2026-08-27-release-cutter` | сдан | Шлюз Release Cutter: скилл + read-only критик + /release-gate и /release-task, Scope lock для Autopilot, замена briefmaker в пайплайне, dry-run PMM-7 (DROP: задача уже закрыта в Jira) |
