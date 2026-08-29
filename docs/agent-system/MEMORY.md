@@ -4,6 +4,10 @@
 
 ## Project specifics
 
+- OpenHands-зона разработки изолирована на VPS; рабочие процессы выполняются под `openhands-agent` в rootless Docker с лимитами 2 CPU/4 GB (evidence: operating runbook, 2026-08-29).
+- Dev-БД `proxima-dev` работает внутри зоны и доступна по адресу `172.17.0.2:5432` (evidence: zone network configuration, 2026-08-29).
+- Резервные копии хранятся в S3-бакете `proxima-backups` в регионе `ru-3` (evidence: backup policy, 2026-08-29).
+- Для аварийной остановки зоны используется kill switch `stop-openhands-safe`; мониторинг зоны выполняется каждые 5 минут (evidence: operations runbook, 2026-08-29).
 - Monorepo: npm workspace `@proxima/collector` (TypeScript, Node >=22 <23) + uv-managed Python 3.14 control-plane; canonical JSON Schemas in `contracts/*.schema.json`; migration ledger in `db/` (evidence: repo layout, 2026-08-16).
 - Test layout: TS tests in `services/collector/tests/`; Python tests in `services/control-plane/tests` + `tools/tests` (evidence: Makefile `test` target).
 - Jira PA is the task tracker; epics PA-34 (Track D, frozen until V3), PA-35 (Track C), PA-36 (Track A / M1), PA-37 (Track B) (evidence: `.planning/STATE.md`, 2026-08-16).
