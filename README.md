@@ -2,6 +2,35 @@
 
 Private read-only data foundation for one WB pilot. M1 keeps official WB evidence immutable, publishes operational, inventory and financial domains independently, and exposes provenance through a private Data Health control-plane.
 
+## Project commands
+
+Use the root Makefile as the project entrypoint. The local toolchain requires Node 22.x, Python 3.14, npm, uv and GNU Make.
+
+| Command | Purpose | Requirements |
+| --- | --- | --- |
+| `make setup` | Install locked Node and Python dependencies with `npm ci` and `uv sync` | Node 22.x, Python 3.14, npm and uv |
+| `make start` | Build and run the compiled business-signal collector once without Telegram delivery | `make setup` and the runtime variables below |
+| `make dev` | Run the same one-shot collector directly from TypeScript through the locked local `tsx` | `make setup` and the runtime variables below |
+| `make test` | Run the Node and Python test suites | Installed dependencies |
+| `make verify` | Run the complete local and CI contract | Installed toolchain; dependencies are refreshed automatically |
+
+`make install` remains a compatibility alias for `make setup`. The other focused verification targets, including `contracts`, `migrations`, `architecture`, `secrets`, `vps` and `business-signal`, remain available.
+
+Export path-only runtime configuration before `make start` or `make dev`:
+
+```bash
+export PROXIMA_TENANT_ID=amirova-test
+export PROXIMA_DATABASE_URL_FILE=/absolute/private/postgres_url
+export PROXIMA_SIGNAL_RAW_DIR=/absolute/private/business-signal-raw
+export WB_STATISTICS_TOKEN_FILE=/absolute/private/wb_statistics_token
+export WB_ANALYTICS_TOKEN_FILE=/absolute/private/wb_analytics_token
+export WB_FINANCE_TOKEN_FILE=/absolute/private/wb_finance_token
+```
+
+The database URL and WB token files must be private regular files with mode `0600`. The raw directory must be outside the Git checkout; the collector creates it with private permissions when needed. If the staging Analytics token is still read-write, explicitly export `PROXIMA_ALLOW_ANALYTICS_READ_WRITE=1`; the default is read-only enforcement.
+
+Both runtime targets are one-shot dry runs of the implemented `stockout-signal` path. They never add `--send`, read Telegram credentials or start the deferred control-plane and scheduler. Preflight errors identify the missing variable or unreadable file without printing a secret value or secret path.
+
 ## Architecture
 
 - Visual entrypoint: `docs/architecture/system.mmd`
