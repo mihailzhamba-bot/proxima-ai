@@ -26,6 +26,7 @@
 - WB test Analytics token may be read-write; while so, the documented `--allow-analytics-read-write` flag must be passed (README.md).
 - Official WB XLSX bytes stay outside Git; tests use synthetic structural fixtures only (STATE.md todos).
 - `package-lock.json` / `Makefile` / `README.md` etc. carry foreign uncommitted changes as of 2026-08-16 — never stage blindly (HANDOFF "Dirty-tree note").
+- Codex v0.150.x validates transport for **every** declared `mcp_servers.*` entry, including `enabled = false` ones. A project `.codex/config.toml` block `[mcp_servers.X] enabled = false` without `command`/`url` is fatal (`Error loading config.toml: invalid transport in mcp_servers.X`) unless X is also defined in `~/.codex/config.toml`. Caught 2026-08-27 on `granola`/`klaviyo`/`linear`/`shopify-storefront` across 7 configs; fixed by deleting those blocks. Rule: in project configs only declare servers that exist globally; disable via `enabled = false` never via transport-less stubs. Verify with `codex mcp list` in the project dir after touching `.codex/config.toml`.
 
 ## User preferences (stable)
 

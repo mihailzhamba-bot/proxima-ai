@@ -22,14 +22,10 @@ default_tools_approval_mode = "approve"
 [mcp_servers.computer-use]
 enabled = false
 
-[mcp_servers.granola]
-enabled = false
-
-[mcp_servers.klaviyo]
-enabled = false
-
-[mcp_servers.linear]
-enabled = false
+# NOTE (2026-08-27): не объявляйте [mcp_servers.X] с "enabled = false" без
+# command/url, если X не определён в ~/.codex/config.toml - Codex v0.150.x
+# валидирует транспорт у всех объявленных серверов и падает с
+# "invalid transport" (ловилось на granola/klaviyo/linear/shopify-storefront).
 
 [mcp_servers.notebooklm]
 enabled = false
@@ -38,9 +34,6 @@ enabled = false
 enabled = false
 
 [mcp_servers.openaiDeveloperDocs]
-enabled = false
-
-[mcp_servers.shopify-storefront]
 enabled = false
 
 [mcp_servers.web-reader]
@@ -54,7 +47,3 @@ enabled = false
 
 [mcp_servers.zread]
 enabled = false
-
-# Codex MCP-конфиг проекта PROXIMA AI (project-scoped).
-# DATABASE_URI берётся из окружения запускающего shell (туннель к VPS - см. AGENTS.md);
-# секреты никогда не коммитятся. Эквивалент CLI-добавления:
