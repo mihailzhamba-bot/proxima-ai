@@ -16,8 +16,30 @@ fixtures-провайдер поверх существующих геттеро
 `services/control-plane/src/proxima/ai/contracts.py:30`), «что неизвестно», SourceRef на каждый факт;
 раскрывается нативным `details`, свёрнутая строка брифа остаётся 36px.
 
-Verify: `make verify` PASS end-to-end (webapp vitest 41 passed — было 26; pytest 202 passed / 4 skipped;
-typecheck, lint 0, next build зелёные; pg-roundtrip SKIP — локального Postgres нет).
+Verify на финальном состоянии `68785d8`: `make verify` **exit=0** end-to-end, лог `logs/pa50-verify.log`
+(вне git, `.gitignore:17`). Цели: install, codegen, typecheck, test (webapp vitest **42 passed** / 6 файлов —
+было 26; pytest **202 passed / 4 skipped**), contracts, migrations, pg-roundtrip **SKIP** (локального
+Postgres нет — штатно для зоны), provenance, architecture (4 Mermaid → SVG+PDF), runtime boundary,
+secret scan (self-test + полный), VPS contract, business signal. Отдельно: lint 0, `next build` зелёный.
+
+В чистой зоне гейт требует `PUPPETEER_SKIP_DOWNLOAD=1` для `npm ci` и отдельно доставленного
+`chrome-headless-shell` для цели `architecture` (см. HANDOFF, раздел Blockers).
+
+Независимое ревью (reviewer, 2026-08-29): **0 blockers / 3 warnings**, вердикт APPROVE WITH WARNINGS.
+Закрыты коммитом `68785d8`: W2 — из карточки убраны расшифровки уровней риска R0..R3, которых нет ни
+в одном источнике репо (`contracts.py:30` даёт только литералы; показ таксономии без SourceRef нарушает
+запреты 5/6 AGENTS.md); W3 — `WEBAPP_DATA_MODE` внесён в таблицу переменных `services/webapp/README.md`
+и в раздел «Окружение» AGENTS.md; W1 — снят этим прогоном `make verify` (ревьюеру запуск был запрещён
+по таймауту, он пометил install/codegen/architecture/pg-roundtrip как UNKNOWN).
+
+Уточнение ревьюера, принятое: выравнивание имён полей по `diagnosis.draft.v1.json` — семантическое,
+не буквальное (camelCase против snake_case, `text`/`sourceRefIds` против `hypothesis`/`source_refs`),
+поэтому adaptation-коммит под PMM-29 будет переименованием, а не чистой заменой.
+
+Открытое замечание ревьюера, сознательно не закрытое в этом срезе (NIT): `MetricStrip` стал async и
+рендерится из `(app)/layout.tsx`, поэтому отказ провайдера уронит шелл целиком, а не секцию. В режиме
+fixtures недостижимо, в режиме postgres это намеренный fail-closed; перестройка границ ошибок — за
+скоупом PA-50, учесть при PA-52.
 
 Критерии приёмки PA-50: №1 (бриф на fixtures с полными карточками), №2 (unreleased), №3 (провайдер
 абстрагирован), №4 (verify) — выполнены. Остаётся **вариант Б**: типы сигнала в `lib/data/types.ts`
