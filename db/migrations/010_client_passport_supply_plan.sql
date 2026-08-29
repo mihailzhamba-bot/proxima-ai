@@ -27,5 +27,5 @@ CREATE TABLE stg_supply_plan (
 );
 -- checksum-policy: normalized-self-v1
 INSERT INTO schema_migrations (version, name, sha256)
-VALUES (7, 'client_passport_supply_plan', '6aca0dbe3d0df0bd47d40795cee618dd3ae354d0532fca3eefdc32ed08c09c34');
+VALUES (10, 'client_passport_supply_plan', '9206a65bfb720f8f332e32cf9b34a2811210f03b0ea8a5c3d7f3ca3973ef156d');
 COMMIT;
