@@ -35,15 +35,9 @@ def test_real_postgres_preserves_raw_bytes_and_task_idempotency(tmp_path: Path) 
     collector = importlib.import_module("wb_async_report")
     migrations = importlib.import_module("apply_migrations")
     dsn = os.environ["PROXIMA_TEST_POSTGRES_DSN"]
+    expected_migrations = sorted(path.name for path in (ROOT / "db" / "migrations").glob("*.sql"))
     with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as connection:
-        assert migrations.apply_pending(connection) == [
-            "001_bootstrap.sql",
-            "002_intake_metadata.sql",
-            "003_wb_analytics_raw.sql",
-            "004_business_signal_slice.sql",
-            "005_wb_analytics_staging.sql",
-            "006_raw_artifact_headers.sql",
-        ]
+        assert migrations.apply_pending(connection) == expected_migrations
         repository = collector.PostgresReportRepository(connection)
         tenant_id = f"it-{uuid.uuid4().hex[:12]}"
         period_from = date.fromisoformat("2026-08-03")
