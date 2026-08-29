@@ -97,12 +97,19 @@ def verify() -> None:
         schema_path = CONTRACTS / f"{name}.schema.json"
         if not schema_path.is_file():
             raise ValueError(f"negative fixture has no matching schema: fixture={fixture_path.name}; schema={name}")
+        value = load(fixture_path)
         try:
-            validator(name).validate(load(fixture_path))
+            validator(name).validate(value)
         except ValidationError as exc:
             print(f"negative rejected: fixture={fixture_path.name}; schema={name}; path={error_path(exc)}")
         else:
-            raise ValueError(f"negative fixture unexpectedly passed: fixture={fixture_path.name}; schema={name}; path=$")
+            try:
+                if name == "diagnosis":
+                    verify_diagnosis_refs(value, fixture_path.name)
+            except ValueError as exc:
+                print(f"negative rejected: fixture={fixture_path.name}; schema={name}; {exc}")
+            else:
+                raise ValueError(f"negative fixture unexpectedly passed: fixture={fixture_path.name}; schema={name}; path=$")
 
 
 if __name__ == "__main__":
