@@ -1,12 +1,10 @@
 #!/bin/bash
-# Stop-hook: agent cannot finish until `make verify` passes (repo verify-contract).
 cd "${OPENHANDS_PROJECT_DIR:-$PWD}"
-
+[ -f .env.task ] && set -a && . ./.env.task && set +a
 if [ -z "${DATABASE_URI:-}" ]; then
-  echo '{"decision":"deny","reason":"DATABASE_URI is not set. Add secret DATABASE_URI (proxima_dev URI) in OpenHands Settings > Secrets, then retry."}'
+  echo '{"decision":"deny","reason":"DATABASE_URI is not set. Source .env.task or add secret DATABASE_URI, then retry."}'
   exit 2
 fi
-
 LOG="$(mktemp /tmp/verify-gate.XXXXXX.log)"
 if make verify >"$LOG" 2>&1; then
   echo "verify-gate: make verify PASS"
