@@ -1,36 +1,22 @@
 /*
  * Structural fixtures для утреннего брифа (PA-49/PA-50, fixtures-first 2026-08-25).
  * Обезличено: fixture-* идентификаторы, структурные суммы без привязки к боевому кабинету (DEC-006).
+ * Типы живут в @/lib/data/types - форма данных общая для fixtures и будущего Postgres.
  */
 
-import type { GyrStatus } from "@/lib/gyr";
+import type {
+  BriefData,
+  BriefDigestItem,
+  BriefSignal,
+  BriefVariant,
+} from "@/lib/data/types";
 
-export type BriefVariant = "daily" | "quiet";
-
-export type BriefSignal = {
-  id: string;
-  status: GyrStatus;
-  title: string;
-  cause: string;
-  /** «Стоимость молчания», ₽/день — оценка потока, пока сигнал не обработан. */
-  costEstimate: number;
-};
-
-export type BriefDigestItem = {
-  id: string;
-  tone: GyrStatus;
-  text: string;
-};
-
-export type BriefData = {
-  variant: BriefVariant;
-  dateIso: string;
-  /** Critical-строки брифа; рендерятся SignalRow. */
-  signals: readonly BriefSignal[];
-  attentionCount: number;
-  digest: readonly BriefDigestItem[];
-  dataMode: "fixtures";
-};
+export type {
+  BriefData,
+  BriefDigestItem,
+  BriefSignal,
+  BriefVariant,
+} from "@/lib/data/types";
 
 const DAILY_SIGNALS: readonly BriefSignal[] = [
   {
@@ -38,14 +24,111 @@ const DAILY_SIGNALS: readonly BriefSignal[] = [
     status: "red",
     title: "Хит выкупается в ноль",
     cause: "маржа после логистики ушла в минус",
+    period: "7 дней к предыдущим 7",
     costEstimate: 41200,
+    riskLevel: "R2",
+    trust: "unreleased",
+    primaryCause: {
+      id: "fixture-cause-oos-primary",
+      text: "Логистика и хранение росли быстрее цены: юнит-экономика позиции перевернулась внутри окна наблюдения.",
+      sourceRefIds: ["fixture-ref-oos-margin", "fixture-ref-oos-logistics"],
+    },
+    alternatives: [
+      {
+        id: "fixture-cause-oos-alt-returns",
+        text: "Всплеск возвратов по размерной сетке: выкуп падает, а расходы на обратную логистику остаются.",
+        sourceRefIds: ["fixture-ref-oos-returns"],
+      },
+      {
+        id: "fixture-cause-oos-alt-promo",
+        text: "Позиция попала в акцию со скидкой, перекрывшей заложенную маржу.",
+        sourceRefIds: ["fixture-ref-oos-margin"],
+      },
+    ],
+    unknowns: [
+      {
+        id: "fixture-unknown-oos-cogs",
+        question: "Какая себестоимость партии, из которой идут текущие отгрузки?",
+        whyItMatters: "Без COGS знак маржи считается по прошлой партии — вывод может развернуться.",
+      },
+      {
+        id: "fixture-unknown-oos-promo-plan",
+        question: "Планируется ли участие позиции в акции на следующей неделе?",
+        whyItMatters: "Если да, снятие с продвижения сегодня не остановит отток маржи.",
+      },
+    ],
+    recommendation:
+      "Снять позицию с платного продвижения до пересчёта юнит-экономики и запросить COGS текущей партии.",
+    sourceRefs: [
+      {
+        id: "fixture-ref-oos-margin",
+        label: "Маржа после логистики, ₽/шт",
+        period: "7 дней к предыдущим 7",
+        source: "витрина маржинальности (staging)",
+      },
+      {
+        id: "fixture-ref-oos-logistics",
+        label: "Логистика и хранение, ₽/шт",
+        period: "7 дней",
+        source: "отчёт по услугам (staging)",
+      },
+      {
+        id: "fixture-ref-oos-returns",
+        label: "Доля возвратов, %",
+        period: "14 дней",
+        source: "витрина заказов и выкупа (staging)",
+      },
+    ],
   },
   {
     id: "fixture-brief-signal-cpc",
     status: "red",
     title: "Ставка РК перегрета",
     cause: "CPM вырос при падающей выкупаемости",
+    period: "3 дня к предыдущим 14",
     costEstimate: 12800,
+    riskLevel: "R1",
+    trust: "unreleased",
+    primaryCause: {
+      id: "fixture-cause-cpc-primary",
+      text: "Аукцион в категории подорожал: та же позиция в выдаче стоит дороже, а конверсия в выкуп не выросла.",
+      sourceRefIds: ["fixture-ref-cpc-cpm", "fixture-ref-cpc-buyout"],
+    },
+    alternatives: [
+      {
+        id: "fixture-cause-cpc-alt-budget",
+        text: "Дневной бюджет исчерпывается к середине дня, и показы уходят в дорогое окно.",
+        sourceRefIds: ["fixture-ref-cpc-cpm"],
+      },
+      {
+        id: "fixture-cause-cpc-alt-content",
+        text: "Изменилась карточка (фото или заголовок), и просела конверсия из показа в заказ.",
+        sourceRefIds: ["fixture-ref-cpc-buyout"],
+      },
+    ],
+    unknowns: [
+      {
+        id: "fixture-unknown-cpc-competitors",
+        question: "Кто из конкурентов зашёл в аукцион в это окно?",
+        whyItMatters: "Разовый заход конкурента лечится паузой, структурный сдвиг ставки — пересчётом ДРР.",
+      },
+    ],
+    recommendation:
+      "Снизить ставку до уровня предыдущих 14 дней и пересмотреть кампанию после суток наблюдения.",
+    sourceRefs: [
+      {
+        id: "fixture-ref-cpc-cpm",
+        label: "CPM, ₽",
+        period: "3 дня к предыдущим 14",
+        source: "витрина рекламы (staging)",
+      },
+      {
+        id: "fixture-ref-cpc-buyout",
+        label: "Выкупаемость, %",
+        period: "3 дня к предыдущим 14",
+        source: "витрина заказов и выкупа (staging)",
+      },
+    ],
   },
 ];
 

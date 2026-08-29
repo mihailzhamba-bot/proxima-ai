@@ -1,11 +1,11 @@
 import { CabinetSwitcher } from "@/components/shell/cabinet-switcher";
-import { getMetrics } from "@/lib/fixtures/metrics";
+import { getDataProvider } from "@/lib/data";
 import { MetricCard } from "@/components/metrics/metric-card";
 import { SectionErrorBoundary } from "@/components/ui/section-error";
 
 /** Метрическая полоса шелла: здоровье кабинета за 5 секунд (R05). SSR, без клиента. */
-export function MetricStrip() {
-  const metrics = getMetrics();
+export async function MetricStrip() {
+  const metrics = await getDataProvider().getMetrics();
 
   return (
     <section aria-label="Показатели кабинета" className="px-4 pt-4 lg:px-6 lg:pt-6">

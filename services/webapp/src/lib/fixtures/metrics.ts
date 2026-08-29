@@ -1,25 +1,15 @@
 /*
  * Метрическая полоса (R05): структурные обезличенные данные для 5 карточек.
- * PA-50 подменит провайдер живыми данными — форма FixtureMetric остаётся.
+ * Форма живёт в @/lib/data/types и общая для fixtures и будущего Postgres (PA-50).
  * Значения структурные (DEC-006: unreleased, fixtures-режим).
  */
 
-import type { GyrStatus } from "@/lib/gyr";
+import type { Metric } from "@/lib/data/types";
 
-export type MetricId = "signals" | "revenue-day" | "orders-day" | "oos-risks" | "freshness";
+export type { Metric, MetricFormat, MetricId } from "@/lib/data/types";
 
-export type MetricFormat = "count" | "rub-compact" | "clock";
-
-export type FixtureMetric = {
-  id: MetricId;
-  label: string;
-  value: number | null;
-  format: MetricFormat;
-  status: GyrStatus | null;
-  deltaPercent: number | null;
-  deltaGoodWhen: "up" | "down" | null;
-  points: readonly number[];
-};
+/** Историческое имя формы метрики; сохранено, чтобы не трогать потребителей вне скоупа PA-50. */
+export type FixtureMetric = Metric;
 
 const SIGNAL_POINTS = [
   4, 3, 5, 4, 6, 5, 4, 3, 4, 2, 3, 4, 5, 3, 2, 3, 4, 3, 2, 3, 4, 3, 2, 3, 2, 3, 2, 2, 3, 2,
