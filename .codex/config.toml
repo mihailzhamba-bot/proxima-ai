@@ -22,15 +22,6 @@ default_tools_approval_mode = "approve"
 [mcp_servers.computer-use]
 enabled = false
 
-[mcp_servers.granola]
-enabled = false
-
-[mcp_servers.klaviyo]
-enabled = false
-
-[mcp_servers.linear]
-enabled = false
-
 [mcp_servers.notebooklm]
 enabled = false
 
@@ -38,9 +29,6 @@ enabled = false
 enabled = false
 
 [mcp_servers.openaiDeveloperDocs]
-enabled = false
-
-[mcp_servers.shopify-storefront]
 enabled = false
 
 [mcp_servers.web-reader]
