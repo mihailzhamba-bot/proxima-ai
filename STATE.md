@@ -31,6 +31,12 @@
 - Что из «48 py + 43 TS тестов» (handoff 14.08) сейчас в дереве - в клоне продуктовых тестов не видно.
 - Открытые вопросы брифинга (Сессия 2) - список в конце `DECISIONS.md`.
 
+## Ход Сессии 1a (30.08.2026, в этой же сессии Claude Code)
+
+- Jira MCP добавлен, OAuth отложен до перезапуска (нужен в 1b).
+- Токен: копирование не нужно (см. выше).
+- Параллельно запущены три агента: сервер 1.2 → `docs/state/INVENTORY.md`, веб-морда 1.4 → `docs/state/WEB-STATE.md`, разведка API 1.1 → `docs/state/API-FACTS.md` + фикстуры в `fixtures/wb-api/` (untracked, решение о коммите сырых данных - за Mike).
+
 ## Где остановился
 
 Сессия 0 закончена на коммите `DECISIONS.md` + `STATE.md` в ветке `docs/session-1-inventory`. Код продукта не писался, сервер не менялся.
@@ -39,7 +45,7 @@
 
 1. Прочитать этот файл, подтвердить Mike в одном абзаце.
 2. Jira MCP `jira-atlassian` уже добавлен в user-scope Claude Code (30.08, статус «Needs authentication»). Осталось: `/mcp` → авторизоваться в браузере → проверить проекты PA и PMM. Откат: `claude mcp remove jira-atlassian -s user`.
-3. Токен Амировой на сервер: sha256-сравнение с существующими → dry-run в чат → OK Mike → `scp` в `~/signal-inputs/amirova_wb_token` (0600). Откат: `ssh proxima 'rm ~/signal-inputs/amirova_wb_token'`.
+3. Токен Амировой: копирование НЕ нужно (30.08 проверено - серверные `/etc/proxima-ai/secrets/wb_*_token` = тот же кабинет, см. поправку к D5b). Разведка идёт на серверных токенах.
 4. Разведка API с сервера (read-эндпоинты Statistics/Analytics), ответы в фикстуры → `docs/state/API-FACTS.md`.
 5. Сервер (1.2) под sudo только чтением → черновик `docs/state/INVENTORY.md`.
 6. Веб-морда `services/webapp` → `docs/state/WEB-STATE.md`.
