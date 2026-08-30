@@ -2,7 +2,7 @@
 
 Память между сессиями. Первое действие каждой сессии - прочитать этот файл и подтвердить заказчику, что подхватил верно.
 
-**Обновлено:** 30.08.2026, конец Сессии 3 (D22). **Следующая сессия:** 4 - нарезка (`bmad-create-epics-and-stories`) и ворота готовности (`bmad-sprint-planning`) → Ворота 3. 5 допущений спайна подтверждены Mike 30.08 (D22).
+**Обновлено:** 30.08.2026, Сессия 4 в работе: Этап 8 (нарезка) закрыт, Этап 9 (`bmad-sprint-planning`) идёт. Далее Ворота 3.
 
 ## Что сделано
 
@@ -45,6 +45,11 @@
 - Этап 6: `bmad-spec` → `_bmad-output/specs/spec-wb-morning-brief/{SPEC.md, glossary.md, .memlog.md}`; PRD не нужен, bmad-ux не запускался (D19).
 - Этап 7: `bmad-architecture` (Fast path) → `_bmad-output/planning-artifacts/architecture/architecture-proxima-ai-2026-08-30/ARCHITECTURE-SPINE.md` (final, 18 AD, 3 mermaid), memlog 60 строк, `reviews/` - 5 отчётов (reconcile-inputs, rubric, adversarial, verified-current, adversarial-v2). Код-свип brownfield подтвердил: дневного ряда по кабинету в схеме нет, удаления по прогону нет, планировщика нет, детектор pmm-20 требует воронку и считает среднее, provider ai/pa-50 - заглушка.
 - Спайн подшит в SPEC.md как companion; open questions спеки 2-3 закрыты AD-4/AD-6.
+
+## Сессия 4 (30.08, та же сессия Claude Code)
+
+- Этап 8: `bmad-create-epics-and-stories` → `_bmad-output/planning-artifacts/epics.md`: 12 FR, 13 NFR, 16 AR; 5 эпиков (E1 M-01 «данные собираются сами», E2 M-02+M-03 «норма и сводка», E3 M-01b «воронка фоном», E4 M-04, E5 M-05); 28 историй, из них 22 на сентябрь (E1 12 включая шаг 0, E2 6, E3 4), 6 помечены **[Claude]** (живые вызовы WB и релизы на сервере - OpenHands не видит токены и не пишет на сервер). Враждебная валидация (`epics-review-2026-08-30.md`): 6 критических правок внесены; спайн v3.1 (AD-9 режим «только статус», AD-11 роли в 011 и политики per-migration, AD-14 целевые номера).
+- Отклонение от лестницы промта: M-02 и M-03 слиты в один эпик (норма без сводки не видна Mike, одни файлы); M-00 выполнен до нарезки (API-FACTS); объяснено и утверждено Mike.
 
 ## Где остановился
 
