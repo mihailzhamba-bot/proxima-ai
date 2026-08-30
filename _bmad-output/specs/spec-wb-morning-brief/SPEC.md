@@ -2,6 +2,7 @@
 id: SPEC-wb-morning-brief
 companions:
   - glossary.md
+  - ../../planning-artifacts/architecture/architecture-proxima-ai-2026-08-30/ARCHITECTURE-SPINE.md
   - ../../../docs/state/API-FACTS.md
   - ../../../docs/state/WEB-STATE.md
   - ../../../docs/state/MIGRATION-GAPS.md
@@ -90,5 +91,3 @@ sources:
 ## Open Questions
 
 - Порог тревоги в процентах и правило «сигнал против шума» - решение Mike в единицах M-03/M-04, после первых живых сводок.
-- Хранить ли малые обезличенные фикстуры (< 1 МБ) в git для автотестов - решает архитектура (D15).
-- Ежедневный запуск сбора: systemd timer на хосте или планировщик в контейнере - решает архитектура.
