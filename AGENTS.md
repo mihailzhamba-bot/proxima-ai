@@ -2,6 +2,59 @@
 
 Единый контракт для coding-агентов (Claude Code / Codex / opencode). Claude Code читает этот файл через адаптер `CLAUDE.md` (`@AGENTS.md`).
 
+<!-- bmad:context -->
+<!-- Verified 2026-08-30 against fe810f6. Managed by bmad-project-context; edits inside this block are replaced on refresh. Keep anything you want preserved outside the markers. -->
+
+## PROXIMA AI
+
+Приватная платформа Proxima для WB-кабинетов: сбор данных кабинета по WB API → PostgreSQL → утренняя сводка с отклонениями в веб-морде. Лестница M-00..M-05, цель 30.09 = M-03. TypeScript collector (`services/collector`), Python control-plane (`services/control-plane`, uv 3.14), Next.js webapp (`services/webapp`), PostgreSQL 16 в docker на одном VPS. Текущее состояние - `STATE.md`, решения - `DECISIONS.md`, факты инвентаризации - `docs/state/`, история M1 - `docs/archive/planning-m1/` (не требования).
+
+## Policy
+
+- Сервер `proxima` (135.106.186.210) - только чтение. Деплой, рестарт, правка на сервере - только после явного «деплой» от Mike в чате; план отката записан до деплоя.
+- Значения токенов, паролей, ключей никуда не выводить - ни в лог, ни в отчёт, ни в коммит; только имя переменной или файла. Токены живут на VPS в `/etc/proxima-ai/secrets/` (0600); вызовы WB API - с сервера через `ssh proxima 'curl -H "Authorization: $(cat …)"'`.
+- WB API только READ: split-токен с битом read-only на категорию; новый эндпоинт - сначала в allowlist `tools/verify_business_signal.py`. Analytics-токен на сервере пока read-write (PA-13) - только read-эндпоинты отчётов.
+- Тесты - на фикстурах `fixtures/wb-api/` (gitignored, копия на VPS в `~/signal-inputs/fixtures/wb-api/`); живой WB API - только когда без него никак, ответ сразу в фикстуру.
+- Каждая запись в БД помечена `run_id`, идемпотентна и удаляется по `run_id` целиком - требование к любому новому писателю.
+- В Jira (PA, PMM) не писать до Ворот 2 (`DECISIONS.md`); задачи не удалять никогда.
+- Один write-capable агент на рабочее дерево; параллельно - только read-only исследование. Стейджить только свои файлы: `git add <files>`, не `git add -A` / `git add .`.
+- Не редактировать `services/collector/src/contracts/*.ts` - менять `contracts/*.schema.json` и `make codegen`; ручные правки тихо перезаписываются.
+- Миграции `db/migrations/NNN_*.sql` не править и не переименовывать - только новая `NNN+1_<snake>.sql`, additive-only, `BEGIN…COMMIT`, self-checksum (`tools/verify_migrations.py`).
+- Заморожено до октября: auth-зона webapp (`src/lib/auth*`, `src/app/api/auth/`, `src/app/login/`) и verbatim-дерево `services/control-plane/src/proxima/`. `db/`, `infra/`, `Makefile`, `src/lib/db/` открыты для единиц M-01.
+- Чужой код - только через `provenance/import-inventory.json` + attestation (`make provenance`); Torgstat и браузерная автоматизация в runtime запрещены (`tools/verify_runtime_boundary.py`).
+
+## Where things are
+
+- Начало сессии: `STATE.md` → `DECISIONS.md` → `docs/state/GATE-1.md`; handoff агентов - `docs/agent-system/HANDOFF.md`.
+- Утренняя сводка встраивается в `services/webapp/src/app/(app)/brief/page.tsx` через `getBrief()` из `src/lib/fixtures/brief.ts`; Postgres-провайдер лежит в ветке `origin/ai/pa-50`.
+- Незамерженный код по ступеням (детектор нормы, promotion дневного ряда, контракты сигнала) - `docs/state/MIGRATION-GAPS.md` §4; бэклог Jira с вердиктами - `docs/state/BACKLOG-REVIEW.md`.
+- База регрессии до автотестов - `docs/state/WORKS-TODAY.md`: прогонять целиком перед релизом.
+- Заметки автопилотов (webapp T2, release-gate T1, diagnosis PMM-5) - `docs/agent-system/autopilot-notes/`.
+
+## Running and verifying
+
+- Полный гейт - `make verify` (~40 с; сетевой: `npm ci`, `uv sync --locked`). Проверять строку `pg-roundtrip: PASS` - без Homebrew PG16 (`/opt/homebrew/opt/postgresql@16`) шаг даёт `SKIP` с exit 0 и миграции не проверены. При длинном `TMPDIR` - `TMPDIR=/tmp make verify`.
+- `PUPPETEER_SKIP_DOWNLOAD=1` перед `npm ci` / `make verify`, иначе качается Chromium.
+- Python только `uv run --python 3.14 --project services/control-plane --extra test pytest services/control-plane/tests tools/tests`; `uv run pytest` из корня падает (`Failed to spawn: pytest`).
+- Один vitest-файл: `npm --workspace @proxima/webapp exec -- vitest run src/tests/<file>`; `npx vitest … --root services/webapp` из корня даёт `vitest: command not found`.
+- `npm test`, `npm run typecheck`, `scripts/agent/verify` проверяют только collector; webapp - `npm --workspace @proxima/webapp test | run typecheck | run lint` (в `make verify` входят test и typecheck, lint - нет).
+- `next build` переписывает tracked `services/webapp/next-env.d.ts` - после сборки `git checkout -- services/webapp/next-env.d.ts`.
+- `.githooks/pre-commit` не активен, пока не выполнено `git config core.hooksPath .githooks`.
+
+## Conventions that differ from defaults
+
+- Коммиты - английский с conventional-префиксом (`feat(webapp): …`); документация и общение - русский; идентификаторы кода - английский.
+- Collector тестируется `node:test` через `tsx` (`services/collector/tests/`), webapp - vitest (`services/webapp/src/tests/`); jest нигде.
+- Демо-данные webapp только из `src/lib/fixtures/` с префиксом `fixture-`; плашка unreleased на всех экранах (DEC-006).
+
+## Known pitfalls
+
+- Переименование миграции без правки `INSERT INTO schema_migrations` ломает checksum - три коммита 29.08 (`fa57aa9`, `31cf85f`, `ad89513`).
+- Codex падает на голом `enabled = false` в `[mcp_servers.X]` `.codex/config.toml` (27.08, PA-39/PA-41/PMM-12); канарейка - `codex mcp list` в `scripts/agent/verify`.
+- `.openhands/hooks/verify-gate.sh` требует `DATABASE_URI` из `.env.task`, хотя `make verify` его не читает - без переменной stop-hook отказывает.
+
+<!-- /bmad:context -->
+
 ## Mandatory startup sequence (all agents)
 
 Before ANY non-trivial task in this repo:
@@ -12,16 +65,16 @@ Before ANY non-trivial task in this repo:
 4. Read `docs/agent-system/HANDOFF.md` - current state and exact next action.
 5. Read `docs/agent-system/TASKS.md` - active task snapshot.
 6. Check `docs/exec-plans/active/` - living plan for the active task, if any.
-7. Check `git status` + last relevant commits (uncommitted work = someone's unfinished thread; see "Dirty-tree note" below).
+7. Check `git status` + last relevant commits (uncommitted work = someone's unfinished thread; stage only files you changed).
 8. Only then start working.
 
 Do not ask the user "where did we stop". Recover state from repository files first; ask only if critical ambiguity remains after recovery.
 
 ## Что это за проект
 
-Приватная data-платформа Proxima для WB-кабинетов. M1 = production-ready read-only data foundation одного пилотного кабинета (Bogatova Belle Robe): официальный WB-интент -> иммутабельные артефакты с SHA-256 -> нормализация в PostgreSQL -> атомарные доменные релизы. Продуктовый слой (M2 AI Daily Manager, M3 SaaS) описан в `.planning/PRODUCT-VISION.md`.
+См. блок `bmad:context` выше (ориентация) и `DECISIONS.md` D2: роадмап M1 заменён лестницей M-00..M-05 (30.08.2026). Описание M1 - `docs/archive/planning-m1/`, история.
 
-**Языки:** коммуникация и документация - русский; идентификаторы кода (переменные, функции, таблицы, поля) - английский.
+**Языки:** коммуникация и документация - русский; коммиты - английский; идентификаторы кода - английский.
 
 ## Карта контекста (читай перед работой)
 
@@ -64,7 +117,7 @@ make verify
 
 | Компонент | Версия | Где |
 |---|---|---|
-| Node.js | >=22 <23 (локально 22.22.x) | collector/data-plane, TypeScript |
+| Node.js | >=22 <23 | collector/data-plane, TypeScript |
 | Python | 3.14 (через uv, НЕ системный 3.9) | control-plane, tools |
 | uv | >=0.11 | управление Python-окружением |
 | PostgreSQL | 16 | VPS compose; локально - туннель |
@@ -105,10 +158,7 @@ host key, агент, реальный вход и туннель, и печат
 
 ## MCP-серверы проекта
 
-Определены в `.mcp.json` (Claude Code), `.codex/config.toml` (Codex) и `opencode.json` (opencode):
-
-- **context7** - актуальные доки библиотек (FastAPI, pg16, TS) против галлюцинаций API
-- **postgres** - Postgres MCP Pro в restricted-режиме; подключается через `DATABASE_URI` из окружения; секреты никогда не попадают в конфиги и Git
+`.mcp.json` (Claude Code), `.codex/config.toml` (Codex), `opencode.json` (opencode) держат только `jira-atlassian` (read-only до Ворот 2) и `node_repl` (`tools/node_repl_server.js` отсутствует - см. `docs/state/MIGRATION-GAPS.md` §5). context7 и Postgres MCP - user-level конфиги, не проектные; секреты в конфиги и Git не попадают.
 
 ## Жёсткие запреты (fail-closed)
 
@@ -131,13 +181,13 @@ host key, агент, реальный вход и туннель, и печат
 ## Рабочий ритм
 
 - Задачи в Jira PA; эпики: PA-36 (Трек A - M1), PA-37 (Трек B - value/сценарии), PA-35 (Трек C - discovery), PA-34 (Трек D - заморожен до V3)
-- Перед нетривиальной задачей - прочитать `STATE.md`, `DECISIONS.md` и `docs/state/`. M1-роадмап и фазы лежат в `docs/archive/planning-m1/` - это история, не текущие требования
+- Перед нетривиальной задачей - прочитать `STATE.md`, `DECISIONS.md` и `docs/state/`; M1 - история в `docs/archive/planning-m1/`
 - Weekly продуктовая сверка с Mike по трекам (решение №49)
 
 ## Working contract (English summary of the binding rules)
 
 - Sequence: understand → plan → execute → verify → document. No state skips; INBOX → CODE → DONE is forbidden.
-- **One main active task per repo.** A new main task starts only when the previous one is DONE, BLOCKED, or explicitly re-prioritized by Mike. New ideas go to Jira PA backlog / `_ai/INBOX.md`, not into active work.
+- **One main active task per repo.** A new main task starts only when the previous one is DONE, BLOCKED, or explicitly re-prioritized by Mike. New ideas go to the Jira PA/PMM backlog (writes only after Ворота 2, see `DECISIONS.md`), not into active work.
 - Every number needs a source and a date. Unknown → `UNKNOWN`. Never invent metrics, prices, statuses, cabinet IDs, SKU.
 - Important knowledge lands in files (routing table above), not in chat memory.
 - Fail closed: verification failed → work is NOT done. Fix, or mark BLOCKED with reason + handoff in `docs/agent-system/HANDOFF.md`.
@@ -212,202 +262,10 @@ Mandatory for major/critical tasks and new epics; one approved gate per epic cov
 Approved gate reports live in `docs/release-gates/<YYYY-MM-DD>-<slug>.md` with Gate ID `RG-<YYYYMMDD>-<slug>`; child tasks reference the Gate ID. `docs/agent-system/DECISIONS.md`, `docs/adr/*` and approved M1 phase contracts are inviolable for the critic: revisiting them requires handoff-status NEEDS_APPROVAL with an explicit reference. See `docs/release-gates/README.md`.
 <!-- release-gate:end -->
 
-## Dirty-tree note
-
-As of 2026-08-16 the working tree carries pre-existing uncommitted changes (Makefile, README.md, package.json, package-lock.json, `docs/archive/planning-m1/STATE.md`, `tools/verify_runtime_boundary.py`, untracked `.mcp.json`, `opencode.json`, `.codex/`, planning docs). They belong to other threads. Do not revert, stage blindly (`git add -A` is forbidden) or commit them together with your work. Stage only files you actually changed.
-
 ## Definition of Done
 
 Done = implemented + `scripts/agent/verify` passes (structural + typecheck + TS tests + pytest) + `make verify` green where the task touches code + no known regressions + review performed (independent cross-model review 0 blocker / 0 warning for critical phases 3, 4, 7) + routing-table docs updated if needed + `docs/agent-system/TASKS.md` / `HANDOFF.md` / ExecPlan updated.
 
 <!-- autopilot:start -->
-## Control-plane: LLM-диагноз (PMM-5, прогон сдан)
-
-Построен слой LLM-диагноза сигналов WB в `services/control-plane` (пакет `proxima_control_plane.diagnosis`): сигнал (payload + context_extracts + source_refs) → промпт → LLM-клиент (mock по умолчанию) → диагноз по JSON-Schema с детерминированной проверкой, что все числа и source_refs взяты из входа → батч-артефакт + JSONL-аудит. Для агентов, дорабатывающих diagnosis (далее по плану: реальный LLM-провайдер и eval-пайплайн). Срез M2/M3 ведётся в Jira-проекте PMM.
-
-## Команды
-
-| Команда | Что делает |
-|---------|------------|
-| `make verify` | Полный verify-гейт репо (канонический, fail-closed) |
-| `scripts/agent/verify` | Быстрый структурный subset для агента |
-
-Тесты diagnosis (голый `uv run pytest` от корня НЕ работает):
-```bash
-uv run --python 3.14 --project services/control-plane --extra test pytest services/control-plane/tests -q
-```
-
-CLI batch run (`diagnosis.toml` ищется от cwd вверх, не найден - дефолты):
-```bash
-uv run --python 3.14 --project services/control-plane python -m proxima_control_plane.diagnosis run --input signals.json --output diagnoses.json [--config diagnosis.toml]
-```
-
-CLI eval (печатает pass-rate; полный гейт 0.80 - в `eval_runner.py`):
-```bash
-uv run --python 3.14 --project services/control-plane python -m proxima_control_plane.diagnosis eval --dataset services/control-plane/tests/diagnosis/data/eval/cases.json
-```
-
-## Структура
-
-```
-services/control-plane/                         - Python-пакет proxima-control-plane (uv, Python >=3.14; deps: jsonschema)
-  src/proxima_control_plane/diagnosis/          - вся построенная диагностика
-    models.py                                   - DiagnosisInput/Diagnosis/BatchItem/BatchResult; parse_signal (сценарии SCN-001/005/008, trust=unreleased, source_refs непустой)
-    schema/diagnosis.draft.v1.json              - draft-JSON-Schema диагноза; каноническая строится в PMM-29/contracts - НЕ переносить
-    validator.py                                - validate_diagnosis(obj) -> list[str] (пусто = ок), jsonschema Draft 2020-12
-    adapters/                                   - Protocol LLMClient, детерминированный MockLLMClient, factory.create_client (провайдера кроме mock нет)
-    prompts/                                    - system.v1.md (анти-инъекция + запрет считать метрики) + builder.build_messages (DATA-блоки, справка DIAGNOSIS_INPUT, PROMPT_VERSION v1)
-    service.py                                  - run_batch: retry невалидного ответа (max 2), timeout без retry, rollback-флаг llm_enabled, детерминизм-проверки чисел/ссылок, аудит
-    audit.py / config.py / cli.py               - JSONL-аудит (глотает OSError); TOML-конфиг с дефолтами (provider=mock, timeout 90); CLI run|eval, exit 0/2
-  tests/diagnosis/                              - pytest по каждому модулю + eval_runner.py (полные критерии) + data/eval/cases.json (12 кейсов: standard/closed_numbers/adversarial)
-contracts/, services/collector/, db/, tools/    - другие треки; зона diagnosis-задач - только services/control-plane
-```
-
-## Подводные камни
-
-- Python только через uv (3.14); системный 3.9 не подходит.
-- MockLLMClient парсит блок DIAGNOSIS_INPUT из user-сообщения: перед `client.diagnose()` всегда звать `build_messages(signal)`, иначе ValueError.
-- Детерминизм-проверка чисел: regex сканирует только текстовые поля (hypothesis/question/why_it_matters/confidence_note); числа из индексов списков входа (`payload.x[0].value` → токен «0») дают ложное срабатывание - в fixtures числовые значения JSON заменены SYNTH-строками.
-- Timeout - финал без retry; retry только когда ответ невалиден по схеме или детерминизму.
-- CLI возвращает 0, даже если часть сигналов failed (изоляция per-signal); exit 2 - только ошибка конфига/входа; битый envelope становится item failed, а не падением.
-- `provider` отличный от mock → ValueError в factory; реального провайдера ещё нет (optional-группа `llm` в pyproject пустая, зарезервирована).
-- Секретов нет: в конфиге только ИМЯ env-переменной `api_key_env` (по умолчанию PROXIMA_LLM_API_KEY), значение нигде не задаётся.
-- Дефолтный audit_path `logs/diagnosis-audit.jsonl` - вне git (`logs/` в .gitignore).
-- Не трогать: `contracts/` (PMM-29), `services/collector/`, `services/control-plane/src/proxima/` (verbatim-дерево PA-41), sibling-worktrees.
-- Тексты диагноза и системный промпт - на русском; идентификаторы кода - английские.
-
-## Как здесь работает Autopilot
-
-Сборка ведётся навыком `/autopilot`. Требования, спецификация и таски — в `.autopilot/`.
-Прогресс — `.autopilot/dashboard.html`. Правило: требование из `manifest.md`
-может снять только пользователь.
-
-Если работа продолжается — скажи «продолжи автопилот»: состояние поднимется
-из `.autopilot/state.js`, переспрашивать ничего не нужно.
-
----
-
-## Web-кабинет (services/webapp) - память яруса T2
-
-Приватный UI Proxima: Next.js 16.3 App Router + Tailwind 4 + TS strict + vitest; данные - только демо-fixtures, экран под плашкой unreleased (DEC-006). Прогон PA-49 Warm Precision сдан (vitest 26 passed, make verify PASS, build зелёный).
-
-### Команды
-
-```
-npm --workspace @proxima/webapp run dev      # dev; порт 3000 занят -> Next молча займёт 3001
-npm --workspace @proxima/webapp test         # vitest run
-npx vitest run src/tests/fx.test.ts --root services/webapp   # один файл
-npm --workspace @proxima/webapp run typecheck | lint | build # по одной
-make verify                                  # полный гейт из корня репо
-make webapp-build | make webapp-lint         # те же цели из Makefile
-ssh -N proxima-app                           # staging: http://localhost:3000, контейнер proxima-webapp-staging (loopback VPS)
-```
-
-### Структура (services/webapp)
-
-- `src/app/layout.tsx` - шрифты Inter + IBM Plex Mono (next/font), ThemeProvider (next-themes)
-- `src/app/(app)/` - защищённая зона: `layout.tsx` + страницы `dashboard | brief | inbox | admin | styleguide`
-- `src/app/login/`, `src/app/api/auth/[...all]/route.ts` - better-auth обвязка (логику не трогать)
-- `src/components/ui/` - примитивы: Button Card Badge GyrBadge FxBadge Skeleton EmptyState SectionError(+Boundary)
-- `src/components/metrics/` - MetricStrip MetricCard Sparkline (inline SVG, `max-[379px]:hidden`)
-- `src/components/brief/` - SignalRow BriefVerdict Digest CountUp
-- `src/components/shell/` - app-sidebar (w-64) cabinet-switcher unreleased-banner
-- `src/components/empty/` - InboxWorkflow KeyboardHint FutureBlock AdminModuleStub (6 модулей)
-- `src/lib/fixtures/` - metrics brief shell: единственный источник демо-данных (getMetrics/getBrief, префикс fixture-)
-- `src/lib/` - gyr.ts fx.ts format/rub.ts utils.ts (семантика и форматирование)
-- `src/lib/auth.ts`, `src/lib/auth-client.ts`, `src/lib/db/` - auth + drizzle/pg, запретная зона
-- `src/tests/` - fx gyr rub metrics brief-fixtures (5 файлов)
-- `Dockerfile` - multi-stage standalone-сборка; секреты приходят окружением на VPS, в образ не печём
-
-### Ключевые файлы
-
-- `services/webapp/src/app/globals.css` - все CSS-токены обеих тем; единственное место с сырыми hex
-- `services/webapp/src/lib/fixtures/metrics.ts` - `getMetrics(): readonly FixtureMetric[]`, `getMetrics.dataMode = "fixtures"`
-- `services/webapp/src/lib/fixtures/brief.ts` - `getBrief(variant?: "daily"|"quiet")`
-- `services/webapp/src/components/metrics/metric-strip.tsx` - метрическая полоса дашборда
-- `services/webapp/src/app/(app)/brief/page.tsx` - `/brief?view=quiet` = тихий день («Критичных нет»)
-- `services/webapp/src/app/(app)/styleguide/page.tsx` - живой стайлгайд примитивов
-- `DESIGN.md` (корень репо) - канон дизайн-системы
-
-### Архитектура
-
-Поток зависимостей: `globals.css` (tokens) -> `lib/fixtures` (провайдер демо-данных) -> `components/ui` (примитивы) -> зоны `metrics | brief | shell | empty` -> страницы `(app)`.
-Семантика живёт в либах, не в UI: дельта тонирована по `deltaGoodWhen` из fixtures, GYR/FX-статусы - `lib/gyr`/`lib/fx`.
-Швы тестов: геттеры `lib/fixtures` (форма данных стабильна) + чистые `lib/gyr` + `lib/format/rub`; DOM проверяется smoke-сборкой и стайлгайдом, E2E нет.
-Секции inbox/dashboard/admin обёрнуты SectionErrorBoundary (2/4/6 секций) - падение секции не роняет экран.
-
-### Соглашения кода
-
-- Сырые hex - только в `globals.css`; компоненты берут цвет исключительно через CSS-переменные.
-- Любая демо-цифра на экране - с FxBadge (`lib/fx`, метка "FX"); fixtures обезличены, префикс `fixture-`, без реальных cabinet ID/SKU/цен.
-- Плашка unreleased (решение DEC-006) остаётся на всех экранах, снимать нельзя.
-- Язык UI русский, идентификаторы английские; без эмодзи, без комментариев в коде (кроме неочевидного).
-- Запретная зона правок: `src/lib/auth*`, `src/app/api/auth/`, `src/app/login/`, `Dockerfile`, `infra/*`, `src/lib/db/*`, `Makefile`, `package.json` (новые зависимости = BLOCKED).
-
-### Окружение (имена, не значения)
-
-- `WEBAPP_REQUIRE_AUTH` - гейт auth на `(app)`, читается в `src/app/(app)/layout.tsx:18`
-- `WEBAPP_DATA_DATABASE_URI` (fallback `DATABASE_URI`) - данные, `src/lib/db/client.ts:45,55`
-- `AUTH_SECRET`, `AUTH_DATABASE_URI` - better-auth (`src/lib/auth.ts:11`, `src/lib/db/client.ts:33`)
-- `NEXT_TELEMETRY_DISABLED`, `PUPPETEER_SKIP_DOWNLOAD` - выставлены в `Dockerfile`
-
-### Подводные камни
-
-- `eslint` запинен на `9.39.5` в `services/webapp/package.json`: eslint-config-next 16.3.3 заявляет peer `>=9`, но на eslint 10 конфиг не проверялся - не апгрейдить мимо пина.
-- `**/.next/` в `.gitignore:10` держите: попади сборочный вывод в tracked-файлы, secret_scan (`make verify`) уронит гейт.
-- `PUPPETEER_SKIP_DOWNLOAD=1` в Dockerfile (deps-stage): транзитивный puppeteer иначе тянет Chromium при `npm ci` - образу он не нужен.
-- Тёмная тема: обе палитры (light ivory / dark stone) калиброваны в globals.css (`.dark` через next-themes); правка токена - сразу в двух темах.
-- `next dev` при занятом 3000 молча уходит на 3001 - проверяйте адресную строку.
-
-### Тесты
-
-- `npm --workspace @proxima/webapp test` = vitest, 26 passed по 5 файлам (`src/tests/{fx,gyr,rub,metrics,brief-fixtures}.test.ts`).
-- Один файл: `npx vitest run src/tests/metrics.test.ts --root services/webapp`.
-- Юнит-тесты ходят только через швы (fixtures-геттеры, gyr, rub); разметку юнит-тестами не покрывать.
-
-### Как здесь работает Autopilot
-
-Прогон PA-49 Warm Precision (режим interview) сдан. Спека и таски - в `.autopilot/2026-08-25-pa49-warm-precision/`, прогресс - `.autopilot/dashboard.html`.
-Продолжение работы: сказать «продолжи автопилот» - состояние поднимется из `.autopilot/state.js`, переспрашивать не нужно.
-Правило неизменно: требование из `manifest.md` может снять только пользователь.
-
-## Release Gate-слой - память яруса T1
-
-Прогон 2026-08-27 release-cutter сдан. Read-only шлюз между планированием и Autopilot: критик доказательно ищет самый дешёвый безопасный путь до проверяемого релиза и имеет право сказать «задача не нужна» - с доказательствами, не вкусом модели.
-
-### Пайплайн
-
-Три слоя: `grill-me` (что именно делаем, какие решения не приняты) → `release-cutter` (нужно ли вообще, можно ли дешевле/переиспользовать) → `autopilot` (реализует только согласованный минимум). В пайплайне Orca major/critical `release-critic` занял место briefmaker (решение Mike): research репо + Jira → отчёт Release Gate.
-
-### Команды
-
-- `/release-gate <задача|PA-XX|PMM-XX|@файл>` - только аудит, НИКОГДА не запускает Autopilot; ключ Jira критик сам тянет через jira-atlassian MCP read-only.
-- `/release-task <задача>` - оркестрация: gate → handoff-ветки (NEEDS_INPUT → реальный скилл grill-me, максимум один цикл Gate→Grill→Gate) → сохранение gate → Autopilot получает только раздел 12 отчёта + поля Scope lock.
-
-### Структура
-
-- `.opencode/skills/release-cutter/SKILL.md` - методология: workflow 8 шагов, вердикты, handoff, шаблон отчёта (13 секций)
-- `.opencode/agents/release-critic.md` - субагент: deny-all + read/glob/grep/list/skill/webfetch/websearch, bash только git-readonly, Jira/Confluence только чтение
-- `.opencode/commands/release-gate.md`, `.opencode/commands/release-task.md` - slash-команды
-- `docs/release-gates/` - утверждённые gate-отчёты + README.md (вердикты, handoff, exemption-список); живой пример: `docs/release-gates/2026-08-27-pmm-7-dry-run.md`
-
-### Контракты
-
-- Gate ID `RG-<YYYYMMDD>-<slug>`; файл отчёта `docs/release-gates/<YYYY-MM-DD>-<slug>.md`; дочерние задачи ссылаются на Gate ID.
-- Вердикты: KEEP / REUSE / SHRINK / DEFER / DROP / BLOCKED. Handoff-status: READY_AUTO / NEEDS_APPROVAL / NEEDS_INPUT / BLOCKED.
-- Строка `DISCOVERY_STATUS: ...` - в шапке `## Gate` и последней строкой отчёта, парсится Orca-координатором: READY_AUTO→READY; DROP/DEFER→NOT_NEEDED; NEEDS_APPROVAL/NEEDS_INPUT/BLOCKED→напрямую.
-- Один gate на epic покрывает дочерние задачи, пока они не выходят за Scope lock.
-
-### Подводные камни
-
-- `.opencode/agents/briefmaker.md` - legacy, не вызывать и не изменять (решение Mike); в major/critical диспетчеризуется release-critic.
-- release-critic read-only: edit/write запрещены permissions, bash только `git status|log|show|diff|branch --show-current|rev-parse`, секреты не читает.
-- Языки: SKILL.md и команды - русские; шаблон отчёта и секция «Release Gate» в AGENTS.md - английские; `docs/release-gates/README.md` - русский.
-- Gate не нужен (exemption): typo, форматирование, test-only, узкий bugfix без изменения поведения/контрактов/архитектуры/данных/зависимостей/security/scope.
-- `docs/agent-system/DECISIONS.md`, `docs/adr/*`, утверждённые фазовые контракты M1 критик не DROP/DEFER молча - только NEEDS_APPROVAL с явной ссылкой.
-
-### Проверка
-
-- Frontmatter (4 файла): `python3 -c "import yaml;[yaml.safe_load(open(f).read().split('---')[1]) for f in ['.opencode/skills/release-cutter/SKILL.md','.opencode/agents/release-critic.md','.opencode/commands/release-gate.md','.opencode/commands/release-task.md']]"`
-- Маркеры AGENTS.md (паттерн якорим к началу строки, иначе grep считает сам этот блок): `grep -c '^<!-- autopilot:start -->' AGENTS.md` → 1; `grep -c '^<!-- release-gate:start -->' AGENTS.md` → 1.
+Заметки автопилотов (PMM-5 diagnosis, PA-49 webapp T2, release-cutter T1) перенесены 30.08.2026 в `docs/agent-system/autopilot-notes/`. Актуальные правила - в блоке `bmad:context` выше.
 <!-- autopilot:end -->
