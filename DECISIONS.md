@@ -166,6 +166,12 @@
 
 Пройдены: Mike подтвердил список D1-D21. С этого момента запись в Jira разрешена (D10, D17) - фактически начнётся после Ворот 3, когда появятся единицы работы.
 
+## D22. Сессия 3: SPEC.md и ARCHITECTURE-SPINE.md
+
+- **Дата:** 30.08.2026
+- **Решение:** Контракт «что строим» - `_bmad-output/specs/spec-wb-morning-brief/SPEC.md` (CAP-1..8 по ступеням M-01..M-05, 13 constraints, 9 non-goals; companions: glossary, API-FACTS, WEB-STATE, MIGRATION-GAPS, WORKS-TODAY, ARCHITECTURE-SPINE). Архитектура - `_bmad-output/planning-artifacts/architecture/architecture-proxima-ai-2026-08-30/ARCHITECTURE-SPINE.md` (final, 18 AD, Fast path, два ревью-гейта: 4 + 1 враждебных ревьюера, отчёты в `reviews/`). Ключевые инварианты: доказательство раньше факта (AD-1); наблюдения с ключом `(srid, lastChangeDate)` и версии каждого дня интервала по прогону (AD-2); три вида транзакций прогона и транзитивное удаление по `collector_run_inputs` (AD-3); один WB-клиент с реестром и фикстурами вместо сети (AD-4); воронка из v3 + CSV в одну таблицу (AD-5); один утренний systemd-юнит с контейнерными one-shot шагами (AD-6); единый helper дня и `stale` в view (AD-7); норма и сводка материализованы (AD-8, AD-9); роли: ledger - NOLOGIN и гранты на базовые таблицы, bootstrap - LOGIN и базы (AD-11); `proxima_test` для сандбокса (AD-12); канон `/srv/proxima-ai/repo`, релиз = образы + тег + план отката (AD-15).
+- **5 допущений спайна ждут Mike:** (1) `flag=0` + `dateFrom` = фильтр по `lastChangeDate` - проверка 2 вызовами в первой единице M-01; (2) async CSV create/status/file и глубина `startDate` не вызывались - проверка ≤ 3 вызовами в единице CAP-6; (3) окно нормы = 14 календарных дней перед оцениваемым днём, сам день исключён; (4) хост-таймеры systemd + `docker compose run` one-shot образов, а не планировщик в compose; (5) канонический чекаут на сервере = `/srv/proxima-ai/repo`, `~/proxima-ai` - зеркало администратора.
+
 ## Открытые вопросы после Сессии 2
 
 - Источник ежедневного `detail_history_report` - за Mike (ЛК WB, список токенов), см. D20. Не блокирует Ворота 2.
