@@ -1,5 +1,103 @@
 # Implementation Readiness - epics.md (30.08.2026)
 
+# Проход 2 (30.08.2026) - спайн v3.2, epics E1-E3 после перереза
+
+Объект: `epics.md` (E1 = 1.0-1.13, E2 = 2.1-2.6, E3 = 3.0-3.4; сентябрь = 25 единиц, 5 [Claude]), `ARCHITECTURE-SPINE.md` v3.2. Вопрос гейта тот же: сможет ли OpenHands (без токенов и сервера) реализовать истории, не придумывая незаписанных решений. Проверено по коду: `tools/pg_local_roundtrip.sh`, `services/collector/package.json`, `Makefile`, `.github/workflows/verify.yml`, `tools/verify_migrations.py`, `db/migrations/009`, `business-signal/{http,raw-store,types}.ts`, `cli/stockout-signal.ts`, `tools/wb_async_report.py`, `tools/tests/test_{wb_async_report_postgres,runtime_roles_schema}.py`, `tools/apply_migrations.py`, `infra/{compose.yaml,bootstrap/provision-postgres-diagnostics.sh}`, `.gitignore`, ветки `origin/mihailzhamba-bot/pmm29-contracts` и `origin/ai/pa-50`, `docs/state/{API-FACTS,INVENTORY}.md`, `SPEC.md`.
+
+## Вердикт прохода 2: CONCERNS (узкий)
+
+- 1.0 и 1.1 стартуют 01.09 без вопросов к Mike (раздел 4). Архитектурных пробелов уровня H не осталось: H1-H7 закрыты в спайне v3.2, H8 частично.
+- Цепочку ломают два места в Story 1.6 (N5, N6) и одно в 1.4 (N4). Все три чинятся одним-двумя предложениями в epics.md и memlog спайна, новых AD не нужно. Story 1.3 не влезает в сеанс - делить.
+- До выдачи OpenHands истории 1.3 и дальше - правки из раздела «Что сделать» (документы, ~1 час).
+
+## 1. Статус находок прохода 1
+
+| # | Статус | Где закрыто / что осталось |
+|---|---|---|
+| H1 harness | Закрыто | AD-12 v3.2 (harness в `pg_local_roundtrip.sh`, `PROXIMA_TEST_POSTGRES_DSN`, `SET ROLE`), Story 1.2 отдельной единицей. Остались локальные N1-N3 |
+| H2 artifact-replay | Закрыто | AD-2 (импорт в CAS, два sha256, `run_day := mskDay(retrieved_at)`, хвост `collect --date-from run_day-3`), Stories 1.0/1.4/1.12 (runbook: `backfill --source artifact:…` + `collect --date-from 2026-08-27`). Осталось: N4 (`retrieved_at` не доезжает до `backfill`); AD-6 и AR2/AR11 в epics.md всё ещё пишут «`collect --from 2026-03-01 --backfill`» - устаревшая фраза (L) |
+| H3 2.1 ↔ 2.2 | Закрыто | 2.1 = принять pmm29, 2.2 ссылается назад на `signal.schema.json`; diagnosis-валидатор отложен до 5.1. AD-10 без оговорки «в M-05» (L) |
+| H4 sandbox | Закрыто | AD-12 `BYPASSRLS` + `GRANT ALL` в `proxima_test`; Story 1.7 |
+| H5 1.10 на сервере | Закрыто | 1.10 → 1.11 (юниты, CI) + 1.12 (runbook); `proxima-pg-backup.sh` снимает 1.0 [Claude]; AD-17 определяет restore-check. Осталось N7 |
+| H6 воронка PK / обёртка | Закрыто | AD-5: PK `(tenant_id, nm_id, calendar_day, source, canonical_sha256)` без `run_id`; два kind `funnel_csv_download`/`funnel_csv_promote`; строку фазы 1 создаёт сам скрипт. 3.1-3.3 согласованы |
+| H7 имена секретов | Закрыто | Conventions «Конфигурация и секреты», правило (2) в шапке эпиков. AD-15 и AR2 в epics.md всё ещё говорят `WEBAPP_DATA_DATABASE_URI` без `_FILE` (L, Story 1.8 верна) |
+| H8 ArtifactSink | Частично | AD-4 и 1.1 вводят `ArtifactSink`/`WbArtifactSink`. Но `RecordedHttpClient` (`http.ts:65-71`) принимает `runId + BusinessSignalRawStore + SignalRepository` (9 методов, `types.ts:96-106`), а `http.ts` под AD-18 read-only. «Поверх» = адаптер `SignalRepository { recordRawArtifact → sink.record; остальные 8 - throw }`. Одно предложение в AD-4 или в Given 1.1 |
+| M1 GUC для autocommit | Закрыто | AD-3: `set_config(…, false)` первым statement соединения. AD-13 всё ещё говорит «`set_config(…, true)` первым statement транзакции (3)» - внутреннее противоречие (L) |
+| M2 RLS-матрица vs гранты | **Нет** | AD-11 и 1.6 без изменений: «каждая роль × каждый view». См. N6 |
+| M3 `FOR INSERT` + USING | Закрыто неявно | Шаблон AD-11 = `FOR SELECT\|ALL`; гейт `verify_migrations.py:46-50` требует `USING` всегда, PG для INSERT его не примет - шаблон обходит проблему |
+| M4 provision без Docker | Частично | 1.7: «путь к `psql` параметром». `SECRETS_DIR` и пропуск `chown 1010` вне root не названы; генерация паролей - образец `provision-postgres-diagnostics.sh:5-34` (`secrets.token_urlsafe(48)`), исполнитель возьмёт |
+| M5 restore-check | Закрыто | AD-17 отделяет проверку бэкапа от refresh. См. N7 |
+| M6 гейт `CURRENT_DATE` | Частично | 1.5: «гейт: `CURRENT_DATE` в `db/` отсутствует» - файл не назван; кандидат один (`verify_migrations.py` + кейс в `tools/tests/test_verifiers.py`) |
+| M7 `.env.task` | Закрыто | `infra/openhands/env.task.template` (проверено `git check-ignore`: не игнорируется) |
+| M8 простой postgres | Закрыто | 1.12: «пересоздаёт контейнер postgres на ~10 с» |
+| M9 3 / 7 утр | Закрыто | 1.13 «три утра подряд (CAP-1)», 2.6 «семь утр (CAP-5)», 1.12 «наблюдение 3 дня» |
+| M10 owner-секреты | Закрыто | AD-15 + 1.8: сервис `control-plane-admin`; CI проверяет `config` на отсутствие owner-секретов у `collector` |
+| M11 действие Mike в UI | Закрыто как решение | 1.10/2.5: `make verify` + vitest через мок `Pool`, живой экран в 1.13/2.6. Приемлемо по D7; см. N10 |
+| M12 `record_fixture.ts` | Закрыто | 1.1; `tools/anonymize_fixture.py` в 1.0 |
+| M13 NFR11 JSON-лог | Закрыто | Правило (3) шапки эпиков, Conventions «Логи», 1.3 `log.ts`, 2.3 `log.py` |
+| M14 pa41 | Нет | Story 4.0 не появилась; октябрь, не блокирует |
+| L1 seed `016_brief_daily_roles` | Нет | Structural Seed без изменений |
+| L2 «до 2.1» | Закрыто | 1.9: «до Story 2.2» |
+| L3 vps-contract `allowed_now=false` | Нет | не упомянут в 1.12/1.13 |
+| L4 виртуальные часы в 3.1 | Нет | |
+| L5 `text + CHECK` | Нет | самокорректируется на первом `make verify` |
+| L6 `172.17.0.1:5432` из зоны | Нет | 1.12 «`env.task` в зону» без проверки достижимости (INVENTORY №69: D8 на хосте не реализован) |
+| L7 два канона | Частично | AD-2: job'ы - CAS; пробы - `~/signal-inputs` |
+| L8 деплой-шаг 1.1 | Нет | см. N12 |
+| L9 `IN DATABASE` | Закрыто | AD-12 |
+
+Итог: H - 7 закрыто, 1 частично; M - 10 закрыто, 2 частично, 2 нет (M2, M14); L - 3 закрыто, 1 частично, 5 нет.
+
+## 2. Новые пробелы после перереза
+
+| # | Где | Что | Правка |
+|---|---|---|---|
+| N1 | 1.2 | «Тег `db`» в `node:test` как механизм не существует. `package.json` гоняет `tsx --test tests/**/*.test.ts` в `make test` - до roundtrip и без DSN; любой `*.test.ts` под `tests/` попадёт и туда. Не записано: суффикс/каталог db-тестов, поведение без DSN в `make test`, порядок применения миграций (сейчас их применяет pytest на строке `pg_local_roundtrip.sh:65`, а 1.2 ставит TS-тесты *до* pytest) | Given 1.2: db-тесты = `tests/db/*.dbtest.ts` (не матчатся `*.test.ts`), скрипт `test:db` = `tsx --test --test-concurrency=1 tests/db/*.dbtest.ts`, без DSN - падает (roundtrip - единственный вызов); roundtrip перед `test:db` явно вызывает `apply_migrations.py --env-file $WORK/roundtrip.env` (файл уже есть, `:55-61`; проверка идемпотентности `:67-72` останется верной) |
+| N2 | 1.2-1.6 | Как job (`collect.ts` по `COLLECTOR_DATABASE_URI_FILE`, `delete_run.py` по `JANITOR_DATABASE_URI_FILE`) в harness оказывается «под `SET ROLE`»: roundtrip даёт только superuser-DSN, URI-файлов нет, хука на `SET ROLE` в job нет. Под superuser RLS обходится - тесты «без GUC → 0» бессмысленны | Top-1: provision-скрипт (часть 1.7) перенести в 1.2 - harness после миграций запускает `provision-runtime-roles.sh` в локальном режиме, получает LOGIN-роли и URI-файлы в `$WORK/`, job'ы подключаются как в проде, `SET ROLE` не нужен вовсе (снимает и N5; одна строка memlog в AD-12). Запасной вариант: `PROXIMA_TEST_SET_ROLE` - job выполняет `SET ROLE` после подключения, если переменная задана (образец `test_runtime_roles_schema.py:155-170`) |
+| N3 | 1.2, 1.6 | `node:test` запускает файлы параллельно в отдельных процессах; общая БД + сидирование `_current` для RLS-матрицы + `delete_run` в одном прогоне - порядок не задан | Один упорядоченный db-файл на историю, `--test-concurrency=1` (см. N1) |
+| N4 | 1.4, 1.0 | `backfill --source artifact:<sha_sales>,<sha_orders>` получает только sha256. `retrieved_at` живёт в API-FACTS (1.0) и в манифесте CAS (`raw-store.ts:92-110`, путь по `run_id`, обратного индекса по sha256 нет). Откуда `run_day` и `wb_raw_artifacts.retrieved_at` - не записано. Чем 1.0 кладёт файлы в CAS и по какой раскладке (`objects/sha256/<hex[0:2]>/<hex>`, 0600, каталоги 0700 - `raw-store.ts:85,16-22`) - не сказано. Откуда в harness «синтетические артефакты с `retrieved_at`» - не сказано | AD-2 / Given 1.4: флаг `--retrieved-at <ISO>` обязателен в режиме `artifact` (из API-FACTS: sales 05:59:39Z, orders 06:00:41Z - один MSK-день, одного флага хватит); синтетика в harness = тест пишет два JSON в `$WORK/raw` через `BusinessSignalRawStore.persist` (переиспользование разрешено AD-18) и вызывает `backfill` с их sha256. В 1.0 назвать раскладку и владельца |
+| N5 | 1.6 → 1.7 | **Порядок ломает 1.6**: `delete_run` под `proxima_run_janitor` требует `GRANT DELETE`, который по AD-3/AD-11 живёт только в bootstrap (гейт `verify_migrations.py:35-39` DELETE не пропускает), а bootstrap - Story 1.7, после 1.6 | Снимается N2 top-1 (provision в 1.2). Иначе - поменять 1.6 и 1.7 местами (1.7 зависит только от 1.5) |
+| N6 | 1.6, AD-11 | = M2. AC «каждая роль × каждый view: с GUC > 0» невыполним: `proxima_webapp_readonly` и `proxima_job_norm` не имеют SELECT на `stg_wb_*_obs` → `stg_wb_*_latest` под ними = `permission denied`, не «> 0» (4 из 16 пар в Epic 1; в Epic 2 добавятся `norm_daily_current`/`brief_current` под collector). Исполнитель «починит» расширением грантов - не в ту сторону | AD-11 + 1.6: «матрица = пары роль × view, где у роли SELECT на все базовые таблицы view (по грантам AD-11); для остальных пар ожидается `permission denied`» |
+| N7 | 1.11, AD-17, 1.0 | Restore-check: `pg_restore` неприменим - бэкап = `pg_dump … \| gzip` → `<date>-proxima.sql.gz` (INVENTORY №126, plain SQL), восстанавливать `gunzip \| psql -v ON_ERROR_STOP=1`. Если локальная копия тоже зашифрована age (`backup_age_recipient`), на сервере нужен identity-файл - путь не записан; без него юнит невыполним | 1.0 [Claude] фиксирует формат локального файла и путь age-identity (или «локальная копия не шифруется»); AD-17/1.11: `gunzip \| psql` вместо `pg_restore` |
+| N8 | 1.5 ↔ 1.13 | `floor` режима `artifact` = «первый день артефакта» (01.03: `orders` с `2026-03-01T00:51:40`), а 1.13 ждёт «дни с 02.03.2026»; FR3 говорит «с 01.03». Полнота 01.03 в `flag=0` не доказана (API-FACTS:42: окно режет по дате; 28.02 есть в `flag=1`, но нет в `flag=0`) | Записать одно правило: `floor = первый день + 1` и в 1.5, и в 1.13 (консервативно, как для живого `--from`). W10/W35 не зависят: 01.03.2026 - воскресенье, ISO W09 |
+| N9 | 3.2 | `wb_async_report.py` создаёт `collector_runs` под owner-URI без GUC: owner = superuser compose → RLS обходится, INSERT проходит; FK `tenant_id → tenants` при удалённом автосоздании (`:296`) даёт «нет tenant - ошибка». **Приемлемо.** Но AD-3 требует `set_config` на соединении для Python-job'ов, а в скрипте его нет (grep пуст) | В Given 3.2 одна строка: «`set_config('proxima.tenant_id', tenant, false)` первым statement после подключения (AD-3), хотя owner RLS не подчиняется» |
+| N10 | 1.10 | «Одно действие = `make verify`» для UI-истории: приемлемо по D7 и симметрично 2.5. Риск: строка статуса впервые видна глазами в 1.13 на сервере; ошибка форматирования = релизный цикл. `DataProvider` из pa-50 (`provider.ts`: `getBrief`, `getMetrics`) метода статуса не имеет - 1.10 расширяет интерфейс и fixtures-provider (не сказано, но очевидно) | Не блокирует. Дёшево: в 1.10 «fixtures-provider отдаёт фикстурный статус; `npm run dev` показывает строку без БД» - тогда `bmad-qa-generate-e2e-tests` снимет экран до 1.13 |
+| N11 | 2.1 | Ветка pmm29 = 26 файлов, среди них `.autopilot/{state.js,dashboard.html,README.md}`, `AGENTS.md`, служебные `spec/tickets` - переносить нельзя; `services/collector/src/contracts/*.ts` генерируются, не копируются. `diagnosis/` ветка не трогает - «пакет не трогается» выполнимо | В 2.1 назвать подмножество: `contracts/{signal,diagnosis,decision-record}.schema.json`, `contracts/examples/*`, `tests/product-contracts.test.ts`, `tools/verify_contracts.py`; типы - `make codegen` |
+| N12 | 1.1 | Блок «When конвейер проходит шаги 3-10 … Then задокументированы в `docs/operations/releases/…`» читается как AC сеанса OpenHands, у которого нет ни сервера, ни права на тег | Пометить блок «[конвейер: Claude + Mike]»; сеанс отвечает за первый Given/When/Then |
+| N13 | 1.8 | CI «`apply-migrations` внутри `control-plane-admin` против service-container PG16»: контейнер из `docker compose run` не видит GH service-container по имени `postgres` (`jobs.env`: `POSTGRES_HOST=postgres`); `secrets: file:` требует файлов-пустышек в CI | В CI поднимать compose-сервис `postgres` с пустышками секретов, не GH service. Локально, самокорректируется |
+| N14 | SPEC:66 | «первая единица M-01 (расписание + бэкфилл) уходит в OpenHands не позже 08.09» - скобка устарела: первая единица = 1.0/1.1 (WB-клиент), расписание = 1.11 | L; править при следующем касании спеки |
+
+Порядок 2.1 → 2.2: ссылок вперёд нет (2.2 `$ref` на `signal.schema.json` из 2.1; `types.ts` удаляется в 2.2, 1.9 ссылается на 2.2). Порядок 3.0 → 3.3: чисто.
+
+## 3. Размер (ориентир ≤ ~5 областей, ≤ ~600 строк)
+
+| История | Состав | Вердикт |
+|---|---|---|
+| 1.3 | 011 + 012 (~150), `collect.ts` + модель прогона (~250), `WbArtifactSink` в БД + писатель наблюдений (~150), `log.ts`, тесты idempotent/drift/`pg_policies` (~250) | **800-1000, 6 областей - не влезает.** Делить: 1.3a = 011 + модель прогона (RUNNING/SUCCEEDED/FAILED) + `WbArtifactSink` в `wb_raw_artifacts` + `log.ts` + тест `pg_policies`; 1.3b = 012 + наблюдения + `_latest` + idempotent replay + `WB_SCHEMA_DRIFT` |
+| 1.4 | режим artifact + живой режим (пагинация, `--resume`, виртуальные часы) + чтение CAS + регистрация + тесты | 500-600, на грани; после N4 влезает |
+| 1.5 | 013 + агрегатор + `data_status_current` + гейт + self-heal `dateFrom` + тест S1/S2 | 500-600, на грани |
+| 2.2 | 3 схемы + примеры + codegen → webapp + удаление `types.ts` + импорты + `msk_day.py` | 500-700, 5 областей - на грани; `msk_day.py` → 2.3 снимает |
+| 3.1 | 014 + `funnel-v3.ts` (активные nmId, пакеты, бюджет, окно) + `facts/funnel-daily.ts` + тесты + `morning_run.sh` | 500-600, на грани |
+| остальные (1.1, 1.2, 1.6-1.12, 2.1, 2.3-2.5, 3.2, 3.3) | ≤ 500 | Влезают |
+
+Сентябрь при делении 1.3: 25 → 26 единиц.
+
+## 4. Первая единица 1.0 + 1.1
+
+**1.0 [Claude] - стартует.** Есть: формула вердикта `flag=0`, пути и токен, CAS-импорт с sha256/`retrieved_at` в API-FACTS, `proxima-pg-backup.sh` в git, `anonymize_fixture.py` со спецификацией обезличивания, целевые каталоги фикстур, правки хука/CI/`PUPPETEER_SKIP_DOWNLOAD`, одно действие Mike. Допущения, которые Claude принимает сам и пишет в PR: раскладка CAS `objects/sha256/<hex[0:2]>/<hex>` 0600/0700 владелец 1010 (N4); окно фикстур `orders`/`sales` = две полные недели с эталонными суммами S1/S2 в `tests/fixtures/wb-api/README.md` (6 месяцев в 200 КБ не влезают); формат локального дампа и age-identity (N7).
+
+**1.1 - стартует.** Есть: реестр 4 эндпоинтов с бюджетами, гейт `verify_wb_client.py` (область `src/wb/` + `src/jobs/` по AD-4), `ArtifactSink` in-memory, CLI-флаги токенов по образцу `stockout-signal.ts:28-33`, `record_fixture.ts`, тесты с граничными значениями, `FixtureTransport` и путь фикстур. Допущения: «поверх `RecordedHttpClient`» = адаптер `SignalRepository` с одним живым методом (H8); шаги 3-10 - конвейер, не сеанс (N12). Вопросов к Mike нет.
+
+## Что сделать до выдачи 1.3+ (порядок)
+
+1. `bmad-create-epics-and-stories` (epics.md): provision-скрипт из 1.7 в 1.2, harness без `SET ROLE` (N2/N5; либо swap 1.6 ↔ 1.7 + `PROXIMA_TEST_SET_ROLE`); в 1.6 матрица по грантам (N6); 1.3 → 1.3a/1.3b; в 1.2 Given - `tests/db/*.dbtest.ts`, `--test-concurrency=1`, явный `apply_migrations.py` перед `test:db` (N1, N3); в 1.4 - `--retrieved-at` и сидирование CAS через `BusinessSignalRawStore.persist` (N4); в 1.5/1.13 - `floor = первый день + 1` (N8); в 3.2 - `set_config` (N9); в 2.1 - подмножество файлов pmm29 (N11); в 1.1 - пометка «[конвейер]» (N12); в 1.11 - `gunzip | psql` (N7); в 1.0 - раскладка CAS, окно фикстур, формат дампа/age (раздел 4).
+2. `bmad-architecture` (memlog, без новых AD): AD-11 - RLS-тест по грантам (N6); AD-12 - provision в harness вместо `SET ROLE` (N2); AD-2 - `--retrieved-at` (N4); AD-17 - `gunzip | psql` (N7); AD-4 - адаптер над `RecordedHttpClient` (H8); устаревшие фразы: AD-6 «`collect --from 2026-03-01 --backfill`», AD-13 «`set_config(…, true)` в транзакции», AD-15 «`WEBAPP_DATA_DATABASE_URI` из секрета», Seed `016_brief_daily_roles` (L1).
+3. 1.0 и 1.1 выдавать сейчас, не дожидаясь п. 1-2.
+
+---
+
+# Проход 1 (30.08.2026) - исходный отчёт
+
 Объект: `_bmad-output/planning-artifacts/epics.md` (5 эпиков, 28 историй; сентябрь = E1-E3, 22 единицы, 6 [Claude]). Эталоны: `SPEC.md` + `glossary.md`, `ARCHITECTURE-SPINE.md` v3.1 (AD-1..18, memlog), `DECISIONS.md` D1-D22, `docs/state/API-FACTS.md`, ревью нарезки v1 (`epics-review-2026-08-30.md`). Режим: read-only, скептик-исполнитель. Вопрос гейта один: сможет ли OpenHands (без токенов и сервера) реализовать истории, не придумывая решений, которых нигде не записано.
 
 Проверено по коду репо (не по документам): `tools/verify_migrations.py`, `tools/pg_local_roundtrip.sh`, `Makefile`, `.github/workflows/verify.yml`, `.openhands/{hooks/verify-gate.sh,setup.sh}`, `.gitignore`, `db/migrations/001-010` (шаблон 009, колонки 003/005), `infra/{compose,webapp.compose}.yaml`, `infra/vps-contract.json` + `verify_vps_contract.py`, `verify_runtime_boundary.py`, `services/collector/src/business-signal/{http,raw-store,secrets,wb-client,types,repository,date-window}.ts`, `services/control-plane/pyproject.toml`, `diagnosis/{validator,models}.py` + `schema/diagnosis.draft.v1.json`, `tools/{apply_migrations,wb_async_report,verify_contracts}.py`, `tools/generate_contract_types.mjs`, ветки `origin/ai/pa-50` и `origin/mihailzhamba-bot/pmm29-contracts`, `docs/state/{INVENTORY,WEB-STATE,MIGRATION-GAPS,WORKS-TODAY}.md`, локальные `fixtures/wb-api/`.

@@ -132,8 +132,8 @@ So that исполнитель работал только на фикстура
 **Then** в `docs/state/API-FACTS.md` раздел «flag=0 семантика (дата)» с формулой вердикта: если в ответе есть строки с `date < dateFrom` и `lastChangeDate >= dateFrom` - фильтр по `lastChangeDate` (AD-4 остаётся); если все `date >= dateFrom` - фильтр по дате, AD-4 меняется на `dateFrom = run_day-14` записью в memlog спайна; на полной фикстуре `orders` 30.08 записан результат `count(*) = count(distinct srid)`
 
 **Given** два полных ответа 30.08 в `~/signal-inputs/fixtures/wb-api/statistics/supplier-{sales,orders}/…flag-0.json`
-**When** они импортируются в CAS `PROXIMA_RAW_DIR` на VPS (`1010:1010`, locator `artifact://business-signal/sha256/<hex>`)
-**Then** оба sha256 и `retrieved_at` записаны в `docs/state/API-FACTS.md` (раздел «Артефакты для бэкфилла») - вход для Story 1.3 и runbook; `infra/backup/proxima-pg-backup.sh` снят с сервера в git как есть (`sha256` совпадает); обезличенные фикстуры `services/collector/tests/fixtures/wb-api/{statistics/orders,statistics/sales,analytics/sales_funnel_v3_history,analytics/nm_report_downloads}/*.json` (≤ 200 КБ; инструмент `tools/anonymize_fixture.py`: nmId → детерминированный хэш, артикулы → `sku-<n>`, суммы × случайный коэффициент 0.8-1.2 с сохранением дней и структуры) закоммичены в ветку `feat/m01-step0` вместе с инструментом
+**When** для них вычисляются sha256 и берётся `retrieved_at` из имени файла (UTC-метка)
+**Then** оба sha256 и `retrieved_at` записаны в `docs/state/API-FACTS.md` (раздел «Артефакты для бэкфилла») - вход для Story 1.5 и runbook (импорт в CAS на VPS делает `tools/cas_import.ts` в Story 1.14); `infra/backup/proxima-pg-backup.sh` снят с сервера в git как есть (`sha256` совпадает); обезличенные фикстуры `services/collector/tests/fixtures/wb-api/{statistics/orders,statistics/sales,analytics/sales_funnel_v3_history,analytics/nm_report_downloads}/*.json` (≤ 200 КБ; инструмент `tools/anonymize_fixture.py`: nmId → детерминированный хэш, артикулы → `sku-<n>`, суммы × случайный коэффициент 0.8-1.2 с сохранением дней и структуры) закоммичены в ветку `feat/m01-step0` вместе с инструментом
 
 **Given** `.openhands/hooks/verify-gate.sh` требует `DATABASE_URI`, `npm ci` тянет Chromium, CI на `ubuntu-latest` даёт `pg-roundtrip: SKIP`
 **When** обвязка правится в той же ветке
@@ -148,7 +148,7 @@ So that следующие единицы шли по проверенному �
 
 **Acceptance Criteria:**
 
-**Given** `services/collector/src/wb/{client,transport,fixture-transport,artifact-sink,msk-day}.ts` по AD-4/AD-7: реестр эндпоинтов и бюджетов, `ArtifactSink` (интерфейс) + `WbArtifactSink` (пишет `wb_raw_artifacts`; в этой истории - только контракт и in-memory реализация для тестов, БД-реализация в 1.2), токены через CLI-флаги `--<category>-token-file` по образцу `stockout-signal.ts`; `tools/record_fixture.ts` (артефакт → обезличенная фикстура через `tools/anonymize_fixture.py`)
+**Given** `services/collector/src/wb/{client,transport,fixture-transport,artifact-sink,msk-day}.ts` по AD-4/AD-7: реестр эндпоинтов и бюджетов, `ArtifactSink` (интерфейс) + in-memory реализация для тестов (БД-реализация `WbArtifactSink` и `recording-client.ts` - в Story 1.3), токены через CLI-флаги `--<category>-token-file` по образцу `stockout-signal.ts`; `tools/record_fixture.ts` (артефакт → обезличенная фикстура через `tools/anonymize_fixture.py`)
 **When** `make verify`
 **Then** новый гейт `tools/verify_wb_client.py` проходит: URL WB только в реестре; реестр = `statistics.orders` (10/мин), `statistics.sales` (1/мин), `analytics.sales_funnel_v3_history` (3/мин), `analytics.nm_report_downloads` (3/мин); `reportDetailByPeriod`/`supplier/stocks` отсутствуют; `setInterval`/`node-cron` не встречаются в `src/**`; `tools/verify_business_signal.py` не изменён
 **And** тесты через `FixtureTransport` при незаданных токенах: 429 ждёт по `X-Ratelimit-Retry`, сдаётся после 3 повторов; бюджет не допускает второй `sales` раньше 60 с (виртуальные часы); сетевой вызов падает; `mskDay('2026-08-29T23:30:00Z') = 2026-08-30`, `mskDay('2026-08-29T20:59:59Z') = 2026-08-29`
@@ -161,35 +161,43 @@ So that следующие единицы шли по проверенному �
 ### Story 1.2: TS↔PG harness в make verify
 
 As a оператор,
-I want чтобы collector-тесты с тегом `db` выполнялись против одноразового PG16 внутри `make verify`, включая проверки под ролями через `SET ROLE`,
-So that все следующие истории с БД имели место для тестов.
+I want чтобы collector-тесты с БД выполнялись против одноразового PG16 внутри `make verify` под теми же LOGIN-ролями, что в проде,
+So that все следующие истории с БД имели место для тестов без `SET ROLE` и без superuser.
 
 **Acceptance Criteria:**
 
-**Given** `tools/pg_local_roundtrip.sh` расширен по AD-12: после миграций запускает `npm --workspace @proxima/collector run test:db` (`node:test`, фильтр по тегу `db`, `PROXIMA_TEST_POSTGRES_DSN`), затем существующие pytest-файлы; ролевые проверки через `SET ROLE <proxima_*>` (LOGIN-пользователей ещё нет)
+**Given** `infra/bootstrap/provision-runtime-roles.sh` по AD-11/AD-12 (идемпотентный; параметры: путь к `psql`, каталог секретов; LOGIN `proxima_collector` (член `proxima_job_collector` и `proxima_source_publisher`), `proxima_norm`, `proxima_webapp`, `proxima_janitor` (+ `GRANT DELETE`); база `proxima_test`; `proxima_sandbox` с CONNECT только к `proxima_test`, `BYPASSRLS`; `REVOKE CONNECT ON DATABASE proxima FROM PUBLIC`; URI-файлы по таблице Conventions) и `tools/pg_local_roundtrip.sh` по AD-12: миграции (pytest `apply_migrations`) → provision на одноразовом PG16 (временный каталог секретов) → `npm --workspace @proxima/collector run test:db` (только `*.db.test.ts`; `make test` их исключает), DSN каждой роли в `PROXIMA_TEST_DSN_<ROLE>`
 **When** `make verify` на маке (Homebrew PG16) и в CI (`ubuntu-24.04` + PG16)
-**Then** `pg-roundtrip: PASS` включает строку `collector db-tests: N passed`; без PG16 шаг по-прежнему `SKIP` с явной строкой; пример db-теста: `SELECT 1` под `SET ROLE proxima_source_publisher`
-**And** Mike выполняет одно действие: `make verify` - строка `collector db-tests` в выводе
+**Then** `pg-roundtrip: PASS` включает `provision: idempotent (2 runs)` и `collector db-tests: N passed`; без PG16 - явный `SKIP`; пример db-теста: под `PROXIMA_TEST_DSN_COLLECTOR` `SELECT 1` проходит, `CONNECT` `proxima_sandbox` к основной базе - отказ
+**And** Mike выполняет одно действие: `make verify` - строки `provision` и `collector db-tests` в выводе
 
-### Story 1.3: Реестр прогонов и наблюдения заказов и продаж
+### Story 1.3: Реестр прогонов, роли и приёмник артефактов
 
 As a оператор,
-I want чтобы прогон сбора записывал артефакты и наблюдения заказов/продаж с их `lastChangeDate`, завершался статусом в едином реестре и работал под своей ролью,
-So that каждая строка была прослеживаема до прогона и доказательства.
+I want чтобы у прогонов был единый реестр с ролями, а каждый ответ WB ложился артефактом в CAS и в `wb_raw_artifacts`,
+So that любая строка в БД была прослеживаема до прогона и доказательства.
 
 **Acceptance Criteria:**
 
-**Given** `db/migrations/011_run_ledger.sql`: `collector_runs` (kinds по AD-3), `collector_run_inputs`, `wb_raw_artifacts` (все с `tenant_id`, RLS), NOLOGIN-роли `proxima_job_collector`, `proxima_job_norm`, `proxima_webapp_readonly`, `proxima_run_janitor` с грантами на эти таблицы и политиками шаблона AD-11, `collector_run_id uuid NULL` в `fact_attempt_runs` и `wb_analytics_report_tasks`; `012_stg_wb_orders_sales.sql`: `stg_wb_orders_obs` PK `(tenant_id, srid, last_change_at)`, `stg_wb_sales_obs` PK `(tenant_id, sale_id, last_change_at)`, `canonical_sha256`, view `_latest` (`security_invoker`), гранты/политики collector + janitor
+**Given** `db/migrations/011_run_ledger.sql`: `collector_runs` (kinds по AD-3), `collector_run_inputs`, `wb_raw_artifacts` (все с `tenant_id`, RLS), NOLOGIN-роли `proxima_job_collector`, `proxima_job_norm`, `proxima_webapp_readonly`, `proxima_run_janitor` с грантами и политиками шаблона AD-11, `collector_run_id uuid NULL` в `fact_attempt_runs` и `wb_analytics_report_tasks`; `src/wb/recording-client.ts` (обёртка по AD-4 поверх `raw-store.ts`/`fetchTransport`, артефакт до проверки статуса), `WbArtifactSink` в БД, `src/wb/run-ledger.ts` (RUNNING autocommit / SUCCEEDED в транзакции / FAILED autocommit, GUC на сессию при подключении), `log.ts`
 **When** `make verify`
-**Then** `verify_migrations.py` проходит; `pg-roundtrip: PASS`; db-тест по `pg_policies`: у каждой таблицы с `run_id` есть политика `proxima_run_janitor`
+**Then** `verify_migrations.py` проходит; harness: `pg_policies` содержит janitor-политику для каждой таблицы с `run_id`; db-тест под `PROXIMA_TEST_DSN_COLLECTOR`: прогон открыт RUNNING, два артефакта записаны (файл в `PROXIMA_RAW_DIR`, строка в `wb_raw_artifacts`, locator `artifact://business-signal/sha256/<hex>`), прогон закрыт SUCCEEDED; искусственная ошибка → FAILED отдельным autocommit, артефакты остались
+**And** Mike выполняет одно действие: `make verify` - `run-ledger: running/succeeded/failed` зелёный
 
-**Given** `jobs/collect.ts` (`collect --tenant amirova-test --date-from <d> --statistics-token-file …`, подключение по `COLLECTOR_DATABASE_URI_FILE`, `WbArtifactSink` в БД, `log.ts`) на `FixtureTransport`
-**When** прогон выполняется в harness под `SET ROLE proxima_job_collector`
-**Then** порядок AD-3: GUC на сессию при подключении → `collector_runs … RUNNING` autocommit → каждая строка `wb_raw_artifacts` autocommit по получении (locator `artifact://business-signal/sha256/<hex>`, файл в `PROXIMA_RAW_DIR`) → наблюдения + `UPDATE … SUCCEEDED` в одной транзакции; JSON-лог по Conventions
-**And** повтор на тех же фикстурах: 0 новых наблюдений, новая строка `collector_runs`; тот же `srid` с новым `lastChangeDate` - вторая строка, `_latest` отдаёт новую; тот же PK с другим payload - `WB_SCHEMA_DRIFT`, `FAILED` отдельным autocommit, наблюдений прогона нет
+### Story 1.4: Наблюдения заказов и продаж
+
+As a оператор,
+I want чтобы прогон сбора записывал наблюдения заказов и продаж с их `lastChangeDate` идемпотентно,
+So that повтор не создавал дублей, а поздняя отмена не терялась.
+
+**Acceptance Criteria:**
+
+**Given** `012_stg_wb_orders_sales.sql`: `stg_wb_orders_obs` PK `(tenant_id, srid, last_change_at)`, `stg_wb_sales_obs` PK `(tenant_id, sale_id, last_change_at)`, `canonical_sha256`, view `_latest` (`security_invoker`), гранты/политики collector + janitor; `jobs/collect.ts` (`collect --tenant amirova-test --date-from <d> --statistics-token-file …`, подключение по `COLLECTOR_DATABASE_URI_FILE`) на `FixtureTransport`, использующий Story 1.3
+**When** прогон выполняется в harness под `PROXIMA_TEST_DSN_COLLECTOR`
+**Then** наблюдения + `SUCCEEDED` в одной транзакции; повтор на тех же фикстурах: 0 новых наблюдений, новая строка `collector_runs`; тот же `srid` с новым `lastChangeDate` - вторая строка, `_latest` отдаёт новую; тот же PK с другим payload - `WB_SCHEMA_DRIFT`, `FAILED`, наблюдений прогона нет
 **And** Mike выполняет одно действие: `make verify` - `collect: idempotent replay 0 new rows` зелёный
 
-### Story 1.4: Бэкфилл истории из артефактов и живого хвоста
+### Story 1.5: Бэкфилл истории из артефактов и живого хвоста
 
 As a Mike,
 I want загрузить всю доступную историю одной командой - из двух сохранённых ответов 30.08 и живого хвоста,
@@ -197,12 +205,12 @@ So that март не пропал, даже если релиз случитс�
 
 **Acceptance Criteria:**
 
-**Given** `jobs/backfill.ts` по AD-2: `backfill --tenant --source artifact:<sha256_sales>,<sha256_orders>` читает артефакты из CAS (зарегистрированы в `wb_raw_artifacts` прогона `backfill`), `run_day := mskDay(retrieved_at)` артефакта; живой режим `backfill --from <d>`: бюджет `sales` 1/мин, при 80 000 строк продолжение с `dateFrom = lastChangeDate` последней строки, `--resume` по последнему `last_change_at`
-**When** режим `artifact` выполняется в harness на двух синтетических артефактах (структура ответов 30.08, известные суммы) с `retrieved_at = 2026-08-30T05:59Z`
+**Given** `tools/cas_import.ts <file> --retrieved-at <ISO> --source official_wb_statistics` (кладёт файл в CAS с манифестом; тот же инструмент используется в runbook на VPS) и `jobs/backfill.ts` по AD-2: `backfill --tenant --source artifact:<sha256_sales>,<sha256_orders> [--retrieved-at <ISO>]` читает артефакты из CAS (регистрирует их в `wb_raw_artifacts` прогона `backfill`), `run_day := mskDay(retrieved_at)` из манифеста или флага; живой режим `backfill --from <d>`: бюджет `sales` 1/мин, при 80 000 строк продолжение с `dateFrom = lastChangeDate` последней строки, `--resume` по последнему `last_change_at`
+**When** в harness два синтетических артефакта (структура ответов 30.08, известные суммы) импортированы `cas_import.ts --retrieved-at 2026-08-30T05:59:00Z` и выполняется режим `artifact`
 **Then** наблюдения созданы за все дни артефактов, `run_day = 2026-08-30`; повтор - 0 новых; живой режим с виртуальными часами: паузы ≥ 60 с и пагинация на синтетическом ответе из 80 000 строк
 **And** Mike выполняет одно действие: `make verify` - `backfill: artifact replay + pagination` зелёный
 
-### Story 1.5: Дневной ряд кабинета и статус данных
+### Story 1.6: Дневной ряд кабинета и статус данных
 
 As a Mike,
 I want чтобы после прогона в БД лежала версия каждого дня интервала, а view отвечал, до какого дня данные полные,
@@ -214,12 +222,12 @@ So that норма и сводка читали один ряд.
 **When** прогон выполняется
 **Then** версия для каждого дня `[floor, run_day-1]` (день без строк = нули + артефакты прогона); `floor = mskDay(dateFrom)` для `collect`, `--from + 1` для живого `backfill`, первый день артефакта для режима `artifact`; `= run_day` не версионируется; `collector_run_inputs` содержит distinct `run_id` наблюдений свёртки; `dateFrom` для `collect` без флага = `min(run_day-3, last_full_day+1)`
 
-**Given** синтетические артефакты Story 1.4 с известными суммами недель S1 и S2
+**Given** синтетические артефакты Story 1.5 с известными суммами недель S1 и S2
 **When** `backfill --source artifact` + агрегатор выполняются в harness
 **Then** суммы `_current` за S1/S2 равны эталону (формулы `glossary.md`); `data_status_current` отдаёт `last_full_day`, `stale = true` при прогоне старше 24 ч (подмена часов) и `false` в пределах 24 ч; сверка с реальными W10/W35 из API-FACTS - на VPS в Story 1.13
 **And** Mike выполняет одно действие: `make verify` - `cabinet-daily: versions every day, S1/S2 sums` зелёный
 
-### Story 1.6: Откат прогона
+### Story 1.7: Откат прогона
 
 As a оператор,
 I want удалять любой прогон целиком одной командой, включая транзитивно зависимые версии,
@@ -227,26 +235,26 @@ So that плохой прогон не оставлял следов.
 
 **Acceptance Criteria:**
 
-**Given** `tools/delete_run.py --tenant <t> --run <uuid> [--dry-run]` по AD-3 (подключение по `JANITOR_DATABASE_URI_FILE`; в harness - `SET ROLE proxima_run_janitor`)
+**Given** `tools/delete_run.py --tenant <t> --run <uuid> [--dry-run]` по AD-3 (подключение по `JANITOR_DATABASE_URI_FILE`; в harness - `PROXIMA_TEST_DSN_JANITOR`)
 **When** выполняется без `--tenant` или без GUC
 **Then** ошибка «0 строк для run_id», не нули; с флагами - счётчики транзитивного замыкания по `collector_run_inputs`, удаление в одной транзакции; FAILED - только строка прогона и артефакты; файлы CAS остаются
-**And** RLS-матрица в harness: для каждой роли × каждого view - `SELECT count(*)` с GUC (> 0) и без GUC (= 0 без ошибки прав); `pg_policies` содержит janitor-политику для каждой таблицы с `run_id`
+**And** RLS-матрица в harness по AD-12: ожидания из грантов AD-11 - у роли с грантом на базовые таблицы view отдаёт `> 0` с GUC и `0` без, у роли без гранта - `permission denied`; `pg_policies` содержит janitor-политику для каждой таблицы с `run_id`
 **And** Mike выполняет одно действие: `make verify` - `delete_run: closure` и `rls: matrix` зелёные
 
-### Story 1.7: LOGIN-роли, тестовая база и сандбокс
+### Story 1.8: Тестовая база и сандбокс OpenHands
 
 As a оператор,
-I want чтобы каждый участник подключался своим LOGIN-пользователем, тестовая база обновлялась одной командой, а сандбокс OpenHands видел копию целиком,
-So that job никогда не ходил superuser-ом.
+I want чтобы тестовая копия базы обновлялась одной командой, а сандбокс OpenHands видел её целиком и только её,
+So that агент тестировал на копии данных, не касаясь боевой базы.
 
 **Acceptance Criteria:**
 
-**Given** `infra/bootstrap/provision-runtime-roles.sh` по AD-11/AD-12 (идемпотентный; LOGIN `proxima_collector` (член `proxima_job_collector` и `proxima_source_publisher`), `proxima_norm`, `proxima_webapp`, `proxima_janitor` (+ `GRANT DELETE`); база `proxima_test`; `proxima_sandbox` с CONNECT только к `proxima_test`, `BYPASSRLS`; `REVOKE CONNECT ON DATABASE proxima FROM PUBLIC`; URI-файлы по таблице Conventions `1010:1010 0600`), `tools/test_db_refresh.sh` по AD-12 (в конце `GRANT ALL ON ALL TABLES IN SCHEMA public TO proxima_sandbox`), шаблон `infra/openhands/env.task.template` (имя не под `.gitignore .env.*`) с `DATABASE_URI` из `proxima_sandbox_uri`
-**When** скрипты выполняются дважды подряд в harness (PG16, без Docker: путь к `psql` параметром)
-**Then** второй запуск ничего не меняет; `proxima_sandbox` не подключается к `proxima`; после refresh под `proxima_sandbox` в `proxima_test` `SELECT count(*) FROM fact_cabinet_daily_current` > 0 и `INSERT` в тестовую таблицу проходит
-**And** Mike выполняет одно действие: `make verify` - `provision: idempotent, sandbox isolated` зелёный
+**Given** `tools/test_db_refresh.sh` по AD-12 (`pg_terminate_backend` → `DROP DATABASE proxima_test WITH (FORCE)` → `CREATE` → `pg_dump proxima | psql -v ON_ERROR_STOP=1 proxima_test` → `GRANT ALL ON ALL TABLES IN SCHEMA public TO proxima_sandbox` → `ALTER ROLE proxima_sandbox IN DATABASE proxima_test SET proxima.tenant_id`), цель `make test-db-refresh`, шаблон `infra/openhands/env.task.template` с `DATABASE_URI` из `proxima_sandbox_uri`, обновление `.openhands/hooks/verify-gate.sh` и `docs/agent-system/TOOLS.md` под сандбокс
+**When** скрипт выполняется дважды подряд в harness (provision из Story 1.2 уже применён)
+**Then** второй запуск проходит; под `PROXIMA_TEST_DSN_SANDBOX` в `proxima_test` `SELECT count(*) FROM fact_cabinet_daily_current` > 0 и `INSERT` в тестовую таблицу проходит; подключение `proxima_sandbox` к основной базе - отказ
+**And** Mike выполняет одно действие: `make verify` - `test-db-refresh: sandbox sees copy` зелёный
 
-### Story 1.8: Образы, compose и staging-overlay
+### Story 1.9: Образы, compose и staging-overlay
 
 As a оператор,
 I want чтобы collector и control-plane собирались в образы и запускались одноразовыми контейнерами из compose с секретами по таблице Conventions, а webapp поднимался staging-overlay'ем,
@@ -259,7 +267,7 @@ So that на хосте не требовались uv/psql/node_modules.
 **Then** всё зелёное; `.env` и `node_modules` в контексте отсутствуют; в `config` сервис `collector` не имеет owner-секретов
 **And** Mike выполняет одно действие: открывает зелёный CI-прогон с job'ами `build-images`, `apply-migrations-in-container`
 
-### Story 1.9: Принять провайдер данных webapp из ветки ai/pa-50
+### Story 1.10: Принять провайдер данных webapp из ветки ai/pa-50
 
 As a оператор,
 I want принять через ревью ветку `origin/ai/pa-50` (интерфейс `DataProvider`, `WEBAPP_DATA_MODE`, fixtures-provider, заглушка postgres-provider) без реализации SQL,
@@ -272,7 +280,7 @@ So that следующая история писала только `postgres-pr
 **Then** `npm --workspace @proxima/webapp test`, `run typecheck`, `run lint` зелёные; `WEBAPP_DATA_MODE` пусто → fixtures, неизвестное → ошибка при старте; postgres-режим бросает `NOT_IMPLEMENTED`; auth-зона не изменена
 **And** Mike выполняет одно действие: `make verify`
 
-### Story 1.10: Статус данных на /brief
+### Story 1.11: Статус данных на /brief
 
 As a Mike,
 I want видеть на `/brief` строку «данные до <дата>, обновлено <время>» и предупреждение вместо цифр, если сбор не проходил больше суток,
@@ -284,9 +292,9 @@ So that я всегда знал, можно ли верить экрану.
 **When** `data_status_current` отдаёт `last_full_day=2026-09-09, collected_at=…, stale=false`
 **Then** на `/brief` строка «Данные до 09.09, обновлено 10.09 05:41»; при `stale=true` или пустом view - «Сбор не проходил больше суток» вместо цифр; `UnreleasedBanner` не снимается
 **And** vitest через шов (мок `Pool`): stale/не stale/пусто; `test`, `typecheck`, `lint` зелёные; auth-зона не изменена
-**And** Mike выполняет одно действие: `make verify` - тест `provider: data status states` зелёный (живой экран - в Story 1.13)
+**And** Mike выполняет одно действие: `make verify` - тест `provider: data status states` зелёный (живой экран - в Story 1.14)
 
-### Story 1.11: Планировщик, алерт и бэкап в git
+### Story 1.12: Планировщик, алерт и бэкап в git
 
 As a оператор,
 I want systemd-юниты утреннего прогона, алерта и проверки восстановления, скрипт шагов и скрипт бэкапа под контролем git,
@@ -294,12 +302,12 @@ So that расписание и восстановление были воспр
 
 **Acceptance Criteria:**
 
-**Given** `infra/systemd/proxima-morning@.{service,timer}` (`OnCalendar=*-*-* 05:30:00 Europe/Moscow`, `Persistent=true`, `User=root`, `ProtectHome=true`, `OnFailure=proxima-alert@%n.service`), `proxima-alert@.service` (Telegram монитора), `proxima-restore-check@.{service,timer}` (Пн 06:00: `pg_restore` последнего дампа из `/var/backups/proxima` в `proxima_test` + `SELECT count(*) FROM fact_cabinet_daily_current`, AD-17), `tools/morning_run.sh <tenant>` (шаг `collect`; шаги `funnel_v3`/`norm`/`brief` добавляются своими эпиками; пути секретов по таблице Conventions; `PROXIMA_GIT_SHA`/`PROXIMA_IMAGE_ID`), `infra/backup/proxima-pg-backup.sh` из Story 1.0 + `PROXIMA_RAW_DIR` в набор бэкапа + установка на место серверного (`install` в runbook)
+**Given** `infra/systemd/proxima-morning@.{service,timer}` (`OnCalendar=*-*-* 05:30:00 Europe/Moscow`, `Persistent=true`, `User=root`, `ProtectHome=true`, `OnFailure=proxima-alert@%n.service`), `proxima-alert@.service` (Telegram монитора), `proxima-restore-check@.{service,timer}` (Пн 06:00: последний дамп из `/var/backups/proxima` → `age -d -i /etc/proxima-ai/secrets/backup_age_key.txt | gunzip | psql proxima_test` после `DROP/CREATE` + `SELECT count(*) FROM fact_cabinet_daily_current`, AD-17), `tools/morning_run.sh <tenant>` (шаг `collect`; шаги `funnel_v3`/`norm`/`brief` добавляются своими эпиками; пути секретов по таблице Conventions; `PROXIMA_GIT_SHA`/`PROXIMA_IMAGE_ID`), `infra/backup/proxima-pg-backup.sh` из Story 1.0 + `PROXIMA_RAW_DIR` в набор бэкапа + установка на место серверного (`install` в runbook)
 **When** CI выполняет `systemd-analyze verify`, `bash -n`, shellcheck; `morning_run.sh --dry-run` печатает команды `docker compose --profile jobs run --rm …`
 **Then** без ошибок
 **And** Mike выполняет одно действие: открывает зелёный CI-прогон с job `systemd-verify`
 
-### Story 1.12: Runbook первого релиза
+### Story 1.13: Runbook первого релиза
 
 As a оператор,
 I want пошаговый runbook релиза M-01 с планом отката, где каждая команда - копипастой с ожидаемым выводом,
@@ -309,10 +317,10 @@ So that релиз выполнялся без импровизации.
 
 **Given** `docs/operations/release-m01.md` по AD-15/AR11
 **When** Mike читает его
-**Then** разделы: подготовка (`mv` токенов в `<tenant>_wb_<category>_token` + chown 1010; `provision-runtime-roles.sh`; `env.task` в зону; `test_db_refresh`); деплой (build → `apply-migrations` через `control-plane-admin` → `compose up -d` с overlay - с пометкой, что добавление bridge-порта пересоздаёт контейнер postgres на ~10 с, старый `proxima-webapp-staging` остаётся до конца наблюдения → `systemctl enable --now` таймеров `morning` и `restore-check`); бэкфилл (`backfill --source artifact:<sha256 из API-FACTS>` + `collect --date-from 2026-08-27`); проверка (`WORKS-TODAY.md`; W10 = 649 / 700 860 ₽ и W35 = 225 / 263 089 ₽ в `_current`; строка статуса на `/brief`); вывод старого контейнера, `~/proxima-webapp-staging`, пустых `proxima_dev`, установка `infra/backup/*`; откат (тег `v2026.09.0-baseline` + `delete_run.py` по прогонам релиза + `WEBAPP_DATA_MODE=fixtures`; миграции не откатываются); наблюдение 3 дня (CAP-1); `CHANGELOG.md`
+**Then** разделы: подготовка (`mv` токенов в `<tenant>_wb_<category>_token` + chown 1010; `provision-runtime-roles.sh`; `env.task` в зону; `test_db_refresh`); деплой (build → `apply-migrations` через `control-plane-admin` → `compose up -d` с overlay - с пометкой, что добавление bridge-порта пересоздаёт контейнер postgres на ~10 с, старый `proxima-webapp-staging` остаётся до конца наблюдения → `systemctl enable --now` таймеров `morning` и `restore-check`); бэкфилл (`cas_import.ts` двух файлов 30.08 с `--retrieved-at` из API-FACTS → `backfill --source artifact:<sha256_sales>,<sha256_orders>` → `collect --date-from 2026-08-27`); проверка (`WORKS-TODAY.md`; W10 = 649 / 700 860 ₽ и W35 = 225 / 263 089 ₽ в `_current`; строка статуса на `/brief`); вывод старого контейнера, `~/proxima-webapp-staging`, пустых `proxima_dev`, установка `infra/backup/*`; откат (тег `v2026.09.0-baseline` + `delete_run.py` по прогонам релиза + `WEBAPP_DATA_MODE=fixtures`; миграции не откатываются); наблюдение 3 дня (CAP-1); `CHANGELOG.md`
 **And** Mike выполняет одно действие: читает runbook и не находит шага, требующего объяснений
 
-### Story 1.13: Первый релиз M-01 на сервере **[Claude]**
+### Story 1.14: Первый релиз M-01 на сервере **[Claude]**
 
 As a Mike,
 I want чтобы после моего «деплой» конвейер M-01 работал на VPS и наутро статус на `/brief` обновился сам,
@@ -447,7 +455,7 @@ So that фаза 1 была прослеживаема и не ломала fail
 
 **Acceptance Criteria:**
 
-**Given** `tools/wb_async_report.py` изменён минимально: автосоздание `tenants` удалено (нет tenant - ошибка); при старте создаёт `collector_runs` `kind = funnel_csv_download` (owner-URI, исключение AD-11 до M-04), пишет `collector_run_id` в `wb_analytics_report_tasks`, закрывает прогон SUCCEEDED/FAILED; `--period from..to` явный; создаёт не более одного отчёта в сутки после проверки `nm_report_downloads`
+**Given** `tools/wb_async_report.py` изменён минимально: автосоздание `tenants` удалено (нет tenant - ошибка); при старте выполняет `set_config('proxima.tenant_id', tenant, false)` и создаёт `collector_runs` `kind = funnel_csv_download` (owner-URI, исключение AD-11 до M-04), пишет `collector_run_id` в `wb_analytics_report_tasks`, закрывает прогон SUCCEEDED/FAILED; `--period from..to` явный; создаёт не более одного отчёта в сутки после проверки `nm_report_downloads`
 **When** `make verify` (`tools/tests/test_wb_async_report*.py` расширены)
 **Then** тесты: отсутствующий tenant → ошибка; прогон создан и закрыт; второй запуск за день не создаёт отчёт
 **And** Mike выполняет одно действие: `make verify` - `wb_async_report: run ledger` зелёный
