@@ -27,11 +27,14 @@ Do not ask the user "where did we stop". Recover state from repository files fir
 
 | Что | Где |
 |---|---|
-| Продуктовое видение, треки A/B/C/D, решения Mike | `.planning/PRODUCT-VISION.md` |
-| M1 roadmap, фазы, гейты | `.planning/ROADMAP.md` |
-| Требования M1 (ARCH/SRC/DATA/UI/OPS/PROC) | `.planning/REQUIREMENTS.md` |
-| Текущее состояние, открытые решения, блокеры | `.planning/STATE.md` |
-| Мировой ресёрч конкурентов и паттернов | `.planning/research/GLOBAL-LANDSCAPE-2026-08-16.md` |
+| Текущее состояние, открытые вопросы, с чего начинать сессию | `STATE.md` (корень) |
+| Решения D1-D11: лестница M-00..M-05 вместо M1, среды, конвейер (30.08.2026) | `DECISIONS.md` (корень) |
+| Факты инвентаризации: сервер, веб-морда, WB API, миграция, база регрессии | `docs/state/*.md` |
+| Продуктовое видение M1 (архив, не текущие требования) | `docs/archive/planning-m1/PRODUCT-VISION.md` |
+| M1 roadmap, фазы, гейты (архив, заменён лестницей M-00..M-05) | `docs/archive/planning-m1/ROADMAP.md` |
+| Требования M1 (архив) | `docs/archive/planning-m1/REQUIREMENTS.md` |
+| Состояние M1 на 25-29.08 (архив) | `docs/archive/planning-m1/STATE.md` |
+| Мировой ресёрч конкурентов и паттернов | `docs/archive/planning-m1/research/GLOBAL-LANDSCAPE-2026-08-16.md` |
 | Архитектурные карты (Mermaid) | `docs/architecture/*.mmd` |
 | Architecture Decision Records | `docs/adr/*.md` (ADR-0001+; краткие записи-указатели в `docs/agent-system/DECISIONS.md`) |
 | Дизайн-система платформы (UI-токены, spec-before-UI) | `DESIGN.md` (Google DESIGN.md spec; валидация: `npx @google/design.md lint DESIGN.md`) |
@@ -128,7 +131,7 @@ host key, агент, реальный вход и туннель, и печат
 ## Рабочий ритм
 
 - Задачи в Jira PA; эпики: PA-36 (Трек A - M1), PA-37 (Трек B - value/сценарии), PA-35 (Трек C - discovery), PA-34 (Трек D - заморожен до V3)
-- Перед нетривиальной задачей - прочитать соотв. фазу в `.planning/ROADMAP.md` и CONTEXT фазы в `.planning/phases/`
+- Перед нетривиальной задачей - прочитать `STATE.md`, `DECISIONS.md` и `docs/state/`. M1-роадмап и фазы лежат в `docs/archive/planning-m1/` - это история, не текущие требования
 - Weekly продуктовая сверка с Mike по трекам (решение №49)
 
 ## Working contract (English summary of the binding rules)
@@ -211,7 +214,7 @@ Approved gate reports live in `docs/release-gates/<YYYY-MM-DD>-<slug>.md` with G
 
 ## Dirty-tree note
 
-As of 2026-08-16 the working tree carries pre-existing uncommitted changes (Makefile, README.md, package.json, package-lock.json, `.planning/STATE.md`, `tools/verify_runtime_boundary.py`, untracked `.mcp.json`, `opencode.json`, `.codex/`, planning docs). They belong to other threads. Do not revert, stage blindly (`git add -A` is forbidden) or commit them together with your work. Stage only files you actually changed.
+As of 2026-08-16 the working tree carries pre-existing uncommitted changes (Makefile, README.md, package.json, package-lock.json, `docs/archive/planning-m1/STATE.md`, `tools/verify_runtime_boundary.py`, untracked `.mcp.json`, `opencode.json`, `.codex/`, planning docs). They belong to other threads. Do not revert, stage blindly (`git add -A` is forbidden) or commit them together with your work. Stage only files you actually changed.
 
 ## Definition of Done
 
