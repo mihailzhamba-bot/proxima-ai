@@ -10,7 +10,7 @@
 - Для аварийной остановки зоны используется kill switch `stop-openhands-safe`; мониторинг зоны выполняется каждые 5 минут (evidence: operations runbook, 2026-08-29).
 - Monorepo: npm workspace `@proxima/collector` (TypeScript, Node >=22 <23) + uv-managed Python 3.14 control-plane; canonical JSON Schemas in `contracts/*.schema.json`; migration ledger in `db/` (evidence: repo layout, 2026-08-16).
 - Test layout: TS tests in `services/collector/tests/`; Python tests in `services/control-plane/tests` + `tools/tests` (evidence: Makefile `test` target).
-- Jira PA is the task tracker; epics PA-34 (Track D, frozen until V3), PA-35 (Track C), PA-36 (Track A / M1), PA-37 (Track B) (evidence: `.planning/STATE.md`, 2026-08-16).
+- Jira PA is the task tracker; epics PA-34 (Track D, frozen until V3), PA-35 (Track C), PA-36 (Track A / M1), PA-37 (Track B) (evidence: `STATE.md` (root), 2026-08-16).
 
 ## Commands that unexpectedly matter
 
@@ -34,7 +34,7 @@
 
 ## User preferences (stable)
 
-- Communication and `.planning/` docs in Russian; code identifiers in English (AGENTS.md).
+- Communication and `docs/archive/planning-m1/` docs in Russian; code identifiers in English (AGENTS.md).
 - Atomic descriptive conventional commits; clean implementation commit per vertical slice (AGENTS.md).
 - Weekly product sync with Mike across tracks (decision #49, STATE.md).
 
