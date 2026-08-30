@@ -77,7 +77,7 @@ NFR13: Контракты: любая форма данных через гра�
 
 FR1: Epic 1 - ежедневный сбор orders/sales в дневной ряд кабинета
 FR2: Epic 1 - идемпотентность повтора (наблюдения + версии по прогону)
-FR3: Epic 1 - бэкфилл истории (Story 1.3: артефакт 30.08 + живой хвост)
+FR3: Epic 1 - бэкфилл истории (Story 1.5: артефакты 30.08 + живой хвост)
 FR4: Epic 1 - статус данных на /brief (last_full_day, collected_at)
 FR5: Epic 1 - предупреждение stale вместо цифр
 FR6: Epic 2 - норма = медиана 14 дней, insufficient при < 14
@@ -115,7 +115,7 @@ Mike открывает `/brief` и видит «данные до <вчера>,
 
 ## Epic 1: Данные кабинета собираются сами (M-01)
 
-Mike открывает `/brief` и видит «данные до <вчера>, обновлено сегодня»; в БД дневной ряд заказов и продаж кабинета `amirova-test` с 01.03.2026, пополняется каждое утро без участия человека; любой прогон откатывается одной командой. Каждая история = один сеанс исполнителя + один PR + одна проверка Mike. Исполнитель по умолчанию - OpenHands (`bmad-build-auto`); истории с пометкой **[Claude]** выполняет Claude (нужны токены на VPS или запись на сервер). Ссылки: AD-1..AD-7, AD-11..AD-15, AD-17 (спайн v3.2); D7, D14, D15, D21, D22.
+Mike открывает `/brief` и видит «данные до <вчера>, обновлено сегодня»; в БД дневной ряд заказов и продаж кабинета `amirova-test` с 01.03.2026, пополняется каждое утро без участия человека; любой прогон откатывается одной командой. Каждая история = один сеанс исполнителя + один PR + одна проверка Mike. Исполнитель по умолчанию - OpenHands (`bmad-build-auto`); истории с пометкой **[Claude]** выполняет Claude (нужны токены на VPS или запись на сервер). Ссылки: AD-1..AD-7, AD-11..AD-15, AD-17 (спайн v3.3); D7, D14, D15, D21, D22.
 
 Правила для всех эпиков: (1) `tools/verify_migrations.py` запрещает пропуски в нумерации - номера в историях целевые; ветка, мержащаяся второй, перенумеровывает свои миграции с пересчётом self-checksum (AD-14); AC не содержат «ledger N/N». (2) Имена секретов и env-переменных - только из таблицы Conventions спайна; история не вводит своих. (3) Каждый job пишет JSON-лог по Conventions через `log.ts` / `log.py`.
 
@@ -133,7 +133,7 @@ So that исполнитель работал только на фикстура
 
 **Given** два полных ответа 30.08 в `~/signal-inputs/fixtures/wb-api/statistics/supplier-{sales,orders}/…flag-0.json`
 **When** для них вычисляются sha256 и берётся `retrieved_at` из имени файла (UTC-метка)
-**Then** оба sha256 и `retrieved_at` записаны в `docs/state/API-FACTS.md` (раздел «Артефакты для бэкфилла») - вход для Story 1.5 и runbook (импорт в CAS на VPS делает `tools/cas_import.ts` в Story 1.14); `infra/backup/proxima-pg-backup.sh` снят с сервера в git как есть (`sha256` совпадает); обезличенные фикстуры `services/collector/tests/fixtures/wb-api/{statistics/orders,statistics/sales,analytics/sales_funnel_v3_history,analytics/nm_report_downloads}/*.json` (≤ 200 КБ; инструмент `tools/anonymize_fixture.py`: nmId → детерминированный хэш, артикулы → `sku-<n>`, суммы × случайный коэффициент 0.8-1.2 с сохранением дней и структуры) закоммичены в ветку `feat/m01-step0` вместе с инструментом
+**Then** оба sha256 и `retrieved_at` записаны в `docs/state/API-FACTS.md` (раздел «Артефакты для бэкфилла») - вход для Story 1.5 и runbook (импорт в CAS на VPS делает `tools/cas_import.ts` в Story 1.14); `infra/backup/proxima-pg-backup.sh` снят с сервера в git как есть (`sha256` совпадает); формат дампа (`gzip | age`) и наличие identity `/etc/proxima-ai/secrets/backup_age_key.txt` подтверждены read-only и записаны в API-FACTS/INVENTORY; обезличенные фикстуры `services/collector/tests/fixtures/wb-api/{statistics/orders,statistics/sales,analytics/sales_funnel_v3_history,analytics/nm_report_downloads}/*.json` (≤ 200 КБ; инструмент `tools/anonymize_fixture.py`: nmId → детерминированный хэш, артикулы → `sku-<n>`, суммы × случайный коэффициент 0.8-1.2 с сохранением дней и структуры) закоммичены в ветку `feat/m01-step0` вместе с инструментом
 
 **Given** `.openhands/hooks/verify-gate.sh` требует `DATABASE_URI`, `npm ci` тянет Chromium, CI на `ubuntu-latest` даёт `pg-roundtrip: SKIP`
 **When** обвязка правится в той же ветке
@@ -224,7 +224,7 @@ So that норма и сводка читали один ряд.
 
 **Given** синтетические артефакты Story 1.5 с известными суммами недель S1 и S2
 **When** `backfill --source artifact` + агрегатор выполняются в harness
-**Then** суммы `_current` за S1/S2 равны эталону (формулы `glossary.md`); `data_status_current` отдаёт `last_full_day`, `stale = true` при прогоне старше 24 ч (подмена часов) и `false` в пределах 24 ч; сверка с реальными W10/W35 из API-FACTS - на VPS в Story 1.13
+**Then** суммы `_current` за S1/S2 равны эталону (формулы `glossary.md`); `data_status_current` отдаёт `last_full_day`, `stale = true` при прогоне старше 24 ч (подмена часов) и `false` в пределах 24 ч; сверка с реальными W10/W35 из API-FACTS - на VPS в Story 1.14
 **And** Mike выполняет одно действие: `make verify` - `cabinet-daily: versions every day, S1/S2 sums` зелёный
 
 ### Story 1.7: Откат прогона
@@ -328,7 +328,7 @@ So that данные кабинета копились с сентября.
 
 **Acceptance Criteria:**
 
-**Given** Stories 1.0-1.12 смержены, тег `v2026.09.NN-2`, runbook, явное «деплой» от Mike (D7)
+**Given** Stories 1.0-1.13 смержены, тег `v2026.09.NN-2`, runbook, явное «деплой» от Mike (D7)
 **When** Claude выполняет runbook шаг за шагом, фиксируя вывод в `docs/operations/releases/2026-09-NN-m01.md`
 **Then** миграции применены полностью; provision идемпотентен; бэкфилл из артефактов 30.08 + живой хвост SUCCEEDED; `fact_cabinet_daily_current` содержит дни с 02.03.2026 по вчера; W10 и W35 совпадают с API-FACTS; `WORKS-TODAY.md` прогнан и дополнен (таймеры активны, статус на `/brief`, `restore-check`); план отката записан до первого шага
 **And** три утра подряд `collector_runs` содержит SUCCEEDED `collect` (CAP-1), `/brief` показывает «данные до <вчера>, обновлено сегодня 05:3x»; не пришёл - откат по плану

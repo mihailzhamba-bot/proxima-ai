@@ -1,5 +1,58 @@
 # Implementation Readiness - epics.md (30.08.2026)
 
+# Проход 3 (30.08.2026) - спайн v3.3, E1 = 1.0-1.14 после перенумерации
+
+Объект: `epics.md` (E1 = 15 историй 1.0-1.14: 1.3 разделена на 1.3/1.4, provision в 1.2, `cas_import.ts` + `--retrieved-at` в 1.5, RLS по грантам в 1.7, age в 1.12), `ARCHITECTURE-SPINE.md` v3.3. Узкий проход: закрытие N1, N2/N5, N4, N6, N7, H8 и размера 1.3; ссылки `Story 1.x`; решения вне спайна; старт 1.0/1.1. Проверено по коду: `services/collector/package.json:20`, `business-signal/raw-store.ts:92-114`, `tools/pg_local_roundtrip.sh:50-68`, `Makefile:4`, `docs/state/INVENTORY.md` №11.
+
+## Вердикт прохода 3: PASS
+
+- Все семь пунктов прохода 2 закрыты в epics.md и спайне; архитектурных решений вне спайна нет; 1.0 и 1.1 стартуют без вопросов к Mike.
+- Остались только L: две устаревшие ссылки `Story 1.x` после перенумерации (строки 80 и 227), стилевые хвосты спайна (AD-1/6/11/13/15, Seed) и четыре локальных решения, которые исполнитель примет сам. Правки - 10 минут, ни один сеанс не блокируют.
+
+## 1. Закрытие находок прохода 2
+
+| # | Статус | Где / что осталось |
+|---|---|---|
+| N1 db-тесты | Закрыто | 1.2 + AD-12: `*.db.test.ts`, скрипт `test:db`, порядок «pytest `apply_migrations` → provision → `test:db`» (совпадает с `pg_local_roundtrip.sh:63-68`, `make test` идёт раньше `pg-roundtrip` в `Makefile:4`). Хвосты (L): `*.db.test.ts` матчится текущим glob `tests/**/*.test.ts` (`package.json:20`) - «`make test` их исключает» требует правки glob, способ не назван, самокорректируется на первом `make test`; `--test-concurrency=1` (N3) не записан ни в 1.2, ни в AD-12 - без него db-файлы 1.4-1.8 пойдут параллельно в одну БД |
+| N2/N5 provision в harness | Закрыто | provision в 1.2 (LOGIN-роли, janitor + `GRANT DELETE`, `PROXIMA_TEST_DSN_<ROLE>`), AD-12 «`SET ROLE` не используется»; 1.4 под `PROXIMA_TEST_DSN_COLLECTOR`, 1.7 под `PROXIMA_TEST_DSN_JANITOR` - обе после 1.2. L: job читает `COLLECTOR_DATABASE_URI_FILE`, тесту дан DSN - тест сам пишет DSN во временный файл (одна строка, очевидно) |
+| N4 `retrieved_at` | Закрыто | AD-2 + 1.5: `tools/cas_import.ts <file> --retrieved-at --source`, `backfill --source artifact:<sha_sales>,<sha_orders> [--retrieved-at]`, `run_day := mskDay(retrieved_at)`, сидирование harness тем же `cas_import.ts`; 1.0 и 1.13 ссылаются на него. L: «`retrieved_at` из манифеста» - манифест `raw-store.ts:110` лежит по `manifests/<run_id>/…`, по sha256 не найти; `cas_import.ts` обязан положить свой манифест, адресуемый sha256 (в AC 1.5 `backfill` идёт без флага, значит lookup нужен; раскладку исполнитель выберет сам) |
+| N6 RLS-матрица | Закрыто | 1.7 + AD-12: ожидания из грантов AD-11, `permission denied` для ролей без гранта. L: последняя фраза AD-11 («под каждой ролью … из каждого view … = 0, без ошибки прав») не поправлена и противоречит AD-12; исполнитель 1.7 идёт по AD-12 |
+| N7 restore-check | Закрыто | AD-17 + 1.12: `age -d -i /etc/proxima-ai/secrets/backup_age_key.txt \| gunzip \| psql proxima_test`, формат `pg_dump \| gzip \| age`. Сервером не подтверждено: INVENTORY №11 говорит только «age → S3»; существование identity-файла и шифрование локальной копии проверяет 1.0 [Claude] (`sudo test -f`, чтение снятого скрипта), иначе юнит 1.12 на сервере не запустится. OpenHands не блокирует |
+| H8 ArtifactSink | Закрыто | AD-4 v3.3: собственный `recording-client.ts` поверх `raw-store.ts`/`fetchTransport`, `RecordedHttpClient` не трогается; 1.1 = интерфейс + in-memory, 1.3 = `WbArtifactSink` в БД. L: AR5 (epics:59) и AD-1 всё ещё говорят «поверх/через `RecordedHttpClient`» |
+| Размер 1.3 | Закрыто | 1.3 = 011 + `recording-client.ts` + `WbArtifactSink` + `run-ledger.ts` + `log.ts` + тесты `pg_policies`/running-succeeded-failed ≈ 550-650, 5 областей; 1.4 = 012 + `collect.ts` + наблюдения + `_latest` + тесты ≈ 500-600. Обе влезают |
+
+## 2. Ссылки `Story 1.x` вне заголовков (10 упоминаний)
+
+| Строка | Ссылка | Вердикт |
+|---|---|---|
+| 80 (FR Coverage) | «бэкфилл истории (Story 1.3: артефакт 30.08 + живой хвост)» | **Битая**: бэкфилл = 1.5; 1.3 = реестр/приёмник |
+| 136 (1.0) | вход для Story 1.5; `cas_import.ts` на VPS в Story 1.14 | Верно (1.5 бэкфилл; 1.14 исполняет runbook) |
+| 151 (1.1) | `WbArtifactSink` и `recording-client.ts` в Story 1.3 | Верно |
+| 195 (1.4) | `collect.ts` использует Story 1.3 | Верно, назад |
+| 225 (1.6) | синтетические артефакты Story 1.5 | Верно, назад |
+| 227 (1.6) | сверка W10/W35 на VPS в Story 1.13 | **Битая**: 1.13 = runbook (документ), VPS = 1.14 |
+| 253 (1.8) | provision из Story 1.2 | Верно, назад |
+| 295 (1.11) | живой экран в Story 1.14 | Верно |
+| 305 (1.12) | `proxima-pg-backup.sh` из Story 1.0 | Верно, назад |
+| 331 (1.14) | «Stories 1.0-1.12 смержены, …, runbook» | L: 1.13 назван словом «runbook»; точнее «1.0-1.13» |
+
+Ссылок вперёд на несуществующие истории нет. Ссылки Epic 2/3 (2.1↔2.2, 2.3→2.6, 2.4→2.3, 2.5→2.6, 3.3→3.0, 2.1→5.1, 1.10→2.2) верны.
+
+## 3. Решения вне спайна
+
+Архитектурных нет. В 1.2 всё покрыто AD-12: временный каталог секретов = «пароли из временных файлов», `PROXIMA_TEST_DSN_<ROLE>`, `test:db`, `*.db.test.ts`, `BYPASSRLS` sandbox. Локальные, исполнитель примет сам: параметры provision «путь к `psql`, каталог секретов» (AD-11 знает только `docker compose exec postgres`); те же параметры для `test_db_refresh.sh` в harness (1.8; roundtrip-база называется `proxima`, `pg_local_roundtrip.sh:50` - `pg_dump proxima` сработает); правка glob `make test`; раскладка манифеста `cas_import.ts`; имена `src/wb/{artifact-sink,recording-client,run-ledger}.ts`, `log.ts`, `tools/cas_import.ts` отсутствуют в Structural Seed. Устаревшие фразы спайна из прохода 2 не поправлены: AD-6 «`collect --from 2026-03-01 --backfill`» (и AR11 epics:65), AD-13 «`set_config(…, true)` первым statement транзакции (3)» vs AD-3/1.3 (GUC на сессию), AD-15 и AR2 (epics:56) «`WEBAPP_DATA_DATABASE_URI` из секрета», AD-12 refresh «`GRANT SELECT`» vs «`GRANT ALL`» там же и в 1.8, Seed `016_brief_daily_roles`, шапка Epic 1 «спайн v3.2».
+
+## 4. Старт 1.0 и 1.1
+
+Оба стартуют без вопросов к Mike; допущения прохода 2 (раздел 4) в силе. 1.0 [Claude] дополнительно проверяет на сервере формат локального дампа и наличие `backup_age_key.txt` (N7) - read-only, нового решения не требует. 1.1: H8 снят AD-4, `artifact-sink.ts` в Given; блок «шаги 3-10» по-прежнему без пометки «[конвейер: Claude + Mike]» (N12, L).
+
+## Что поправить (10 минут, не блокирует)
+
+1. epics.md: строка 80 → Story 1.5; строка 227 → Story 1.14; строка 331 → «1.0-1.13»; шапка Epic 1 → v3.3; AR5 → «поверх `raw-store.ts`/`fetchTransport`»; AR11 → артефакт-режим + `collect --date-from`; в 1.2 Given - `--test-concurrency=1`; в 1.0 Then - проверка `backup_age_key.txt` и формата дампа.
+2. Спайн (memlog, без новых AD): AD-1/AD-6/AD-11 (последняя фраза)/AD-13/AD-15 привести к AD-2/AD-3/AD-4/AD-12; Seed - `016` и файлы `src/wb/*`, `tools/cas_import.ts`.
+
+---
+
 # Проход 2 (30.08.2026) - спайн v3.2, epics E1-E3 после перереза
 
 Объект: `epics.md` (E1 = 1.0-1.13, E2 = 2.1-2.6, E3 = 3.0-3.4; сентябрь = 25 единиц, 5 [Claude]), `ARCHITECTURE-SPINE.md` v3.2. Вопрос гейта тот же: сможет ли OpenHands (без токенов и сервера) реализовать истории, не придумывая незаписанных решений. Проверено по коду: `tools/pg_local_roundtrip.sh`, `services/collector/package.json`, `Makefile`, `.github/workflows/verify.yml`, `tools/verify_migrations.py`, `db/migrations/009`, `business-signal/{http,raw-store,types}.ts`, `cli/stockout-signal.ts`, `tools/wb_async_report.py`, `tools/tests/test_{wb_async_report_postgres,runtime_roles_schema}.py`, `tools/apply_migrations.py`, `infra/{compose.yaml,bootstrap/provision-postgres-diagnostics.sh}`, `.gitignore`, ветки `origin/mihailzhamba-bot/pmm29-contracts` и `origin/ai/pa-50`, `docs/state/{API-FACTS,INVENTORY}.md`, `SPEC.md`.
