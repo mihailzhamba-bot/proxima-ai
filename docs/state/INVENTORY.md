@@ -1,8 +1,8 @@
 # INVENTORY - сервер 135.106.186.210 (claudette)
 
-**Дата:** 30.08.2026, 05:55-06:10 UTC. **Статус:** черновик Сессии 1a, часть «сервер» (Этап 1.2).
+**Дата:** 30.08.2026, 05:55-06:10 UTC. **Статус:** финал Сессии 1b (30.08.2026). Часть «сервер» - Этап 1.2; часть «код» - §5 (сводка из `MIGRATION-GAPS.md`, `WEB-STATE.md`, `API-FACTS.md`). База регрессии - `WORKS-TODAY.md` (33/33).
 **Метод:** только чтение по `ssh -o BatchMode=yes proxima '<cmd>'` под `sudo`. Секреты не читались: для них путь/mode/owner/size/дата и sha256 (A3). Роль Postgres из `/run/secrets/postgres_user` в выводе заменена на `<pg_user>`.
-**Не покрыто:** локальный архив и GitHub-ветки (Сессия 1b), содержимое OpenHands `settings.json`/`secrets.json`, содержимое `.env`-файлов (только имена переменных).
+**Не покрыто:** содержимое OpenHands `settings.json`/`secrets.json`, содержимое `.env`-файлов (только имена переменных), бэклог Jira (см. `BACKLOG-REVIEW.md`).
 
 ## 1. Таблица компонентов
 
@@ -60,7 +60,8 @@
 
 ## 4. Красные флаги
 
-1. **Незапушенная работа PA-50.** Workspace `26fa6b87…` (0700, openhands-agent): `ai/pa-50` @ `d8c912c`, 4 коммита над `db56429` (`4f5d6c1 feat(webapp): провайдер данных и полная карточка сигнала`, `d4febf5`, `68785d8`, `d8c912c docs: доказательство make verify`). В GitHub ветки `ai/pa-50` нет (`git ls-remote --heads origin`, с мака). Единственная копия - на сервере.
+1. **Незапушенная работа PA-50 - ЗАКРЫТ 30.08 (D11):** ветка спасена в `origin/ai/pa-50` @ `d8c912c`, workspace не тронут. Осталось решение «мержить или нет».
+   Исходная запись: Workspace `26fa6b87…` (0700, openhands-agent): `ai/pa-50` @ `d8c912c`, 4 коммита над `db56429` (`4f5d6c1 feat(webapp): провайдер данных и полная карточка сигнала`, `d4febf5`, `68785d8`, `d8c912c docs: доказательство make verify`). В GitHub ветки `ai/pa-50` нет (`git ls-remote --heads origin`, с мака). Единственная копия - на сервере.
 2. **Схема БД отстаёт от кода на 4 миграции.** `schema_migrations` в `proxima`: версии 1-6, последняя `raw_artifact_headers` 14.08 17:53. В main `db/migrations` = 001-010 (007 quality_lineage, 008 release_records, 009 runtime_roles, 010 client_passport). `/srv/proxima-ai/repo` (initdb-mount compose) содержит только 001-006.
 3. **Данные не обновляются.** Последний WB-ответ: `raw_wb_analytics_responses.persisted_at` = 25.08 16:33, `stg_wb_nm_report_rows` 1220 строк (staged 25.08). Business-signal: 14.08 19:37. `data/day1-wb-api` и `data/wb-analytics-spool` пусты. Расписания сбора нет: ни cron, ни timer (только monitor, backup, zone-check). 5 дней без данных на 30.08.
 4. **Пять копий кода разъехались.** `~/proxima-ai` `db56429` (main) | `/srv/proxima-ai/repo` `fd95fcb` (25.08, detached, remote нет) | `~/proxima-webapp-staging/repo` `bae976c` (26.08, remote → отсутствующий `/tmp/pa49-head.bundle`, `?? Dockerfile.staging`) | OpenHands `tasks/pa-50` `db56429` | OpenHands `26fa…` `d8c912c`. Compose пилота монтирует миграции из самой старой копии.
@@ -221,3 +222,23 @@ sha256 (первые 12): `wb_analytics_token` etc `90ff3aec07ed` / signal-input
 `find services db tools -name "*test*" -o -name "*.spec.*" | grep -v node_modules`: Python 21 файлов `test_*.py` - `services/control-plane/tests/{diagnosis/ (9), evals/, unit/, e2e/, test_boundary.py}`, `tools/tests/{test_verifiers,test_wb_async_report,test_wb_api_probe,test_runtime_roles_schema,test_wb_async_report_postgres}.py`; TS 12 файлов `*.test.ts` - `services/collector/tests/` (7: imported-boundary, manual-wb-xlsx-intake, business-signal ×3, client-passport-config, intake-contract), `services/webapp/src/tests/` (5: brief-fixtures, metrics, rub, gyr, fx). Это соответствует «48 py + 43 TS тестов» из handoff 14.08 только по файлам; число тест-кейсов не считалось.
 `grep -E '^[a-z-]+:' Makefile`: `verify: install codegen typecheck test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal`; цели `install codegen typecheck test webapp-lint webapp-build contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal agent-toolset probe-wb-api apply-migrations collect-wb-analytics`.
 На сервере `make verify` не запускался в `~/proxima-ai`: нет `node_modules`, `.venv`, `uv`; лог `verify-acceptance-migration-docs.log` (17K, 29.08 16:58) лежит в `/srv/openhands/logs/` - verify гонялся внутри зоны OpenHands.
+
+## 5. Код: вердикты (сводка 1b, 30.08.2026)
+
+Итог сервера по §1: 15 компонентов работает, 3 полуготово, 2 мёртвое, 3 «не понял», 1 отсутствует (Caddy). Живого больше половины.
+
+| Компонент кода | Где | Вердикт | Чем подтверждено |
+|---|---|---|---|
+| Collector (TS): интейк WB-аналитики, business-signal, seed-CLI | `services/collector` | работает | `make verify` PASS на маке 30.08 (52/52 TS-тестов, `tsc` 0); 182/0 битых импортов (MIGRATION-GAPS §7.1) |
+| Control-plane (Python): диагноз PMM-5, верификаторы | `services/control-plane`, `tools` | работает | pytest 202 passed / 4 skipped; 8 верификаторов passed (WORKS-TODAY) |
+| Инструменты WB API | `tools/wb_api_probe.py`, `tools/wb_async_report.py` | работает, но только 7-дневное окно под stockout-сигнал | API-FACTS §D; `orders` и v3-воронка нигде не собираются |
+| Миграции 001-006 | `db/migrations` | работает (= 13 таблиц в БД) | MIGRATION-GAPS §7.6 |
+| Миграции 007-010 | `db/migrations` | полуготово: в коде есть, в БД нет; писатели 5 таблиц 007 - только на ветках PA-03-02/pa41; писателей 008 нет нигде | MIGRATION-GAPS §4, §7.7 |
+| Веб-морда | `services/webapp` | полуготово: сборка/26 тестов зелёные, 100% fixtures, auth без БД, 3 из 4 экранов заглушки | WEB-STATE; рекомендация «доделывать» |
+| Интейк ручного XLSX | `services/collector/src/intake` | работает, но пишет манифесты в ФС; таблицы `source_artifacts/artifact_manifests/intake_attempts` пусты | MIGRATION-GAPS §3.4, §7.7 |
+| 7 незамерженных веток (~1.5k строк) | `origin/ai/pa-50`, `pmm29-contracts`, `PA-03-02-promotion`, `pa41-full-w2-phase3`, `pmm-20-scn-001`, `now-orchestrator`, `pa-9`, `stash/pa-27-snapshot` | полуготово: код есть, ревью/мерж нет; коллизия трёх `010_*.sql` | MIGRATION-GAPS §4 |
+| Никогда не существовало | `tools/node_repl_server.js`, `services/webapp/drizzle/`, писатели `release_*`, `docs/evidence/` | писать заново или списать | MIGRATION-GAPS §5 |
+| Расписание сбора данных | нигде | отсутствует - никогда не было | INVENTORY §4.3 |
+
+Секреты в истории git: не найдены (276 коммитов, 12 паттернов, MIGRATION-GAPS §6). Потери при переезде: 0.
+
