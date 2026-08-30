@@ -38,7 +38,7 @@
 ## С чего начинать Сессию 1a
 
 1. Прочитать этот файл, подтвердить Mike в одном абзаце.
-2. Jira MCP: `claude mcp add --transport http jira-atlassian https://mcp.atlassian.com/v1/mcp` → OAuth → проверить проекты PA и PMM.
+2. Jira MCP `jira-atlassian` уже добавлен в user-scope Claude Code (30.08, статус «Needs authentication»). Осталось: `/mcp` → авторизоваться в браузере → проверить проекты PA и PMM. Откат: `claude mcp remove jira-atlassian -s user`.
 3. Токен Амировой на сервер: sha256-сравнение с существующими → dry-run в чат → OK Mike → `scp` в `~/signal-inputs/amirova_wb_token` (0600). Откат: `ssh proxima 'rm ~/signal-inputs/amirova_wb_token'`.
 4. Разведка API с сервера (read-эндпоинты Statistics/Analytics), ответы в фикстуры → `docs/state/API-FACTS.md`.
 5. Сервер (1.2) под sudo только чтением → черновик `docs/state/INVENTORY.md`.
