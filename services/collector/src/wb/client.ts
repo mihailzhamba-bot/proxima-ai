@@ -52,10 +52,15 @@ function abortError(signal: AbortSignal): Error {
   return signal.reason instanceof Error ? signal.reason : new WbClientError('CANCELLED', 'WB client run cancelled');
 }
 
-/** Client-side fixed-window budget per endpoint (`limitPerMinute` from the registry). */
+/**
+ * Client-side fixed-window budget per endpoint (`limitPerMinute` from the
+ * registry). Every `reserve()` books exactly one slot atomically: a window
+ * holds at most `limit` reservations, and callers that arrive while a future
+ * window is being booked join that window instead of sneaking into the past.
+ */
 export class RateBudget {
   private readonly windowStartAt = new Map<string, number>();
-  private readonly usedInWindow = new Map<string, number>();
+  private readonly reservedInWindow = new Map<string, number>();
 
   constructor(
     private readonly limitFor: (endpointId: string) => number = endpointLimit,
@@ -64,38 +69,62 @@ export class RateBudget {
 
   earliestAllowedAt(endpointId: string): number {
     const start = this.windowStartAt.get(endpointId);
-    const used = this.usedInWindow.get(endpointId) ?? 0;
-    if (start === undefined || used < this.limitFor(endpointId)) return this.now();
+    const reserved = this.reservedInWindow.get(endpointId) ?? 0;
+    if (start === undefined || reserved < this.limitFor(endpointId)) return this.now();
     return start + 60_000;
   }
 
   /**
-   * Reserves the next free slot and returns how long the caller must wait
-   * before sending. A slot is claimed at reservation time, so a caller that
-   * waits the returned delay lands exactly on its slot.
+   * Books the next free slot and returns how long the caller must wait
+   * before sending. The booking is synchronous, so concurrent callers can
+   * never be handed the same slot or a slot inside an already full window.
    */
   reserve(endpointId: string): number {
     const limit = this.limitFor(endpointId);
     if (!Number.isSafeInteger(limit) || limit < 1) {
       throw new WbClientError('WB_ENDPOINT_UNKNOWN', `no rate budget for endpoint ${endpointId}`, endpointId as WbEndpointSpec['id']);
     }
+    const windowMs = 60_000;
     const current = this.now();
-    const start = this.windowStartAt.get(endpointId);
-    const used = this.usedInWindow.get(endpointId) ?? 0;
-    if (start === undefined || current >= start + 60_000) {
+    const start = this.windowStartAt.get(endpointId) ?? current;
+    const reserved = this.reservedInWindow.get(endpointId) ?? 0;
+
+    if (current >= start + windowMs) {
+      // The tracked window is stale: nothing was booked into it recently.
       this.windowStartAt.set(endpointId, current);
-      this.usedInWindow.set(endpointId, 1);
+      this.reservedInWindow.set(endpointId, 1);
       return 0;
     }
-    if (used < limit) {
-      this.usedInWindow.set(endpointId, used + 1);
+    if (current < start) {
+      // A future window is already taking reservations for this endpoint.
+      if (reserved < limit) {
+        this.reservedInWindow.set(endpointId, reserved + 1);
+      } else {
+        this.windowStartAt.set(endpointId, start + windowMs);
+        this.reservedInWindow.set(endpointId, 1);
+      }
+      return this.windowStartAt.get(endpointId)! - current;
+    }
+    if (reserved < limit) {
+      this.reservedInWindow.set(endpointId, reserved + 1);
       return 0;
     }
-    const nextWindowStart = start + 60_000;
-    this.windowStartAt.set(endpointId, nextWindowStart);
-    this.usedInWindow.set(endpointId, 1);
-    return nextWindowStart - current;
+    this.windowStartAt.set(endpointId, start + windowMs);
+    this.reservedInWindow.set(endpointId, 1);
+    return start + windowMs - current;
   }
+}
+
+export const MIN_RETRY_DELAY_MILLISECONDS = 1_000;
+
+/**
+ * Conservative wait for a 429 that came without any retry hint: one pacing
+ * interval of the endpoint's own budget, floored at one second, so a missing
+ * header can never turn into a hot retry loop.
+ */
+export function fallbackRetryDelayMilliseconds(limitPerMinute: number): number {
+  const limit = Number.isSafeInteger(limitPerMinute) && limitPerMinute > 0 ? limitPerMinute : 1;
+  return Math.max(MIN_RETRY_DELAY_MILLISECONDS, Math.ceil(60_000 / limit));
 }
 
 export interface WbClientOptions {
@@ -182,7 +211,9 @@ export class WbClient {
           throw new WbClientError('WB_RATE_LIMIT_EXHAUSTED', `${spec.id} still rate limited after ${attempt} retries`, spec.id, response.status);
         }
         attempt += 1;
-        await this.clock.sleep(retryDelayMilliseconds(responseHeaders) ?? 0, this.signal);
+        const hinted = retryDelayMilliseconds(responseHeaders);
+        const delay = hinted ?? fallbackRetryDelayMilliseconds(spec.limitPerMinute);
+        await this.clock.sleep(delay, this.signal);
         continue;
       }
 
