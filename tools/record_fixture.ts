@@ -1,16 +1,17 @@
-#!/usr/bin/env node
+#!/usr/bin/env npx tsx
 /**
- * Turn a stored WB run artifact into an anonymized committed fixture.
+ * Turn a raw WB response file into an anonymized committed fixture.
+ *
+ * Run it as: npx tsx tools/record_fixture.ts --artifact <path> ...
+ * (plain `node` cannot execute TypeScript imports).
  *
  * Thin wrapper around the existing tools/anonymize_fixture.py (Story 1.0):
- * this tool only finds the artifact bytes and chooses the fixture path
+ * this tool only picks the fixture path
  * `services/collector/tests/fixtures/wb-api/<api>/<endpoint>/sample.json`
  * derived from the endpoint registry (AD-4). Anonymization itself stays in
  * the Python tool; nothing here invents response data.
  */
 import { spawn } from 'node:child_process';
-import { open } from 'node:fs/promises';
-import { constants } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,13 +34,13 @@ function usage(code: number): never {
   const endpoints = Object.keys(WB_ENDPOINTS).join(', ');
   process.stdout.write(
     [
-      'usage: tools/record_fixture.ts --artifact <path-or-sha256> --endpoint <id> --seed 42 \\',
+      'usage: tools/record_fixture.ts --artifact <path> --endpoint <id> --seed 42 \\',
       '       --salt-file <path> [--limit-days N] [--max-bytes N]',
       '',
       `endpoints: ${endpoints}`,
       '',
-      'The artifact is a raw WB response (bytes or a hex sha256 of stored bytes);',
-      'the output is the anonymized fixture committed for tests.',
+      'The artifact is a file holding the raw WB response; the output is the',
+      'anonymized fixture committed for tests.',
     ].join('\n'),
   );
   process.exit(code);
@@ -74,15 +75,6 @@ function parseArgs(argv: string[]): Options {
     ...(values['limit-days'] ? { limitDays: Number(values['limit-days']) } : {}),
     ...(values['max-bytes'] ? { maxBytes: Number(values['max-bytes']) } : {}),
   };
-}
-
-async function readArtifact(reference: string): Promise<string> {
-  const handle = await open(reference, constants.O_RDONLY);
-  try {
-    return (await handle.readFile()).toString('utf8');
-  } finally {
-    await handle.close();
-  }
 }
 
 function runAnonymizer(input: string, output: string, options: Options): Promise<void> {
