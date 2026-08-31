@@ -108,6 +108,63 @@ def test_business_signal_contract_is_fail_closed() -> None:
     signal.verify()
 
 
+def test_wb_client_contract_is_fail_closed() -> None:
+    wb_client = load_tool("verify_wb_client")
+    wb_client.verify()
+
+
+def test_wb_client_gate_rejects_forbidden_endpoint_in_registry() -> None:
+    wb_client = load_tool("verify_wb_client")
+    registry = ROOT / "services" / "collector" / "src" / "wb" / "registry.ts"
+    original = registry.read_text(encoding="utf-8")
+    try:
+        registry.write_text(
+            original.replace(
+                "https://statistics-api.wildberries.ru/api/v1/supplier/orders",
+                "https://statistics-api.wildberries.ru/api/v1/supplier/stocks",
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="forbidden endpoint|URL set differs"):
+            wb_client.verify()
+    finally:
+        registry.write_text(original, encoding="utf-8")
+
+
+def test_wb_client_gate_rejects_budget_drift() -> None:
+    wb_client = load_tool("verify_wb_client")
+    registry = ROOT / "services" / "collector" / "src" / "wb" / "registry.ts"
+    original = registry.read_text(encoding="utf-8")
+    try:
+        assert "limitPerMinute: 1," in original
+        registry.write_text(
+            original.replace("limitPerMinute: 1,", "limitPerMinute: 5,", 1),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="budget mismatch"):
+            wb_client.verify()
+    finally:
+        registry.write_text(original, encoding="utf-8")
+
+
+def test_wb_client_gate_rejects_url_outside_registry() -> None:
+    wb_client = load_tool("verify_wb_client")
+    client = ROOT / "services" / "collector" / "src" / "wb" / "client.ts"
+    original = client.read_text(encoding="utf-8")
+    try:
+        client.write_text(
+            original.replace(
+                "import { endpointLimit, WB_ENDPOINTS } from './registry.js';",
+                "import { endpointLimit, WB_ENDPOINTS } from './registry.js';\nconst DRIFT = 'https://statistics-api.wildberries.ru/api/v1/supplier/incomes';\nvoid DRIFT;",
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="WB URL literal outside the registry"):
+            wb_client.verify()
+    finally:
+        client.write_text(original, encoding="utf-8")
+
+
 def test_agent_toolset_contract_is_fail_closed() -> None:
     toolset = load_tool("verify_agent_toolset")
     toolset.verify_static()
