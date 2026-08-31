@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Disposable local PostgreSQL migration roundtrip (Phase 3 plan 03-01, Task 3).
-# No Docker, no VPS: initdb a throwaway PostgreSQL 16 cluster in the OS temp
-# dir, apply every verified migration through the canonical apply path, prove
-# idempotent re-apply, run the real-PostgreSQL pytest subset, assert ledger
-# completeness, then destroy the cluster. Exits 0 with SKIP when no initdb.
+# Disposable local PostgreSQL migration + runtime-roles roundtrip
+# (Story 1.2, AD-11/AD-12). No Docker, no VPS: initdb a throwaway PostgreSQL 16
+# cluster in the OS temp dir, apply every verified migration through the
+# canonical apply path, prove idempotent re-apply, run the real-PostgreSQL
+# pytest subset, assert ledger completeness, provision the production LOGIN
+# roles twice (idempotence proof) and run the collector *.db.test.ts subset
+# under those roles, then destroy the cluster. Exits 0 with SKIP when no initdb.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -78,5 +80,49 @@ if [[ "${RECORDED}" != "${EXPECTED}" ]]; then
   exit 1
 fi
 echo "pg-roundtrip: ledger complete (${RECORDED}/${EXPECTED})"
+
+# AD-11/AD-12: provision the production LOGIN roles (plus the proxima_test
+# database and the sandbox role) against the disposable cluster, then prove
+# the script is idempotent by running it a second time. Secrets live only in
+# the throwaway work dir; passwords are generated on the fly.
+SECRETS_DIR="${WORK}/secrets"
+PROVISION_ARGS=(--psql "${PGBIN}/psql" --secrets-dir "${SECRETS_DIR}"
+                --host 127.0.0.1 --port "${PORT}" --database proxima
+                --admin-user proxima_roundtrip)
+echo "pg-roundtrip: provision runtime roles (run 1 of 2)"
+bash "${REPO_ROOT}/infra/bootstrap/provision-runtime-roles.sh" "${PROVISION_ARGS[@]}"
+echo "pg-roundtrip: provision runtime roles (run 2 of 2)"
+bash "${REPO_ROOT}/infra/bootstrap/provision-runtime-roles.sh" "${PROVISION_ARGS[@]}"
+echo "pg-roundtrip: provision: idempotent (2 runs)"
+
+role_dsn() {
+  sed -e 's/[[:space:]]*$//' "${SECRETS_DIR}/$1_uri"
+}
+DSN_COLLECTOR="$(role_dsn proxima_collector)"
+DSN_NORM="$(role_dsn proxima_norm)"
+DSN_WEBAPP="$(role_dsn proxima_webapp)"
+DSN_JANITOR="$(role_dsn proxima_janitor)"
+DSN_SANDBOX="$(role_dsn proxima_sandbox)"
+export PROXIMA_TEST_DSN_COLLECTOR="${DSN_COLLECTOR}"
+export PROXIMA_TEST_DSN_NORM="${DSN_NORM}"
+export PROXIMA_TEST_DSN_WEBAPP="${DSN_WEBAPP}"
+export PROXIMA_TEST_DSN_JANITOR="${DSN_JANITOR}"
+export PROXIMA_TEST_DSN_SANDBOX="${DSN_SANDBOX}"
+
+# Only *.db.test.ts run here; the plain `make test` glob excludes them.
+DB_LOG="${WORK}/collector-db-tests.log"
+echo "pg-roundtrip: collector db-tests (*.db.test.ts, PROXIMA_TEST_DSN_<ROLE>)"
+if ! (cd "${REPO_ROOT}" && npm --workspace @proxima/collector run test:db) >"${DB_LOG}" 2>&1; then
+  echo "pg-roundtrip: FAIL (collector db-tests)" >&2
+  cat "${DB_LOG}" >&2
+  exit 1
+fi
+PASSED="$(sed -n 's/^# pass \([0-9][0-9]*\)$/\1/p' "${DB_LOG}" | awk '{s+=$1} END {printf "%d", s}')"
+if [[ "${PASSED}" -eq 0 ]]; then
+  echo "pg-roundtrip: FAIL (collector db-tests reported 0 passed tests)" >&2
+  cat "${DB_LOG}" >&2
+  exit 1
+fi
+echo "pg-roundtrip: collector db-tests: ${PASSED} passed"
 
 echo "pg-roundtrip: PASS"
