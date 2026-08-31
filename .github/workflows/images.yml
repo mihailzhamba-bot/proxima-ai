@@ -6,6 +6,7 @@ name: images
 on:
   pull_request:
   push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -22,11 +23,18 @@ jobs:
           for pattern in '^\.env$' '^\.git$' '^node_modules' 'fixtures/' '^_bmad-output/$'; do
             grep -Eq "${pattern}" .dockerignore || { echo ".dockerignore missing: ${pattern}"; exit 1; }
           done
+          # A recursive **/fixtures/ mask would strip services/webapp/src/lib/fixtures
+          # (imported by production pages) from the context and break `next build`.
+          ! grep -Eq '^\*\*/fixtures/' .dockerignore
           test ! -f .env
-      - name: Build collector and control-plane images (root context)
+      - name: Build collector, control-plane and webapp images (root context)
         run: |
           docker build -f services/collector/Dockerfile -t proxima-ai/collector:ci .
           docker build -f services/control-plane/Dockerfile -t proxima-ai/control-plane:ci .
+          # Webapp production pages import @/lib/fixtures (brief, styleguide): a root-only
+          # /fixtures/ dockerignore mask keeps them in the context; `next build` fails
+          # outright if the imports do not resolve.
+          docker build -f services/webapp/Dockerfile -t proxima-ai/webapp:ci .
       - name: Both images run as UID 1010 and carry no host secrets
         run: |
           for image in proxima-ai/collector:ci proxima-ai/control-plane:ci; do
@@ -34,6 +42,8 @@ jobs:
             test "${uid}" = "1010" || { echo "${image}: expected USER 1010, got ${uid}"; exit 1; }
             docker run --rm --entrypoint sh "${image}" -c \
               '! find / -maxdepth 4 -name .env -not -path "/proc/*" -not -path "/sys/*" | grep -q .'
+            # jobs.env arrives via compose bind mount only — nothing baked into the image.
+            docker run --rm --entrypoint sh "${image}" -c '! test -f /app/infra/jobs.env'
             echo "${image}: USER ${uid}, no .env in image"
           done
 
