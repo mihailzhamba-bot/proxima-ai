@@ -11,6 +11,8 @@ export interface DiagnosisV1 {
   alternatives: [string, string] | [string, string, string];
   unknowns: string[];
   /**
+   * Positional: exactly 1 + len(alternatives) + len(unknowns) entries - first for the primary cause, then one per alternative, then one per unknown. Enforced by tools/verify_contracts.py and services/collector/tests/product-contracts.test.ts (not expressible in JSON Schema alone).
+   *
    * @minItems 1
    */
   source_refs: [string, ...string[]];

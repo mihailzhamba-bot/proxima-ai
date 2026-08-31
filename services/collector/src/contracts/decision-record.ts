@@ -24,7 +24,10 @@ export interface Measurement {
 }
 export interface Metric {
   name: string;
-  value: number;
+  /**
+   * Money as a string with exactly two decimal places (AD-10).
+   */
+  value: string;
   unit: string;
   source_ref: string;
 }

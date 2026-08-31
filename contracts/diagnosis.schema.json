@@ -11,7 +11,12 @@
     "primary_cause": { "type": "string", "minLength": 1 },
     "alternatives": { "type": "array", "minItems": 2, "maxItems": 3, "items": { "type": "string", "minLength": 1 } },
     "unknowns": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-    "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "source_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Positional: exactly 1 + len(alternatives) + len(unknowns) entries - first for the primary cause, then one per alternative, then one per unknown. Enforced by tools/verify_contracts.py and services/collector/tests/product-contracts.test.ts (not expressible in JSON Schema alone)."
+    },
     "confidence_note": { "type": "string", "minLength": 1 },
     "reviewer": {
       "type": "object",

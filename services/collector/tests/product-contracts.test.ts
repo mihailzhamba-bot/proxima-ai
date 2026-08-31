@@ -28,6 +28,10 @@ function assertError(errors: ErrorObject[] | null | undefined, instancePath: str
   assert.ok(errors?.some((error) => error.instancePath === instancePath && error.keyword === keyword));
 }
 
+function copy<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 test('validates the synthetic signal and preserves generated SignalV1 shape', async () => {
   const schema = await readJson<Record<string, unknown>>('contracts/signal.schema.json');
   const signal = await readJson<SignalV1>('contracts/examples/signal.synthetic.json');
@@ -62,6 +66,13 @@ test('validates diagnosis and enforces positional source-ref invariant', async (
   assert.equal(diagnosis.source_refs.length, 1 + diagnosis.alternatives.length + diagnosis.unknowns.length);
 });
 
+test('diagnosis-bad-refs fixture on disk violates the positional invariant', async () => {
+  const diagnosis = await readJson<DiagnosisV1>('contracts/examples/diagnosis-bad-refs.synthetic.json');
+  const expected = 1 + diagnosis.alternatives.length + diagnosis.unknowns.length;
+
+  assert.notEqual(diagnosis.source_refs.length, expected);
+});
+
 test('rejects diagnosis with fewer than two alternatives and empty source refs', async () => {
   const schema = await readJson<Record<string, unknown>>('contracts/diagnosis.schema.json');
   const diagnosis = await readJson<DiagnosisV1>('contracts/examples/diagnosis.synthetic.json');
@@ -74,6 +85,31 @@ test('rejects diagnosis with fewer than two alternatives and empty source refs',
   const emptyRefs = { ...diagnosis, source_refs: [] };
   assert.equal(validate(emptyRefs), false);
   assertError(validate.errors, '/source_refs', 'minItems');
+});
+
+test('rejects rub assessment and metric values that are not money strings', async () => {
+  const signalSchema = await readJson<Record<string, unknown>>('contracts/signal.schema.json');
+  const signal = await readJson<SignalV1>('contracts/examples/signal.synthetic.json');
+  const signalValidate = validator(signalSchema);
+
+  assert.equal(signal.rub_assessment?.value_rub, '12345.67');
+  const numberValue = { ...signal, rub_assessment: { value_rub: 12345.67, method: 'revenue' } };
+  assert.equal(signalValidate(numberValue), false);
+  assertError(signalValidate.errors, '/rub_assessment/value_rub', 'type');
+
+  const looseString = { ...signal, rub_assessment: { value_rub: '12345.6', method: 'revenue' } };
+  assert.equal(signalValidate(looseString), false);
+  assertError(signalValidate.errors, '/rub_assessment/value_rub', 'pattern');
+
+  const decisionSchema = await readJson<Record<string, unknown>>('contracts/decision-record.schema.json');
+  const decision = await readJson<DecisionRecordV1>('contracts/examples/decision-record.synthetic.json');
+  const decisionValidate = validator(decisionSchema);
+
+  assert.equal(decision.expected.metrics[0].value, '1200.00');
+  const numericMetric = copy(decision) as unknown as { expected: { metrics: [{ value: unknown } & Record<string, unknown>] } };
+  numericMetric.expected.metrics[0].value = 1200;
+  assert.equal(decisionValidate(numericMetric), false);
+  assertError(decisionValidate.errors, '/expected/metrics/0/value', 'type');
 });
 
 test('validates an open decision record with the generated DecisionRecordV1 shape', async () => {

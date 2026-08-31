@@ -6,7 +6,7 @@
   "decided_at": "2026-08-28T10:00:00Z",
   "reason": null,
   "expected": {
-    "metrics": [{ "name": "fixture-conversion", "value": 0.12, "unit": "ratio", "source_ref": "table://fixture-baseline/2026-08-28" }],
+    "metrics": [{ "name": "fixture-revenue", "value": "1200.00", "unit": "rub", "source_ref": "table://fixture-baseline/2026-08-28" }],
     "horizon_days": 7
   },
   "actual": null,

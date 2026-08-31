@@ -5,7 +5,7 @@
   "actor": "fixture-actor-001",
   "decided_at": "2026-08-28T10:00:00Z",
   "reason": null,
-  "expected": { "metrics": [{ "name": "fixture-metric", "value": 1, "unit": "count", "source_ref": "table://fixture/2026-08-28" }], "horizon_days": 1 },
+  "expected": { "metrics": [{ "name": "fixture-revenue", "value": "100.00", "unit": "rub", "source_ref": "table://fixture/2026-08-28" }], "horizon_days": 1 },
   "actual": null,
   "delta": null
 }

@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker
-from jsonschema.exceptions import ValidationError
+from jsonschema.exceptions import SchemaError, ValidationError
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -135,6 +135,10 @@ def verify() -> None:
 if __name__ == "__main__":
     try:
         verify()
+    except SchemaError as exc:
+        location = "/".join(str(part) for part in exc.absolute_path) or "$"
+        print(f"contract verification failed: invalid schema; path={location}; reason={exc.message}", file=sys.stderr)
+        raise SystemExit(1) from exc
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"contract verification failed: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

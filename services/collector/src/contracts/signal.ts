@@ -9,7 +9,10 @@ export interface SignalV1 {
   created_at: string;
   trust_marking: 'unreleased' | 'released';
   rub_assessment: null | {
-    value_rub: number;
+    /**
+     * Money as a string with exactly two decimal places (AD-10).
+     */
+    value_rub: string;
     method: 'revenue' | 'profit';
   };
   /**
