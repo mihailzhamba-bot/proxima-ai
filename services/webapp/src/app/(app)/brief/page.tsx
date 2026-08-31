@@ -3,7 +3,7 @@ import { BriefVerdict } from "@/components/brief/brief-verdict";
 import { Digest } from "@/components/brief/digest";
 import { SignalRow } from "@/components/brief/signal-row";
 import { SectionErrorBoundary } from "@/components/ui/section-error";
-import { getBrief, type BriefVariant } from "@/lib/fixtures/brief";
+import { getDataProvider, type BriefVariant } from "@/lib/data";
 
 export const metadata: Metadata = {
   title: "Бриф",
@@ -16,7 +16,7 @@ type BriefPageProps = {
 export default async function BriefPage({ searchParams }: BriefPageProps) {
   const params = await searchParams;
   const variant: BriefVariant = params.view === "quiet" ? "quiet" : "daily";
-  const brief = getBrief(variant);
+  const brief = await getDataProvider().getBrief(variant);
   const firstCritical = brief.signals[0];
 
   return (
