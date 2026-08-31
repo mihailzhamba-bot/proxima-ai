@@ -136,8 +136,10 @@ nmIDs - топ-3 по числу строк в фикстуре `supplier-sales`
 |---|---|---|
 | `supplier-sales/20260830T055939Z__dateFrom-2023-01-01_flag-0.json` | `77c99ddac2bbcf3fcedcecc0a386a5abb5727c2f213d38950b89a6916e13fc29` | 2026-08-30T05:59:39Z |
 | `supplier-orders/20260830T060041Z__dateFrom-2023-01-01_flag-0.json` | `d2d0ecfed34b67dd0e4b4dc34228fa434d102b190ce18f8f27686987e76aa03e` | 2026-08-30T06:00:41Z |
+| `supplier-sales/20260831T155341Z__dateFrom-2023-01-01_flag-0.json` | `d2f1dc9581ad1f1ab67d1f7ac874b1fa93109915a06d3b09505d960e0b65ec96` | 2026-08-31T15:53:41Z |
+| `supplier-orders/20260831T155341Z__dateFrom-2023-01-01_flag-0.json` | `0c0318ff835d59e263a32cd1f565d8f899e28173e4eacc942c414756214daa40` | 2026-08-31T15:53:41Z |
 
-Импорт в CAS - `tools/cas_import.ts` в Story 1.14 (runbook), `run_day = 2026-08-30`.
+Импорт в CAS - `tools/cas_import.ts` в Story 1.14 (runbook). `run_day` = дата `retrieved_at` артефакта; бэкфилл берёт самую свежую пару (31.08: sales 8.8 МБ, orders 10.9 МБ, оба ряда по-прежнему с 2026-03-01). Снапшот 31.08 снят как страховка непрерывности ряда до запуска ежедневного сбора.
 
 ## Формат бэкапа (31.08.2026, факт)
 
