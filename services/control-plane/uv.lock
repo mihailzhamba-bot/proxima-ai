@@ -156,6 +156,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "jsonschema" },
+    { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
 ]
 
@@ -170,6 +171,7 @@ test = [
 requires-dist = [
     { name = "httpx", marker = "extra == 'test'", specifier = "==0.28.1" },
     { name = "jsonschema", specifier = "==4.25.1" },
+    { name = "psycopg", extras = ["binary"], specifier = "==3.3.4" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'test'", specifier = "==3.3.4" },
     { name = "pydantic", specifier = "==2.13.4" },
     { name = "pytest", marker = "extra == 'test'", specifier = "==8.4.2" },

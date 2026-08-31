@@ -25,6 +25,56 @@ services:
       timeout: 5s
       retries: 5
 
+  # One-shot job containers (AD-6/AD-15). `run --rm --profile jobs`, never `up`.
+  # Secret-файлы на хосте - 1010:1010 0600 (AD-6), compose биндит их как есть.
+  collector:
+    build:
+      context: ..
+      dockerfile: services/collector/Dockerfile
+    profiles: ["jobs"]
+    environment:
+      COLLECTOR_DATABASE_URI_FILE: /run/secrets/proxima_collector_uri
+    secrets:
+      - proxima_collector_uri
+    env_file:
+      - jobs.env
+    networks:
+      - private
+    restart: "no"
+
+  control-plane:
+    build:
+      context: ..
+      dockerfile: services/control-plane/Dockerfile
+    profiles: ["jobs"]
+    environment:
+      NORM_DATABASE_URI_FILE: /run/secrets/proxima_norm_uri
+    secrets:
+      - proxima_norm_uri
+    env_file:
+      - jobs.env
+    networks:
+      - private
+    restart: "no"
+
+  # Owner-секреты живут только здесь (AD-15): apply-migrations, funnel_csv_download.
+  control-plane-admin:
+    build:
+      context: ..
+      dockerfile: services/control-plane/Dockerfile
+    profiles: ["jobs"]
+    environment:
+      POSTGRES_USER_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_user
+      - postgres_password
+    env_file:
+      - jobs.env
+    networks:
+      - private
+    restart: "no"
+
 networks:
   private:
     name: proxima-ai-private
@@ -37,3 +87,7 @@ secrets:
     file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/postgres_user
   postgres_password:
     file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/postgres_password
+  proxima_collector_uri:
+    file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/proxima_collector_uri
+  proxima_norm_uri:
+    file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/proxima_norm_uri

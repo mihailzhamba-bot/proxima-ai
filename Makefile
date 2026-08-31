@@ -59,8 +59,11 @@ agent-toolset:
 probe-wb-api:
 	uv run --python 3.14 --project services/control-plane --extra test python tools/wb_api_probe.py --env-file .env
 
+# Owner-URI env file: repository root .env on the host (AD-15), infra/jobs.env inside control-plane-admin.
+ENV_FILE ?= .env
+
 apply-migrations:
-	uv run --python 3.14 --project services/control-plane --extra test python tools/apply_migrations.py --env-file .env
+	uv run --python 3.14 --project services/control-plane --extra test python tools/apply_migrations.py --env-file $(ENV_FILE)
 
 collect-wb-analytics:
 	uv run --python 3.14 --project services/control-plane --extra test python tools/wb_async_report.py --env-file .env --tenant-id amirova-test --period latest-closed-week
