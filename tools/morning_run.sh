@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Run the implemented morning jobs in order.  Later epics append their steps here.
+set -euo pipefail
+
+readonly REPOSITORY_DIR="/srv/proxima-ai/repo"
+readonly SECRETS_DIR="/etc/proxima-ai/secrets"
+
+usage() {
+  printf '%s\n' "usage: $0 <tenant> [--dry-run]" >&2
+  exit 64
+}
+
+fail() {
+  printf '%s\n' "morning_run: $*" >&2
+  exit 1
+}
+
+[[ $# -ge 1 && $# -le 2 ]] || usage
+tenant="$1"
+dry_run=false
+if [[ $# -eq 2 ]]; then
+  [[ "$2" == "--dry-run" ]] || usage
+  dry_run=true
+fi
+[[ "$tenant" =~ ^[a-z0-9][a-z0-9_-]{2,63}$ ]] || fail "invalid tenant id"
+
+run_collect() {
+  local git_sha image_id statistics_token analytics_token
+  statistics_token="${SECRETS_DIR}/${tenant}_wb_statistics_token"
+  analytics_token="${SECRETS_DIR}/${tenant}_wb_analytics_token"
+
+  if [[ "$dry_run" == true ]]; then
+    printf '%s\n' "docker compose --profile jobs run --rm collector collect --tenant ${tenant} --statistics-token-file ${statistics_token} --analytics-token-file ${analytics_token}"
+    return
+  fi
+
+  [[ -d "$REPOSITORY_DIR" ]] || fail "repository is missing: $REPOSITORY_DIR"
+  [[ -r "$statistics_token" && -r "$analytics_token" ]] || fail "tenant token file is missing or unreadable"
+  cd "$REPOSITORY_DIR"
+  git_sha="$(git rev-parse HEAD)"
+  image_id="$(docker compose --profile jobs images -q collector | head -n 1)"
+  [[ -n "$image_id" ]] || fail "collector image is not available"
+  image_id="$(docker image inspect -f '{{.Id}}' "$image_id")"
+  PROXIMA_GIT_SHA="$git_sha" PROXIMA_IMAGE_ID="$image_id" \
+    docker compose --profile jobs run --rm collector collect --tenant "$tenant" \
+      --statistics-token-file "$statistics_token" --analytics-token-file "$analytics_token"
+}
+
+run_collect

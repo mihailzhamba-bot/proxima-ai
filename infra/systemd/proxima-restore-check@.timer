@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly PROXIMA AI PostgreSQL restore check for tenant %i
+
+[Timer]
+OnCalendar=Mon *-*-* 06:00:00 Europe/Moscow
+Persistent=true
+Unit=proxima-restore-check@%i.service
+
+[Install]
+WantedBy=timers.target
+
