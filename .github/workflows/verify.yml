@@ -25,8 +25,10 @@ jobs:
         run: tools/morning_run.sh amirova-test --dry-run
 
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -37,4 +39,5 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-16
       - run: make verify
