@@ -102,5 +102,7 @@
 
 **История ветки:** первые версии фикстур (`609735f`) содержали восстановимые суммы и реальные категории (репо приватный). При мерже #36 - squash-merge + удалить ветку, либо явное ОК Mike на force-push перезаписанной ветки.
 
-Дальше: мерж #35 и #36 (Mike) → Story 1.1 в OpenHands по `docs/state/STORY-1.1-DISPATCH.md` (после «гоу»).
+**Story 1.1 запущена в OpenHands (31.08, «гоу» Mike):** conversation `d88d4273-1cba-4f6c-968a-1d3e11ab3c0c` на Agent Server 18000 (агент zai/glm-5.3, max_iterations 500, NeverConfirm), workspace `/srv/openhands/persistence/workspace/project/d88d42731cba4f6c968a1d3e11ab3c0c`. База воркера = `origin/feat/m01-step0` (main без 1.0 до мержа #36), ветка `feat/m01-story-1.1`. Push из сандбокса невозможен (git-креденшалов нет - потому и ai/pa-50 спасалась бандлом): воркер коммитит локально, забор - бандлом (`sudo git bundle` → scp → push с мака). После squash-мержа #36 ветку 1.1 перебазировать на main механически.
+
+Дальше: мерж #35 и #36 (Mike); мониторить conversation 1.1, по завершении - бандл, verify на маке, PR.
 
