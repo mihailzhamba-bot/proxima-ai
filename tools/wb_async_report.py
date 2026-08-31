@@ -45,6 +45,10 @@ SAFE_ENV_KEYS = frozenset(
         "WB_PRICES_TOKEN_FILE",
         "WB_PROMOTION_TOKEN_FILE",
         "PROXIMA_SPOOL_DIR",
+        # Set on the VPS at release time (Conventions): compose `secrets:` source dir and
+        # the raw-artifacts spool root. Non-secret path parameters, safe for jobs.env.
+        "PROXIMA_SECRETS_DIR",
+        "PROXIMA_RAW_DIR",
         "POSTGRES_USER_FILE",
         "POSTGRES_PASSWORD_FILE",
         "POSTGRES_HOST",

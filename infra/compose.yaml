@@ -38,6 +38,9 @@ services:
       - proxima_collector_uri
     env_file:
       - jobs.env
+    volumes:
+      # Host-side edits to jobs.env apply on the next `compose run` without a rebuild.
+      - ../infra/jobs.env:/app/infra/jobs.env:ro
     networks:
       - private
     restart: "no"
@@ -53,11 +56,18 @@ services:
       - proxima_norm_uri
     env_file:
       - jobs.env
+    volumes:
+      - ../infra/jobs.env:/app/infra/jobs.env:ro
     networks:
       - private
     restart: "no"
 
-  # Owner-секреты живут только здесь (AD-15): apply-migrations, funnel_csv_download.
+  # Owner-секреты живут только здесь (AD-15): apply-migrations. FUNNEL_CSV_DOWNLOAD:
+  # аналитикс-токен не монтируется - по Conventions путь к <tenant>_wb_analytics_token
+  # подставляет morning_run.sh как CLI-флаг (--analytics-token-file), монтаж в compose
+  # - TODO Story 3.2 (октябрь), вместе с целью funnel_csv_download.
+  # TODO (Story 1.12/AD-11): proxima_janitor_uri → JANITOR_DATABASE_URI_FILE - смонтировать
+  # при заведении janitor-сервиса; имя секрета по Conventions.
   control-plane-admin:
     build:
       context: ..
@@ -71,6 +81,8 @@ services:
       - postgres_password
     env_file:
       - jobs.env
+    volumes:
+      - ../infra/jobs.env:/app/infra/jobs.env:ro
     networks:
       - private
     restart: "no"

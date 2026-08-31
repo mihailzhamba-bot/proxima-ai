@@ -8,8 +8,9 @@
 **/.env.*
 node_modules
 **/node_modules
-fixtures/
-**/fixtures/
+# Root-anchored only: the full WB fixture corpus. NOT `**/fixtures/` — webapp production
+# pages (brief, styleguide) import @/lib/fixtures, a recursive mask breaks `next build`.
+/fixtures/
 _bmad-output/
 .planning/
 .autopilot/

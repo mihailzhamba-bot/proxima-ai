@@ -31,6 +31,9 @@ SAFE_ENV_KEYS = frozenset(
         "WB_PROMOTION_TOKEN_FILE",
         "PROXIMA_RAW_DIR",
         "PROXIMA_SPOOL_DIR",
+        # Mirrors tools/wb_async_report.py: cross-tool invariant test asserts
+        # SAFE_ENV_KEYS(report) <= SAFE_ENV_KEYS(probe).
+        "PROXIMA_SECRETS_DIR",
         "POSTGRES_USER_FILE",
         "POSTGRES_PASSWORD_FILE",
         "POSTGRES_HOST",
