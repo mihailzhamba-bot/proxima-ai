@@ -46,6 +46,18 @@ test('sandbox role cannot connect to the main database', { skip: ready ? false :
   await client.end().catch(() => undefined);
 });
 
+test('sandbox role cannot connect to the maintenance database', { skip: ready ? false : 'PROXIMA_TEST_DSN_SANDBOX not set (run via tools/pg_local_roundtrip.sh)' }, async () => {
+  const client = new Client({ connectionString: withDatabase(DSN_SANDBOX, 'postgres') });
+  await assert.rejects(client.connect(), (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/permission denied for database|does not have CONNECT privilege/i.test(message)) {
+      throw new Error(`expected CONNECT rejection for proxima_sandbox, got: ${message}`);
+    }
+    return true;
+  });
+  await client.end().catch(() => undefined);
+});
+
 test('sandbox role connects to its test copy', { skip: ready ? false : 'PROXIMA_TEST_DSN_SANDBOX not set (run via tools/pg_local_roundtrip.sh)' }, async () => {
   const client = new Client({ connectionString: DSN_SANDBOX });
   await client.connect();
