@@ -7,9 +7,11 @@ readonly BACKUP_DIR="/var/backups/proxima"
 [[ $# -eq 1 ]] || { printf '%s\n' "usage: $0 <tenant>" >&2; exit 64; }
 tenant="$1"
 [[ "$tenant" =~ ^[a-z0-9][a-z0-9_-]{2,63}$ ]] || { printf '%s\n' "restore-check: invalid tenant id" >&2; exit 1; }
+[[ -n "${PROXIMA_SECRETS_DIR:-}" ]] || { printf '%s\n' "restore-check: PROXIMA_SECRETS_DIR is required (see infra/jobs.env)" >&2; exit 1; }
+[[ -n "${PROXIMA_RAW_DIR:-}" ]] || { printf '%s\n' "restore-check: PROXIMA_RAW_DIR is required (see infra/jobs.env)" >&2; exit 1; }
 
-dump_file="$(find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.sql.gz' -print | sort | tail -n 1)"
-[[ -n "$dump_file" ]] || { printf '%s\n' "restore-check: no local .sql.gz dump found" >&2; exit 1; }
+dump_file="$(find "$BACKUP_DIR" -maxdepth 1 -type f -name '????-??-??-proxima.sql.gz' -print | sort | tail -n 1)"
+[[ -n "$dump_file" ]] || { printf '%s\n' "restore-check: no local proxima .sql.gz dump found for ${tenant}" >&2; exit 1; }
 
 compose=(docker compose)
 "${compose[@]}" exec -T postgres sh -ceu '

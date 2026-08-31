@@ -1,28 +1,47 @@
-#!/usr/bin/env bash
-# Local dumps are plain gzip.  age encryption is used only for the S3 copy.
-set -euo pipefail
-
-readonly BACKUP_DIR="/var/backups/proxima"
-readonly SECRETS_DIR="/etc/proxima-ai/secrets"
-readonly COMPOSE_DIR="/srv/proxima-ai/repo"
-readonly RAW_DIR="${PROXIMA_RAW_DIR:?PROXIMA_RAW_DIR must be set}"
-readonly DATE_TAG="$(date +%F)"
-
+#!/bin/bash
+# Nightly pg_dump: pilot proxima + proxima_dev -> local (retention 14d) + age-encrypted -> S3 proxima-backups (ru-3)
+set -uo pipefail
+SEC=/etc/proxima-ai/secrets
+PGUSER=$(cat $SEC/postgres_user)
+AGE_PUB=$(cat $SEC/backup_age_recipient)
+BACKUP_DIR=/var/backups/proxima
+STAMP=$(date +%F)
 mkdir -p "$BACKUP_DIR"
-cd "$COMPOSE_DIR"
-
-backup_database() {
-  local database="$1" output="$BACKUP_DIR/${DATE_TAG}-${database}.sql.gz"
-  docker compose exec -T postgres sh -ceu '
-    exec pg_dump -U "$(cat /run/secrets/postgres_user)" "$1"
-  ' sh "$database" | gzip -c > "$output"
-  printf 'OK local %s (%s)\n' "$database" "$(du -h "$output" | awk '{print $1}')"
-}
-
-backup_database proxima
-
-raw_output="$BACKUP_DIR/${DATE_TAG}-raw.tar.gz"
-tar -C "$(dirname "$RAW_DIR")" -czf "$raw_output" "$(basename "$RAW_DIR")"
-printf 'OK local raw (%s)\n' "$(du -h "$raw_output" | awk '{print $1}')"
-
-find "$BACKUP_DIR" -type f -name '*.gz' -mtime +14 -delete
+for db in proxima; do
+  F="$BACKUP_DIR/${STAMP}-${db}.sql.gz"
+  if docker exec proxima-ai-postgres-1 pg_dump -U "$PGUSER" "$db" | gzip > "$F"; then
+    echo "$(date -Is) OK local $db ($(du -h "$F" | cut -f1))"
+  else
+    echo "$(date -Is) FAIL local $db" >&2; continue
+  fi
+  if age -r "$AGE_PUB" "$F" > "$F.age" 2>/dev/null && s3cmd put "$F.age" "s3://proxima-backups/${STAMP:0:7}/${STAMP}-${db}.sql.gz.age" >/dev/null 2>&1; then
+    echo "$(date -Is) OK s3 ${STAMP}-${db}.sql.gz.age"
+    rm -f "$F.age"
+  else
+    echo "$(date -Is) FAIL s3 $db (local copy kept)" >&2
+  fi
+done
+RAW_F="$BACKUP_DIR/${STAMP}-raw.tar.gz"
+if tar -C "$(dirname "$PROXIMA_RAW_DIR")" -czf "$RAW_F" "$(basename "$PROXIMA_RAW_DIR")"; then
+  echo "$(date -Is) OK local raw ($(du -h "$RAW_F" | cut -f1))"
+  if age -r "$AGE_PUB" "$RAW_F" > "$RAW_F.age" 2>/dev/null && s3cmd put "$RAW_F.age" "s3://proxima-backups/${STAMP:0:7}/${STAMP}-raw.tar.gz.age" >/dev/null 2>&1; then
+    echo "$(date -Is) OK s3 ${STAMP}-raw.tar.gz.age"
+    rm -f "$RAW_F.age"
+  else
+    echo "$(date -Is) FAIL s3 raw (local copy kept)" >&2
+  fi
+else
+  echo "$(date -Is) FAIL local raw" >&2
+fi
+find "$BACKUP_DIR" -name "*.sql.gz" -mtime +14 -delete
+find "$BACKUP_DIR" -name "*.age" -mtime +3 -delete
+# dev db (rootless container in agent zone)
+F="$BACKUP_DIR/${STAMP}-proxima_dev.sql.gz"
+if DOCKER_HOST=unix:///run/user/1002/docker.sock docker exec proxima-dev pg_dump -U proxima_dev proxima_dev | gzip > "$F" 2>/dev/null; then
+  echo "$(date -Is) OK local proxima_dev ($(du -h "$F" | cut -f1))"
+  if age -r "$AGE_PUB" "$F" > "$F.age" 2>/dev/null && s3cmd put "$F.age" "s3://proxima-backups/${STAMP:0:7}/${STAMP}-proxima_dev.sql.gz.age" >/dev/null 2>&1; then
+    echo "$(date -Is) OK s3 ${STAMP}-proxima_dev"; rm -f "$F.age"
+  fi
+else
+  echo "$(date -Is) SKIP proxima_dev (zone down?)" >&2
+fi

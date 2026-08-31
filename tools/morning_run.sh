@@ -3,7 +3,6 @@
 set -euo pipefail
 
 readonly REPOSITORY_DIR="/srv/proxima-ai/repo"
-readonly SECRETS_DIR="/etc/proxima-ai/secrets"
 
 usage() {
   printf '%s\n' "usage: $0 <tenant> [--dry-run]" >&2
@@ -25,17 +24,19 @@ fi
 [[ "$tenant" =~ ^[a-z0-9][a-z0-9_-]{2,63}$ ]] || fail "invalid tenant id"
 
 run_collect() {
-  local git_sha image_id statistics_token analytics_token
-  statistics_token="${SECRETS_DIR}/${tenant}_wb_statistics_token"
-  analytics_token="${SECRETS_DIR}/${tenant}_wb_analytics_token"
+  local git_sha image_id statistics_token secrets_dir
+  secrets_dir="${PROXIMA_SECRETS_DIR:-/etc/proxima-ai/secrets}"
+  statistics_token="${secrets_dir}/${tenant}_wb_statistics_token"
 
   if [[ "$dry_run" == true ]]; then
-    printf '%s\n' "docker compose --profile jobs run --rm collector collect --tenant ${tenant} --statistics-token-file ${statistics_token} --analytics-token-file ${analytics_token}"
+    printf '%s\n' "docker compose --profile jobs run --rm collector collect --tenant ${tenant} --statistics-token-file ${statistics_token}"
     return
   fi
 
+  [[ -n "${PROXIMA_SECRETS_DIR:-}" ]] || fail "PROXIMA_SECRETS_DIR is required (see infra/jobs.env)"
+  [[ -n "${PROXIMA_RAW_DIR:-}" ]] || fail "PROXIMA_RAW_DIR is required (see infra/jobs.env)"
   [[ -d "$REPOSITORY_DIR" ]] || fail "repository is missing: $REPOSITORY_DIR"
-  [[ -r "$statistics_token" && -r "$analytics_token" ]] || fail "tenant token file is missing or unreadable"
+  [[ -r "$statistics_token" ]] || fail "tenant statistics token file is missing or unreadable"
   cd "$REPOSITORY_DIR"
   git_sha="$(git rev-parse HEAD)"
   image_id="$(docker compose --profile jobs images -q collector | head -n 1)"
@@ -43,7 +44,7 @@ run_collect() {
   image_id="$(docker image inspect -f '{{.Id}}' "$image_id")"
   PROXIMA_GIT_SHA="$git_sha" PROXIMA_IMAGE_ID="$image_id" \
     docker compose --profile jobs run --rm collector collect --tenant "$tenant" \
-      --statistics-token-file "$statistics_token" --analytics-token-file "$analytics_token"
+      --statistics-token-file "$statistics_token"
 }
 
 run_collect

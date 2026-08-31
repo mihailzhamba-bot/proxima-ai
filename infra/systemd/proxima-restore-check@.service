@@ -8,5 +8,6 @@ OnFailure=proxima-alert@%n.service
 Type=oneshot
 User=root
 WorkingDirectory=/srv/proxima-ai/repo
+EnvironmentFile=-/srv/proxima-ai/repo/infra/jobs.env
 ExecStart=/usr/bin/env bash /srv/proxima-ai/repo/tools/restore_check.sh %i
 ProtectHome=true
