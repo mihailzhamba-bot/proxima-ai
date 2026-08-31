@@ -1,9 +1,13 @@
 """Contract gate for the single WB client (Story 1.1, AD-4).
 
 Fail-closed checks:
-- WB URLs live only in the endpoint registry (`src/wb/registry.ts`);
-- the registry contains exactly the four allowed endpoints with their
-  per-minute budgets taken from docs/state/API-FACTS.md;
+- the endpoint registry holds exactly the four allowed endpoints with their
+  per-minute budgets from docs/state/API-FACTS.md, entry by entry: any extra
+  key, duplicated URL or per-entry budget drift fails the gate;
+- WB hosts appear nowhere in `services/collector/src/**` outside
+  `src/wb/registry.ts` — including `src/cli/**` and string concatenations
+  (`.wildberries` substring). `src/business-signal/` is exempt: it is frozen
+  read-only by AD-18 and carries its own verified endpoint list;
 - removed/deprecated endpoints (`reportDetailByPeriod`, `supplier/stocks`,
   `nm-report/detail*`, `supplier/incomes`) appear nowhere in `src/wb/`;
 - `tools/record_fixture.ts` exists and only anonymizes through
@@ -21,8 +25,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 COLLECTOR_SRC = ROOT / "services" / "collector" / "src"
 WB_DIR = COLLECTOR_SRC / "wb"
-JOBS_DIR = COLLECTOR_SRC / "jobs"
 BUSINESS_SIGNAL_VERIFIER = ROOT / "tools" / "verify_business_signal.py"
+# AD-18: frozen Story 1.0 module, verified by tools/verify_business_signal.py.
+SCAN_EXEMPT_DIRS = ("business-signal",)
 
 EXPECTED_REGISTRY: dict[str, tuple[str, int]] = {
     "statistics.orders": (
@@ -52,75 +57,126 @@ FORBIDDEN_MARKERS = (
 )
 
 WB_HOST_RE = re.compile(r"https?://[A-Za-z0-9.-]*wildberries\.ru[^'\"\s]*")
-URL_TEMPLATE_RE = re.compile(r"https://[A-Za-z0-9.-]+\.wildberries\.ru")
+WB_HOST_SUBSTRING = ".wildberries"
 TIMER_RE = re.compile(r"\bsetInterval\s*\(|\bnode-cron\b")
 RETRY_RE = re.compile(r"x-ratelimit-retry", re.IGNORECASE)
 TOKEN_FLAG_RE = re.compile(r"--(statistics|analytics|finance)-token-file")
 
+# One registry entry: `  '<id>': { ... }` — spec objects contain no nested braces.
+REGISTRY_ENTRY_RE = re.compile(
+    r"^\s{2}'(?P<key>[^']+)':\s*\{(?P<body>[^{}]*)\}\s*,?\s*$",
+    re.MULTILINE | re.DOTALL,
+)
+URL_FIELD_RE = re.compile(r"url:\s*'([^']+)'")
+LIMIT_FIELD_RE = re.compile(r"limitPerMinute:\s*(\d+)")
 
-def registry_source() -> str:
-    return (WB_DIR / "registry.ts").read_text(encoding="utf-8")
+
+def parse_registry_entries(source: str) -> dict[str, dict[str, str]]:
+    """Parses every entry of the WB_ENDPOINTS object, keyed by its literal key."""
+    entries: dict[str, dict[str, str]] = {}
+    for match in REGISTRY_ENTRY_RE.finditer(source):
+        key = match.group("key")
+        body = match.group("body")
+        url = URL_FIELD_RE.search(body)
+        limit = LIMIT_FIELD_RE.search(body)
+        if key in entries:
+            entries[key]["_duplicated_key"] = "true"
+            continue
+        entries[key] = {
+            "url": url.group(1) if url else "",
+            "limit": limit.group(1) if limit else "",
+        }
+    return entries
 
 
-def verify_registry() -> list[str]:
+def verify_registry(registry_path: Path = WB_DIR / "registry.ts") -> list[str]:
     errors: list[str] = []
-    path = WB_DIR / "registry.ts"
-    if not path.is_file():
-        return [f"missing endpoint registry: {path.relative_to(ROOT)}"]
+    if not registry_path.is_file():
+        return [f"missing endpoint registry: {registry_path}"]
 
-    source = registry_source()
-    found: dict[str, tuple[str, int]] = {}
+    source = registry_path.read_text(encoding="utf-8")
+    entries = parse_registry_entries(source)
+
+    unexpected = sorted(set(entries) - set(EXPECTED_REGISTRY))
+    if unexpected:
+        errors.append(
+            "registry holds endpoints outside the allowed four: " + ", ".join(unexpected)
+        )
+    missing = sorted(set(EXPECTED_REGISTRY) - set(entries))
+    if missing:
+        errors.append("registry is missing endpoints: " + ", ".join(missing))
+
+    url_counts: dict[str, int] = {}
+    for entry in entries.values():
+        if entry["url"]:
+            url_counts[entry["url"]] = url_counts.get(entry["url"], 0) + 1
+    duplicated_urls = sorted(url for url, count in url_counts.items() if count > 1)
+    if duplicated_urls:
+        errors.append("registry URLs are not unique: " + ", ".join(duplicated_urls))
+
     for endpoint_id, (url, limit) in EXPECTED_REGISTRY.items():
-        if url not in source:
-            errors.append(f"registry missing endpoint URL: {endpoint_id} -> {url}")
+        entry = entries.get(endpoint_id)
+        if entry is None:
             continue
-        block = source.split(url, 1)[1]
-        match = re.search(r"limitPerMinute:\s*(\d+)", block)
-        if match is None:
-            errors.append(f"registry endpoint {endpoint_id} has no limitPerMinute next to its URL")
-            continue
-        found[endpoint_id] = (url, int(match.group(1)))
-        if int(match.group(1)) != limit:
+        if entry["url"] != url:
             errors.append(
-                f"registry budget mismatch for {endpoint_id}: "
-                f"expected {limit}/min, found {match.group(1)}"
+                f"registry URL mismatch for {endpoint_id}: expected {url}, found {entry['url'] or '<missing>'}"
+            )
+        if entry["limit"] != str(limit):
+            errors.append(
+                f"registry budget mismatch for {endpoint_id}: expected {limit}/min, found {entry['limit'] or '<missing>'}"
             )
 
-    extra = set(found) - set(EXPECTED_REGISTRY)
-    if extra:
-        errors.append(f"registry holds unexpected endpoints: {', '.join(sorted(extra))}")
-    urls_in_registry = set(WB_HOST_RE.findall(source))
-    expected_urls = {url for url, _ in EXPECTED_REGISTRY.values()}
-    if urls_in_registry != expected_urls:
+    # No WB host may hide anywhere else in the registry source (concatenations
+    # included); literals are covered by the entry checks above.
+    for match in WB_HOST_RE.finditer(source):
+        url = match.group(0)
+        if url not in {expected for expected, _ in EXPECTED_REGISTRY.values()}:
+            errors.append(f"registry contains an unexpected WB URL: {url}")
+    if source.count(WB_HOST_SUBSTRING) != sum(
+        url.count(WB_HOST_SUBSTRING) for url, _ in EXPECTED_REGISTRY.values()
+    ):
         errors.append(
-            "registry URL set differs from the allowed four: "
-            f"unexpected={sorted(urls_in_registry - expected_urls)} "
-            f"missing={sorted(expected_urls - urls_in_registry)}"
+            "registry contains WB host fragments beyond the four allowed endpoints"
         )
+    for forbidden in FORBIDDEN_MARKERS:
+        if forbidden in source:
+            errors.append(f"forbidden endpoint in the registry: {forbidden}")
     return errors
 
 
-def verify_urls_only_in_registry() -> list[str]:
+def collector_sources(collector_src: Path = COLLECTOR_SRC) -> list[Path]:
+    if not collector_src.is_dir():
+        return []
+    return [
+        path
+        for path in sorted(collector_src.rglob("*.ts"))
+        if not any(part in SCAN_EXEMPT_DIRS for part in path.relative_to(collector_src).parts[:-1])
+    ]
+
+
+def verify_urls_only_in_registry(collector_src: Path = COLLECTOR_SRC) -> list[str]:
     errors: list[str] = []
     allowed_urls = {url for url, _ in EXPECTED_REGISTRY.values()}
-    roots = [WB_DIR]
-    if JOBS_DIR.is_dir():
-        roots.append(JOBS_DIR)
-    for root in roots:
-        for path in sorted(root.rglob("*.ts")):
-            if path.name == "registry.ts":
-                continue
-            content = path.read_text(encoding="utf-8")
-            for marker in FORBIDDEN_MARKERS:
-                if marker in content:
-                    errors.append(
-                        f"{path.relative_to(ROOT)}: forbidden endpoint {marker} outside the registry"
-                    )
-            for url in sorted(set(WB_HOST_RE.findall(content))):
-                if url not in allowed_urls:
-                    errors.append(
-                        f"{path.relative_to(ROOT)}: WB URL literal outside the registry: {url}"
-                    )
+    for path in collector_sources(collector_src):
+        if path.name == "registry.ts":
+            continue
+        content = path.read_text(encoding="utf-8")
+        for marker in FORBIDDEN_MARKERS:
+            if marker in content:
+                errors.append(
+                    f"{path.relative_to(ROOT)}: forbidden endpoint {marker} outside the registry"
+                )
+        for url in sorted(set(WB_HOST_RE.findall(content))):
+            if url not in allowed_urls:
+                errors.append(
+                    f"{path.relative_to(ROOT)}: WB URL literal outside the registry: {url}"
+                )
+        if WB_HOST_SUBSTRING in content:
+            line = content[: content.index(WB_HOST_SUBSTRING)].count("\n") + 1
+            errors.append(
+                f"{path.relative_to(ROOT)}:{line}: WB host fragment outside the registry"
+            )
     return errors
 
 
@@ -181,6 +237,10 @@ def verify_wb_module_files() -> list[str]:
         errors.append("services/collector/src/wb/client.ts must cap 429 retries at 3")
     if client and not RETRY_RE.search(client):
         errors.append("services/collector/src/wb/client.ts must wait on X-Ratelimit-Retry")
+    if client and "fallbackRetryDelayMilliseconds" not in client:
+        errors.append(
+            "services/collector/src/wb/client.ts must fall back to a paced delay when 429 carries no retry header"
+        )
     msk_day = (WB_DIR / "msk-day.ts").read_text(encoding="utf-8") if (WB_DIR / "msk-day.ts").is_file() else ""
     if msk_day and "Europe/Moscow" not in msk_day:
         errors.append("services/collector/src/wb/msk-day.ts must resolve Europe/Moscow explicitly")
@@ -212,6 +272,16 @@ def verify_token_flags_pattern() -> list[str]:
         for option in ("statistics-token-file", "analytics-token-file", "finance-token-file"):
             if option not in content:
                 errors.append(f"stockout-signal.ts lost the --{option} option")
+    wb_collect = COLLECTOR_SRC / "cli" / "wb-collect.ts"
+    if not wb_collect.is_file():
+        errors.append("services/collector/src/cli/wb-collect.ts is missing (Story 1.1 CLI)")
+    else:
+        content = wb_collect.read_text(encoding="utf-8")
+        for option in ("--endpoint", "--statistics-token-file", "--analytics-token-file"):
+            if option not in content:
+                errors.append(f"wb-collect.ts lost the {option} option")
+        if "readPrivateSecret" not in content:
+            errors.append("wb-collect.ts must read tokens through readPrivateSecret")
     wb_sources = "\n".join(
         path.read_text(encoding="utf-8") for path in sorted(WB_DIR.glob("*.ts"))
     )
@@ -220,11 +290,14 @@ def verify_token_flags_pattern() -> list[str]:
     return errors
 
 
-def verify() -> None:
+def verify(
+    registry_path: Path = WB_DIR / "registry.ts",
+    collector_src: Path = COLLECTOR_SRC,
+) -> None:
     errors: list[str] = []
     errors += verify_wb_module_files()
-    errors += verify_registry()
-    errors += verify_urls_only_in_registry()
+    errors += verify_registry(registry_path)
+    errors += verify_urls_only_in_registry(collector_src)
     errors += verify_no_timers()
     errors += verify_record_fixture_tool()
     errors += verify_token_flags_pattern()

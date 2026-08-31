@@ -6,6 +6,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -163,6 +164,65 @@ def test_wb_client_gate_rejects_url_outside_registry() -> None:
             wb_client.verify()
     finally:
         client.write_text(original, encoding="utf-8")
+
+
+def test_wb_client_gate_rejects_fifth_endpoint_with_duplicated_url() -> None:
+    """Regression: an extra registry entry reusing an allowed URL and a wild
+    budget must fail the gate, not slip through as a "known" URL."""
+    wb_client = load_tool("verify_wb_client")
+    original = (ROOT / "services" / "collector" / "src" / "wb" / "registry.ts").read_text(
+        encoding="utf-8"
+    )
+    injected = original.replace(
+        "  'statistics.sales': {",
+        "\n".join(
+            [
+                "  'statistics.orders_burst': {",
+                "    id: 'statistics.orders_burst',",
+                "    method: 'GET',",
+                "    url: 'https://statistics-api.wildberries.ru/api/v1/supplier/orders',",
+                "    token: 'statistics',",
+                "    api: 'statistics',",
+                "    fixtureDir: 'statistics/orders_burst',",
+                "    limitPerMinute: 100,",
+                "  },",
+                "  'statistics.sales': {",
+            ]
+        ),
+        1,
+    )
+    assert injected != original, "fixture injection anchor disappeared"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "src" / "wb").mkdir(parents=True)
+        (root / "src" / "wb" / "registry.ts").write_text(injected, encoding="utf-8")
+        with pytest.raises(ValueError, match="endpoints outside the allowed four"):
+            wb_client.verify(
+                registry_path=root / "src" / "wb" / "registry.ts",
+                collector_src=root / "src",
+            )
+
+
+def test_wb_client_gate_rejects_wb_host_fragment_in_cli_source() -> None:
+    """Regression: `.wildberries` reached through string concatenation anywhere
+    in collector src (incl. cli/) must fail, not just full URL literals."""
+    wb_client = load_tool("verify_wb_client")
+    drift = ROOT / "services" / "collector" / "src" / "cli" / "wb-collect.ts"
+    original = drift.read_text(encoding="utf-8")
+    try:
+        drift.write_text(
+            original.replace(
+                "export function parseWbCollectArgs",
+                "const HOST_SUFFIX = '.wildberries' + '.ru/api/v1/supplier/incomes';\nvoid HOST_SUFFIX;\n\nexport function parseWbCollectArgs",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="WB host fragment outside the registry"):
+            wb_client.verify()
+    finally:
+        drift.write_text(original, encoding="utf-8")
 
 
 def test_agent_toolset_contract_is_fail_closed() -> None:
