@@ -2,7 +2,7 @@
 
 Память между сессиями. Первое действие каждой сессии - прочитать этот файл и подтвердить заказчику, что подхватил верно.
 
-**Обновлено:** 30.08.2026, конец Сессии 4: Этап 9 закрыт - гейт готовности PASS (3 прохода), `sprint-status.yaml` сгенерирован. **Ворота 3:** пройдены 31.08 (D23): сентябрь = E1 + E2 + 3.1 (22 единицы), CSV-воронка - октябрь. Дальше: Jira (D17), Story 1.0 [Claude], Story 1.1 в OpenHands до 08.09.
+**Обновлено:** 31.08.2026: Story 1.0 сделана (ветка `feat/m01-step0`, verify зелёный), 3/4 коммитов запушены - CI-коммит ждёт PAT с правом Workflows. **Ворота 3:** пройдены 31.08 (D23): сентябрь = E1 + E2 + 3.1 (22 единицы), CSV-воронка - октябрь. Дальше: мерж PR #35 (Mike) → PR `feat/m01-step0` → Jira (D17, окно с брифом) → Story 1.1 в OpenHands до 08.09.
 
 ## Что сделано
 
@@ -82,6 +82,21 @@
 
 1. Записать решение Mike по объёму сентября в `DECISIONS.md` (D23) и в `sprint-status.yaml` (истории за бортом - оставить `backlog`, пометить в `epics.md` «октябрь»).
 2. Jira (D17): 6 эпиков по ступеням + задача на каждую единицу сентября со ссылкой на `epics.md#story-N-M`; статусы 20 «переписать» и 16 «свернуть» из `BACKLOG-REVIEW.md` - применить; в Jira пишем впервые.
-3. Story 1.0 [Claude]: 2 вызова `flag=0`, sha256 артефактов 30.08, снятие backup-скрипта, фикстуры через `anonymize_fixture.py`, починка `.openhands` и CI - ветка `feat/m01-step0`.
+3. ~~Story 1.0 [Claude]~~ - **сделано 31.08**, см. ниже.
 4. Story 1.1 в OpenHands (`bmad-build-auto` по контракту воркера, промт единицы = текст истории + ссылки на AD) - не позже 08.09; конвейер 10 шагов, релиз с тегом `v2026.09.0-baseline` как точкой отката.
+
+## Story 1.0 (31.08) - сделано, один блокер
+
+Ветка `feat/m01-step0` (от `origin/main` @ `db56429`), 4 атомарных коммита, `make verify` зелёный целиком (211 passed / 4 skipped, `pg-roundtrip: PASS`, secret scan passed):
+
+1. `1138e5a` `tools/anonymize_fixture.py` + тест (9 passed; nmId/sku/brand/geo/srid обезличиваются детерминированно по seed, money x0.8-1.2, даты не трогаются).
+2. `609735f` фикстуры `services/collector/tests/fixtures/wb-api/` seed 42: orders 196КБ/14 дней, sales 194КБ/14 дней, funnel_v3, downloads + README с sha-таблицей источников 30.08.
+3. `646ecb1` `.openhands`: verify-gate без требования `DATABASE_URI`, setup.sh с `PUPPETEER_SKIP_DOWNLOAD=1`.
+4. `d1a47bb` CI: `ubuntu-24.04` + postgresql-16 + `PUPPETEER_SKIP_DOWNLOAD` - **не запушен**.
+
+Данные-часть (30.08, в этой ветке docs): flag=0 = фильтр по `lastChangeDate` (подтверждено живыми вызовами), sha256 артефактов бэкфилла в `API-FACTS.md`, снимок backup-скрипта, AD-17 и story 1.12 поправлены (age только S3).
+
+**Блокер:** push `d1a47bb` отбит - GitHub PAT (`mihailzhamba-bot`, osxkeychain и gh) без права **Workflows: Read and write**; SSH-порт 22 наружу закрыт сетью, ключа мака на аккаунте нет. Remote tip = `646ecb1` (3/4 коммитов). Фикс: перевыпустить fine-grained PAT с Contents + Workflows write → `git push` из worktree `~/Desktop/Проекты/Proxima/proxima-ai-m01step0`.
+
+Дальше: после мержа PR #35 и починки токена - PR ветки `feat/m01-step0` (полные 4 коммита), конвейер (review → CI → приёмка Mike), затем Story 1.1.
 
