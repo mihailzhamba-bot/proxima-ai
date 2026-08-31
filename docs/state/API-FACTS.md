@@ -125,3 +125,20 @@ nmIDs - топ-3 по числу строк в фикстуре `supplier-sales`
 | 14:14:57 | POST analytics `v3/sales-funnel/products/history` | те же nmIds, selectedPeriod 2026-02-23..2026-03-01, day (D16) | 400 | 0.08 s | 332 | `analytics/sales-funnel-v3-history/20260830T141457Z__nmIDs-3_period-2026-02-23_2026-03-01_day.json` |
 
 Пропущенные по плану вызовы: 3 глубинных `detail/history` (3/6/12 мес) - не выполнялись, потому что базовый вызов вернул 404; finance-токен для `reportDetailByPeriod` - не понадобился (statistics-токен прошёл).
+
+## flag=0 семантика (31.08.2026, Story 1.0)
+
+Два read-вызова с сервера (`dateFrom=2026-08-28T00:00:00&flag=0`, D22): `orders` - 172 строки, `date` от 06.08 до 31.08, все `lastChangeDate` ≥ 28.08, **69 строк с `date < dateFrom`** → фильтр по `lastChangeDate`, допущение AD-4 подтверждено, `dateFrom = run_day-3` остаётся. `sales` - 108 строк, `date` 28-31.08, 0 строк раньше окна (обновления продаж реже). Уникальность ключей: `srid` 172/172, `saleID` 108/108 (и 13 325/13 325, 10 611 - на полных фикстурах 30.08 с учётом пар продажа+возврат по разным `saleID`). Фикстуры: `~/signal-inputs/fixtures/wb-api/statistics/supplier-{orders,sales}/*step0.json`.
+
+## Артефакты для бэкфилла (Story 1.5 / 1.14)
+
+| Файл (VPS `~/signal-inputs/fixtures/wb-api/statistics/`) | sha256 | retrieved_at |
+|---|---|---|
+| `supplier-sales/20260830T055939Z__dateFrom-2023-01-01_flag-0.json` | `77c99ddac2bbcf3fcedcecc0a386a5abb5727c2f213d38950b89a6916e13fc29` | 2026-08-30T05:59:39Z |
+| `supplier-orders/20260830T060041Z__dateFrom-2023-01-01_flag-0.json` | `d2d0ecfed34b67dd0e4b4dc34228fa434d102b190ce18f8f27686987e76aa03e` | 2026-08-30T06:00:41Z |
+
+Импорт в CAS - `tools/cas_import.ts` в Story 1.14 (runbook), `run_day = 2026-08-30`.
+
+## Формат бэкапа (31.08.2026, факт)
+
+`/var/backups/proxima/YYYY-MM-DD-{proxima,proxima_dev}.sql.gz` - локально **plain gzip, без age**; age-ключи (`backup_age_key.txt` 0600 root, `backup_age_recipient` 0644) используются скриптом только для S3-копии. `proxima-pg-backup.sh` снят в `infra/backup/` (sha256 `d29feb24…`). Для `proxima-restore-check@` локальный дамп: `gunzip | psql` без age; AD-17 уточнён.
