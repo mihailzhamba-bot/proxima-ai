@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createFixturesProvider } from "@/lib/data/fixtures-provider";
 import { createPostgresProvider, POSTGRES_PROVIDER_NOT_IMPLEMENTED } from "@/lib/data/postgres-provider";
 import { DATA_MODE_ENV, getDataProvider, resetDataProvider, resolveDataMode } from "@/lib/data";
+import { register } from "@/instrumentation";
 
 /*
  * Шов PA-50 (критерий приёмки №3): источник данных меняется конфигом,
@@ -42,10 +43,31 @@ describe("getDataProvider — выбор провайдера", () => {
     expect(getDataProvider().mode).toBe("postgres");
   });
 
+  it("неизвестный режим через process.env роняет получение провайдера", () => {
+    process.env[DATA_MODE_ENV] = "postgress";
+    resetDataProvider();
+    expect(() => getDataProvider()).toThrow(/не поддерживается/);
+  });
+
   it("провайдер кэшируется на процесс: режим — свойство деплоя", () => {
     process.env[DATA_MODE_ENV] = "fixtures";
     resetDataProvider();
     expect(getDataProvider()).toBe(getDataProvider());
+  });
+});
+
+describe("instrumentation register — валидация при старте", () => {
+  it("неизвестный режим останавливает старт server runtime", () => {
+    process.env[DATA_MODE_ENV] = "staging";
+    expect(() => register()).toThrow(/не поддерживается/);
+  });
+
+  it("пустой и допустимые режимы проходят без ошибки", () => {
+    expect(() => register()).not.toThrow();
+    process.env[DATA_MODE_ENV] = "fixtures";
+    expect(() => register()).not.toThrow();
+    process.env[DATA_MODE_ENV] = "postgres";
+    expect(() => register()).not.toThrow();
   });
 });
 
