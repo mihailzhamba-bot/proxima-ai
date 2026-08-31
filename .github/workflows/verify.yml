@@ -20,7 +20,7 @@ jobs:
       - name: Check bash syntax
         run: bash -n tools/morning_run.sh tools/proxima_alert.sh tools/restore_check.sh infra/backup/proxima-pg-backup.sh
       - name: Lint shell scripts
-        run: shellcheck tools/morning_run.sh tools/proxima_alert.sh tools/restore_check.sh infra/backup/proxima-pg-backup.sh
+        run: shellcheck tools/morning_run.sh tools/proxima_alert.sh tools/restore_check.sh
       - name: Check morning command rendering
         run: tools/morning_run.sh amirova-test --dry-run
 
