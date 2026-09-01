@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "bad": {
+      "source": "stephenleo/bmad-autonomous-development",
+      "sourceType": "github",
+      "skillPath": "skills/bad/SKILL.md",
+      "computedHash": "2fda02f0bcb2c38d427af51c2be5164a130b49a27675b58298d685c213500906"
+    }
+  }
+}
