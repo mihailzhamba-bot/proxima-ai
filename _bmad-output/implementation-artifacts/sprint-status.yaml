@@ -35,27 +35,27 @@ project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 development_status:
-  epic-1: backlog
-  1-0-шаг-0-живые-проверки-артефакты-и-обвязка-claude: review
-  1-1-wb-клиент-с-реестром-эндпоинтов-и-гейт-обкатка-конвейера-цел: review
-  1-2-ts-pg-harness-в-make-verify: review
-  1-3-реестр-прогонов-роли-и-приёмник-артефактов: backlog
+  epic-1: in-progress
+  1-0-шаг-0-живые-проверки-артефакты-и-обвязка-claude: done
+  1-1-wb-клиент-с-реестром-эндпоинтов-и-гейт-обкатка-конвейера-цел: done
+  1-2-ts-pg-harness-в-make-verify: done
+  1-3-реестр-прогонов-роли-и-приёмник-артефактов: in-progress
   1-4-наблюдения-заказов-и-продаж: backlog
   1-5-бэкфилл-истории-из-артефактов-и-живого-хвоста: backlog
   1-6-дневной-ряд-кабинета-и-статус-данных: backlog
   1-7-откат-прогона: backlog
   1-8-тестовая-база-и-сандбокс-openhands: backlog
-  1-9-образы-compose-и-staging-overlay: review
-  1-10-принять-провайдер-данных-webapp-из-ветки-ai-pa-50: review
+  1-9-образы-compose-и-staging-overlay: done
+  1-10-принять-провайдер-данных-webapp-из-ветки-ai-pa-50: done
   1-11-статус-данных-на-brief: backlog
-  1-12-планировщик-алерт-и-бэкап-в-git: review
+  1-12-планировщик-алерт-и-бэкап-в-git: done
   1-13-runbook-первого-релиза: backlog
   1-14-первый-релиз-m-01-на-сервере-claude: backlog
   epic-1-retrospective: optional
 
-  epic-2: backlog
-  2-1-принять-контракты-сигнала-из-ветки-pmm29: review
-  2-2-контракты-нормы-и-сводки-с-генерацией-типов-для-webapp: backlog
+  epic-2: in-progress
+  2-1-принять-контракты-сигнала-из-ветки-pmm29: done
+  2-2-контракты-нормы-и-сводки-с-генерацией-типов-для-webapp: in-progress
   2-3-норма-по-медиане-14-дней: backlog
   2-4-материализованная-сводка-дня: backlog
   2-5-brief-показывает-вчера-против-нормы: backlog
