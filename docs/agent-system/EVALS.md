@@ -29,7 +29,7 @@
 ### Docs / agent-system change
 1. `scripts/agent/verify` structural checks pass.
 2. Every factual claim has source + date, or is marked `UNKNOWN`.
-3. No duplication of `.planning/` content — routes/links only.
+3. No duplication of `docs/archive/planning-m1/` content — routes/links only.
 
 ### Collector code change (TS)
 1. `npm run typecheck` + `npm test` green (tests + build + import smoke).

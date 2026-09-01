@@ -53,7 +53,7 @@ Verification: task keys referenced in TASKS.md exist.
 ## Sibling source worktrees (Опрос-v2.2, torgstat-collector)
 
 Purpose: import sources only.
-Access: paths recorded in `.planning/STATE.md` "Source Boundaries" with pinned baselines.
+Access: paths recorded in `STATE.md` (root) "Source Boundaries" with pinned baselines.
 Safe operations: read; import via explicit allowlist + relative path + SHA-256.
 Dangerous operations: any mutation, stash, clean or commit inside those worktrees — forbidden.
 Verification: baseline hashes `9cca25d1` / `610169a6` unchanged.

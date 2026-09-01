@@ -15,3 +15,5 @@ business-signal-private/
 .autopilot/serve.*
 worktrees/
 logs/
+# WB API raw fixtures: 400+ MB, live on VPS ~/signal-inputs/fixtures/wb-api/ (DECISIONS D5)
+fixtures/wb-api/

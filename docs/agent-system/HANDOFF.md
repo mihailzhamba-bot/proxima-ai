@@ -1,5 +1,7 @@
 # HANDOFF — PROXIMA AI
 
+> **30.08.2026:** роадмап M1 заменён лестницей M-00..M-05 (см. `/DECISIONS.md` D2, `/STATE.md`, `/docs/state/`). Всё ниже - состояние на 25-29.08, историческое; не считать текущими требованиями до обновления в Сессии 2 (bmad-project-context).
+
 > If the current agent disappears right now, what must the next one know? Update after every meaningful stage.
 
 ## Current objective

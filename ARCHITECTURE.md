@@ -9,4 +9,4 @@ Mermaid source-of-truth maps live in `docs/architecture/*.mmd` (rendered via Mer
 - Provenance: immutable artifacts with SHA-256; imports from sibling worktrees only via allowlist with SHA-256.
 - Agent layer: `docs/agent-system/` (role map in README.md); verify: `make verify` + `scripts/agent/*`.
 
-Verify current state against `.planning/ROADMAP.md` before relying on this summary.
+Verify current state against `docs/archive/planning-m1/ROADMAP.md` before relying on this summary.

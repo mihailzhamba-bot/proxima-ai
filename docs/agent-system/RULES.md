@@ -24,7 +24,7 @@ English distillation of the binding rules. Canonical Russian source: `AGENTS.md`
 - Atomic, descriptive conventional commits (`fix: WB diagnostic YoY margin calc`, not `update`).
 - Update `docs/agent-system/HANDOFF.md` + `TASKS.md` at every state change of the active task.
 - Unknown fact → write `UNKNOWN`; never guess metrics, dates, Jira keys.
-- Read a file before changing it; route to `.planning/STATE.md` instead of duplicating its content.
+- Read a file before changing it; route to `STATE.md` (root) instead of duplicating its content.
 - Raw evidence stays immutable, content-addressed, outside Git.
 - A new PMM slice task description references the DoD checklist (`docs/governance/dod-checklist.md`); if omitted at creation, refinement adds the link.
 

@@ -375,7 +375,7 @@ Release Cutter ищет самый дешёвый безопасный путь,
 
 ## Жёсткие ограничения: неприкосновенные решения
 
-`docs/agent-system/DECISIONS.md`, `docs/adr/*` и утверждённые фазовые контракты M1-roadmap (`.planning/ROADMAP.md`, `.planning/phases/*`) неприкосновенны.
+`docs/agent-system/DECISIONS.md`, `docs/adr/*` и утверждённые фазовые контракты M1-roadmap (`docs/archive/planning-m1/ROADMAP.md`, `docs/archive/planning-m1/phases/*`) неприкосновенны.
 
 - Release Cutter может SHRINK'нуть реализацию внутри этих решений.
 - DROP/DEFER самого решения молча - запрещён.
