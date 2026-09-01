@@ -1,5 +1,5 @@
 import { FxBadge } from "@/components/ui/fx-badge";
-import type { BriefDigestItem } from "@/lib/contracts/presentation";
+import type { BriefDigestItem } from "@/lib/presentation";
 import { gyrDotClass } from "@/lib/gyr";
 import { cn } from "@/lib/utils";
 

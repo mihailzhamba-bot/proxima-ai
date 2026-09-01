@@ -1,4 +1,4 @@
-import type { BriefData, BriefVariant, DataMode, Metric } from "@/lib/contracts/presentation";
+import type { BriefData, BriefVariant, DataMode, Metric } from "@/lib/presentation";
 
 /*
  * Шов между UI и источником данных (PA-50, критерий приёмки №3).

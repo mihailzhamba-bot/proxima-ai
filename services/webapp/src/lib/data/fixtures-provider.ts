@@ -1,5 +1,5 @@
 import type { DataProvider } from "@/lib/data/provider";
-import type { BriefData, BriefVariant, Metric } from "@/lib/contracts/presentation";
+import type { BriefData, BriefVariant, Metric } from "@/lib/presentation";
 import { getBrief } from "@/lib/fixtures/brief";
 import { getMetrics } from "@/lib/fixtures/metrics";
 

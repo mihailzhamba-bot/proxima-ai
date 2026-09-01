@@ -1,7 +1,7 @@
 /*
  * Structural fixtures для утреннего брифа (PA-49/PA-50, fixtures-first 2026-08-25).
  * Обезличено: fixture-* идентификаторы, структурные суммы без привязки к боевому кабинету (DEC-006).
- * UI-типы живут в @/lib/contracts/presentation; boundary-контракты генерируются рядом.
+ * UI-типы живут в @/lib/presentation; boundary-контракты генерируются отдельно.
  */
 
 import type {
@@ -9,14 +9,14 @@ import type {
   BriefDigestItem,
   BriefSignal,
   BriefVariant,
-} from "@/lib/contracts/presentation";
+} from "@/lib/presentation";
 
 export type {
   BriefData,
   BriefDigestItem,
   BriefSignal,
   BriefVariant,
-} from "@/lib/contracts/presentation";
+} from "@/lib/presentation";
 
 const DAILY_SIGNALS: readonly BriefSignal[] = [
   {
