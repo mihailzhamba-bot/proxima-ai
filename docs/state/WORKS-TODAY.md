@@ -64,7 +64,9 @@
 
 - **WT-BAD-1.** `uv run --python 3.14 --project services/control-plane --extra test pytest tools/tests/test_bad_dev_story.py` - 12 тестов, офлайн: провижин из бандла, ноль remote'ов, гейты (база, контрактные файлы, ancestry, запрещённые пути, неизменность существующих миграций, секрет-скан, грязное дерево, ноль коммитов), коллизия workspace, валидация аргументов. Входит в `make verify` через `tools/tests`.
 - **WT-BAD-2.** Гейт Дирижёра: при активном `codex-conductor.timer` вызов `tools/orchestrator/bad_dev_story.sh --preflight-only` обязан вернуть exit 3. Проверено 01.09.2026.
-- **Не проверено вживую:** dispatch реального разговора OpenHands - требует остановки Дирижёра и тратит LLM-квоту (см. п. 6 ниже, WT-08).
+- **WT-BAD-3.** Живой круг проверен 01.09.2026 (Дирижёр остановлен, профиль `fedor`, ветка `chore/bad-smoke` от `81ddddf`): provision → dispatch → wait → collect → fetch, 1 коммит в `refs/openhands/bad-smoke/6/head`, все гейты `pass` кроме `stop_hook: unknown`. Прогон занял ~35 с. Артефакты и workspace удалены после проверки.
+- **Факт, найденный этим прогоном:** `.openhands/hooks.json` (стоп-гейт с `make verify`) к разговорам agent-server **не применяется** - `hook_config` равен `null` и у моста, и у воркеров Дирижёра. Красный `make verify` в песочнице никого не остановит; гейт обязан гоняться снаружи (Дирижёр - шаг 3 своего тика, BAD - шаг 4 в `SKILL.md`).
+- **Ловушка, стоившая двух попыток:** `working_dir` разговора обязан быть **корнем workspace**, а не чекаутом. Профиль `fedor` - это Codex поверх ACP; стартуя внутри чекаута, он читает проектный `.codex/config.toml` и падает с `ACPInitError ... invalid transport` (та же причина, что в «Known pitfalls» AGENTS.md от 27.08). Поэтому путь к репозиторию должен быть назван в самом промте.
 
 ## Не удалось проверить
 

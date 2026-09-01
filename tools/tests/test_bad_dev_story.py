@@ -47,11 +47,31 @@ def sandbox(tmp_path: Path) -> dict:
     return {"root": tmp_path, "source": source, "prompt": prompt}
 
 
-def run_bridge(sandbox: dict, run_id: str, simulate: str, *extra: str) -> dict:
+SUDO_SHIM = """#!/bin/bash
+# Stands in for sudo: drops -n and -u <user>, runs the rest as the current user.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n) shift ;;
+    -u) shift 2 ;;
+    *) break ;;
+  esac
+done
+exec "$@"
+"""
+
+
+def run_bridge(sandbox: dict, run_id: str, simulate: str, *extra: str, privileged: bool = False) -> dict:
     env = dict(os.environ)
+    if privileged:
+        # exercise the real elevation code path, including its quoting
+        shim = sandbox["root"] / "fake-sudo"
+        shim.write_text(SUDO_SHIM, encoding="utf-8")
+        shim.chmod(0o755)
+        env.update(BRIDGE_SUDO_CMD=str(shim), BRIDGE_AGENT_USER=os.environ.get("USER", "root"))
+        env.pop("BRIDGE_SUDO", None)
+    else:
+        env.update(BRIDGE_SUDO="", BRIDGE_AGENT_USER="")
     env.update(
-        BRIDGE_SUDO="",
-        BRIDGE_AGENT_USER="",
         WORKSPACE_ROOT=str(sandbox["root"] / "ws"),
         REPO_ROOT=str(sandbox["source"]),
     )
@@ -199,3 +219,21 @@ def test_argument_validation() -> None:
     ]:
         result = subprocess.run([str(SCRIPT), *args], capture_output=True, text=True)
         assert result.returncode == 2, reason
+
+
+def test_contract_gate_passes_through_the_privileged_path(sandbox: dict) -> None:
+    """Regression: the elevation command must survive a newline IFS.
+
+    The contract-file loop sets IFS to a newline. An unquoted multi-word
+    elevation command collapses into one unfindable word there, every sandbox
+    hash comes back empty, and the gate fails on files that actually match.
+    """
+    payload = run_bridge(
+        sandbox,
+        "privileged",
+        f"echo hi > NEW.md && git add NEW.md && {COMMIT} 'feat: add NEW.md'",
+        privileged=True,
+    )
+    assert payload["gates"]["contract_files"] == "pass", payload["problem"]
+    assert payload["exit_code"] == 0
+    assert payload["commits"] == 1

@@ -308,8 +308,13 @@ yourself — an OpenHands worker does, and you carry its commits back.
    Build it strictly from files in the repo, inventing nothing, following the
    template in `docs/agent-system/ORCHESTRATOR.md` (section «Шаблон dispatch-промта»):
      - "Ты - исполнитель единицы работы Story {number}. Автономно, без вопросов."
-     - environment: workspace is already provisioned, branch already created,
-       reference docs are present, there is NO network to GitHub
+     - environment: the checkout is in the `proxima-ai/` subdirectory of your
+       working directory — say so explicitly and tell the worker to `cd` there
+       first (the working directory is the workspace root on purpose: from
+       inside the checkout a Codex-based profile dies on the project
+       .codex/config.toml, see AGENTS.md Known pitfalls). The branch is
+       already created and checked out, git identity is set, there is NO
+       network to GitHub and no git remote — do not create one, never git init
      - what to read first: AGENTS.md, the story text from epics.md VERBATIM
        (Given/When/Then included), the relevant AD sections of ARCHITECTURE-SPINE.md,
        and docs/state/API-FACTS.md when the story touches WB
@@ -333,21 +338,28 @@ yourself — an OpenHands worker does, and you carry its commits back.
    and `gates`. Never re-run it with the same --run-id and --attempt; a retry
    needs `--attempt 2`.
 
-3. On `exit_code: 0`, first read `gates.stop_hook`:
-     - `pass`  — the sandbox stop hook saw `make verify` green.
-     - `deny`  — cannot happen at exit 0 (the bridge turns it into exit 4).
-     - `unknown` — the verdict was NOT found in the event dump. `make verify`
-       is then UNPROVEN: read logs/openhands-bridge/story-{number}/attempt-1/
-       final-response.md and confirm the worker reports a green verify before
-       you continue. If it does not, treat the story as failed and stop.
-   Then merge the worker's commits into the story worktree:
+3. On `exit_code: 0` — merge the worker's commits into the story worktree:
      git -C {repo_root}/{WORKTREE_BASE_PATH}/story-{number}-{short_description} \
        merge --ff-only <local_ref from the JSON>
-   Then update sprint-status.yaml at the REPO ROOT:
+
+4. Then run the gate YOURSELF, in that worktree:
+     cd {repo_root}/{WORKTREE_BASE_PATH}/story-{number}-{short_description} \
+       && PUPPETEER_SKIP_DOWNLOAD=1 TMPDIR=/tmp make verify
+   This step is not optional and cannot be delegated to the sandbox: the
+   repository stop hook (.openhands/hooks.json, which denies a finish on a red
+   `make verify`) is NOT applied to bridge-dispatched conversations — verified
+   01.09.2026, hook_config is null for these and for the conductor's workers
+   alike. `gates.stop_hook` therefore reports `unknown` in the normal case and
+   proves nothing; only a `deny` is meaningful, and the bridge already turns
+   that into exit 4. A red verify here means the story is NOT done: report and
+   stop, or send a fix round to the same conversation with
+     sudo -u openhands-agent tools/orchestrator/send_fix.sh <cid> <message-file>
+
+5. With verify green, update sprint-status.yaml at the REPO ROOT:
      {repo_root}/_bmad-output/implementation-artifacts/sprint-status.yaml
    Set story {number} status to `review`.
 
-4. On any non-zero exit_code — STOP this story and report. Do not retry, do not
+6. On any non-zero exit_code — STOP this story and report. Do not retry, do not
    implement it yourself, do not auto-confirm anything. The codes mean:
      2 usage/precondition · 3 needs a human (conductor busy, dirty sandbox,
      confirmation requested) · 4 agent failure (error, stuck, red make verify,

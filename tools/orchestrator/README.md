@@ -17,6 +17,15 @@
 ключ деплоя и PAT доступны только root, обёртки запрещают force-push, правки
 `.github/workflows/**`, ветки вне `feat|fix|docs|chore/*` и мерж при некрасном CI.
 
+Два факта про оба скрипта, проверенные 01.09.2026:
+
+- `working_dir` разговора - **корень workspace**, а не чекаут внутри него. Из чекаута
+  профиль на Codex падает с `ACPInitError ... invalid transport`, читая проектный
+  `.codex/config.toml` (AGENTS.md, Known pitfalls). Путь к репозиторию поэтому
+  называется в тексте dispatch-промта.
+- `.openhands/hooks.json` к этим разговорам **не применяется** (`hook_config` = null).
+  Красный `make verify` в песочнице ничего не остановит - гейт гоняется снаружи.
+
 Отличия `bad_dev_story.sh` от `launch_worker.sh` (сознательные, см. D25):
 в песочнице **ноль remote'ов** вместо `origin` на GitHub, перед стартом проверяются
 `HEAD == base_sha` и sha256 контрактных файлов, грязное дерево на выходе - ошибка,

@@ -16,17 +16,31 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 
-# Privilege seam. Production uses `sudo -n` and runs sandbox git as the agent
-# user; the test harness sets BRIDGE_SUDO="" and BRIDGE_AGENT_USER="" so the
-# same code path runs unprivileged in a temporary workspace root.
-SUDO="${BRIDGE_SUDO-sudo -n}"
+# Privilege seam. Production runs `sudo -n` and does sandbox git as the agent
+# user. Tests set BRIDGE_SUDO="" (run everything directly) or point
+# BRIDGE_SUDO_CMD at a shim, so the privileged code path itself is exercised.
+#
+# The elevation command is ONE word and is always quoted: this function is
+# called from loops that set IFS to a newline, where an unquoted multi-word
+# expansion would collapse into a single unfindable command.
+SUDO_CMD="${BRIDGE_SUDO_CMD-sudo}"
+case "${BRIDGE_SUDO-unset}" in "") SUDO_CMD="" ;; esac
 AGENT_USER="${BRIDGE_AGENT_USER-openhands-agent}"
-priv() { if [ -n "$SUDO" ]; then $SUDO "$@"; else "$@"; fi; }
+priv() { if [ -n "$SUDO_CMD" ]; then "$SUDO_CMD" -n "$@"; else "$@"; fi; }
 as_agent() {
-  if [ -n "$SUDO" ] && [ -n "$AGENT_USER" ]; then $SUDO -u "$AGENT_USER" "$@"; else "$@"; fi
+  if [ -n "$SUDO_CMD" ] && [ -n "$AGENT_USER" ]; then "$SUDO_CMD" -n -u "$AGENT_USER" "$@"
+  else "$@"; fi
 }
-OWNER_FLAGS=""
-[ -n "$SUDO" ] && [ -n "$AGENT_USER" ] && OWNER_FLAGS="-o $AGENT_USER -g $AGENT_USER"
+own_flags() {  # prints the install(1) ownership flags, empty when unprivileged
+  [ -n "$SUDO_CMD" ] && [ -n "$AGENT_USER" ] && printf -- '-o %s -g %s' "$AGENT_USER" "$AGENT_USER"
+}
+OWNER_FLAGS="$(own_flags)"
+
+# lib.sh's oh_key() reads the key file directly because the conductor's scripts
+# run as openhands-agent. This bridge runs as the invoking user, who cannot read
+# a 0600 file in that home, so route the read through the privilege seam.
+# Only the PATH is ever passed as an argument; the value stays inside lib.sh.
+oh_key() { priv cat "$OH_KEY_FILE" 2>/dev/null | grep '^LOCAL_BACKEND_API_KEY' | cut -d= -f2-; }
 
 # ---------------------------------------------------------------- exit codes
 EX_OK=0            # done, commits fetched
@@ -97,6 +111,40 @@ GATE_BASE="skipped"; GATE_CONTRACT="skipped"; GATE_ANCESTRY="skipped"
 GATE_PATHS="skipped"; GATE_SECRETS="skipped"; GATE_DIRTY="skipped"; GATE_HOOK="skipped"
 
 note() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
+
+# Event history lives in the conversation's persistence dir, which is owned by
+# the agent user; the API returns nothing once a conversation dies during init.
+dump_diagnostics() {
+  [ -n "$CID" ] || return 0
+  agent_final_response "$CID" >"$RUN_DIR/final-response.md" 2>/dev/null
+  oh_curl GET "/api/conversations/$CID/events" >"$RUN_DIR/events.json" 2>/dev/null
+  PDIR="$(oh_curl GET "/api/conversations/$CID" 2>/dev/null \
+    | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("persistence_dir") or "")
+except Exception: print("")' 2>/dev/null)"
+  if [ -n "$PDIR" ]; then
+    priv sh -c "cat '$PDIR'/events/*.json 2>/dev/null" >"$RUN_DIR/persisted-events.json" 2>/dev/null
+  fi
+  note "diagnostics in $RUN_DIR"
+}
+
+# first error the conversation recorded, for the failure message
+conversation_error() {
+  PDIR="$(oh_curl GET "/api/conversations/$1" 2>/dev/null \
+    | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("persistence_dir") or "")
+except Exception: print("")' 2>/dev/null)"
+  [ -n "$PDIR" ] || return 0
+  priv sh -c "cat '$PDIR'/events/*.json 2>/dev/null" | python3 -c '
+import json, re, sys
+raw = sys.stdin.read()
+for blob in re.findall(r"\{.*?\}(?=\s*\{|\s*$)", raw, re.S) or [raw]:
+    try: event = json.loads(blob)
+    except Exception: continue
+    if event.get("code") or "Error" in str(event.get("kind", "")):
+        print((event.get("code", "") + ": " + str(event.get("detail", ""))).replace("\n", " ")[:300])
+        break' 2>/dev/null
+}
 
 emit() {  # emit <exit-code>
   local code="$1"
@@ -178,8 +226,8 @@ mkdir -p "$RUN_DIR" || fail $EX_INFRA "cannot create run dir $RUN_DIR"
 # ------------------------------------------------------------- 1. preflight
 note "preflight"
 command -v git >/dev/null || fail $EX_INFRA "git not on PATH"
-if [ -n "$SUDO" ]; then
-  $SUDO true 2>/dev/null || fail $EX_INFRA "sudo -n unavailable"
+if [ -n "$SUDO_CMD" ]; then
+  priv true 2>/dev/null || fail $EX_INFRA "sudo -n unavailable"
 fi
 if [ -z "$SIMULATE_WORKER" ]; then
   priv test -r "$OH_KEY_FILE" 2>/dev/null || fail $EX_INFRA "session key file unreadable: $OH_KEY_FILE"
@@ -191,14 +239,36 @@ if systemctl is-active --quiet codex-conductor.timer 2>/dev/null \
    || systemctl is-active --quiet proxima-conductor.timer 2>/dev/null; then
   fail $EX_HUMAN "conductor timer is active - stop it before running BAD (systemctl disable --now codex-conductor.timer)"
 fi
+# A slot held by a worker that has already finished is not live work: the
+# conductor was stopped before collecting it, and that state never clears on its
+# own. Block only on workers that are still moving, and say so for the rest.
 if command -v conductor >/dev/null 2>&1; then
-  BUSY="$(conductor status 2>/dev/null | python3 -c 'import json,sys
-try: print(len(json.load(sys.stdin).get("workers") or []))
-except Exception: print(0)' 2>/dev/null || echo 0)"
-  [ "${BUSY:-0}" = "0" ] || fail $EX_HUMAN "conductor still holds $BUSY worker slot(s)"
+  SLOTS="$(conductor status 2>/dev/null | python3 -c '
+import json, re, sys
+try:
+    workers = json.load(sys.stdin).get("workers") or []
+except Exception:
+    print("unknown 0 0"); raise SystemExit
+TERMINAL = {"finished", "stopped", "error", "stuck"}
+live, done = [], []
+for w in workers:
+    match = re.search(r"status=(\w+)", w.get("detail") or "")
+    state = match.group(1) if match else "unknown"
+    (done if state in TERMINAL else live).append("%s(%s)" % (w.get("story"), state))
+print("ok", ",".join(live) or "-", ",".join(done) or "-")' 2>/dev/null || echo "unknown 0 0")"
+  set -- $SLOTS
+  SLOT_OK="${1:-unknown}"; SLOT_LIVE="${2:--}"; SLOT_DONE="${3:--}"
+  [ "$SLOT_OK" = "ok" ] || fail $EX_HUMAN "cannot read conductor status - resolve it before running BAD"
+  [ "$SLOT_LIVE" = "-" ] || fail $EX_HUMAN "conductor workers still running: $SLOT_LIVE"
+  [ "$SLOT_DONE" = "-" ] || note "conductor holds finished, uncollected work: $SLOT_DONE (not blocking; harvest it before re-enabling the timer)"
 fi
-oh_curl GET /api/conversations/count >/dev/null 2>&1 \
-  || fail $EX_INFRA "OpenHands API not reachable at $OH_BASE"
+COUNT_BODY="$(oh_curl GET /api/conversations/count 2>/dev/null)"
+case "$COUNT_BODY" in
+  ''|*Unauthorized*|*unauthorized*)
+    fail $EX_INFRA "OpenHands API at $OH_BASE rejected the session key or is unreachable" ;;
+esac
+echo "$COUNT_BODY" | grep -Eq '^[0-9]+$|"[a-z_]+"' \
+  || fail $EX_INFRA "unexpected reply from $OH_BASE: $(echo "$COUNT_BODY" | head -c 120)"
 note "preflight ok (api $OH_BASE, conductor idle)"
 else
 note "preflight ok (simulated worker, no API and no conductor guard)"
@@ -278,6 +348,13 @@ if [ -n "$SIMULATE_WORKER" ]; then
   STATUS="finished"; GATE_HOOK="simulated"
 else
 case "$PROFILE_NAME" in fedor) PROFILE="$PROFILE_FEDOR" ;; glm) PROFILE="$PROFILE_GLM" ;; esac
+# working_dir is the workspace ROOT, not the checkout inside it - same as
+# launch_worker.sh, and not an accident. The fedor profile is Codex over ACP;
+# started inside the checkout it loads the project .codex/config.toml, whose
+# transport-less `enabled = false` blocks are fatal unless the same servers
+# exist in the agent user's ~/.codex (AGENTS.md, Known pitfalls, 27.08). From
+# the workspace root that file is out of scope. The dispatch prompt therefore
+# has to name the checkout subdirectory explicitly.
 PAYLOAD="$(mktemp)"; chmod 600 "$PAYLOAD"
 python3 - "$CID" "$WS" "$PROMPT_FILE" "$PROFILE" "$PAYLOAD" "$RUN_ID" "$ATTEMPT" "$MAX_ITERATIONS" <<'PY'
 import json, re, sys
@@ -329,10 +406,10 @@ while :; do
       fi
       ;;
     finished|stopped) break ;;
-    error) fail $EX_AGENT "conversation ended with execution_status=error" ;;
-    stuck) fail $EX_AGENT "stuck detection fired; intervene with: sudo -u $AGENT_USER $HERE/send_fix.sh $CID <message-file>" ;;
+    error) dump_diagnostics; fail $EX_AGENT "conversation ended with execution_status=error: $(conversation_error "$CID")" ;;
+    stuck) dump_diagnostics; fail $EX_AGENT "stuck detection fired; intervene with: sudo -u $AGENT_USER $HERE/send_fix.sh $CID <message-file>" ;;
     waiting_for_confirmation|paused)
-      fail $EX_HUMAN "conversation needs a human ($STATUS); confirmation is never granted automatically" ;;
+      dump_diagnostics; fail $EX_HUMAN "conversation needs a human ($STATUS); confirmation is never granted automatically" ;;
     *)
       UNKNOWN_SEEN=$((UNKNOWN_SEEN + 1))
       [ "$UNKNOWN_SEEN" -ge "$MAX_UNKNOWN" ] && fail $EX_INFRA "unknown execution_status repeated: $STATUS"
@@ -385,7 +462,7 @@ A bundle create "$SANDBOX_BUNDLE" "$BASE_SHA..$BRANCH" >/dev/null 2>&1 \
 A bundle verify "$SANDBOX_BUNDLE" >/dev/null 2>&1 \
   || fail $EX_INTEGRITY "bundle does not verify inside the sandbox"
 # freeze before copying: same uid could otherwise swap the file underneath us
-if [ -n "$SUDO" ]; then priv chown root:root "$SANDBOX_BUNDLE"; fi
+if [ -n "$SUDO_CMD" ]; then priv chown root:root "$SANDBOX_BUNDLE"; fi
 priv chmod 600 "$SANDBOX_BUNDLE"
 SANDBOX_SHA="$(priv sha256sum "$SANDBOX_BUNDLE" | cut -d' ' -f1)"
 RESULT_BUNDLE="$RUN_DIR/result.bundle"
