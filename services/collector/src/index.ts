@@ -48,6 +48,10 @@ export { formatStockoutMessage, preflightAndSend, TelegramBotApi } from './busin
 export { BusinessSignalError } from './business-signal/types.js';
 export { InMemoryArtifactSink } from './wb/artifact-sink.js';
 export type { ArtifactSink, WbArtifact, WbArtifactSinkInput } from './wb/artifact-sink.js';
+export { WbArtifactSink } from './wb/recording-client.js';
+export { RunLedger } from './wb/run-ledger.js';
+export type { CollectorRunKind, CollectorRunStatus, RunLedgerInput } from './wb/run-ledger.js';
+export { logRunEvent } from './wb/log.js';
 export {
   MAX_RETRIES_AFTER_RATE_LIMIT,
   RateBudget,
