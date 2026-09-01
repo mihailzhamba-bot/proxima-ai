@@ -11,6 +11,7 @@ export PATH="$HOME/.local/bin:$PATH"
 uv python install 3.14
 
 node --version
+export PUPPETEER_SKIP_DOWNLOAD=1
 npm ci --no-audit --no-fund
 
 make codegen
