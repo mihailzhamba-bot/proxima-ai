@@ -268,4 +268,12 @@ Done = implemented + `scripts/agent/verify` passes (structural + typecheck + TS 
 
 <!-- autopilot:start -->
 Заметки автопилотов (PMM-5 diagnosis, PA-49 webapp T2, release-cutter T1) перенесены 30.08.2026 в `docs/agent-system/autopilot-notes/`. Актуальные правила - в блоке `bmad:context` выше.
+
+## Product contracts v1 (PMM-29, 2026-08-29)
+
+- Реализованы три канонические JSON Schema Draft 2020-12 в `contracts/`: `signal`, `diagnosis`, `decision-record`; примеры включают позитивные и `-bad-` негативные fixtures.
+- `tools/verify_contracts.py` проверяет все схемы через glob, валидные examples и негативные `-bad-` examples с указанием поля; также проверяет positional `diagnosis.source_refs`.
+- `make codegen` генерирует TS-типы с `AUTO-GENERATED` banner; Ajv contract tests покрывают positive/negative cases для всех трёх схем.
+- Атомарные implementation commits: `f0fbc70`, `17c2d51`, `b20e2e9`. На момент записи `make verify` проходит.
+- Приняты в `feat/m03-story-2.1` (коммиты `5f6484b`, `1911033`); по ревью D14 деньги переведены в строки с двумя знаками (AD-10): `signal.rub_assessment.value_rub` и `decision-record.$defs.metric.value` → `{"type":"string","pattern":"^-?[0-9]+\\.[0-9]{2}$"}`.
 <!-- autopilot:end -->

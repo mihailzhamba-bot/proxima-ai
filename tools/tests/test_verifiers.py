@@ -4,6 +4,7 @@ import base64
 import copy
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -65,6 +66,37 @@ def test_provenance_uses_locked_commit_bytes_not_later_worktree_state() -> None:
 def test_cross_language_contracts_accept_only_fail_closed_examples() -> None:
     contracts = load_tool("verify_contracts")
     contracts.verify()
+
+
+def test_contract_verifier_reports_invalid_schema_without_traceback(tmp_path: Path) -> None:
+    tool = tmp_path / "tools"
+    tool.mkdir()
+    shutil.copyfile(ROOT / "tools" / "verify_contracts.py", tool / "verify_contracts.py")
+    contracts_dir = tmp_path / "contracts"
+    contracts_dir.mkdir()
+    (contracts_dir / "broken.schema.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://proxima.local/contracts/broken/v1",
+                "type": "object",
+                "properties": {"value": {"type": "string", "pattern": "("}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(tool / "verify_contracts.py")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr
+    assert "contract verification failed: invalid schema" in result.stderr
+    assert "is not a 'regex'" in result.stderr
 
 
 def test_runtime_boundary_has_no_live_torgstat_path() -> None:
