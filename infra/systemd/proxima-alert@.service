@@ -1,0 +1,10 @@
+[Unit]
+Description=Send PROXIMA AI failure alert for %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/env bash /srv/proxima-ai/repo/tools/proxima_alert.sh %i
+ProtectHome=true

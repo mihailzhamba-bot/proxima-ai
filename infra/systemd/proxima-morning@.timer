@@ -1,0 +1,11 @@
+[Unit]
+Description=Run PROXIMA AI morning jobs for tenant %i
+
+[Timer]
+OnCalendar=*-*-* 05:30:00 Europe/Moscow
+Persistent=true
+Unit=proxima-morning@%i.service
+
+[Install]
+WantedBy=timers.target
+

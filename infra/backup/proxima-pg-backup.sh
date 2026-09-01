@@ -21,6 +21,18 @@ for db in proxima; do
     echo "$(date -Is) FAIL s3 $db (local copy kept)" >&2
   fi
 done
+RAW_F="$BACKUP_DIR/${STAMP}-raw.tar.gz"
+if tar -C "$(dirname "$PROXIMA_RAW_DIR")" -czf "$RAW_F" "$(basename "$PROXIMA_RAW_DIR")"; then
+  echo "$(date -Is) OK local raw ($(du -h "$RAW_F" | cut -f1))"
+  if age -r "$AGE_PUB" "$RAW_F" > "$RAW_F.age" 2>/dev/null && s3cmd put "$RAW_F.age" "s3://proxima-backups/${STAMP:0:7}/${STAMP}-raw.tar.gz.age" >/dev/null 2>&1; then
+    echo "$(date -Is) OK s3 ${STAMP}-raw.tar.gz.age"
+    rm -f "$RAW_F.age"
+  else
+    echo "$(date -Is) FAIL s3 raw (local copy kept)" >&2
+  fi
+else
+  echo "$(date -Is) FAIL local raw" >&2
+fi
 find "$BACKUP_DIR" -name "*.sql.gz" -mtime +14 -delete
 find "$BACKUP_DIR" -name "*.age" -mtime +3 -delete
 # dev db (rootless container in agent zone)
