@@ -8,6 +8,20 @@
 
 Ship M1 — a production-ready read-only data foundation for one pilot WB cabinet (Bogatova Belle Robe) with SHA-256 provenance from official WB evidence to PostgreSQL domain releases (Phase 2 of 8 in progress).
 
+## Последнее (01.09.2026): BMAD достроен, BAD установлен, шаг реализации ведёт в OpenHands
+
+Ветка `feat/bmad-bad` от `origin/feat/orchestrator-conductor`. Сделано:
+
+- BMAD 6.11.0 достроен: модуль **TEA v1.23.4**, цели установки `claude-code` (появился `.claude/skills/`, 59 скиллов) и `openhands`. Конфиги `_bmad/config.toml` + `_bmad/{core,bmm,tea}/config.yaml` целы, рендер скиллов проверен.
+- `gh` 2.45.0 из Ubuntu universe (стороннего репозитория не добавлял). **`gh auth login` за Mike** - токену нужен scope `workflow`, иначе повторится блокер 31.08.
+- BAD 1.2.0 в `.claude/skills/bad/` (`npx skills add … --copy`, запись источника - `skills-lock.json`). Настроен: `max_parallel_stories: 3`, `auto_pr_merge: false`, statusline- и activity-хуки в `.claude/settings.local.json` (поставлен `jq` - без него activity-хук молча ничего не пишет).
+- Шаг 3 BAD переписан на `tools/orchestrator/bad_dev_story.sh` (новый; `lib.sh` переиспользован, скрипты Дирижёра не тронуты). 12 офлайн-тестов - `tools/tests/test_bad_dev_story.py`.
+- Решение D25 в `DECISIONS.md`; правила сосуществования - `ORCHESTRATION.md`.
+
+**Не сделано и требует Mike:** живой прогон моста (гейт не пускает, пока активен `codex-conductor.timer` - и это правильно); `gh auth login`; мерж ветки.
+
+**Заметка:** строка в `bmad:context` блоке AGENTS.md про `DATABASE_URI` из `.env.task` устарела - требование снято коммитом `646ecb1`. Блок управляется скиллом `bmad-project-context`, руками не правил; поправить при следующем рефреше блока.
+
 ## Current task
 
 **PA-13 enforcement rollback оставлен по решению Mike 2026-08-25;** live Jira всё ещё «В работе» и требует ручной актуализации: исходная цель superseded, successor = READ-only Analytics token → повторный revert. **Plan 02-02 cancelled; выбран Phase 2 вариант A (close with descope), Jira-переход ещё не выполнен.**

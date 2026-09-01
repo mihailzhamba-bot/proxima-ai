@@ -69,6 +69,31 @@
 `orca orchestration task-list --json`, `dispatch-show --task <id> --json`.
 Работа, выполненная вне Orca-оркестрации, не называется orchestrated - фиксируется как обычная сессия.
 
+## BAD и Дирижёр: два конвейера, один за раз (D25, 01.09.2026)
+
+Ниже уровня оркестратора Orca живут два **исполнительных** конвейера над одной
+очередью `_bmad-output/implementation-artifacts/sprint-status.yaml`:
+
+| | Дирижёр | BAD |
+|---|---|---|
+| Мозг | conversation Codex на VPS, тик по таймеру | сессия Claude Code, ручной `/bad` |
+| Человек в контуре | нет (алерты + утренняя сводка) | да, на каждом батче |
+| Шаги | dispatch → кросс-модельное ревью → verify → PR → automerge | Phase 0-4 BMAD/TEA: story → ATDD → dev → test-review → code-review → PR → PR-review |
+| Реализация | воркер OpenHands (`launch_worker.sh`) | воркер OpenHands (`bad_dev_story.sh`) |
+| Мерж | automerge через root-обёртку | только Mike (`auto_pr_merge = false`) |
+| Контракт | `docs/agent-system/ORCHESTRATOR.md` (Дирижёр не имеет права его менять) | `.claude/skills/bad/SKILL.md` |
+
+**Одновременно они работать не могут** - подерутся за истории, ветки и номера
+миграций. Переключение только явное и только Mike:
+`sudo systemctl disable --now codex-conductor.timer`, дождаться завершения
+активных воркеров, затем `/bad`. Обратно - `enable --now`.
+Гейт продублирован в двух местах: в `SKILL.md` (Startup Gate) и fail-closed
+в `tools/orchestrator/bad_dev_story.sh` (exit 3), чтобы пропущенная инструкция
+всё равно не привела к диспатчу.
+
+Release Gate и решения Mike стоят **над** обоими: BAD - исполнительный конвейер
+внутри уже утверждённой единицы, а не замена `/release-gate`.
+
 ## Границы (fail-closed, наследуют AGENTS.md)
 
 - Sibling-worktrees (`Опрос-v2.2`, `torgstat-collector`) - не мутировать.
