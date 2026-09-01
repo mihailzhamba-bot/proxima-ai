@@ -1,0 +1,25 @@
+# Staging-overlay webapp (Story 1.9 / AD-15): auth off, loopback only, data URI from a secret file.
+#   docker compose -f infra/compose.yaml -f infra/webapp.staging.compose.yaml up -d postgres webapp
+# Публичный контур (auth + Caddy) - отдельный infra/webapp.compose.yaml, октябрь.
+
+services:
+  webapp:
+    build:
+      context: ..
+      dockerfile: services/webapp/Dockerfile
+    environment:
+      WEBAPP_REQUIRE_AUTH: "false"
+      WEBAPP_DATA_MODE: ${WEBAPP_DATA_MODE:-fixtures}
+      WEBAPP_TENANT_ID: ${WEBAPP_TENANT_ID:?set in .env on VPS}
+      WEBAPP_DATA_DATABASE_URI_FILE: /run/secrets/proxima_webapp_uri
+    secrets:
+      - proxima_webapp_uri
+    ports:
+      - "127.0.0.1:${PROXIMA_WEBAPP_PORT:-3000}:3000"
+    networks:
+      - private
+    restart: unless-stopped
+
+secrets:
+  proxima_webapp_uri:
+    file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/proxima_webapp_uri

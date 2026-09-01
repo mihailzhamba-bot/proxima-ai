@@ -25,6 +25,68 @@ services:
       timeout: 5s
       retries: 5
 
+  # One-shot job containers (AD-6/AD-15). `run --rm --profile jobs`, never `up`.
+  # Secret-файлы на хосте - 1010:1010 0600 (AD-6), compose биндит их как есть.
+  collector:
+    build:
+      context: ..
+      dockerfile: services/collector/Dockerfile
+    profiles: ["jobs"]
+    environment:
+      COLLECTOR_DATABASE_URI_FILE: /run/secrets/proxima_collector_uri
+    secrets:
+      - proxima_collector_uri
+    env_file:
+      - jobs.env
+    volumes:
+      # Host-side edits to jobs.env apply on the next `compose run` without a rebuild.
+      - ../infra/jobs.env:/app/infra/jobs.env:ro
+    networks:
+      - private
+    restart: "no"
+
+  control-plane:
+    build:
+      context: ..
+      dockerfile: services/control-plane/Dockerfile
+    profiles: ["jobs"]
+    environment:
+      NORM_DATABASE_URI_FILE: /run/secrets/proxima_norm_uri
+    secrets:
+      - proxima_norm_uri
+    env_file:
+      - jobs.env
+    volumes:
+      - ../infra/jobs.env:/app/infra/jobs.env:ro
+    networks:
+      - private
+    restart: "no"
+
+  # Owner-секреты живут только здесь (AD-15): apply-migrations. FUNNEL_CSV_DOWNLOAD:
+  # аналитикс-токен не монтируется - по Conventions путь к <tenant>_wb_analytics_token
+  # подставляет morning_run.sh как CLI-флаг (--analytics-token-file), монтаж в compose
+  # - TODO Story 3.2 (октябрь), вместе с целью funnel_csv_download.
+  # TODO (Story 1.12/AD-11): proxima_janitor_uri → JANITOR_DATABASE_URI_FILE - смонтировать
+  # при заведении janitor-сервиса; имя секрета по Conventions.
+  control-plane-admin:
+    build:
+      context: ..
+      dockerfile: services/control-plane/Dockerfile
+    profiles: ["jobs"]
+    environment:
+      POSTGRES_USER_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_user
+      - postgres_password
+    env_file:
+      - jobs.env
+    volumes:
+      - ../infra/jobs.env:/app/infra/jobs.env:ro
+    networks:
+      - private
+    restart: "no"
+
 networks:
   private:
     name: proxima-ai-private
@@ -37,3 +99,7 @@ secrets:
     file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/postgres_user
   postgres_password:
     file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/postgres_password
+  proxima_collector_uri:
+    file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/proxima_collector_uri
+  proxima_norm_uri:
+    file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/proxima_norm_uri

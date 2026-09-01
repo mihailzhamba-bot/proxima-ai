@@ -1,0 +1,45 @@
+# Context = repository root for every image (services/collector, services/control-plane,
+# services/webapp). Secrets and local toolchain state must never enter a build context (AD-6).
+.git
+.gitignore
+.env
+.env.*
+**/.env
+**/.env.*
+node_modules
+**/node_modules
+# Root-anchored only: the full WB fixture corpus. NOT `**/fixtures/` — webapp production
+# pages (brief, styleguide) import @/lib/fixtures, a recursive mask breaks `next build`.
+/fixtures/
+_bmad-output/
+.planning/
+.autopilot/
+.codex/
+.claude/
+.opencode/
+.agents/
+.bmad/
+.openhands/
+.githooks/
+.github/
+.worktrees/
+worktrees/
+build/
+**/build/
+**/dist/
+**/.next/
+**/__pycache__/
+.venv/
+**/.venv/
+.pytest_cache/
+**/.pytest_cache/
+logs/
+raw/
+secrets/
+business-signal-private/
+*.tsbuildinfo
+.DS_Store
+provenance/
+docs/
+*.html
+*.md
