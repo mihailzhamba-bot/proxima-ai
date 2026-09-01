@@ -1,0 +1,18 @@
+[Unit]
+Description=PROXIMA AI conductor tick (server-side story pipeline)
+Documentation=file:///srv/proxima-ai/repo/docs/agent-system/ORCHESTRATOR.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=proxima-alert@%n.service
+
+[Service]
+Type=oneshot
+User=openhands-agent
+Group=openhands-agent
+WorkingDirectory=/srv/proxima-ai/conductor
+Environment=CANONICAL_REPO=/srv/proxima-ai/conductor-repo
+Environment=CONDUCTOR_STATE_DIR=/srv/proxima-ai/conductor
+ExecStart=/srv/proxima-ai/conductor-repo-checkout/tools/orchestrator/conductor_tick.sh
+TimeoutStartSec=600
+ProtectHome=true
+NoNewPrivileges=false

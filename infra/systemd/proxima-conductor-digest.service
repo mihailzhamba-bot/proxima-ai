@@ -1,0 +1,13 @@
+[Unit]
+Description=PROXIMA AI conductor morning digest to Telegram
+Documentation=file:///srv/proxima-ai/repo/docs/agent-system/ORCHESTRATOR.md
+OnFailure=proxima-alert@%n.service
+
+[Service]
+Type=oneshot
+User=openhands-agent
+Group=openhands-agent
+Environment=CONDUCTOR_STATE_DIR=/srv/proxima-ai/conductor
+ExecStart=/srv/proxima-ai/conductor-repo-checkout/tools/orchestrator/conductor_digest.sh
+TimeoutStartSec=300
+ProtectHome=true
