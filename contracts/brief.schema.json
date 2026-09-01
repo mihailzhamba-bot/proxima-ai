@@ -7,7 +7,7 @@
   "required": ["schema_version", "data_status", "evaluation_day", "actual", "norm", "deviation_pct", "signals", "source_refs"],
   "properties": {
     "schema_version": { "const": 1 },
-    "data_status": true,
+    "data_status": { "$ref": "#/$defs/dataStatus" },
     "evaluation_day": { "type": "string", "format": "date" },
     "actual": { "$ref": "#/$defs/actual" },
     "norm": { "$ref": "#/$defs/norm" },
@@ -16,6 +16,16 @@
     "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
   },
   "$defs": {
+    "dataStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["last_full_day", "collected_at", "stale"],
+      "properties": {
+        "last_full_day": { "type": "string", "format": "date" },
+        "collected_at": { "type": ["string", "null"], "format": "date-time" },
+        "stale": { "type": "boolean" }
+      }
+    },
     "actual": {
       "type": "object",
       "additionalProperties": false,

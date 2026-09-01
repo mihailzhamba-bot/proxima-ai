@@ -2,7 +2,7 @@
 // AUTO-GENERATED from contracts/*.schema.json by `make codegen` - DO NOT EDIT.
 export interface BriefV1 {
   schema_version: 1;
-  data_status: unknown;
+  data_status: DataStatus;
   evaluation_day: string;
   actual: Actual;
   norm: Norm;
@@ -12,6 +12,11 @@ export interface BriefV1 {
    * @minItems 1
    */
   source_refs: [string, ...string[]];
+}
+export interface DataStatus {
+  last_full_day: string;
+  collected_at: string | null;
+  stale: boolean;
 }
 export interface Actual {
   orders: number;
