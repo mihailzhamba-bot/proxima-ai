@@ -11,6 +11,10 @@ CANONICAL_REPO="${CANONICAL_REPO:-/srv/proxima-ai/conductor-repo}"
 PROFILE_FEDOR="${PROFILE_FEDOR:-027234ef-bda1-4ce2-bc4a-c363961ea8d1}"
 PROFILE_GLM="${PROFILE_GLM:-dca3198c-d56f-4346-940a-b04b9ad049a0}"
 
+# git wrapper for the canonical bare repo (safe.directory: it is owned by the
+# agent but git refuses cross-owner access when called through sudo helpers)
+cgit() { git -C "$CANONICAL_REPO" -c safe.directory="$CANONICAL_REPO" "$@"; }
+
 oh_key() {
   grep '^LOCAL_BACKEND_API_KEY' "$OH_KEY_FILE" | cut -d= -f2-
 }

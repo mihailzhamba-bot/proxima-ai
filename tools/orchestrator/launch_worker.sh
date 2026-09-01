@@ -19,8 +19,8 @@ WS="${WORKSPACE_ROOT}/${HEX}"
 install -d -o openhands-agent -g openhands-agent "$WS" 2>/dev/null || mkdir -p "$WS"
 
 BUNDLE="$(mktemp -u /tmp/conductor-XXXXXX.bundle)"
-git -C "$CANONICAL_REPO" bundle create "$BUNDLE" --all >/dev/null 2>&1 || { echo "bundle failed" >&2; exit 3; }
-git clone -q "$BUNDLE" "$WS/proxima-ai" || { rm -f "$BUNDLE"; echo "clone failed" >&2; exit 3; }
+cgit bundle create "$BUNDLE" --all >/dev/null 2>&1 || { echo "bundle failed" >&2; exit 3; }
+git -c safe.directory='*' clone -q "$BUNDLE" "$WS/proxima-ai" || { rm -f "$BUNDLE"; echo "clone failed" >&2; exit 3; }
 rm -f "$BUNDLE"
 
 G() { git -C "$WS/proxima-ai" "$@"; }

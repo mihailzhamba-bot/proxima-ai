@@ -34,9 +34,9 @@ start_conductor() {
   ws="${WORKSPACE_ROOT}/${hex}"
   install -d -o openhands-agent -g openhands-agent "$ws" 2>/dev/null || mkdir -p "$ws"
   bundle="$(mktemp -u /tmp/conductor-boot-XXXXXX.bundle)"
-  git -C "$CANONICAL_REPO" -c safe.directory="$CANONICAL_REPO" bundle create "$bundle" --all >/dev/null 2>&1 \
+  cgit bundle create "$bundle" --all >/dev/null 2>&1 \
     || { echo "canonical bundle failed" >&2; return 3; }
-  git clone -q "$bundle" "$ws/proxima-ai" || { rm -f "$bundle"; return 3; }
+  git -c safe.directory='*' clone -q "$bundle" "$ws/proxima-ai" || { rm -f "$bundle"; return 3; }
   rm -f "$bundle"
   git -C "$ws/proxima-ai" checkout -q main 2>/dev/null || true
   chown -R openhands-agent:openhands-agent "$ws" 2>/dev/null || true
