@@ -1,14 +1,13 @@
 /*
- * Доменный контракт данных web-кабинета (PA-50). UI зависит только от этих типов,
+ * Доменный view-model данных web-кабинета (PA-50). UI зависит только от этих типов,
  * а не от конкретного источника: fixtures сегодня, Postgres после деплой-сессии.
  *
- * ВРЕМЕННО ЛОКАЛЬНЫЙ. Канонический контракт сигнала строится в PMM-29
- * (contracts/*.schema.json + codegen) и принадлежит bot lane. Когда он принят,
- * этот файл заменяется сгенерированными типами одним adaptation-коммитом
- * (схема переноса из PA-41: verbatim -> adaptation).
+ * Это ФОРМА ЭКРАНА, а не проводной контракт. Канонические контракты конвейера
+ * (AD-9/AD-10) живут в contracts/*.schema.json; их TS-типы генерируются
+ * `make codegen` в @/lib/contracts и не редактируются руками. Postgres-провайдер
+ * читает проводной payload по @/lib/contracts и маппит его в эти типы (Story 2.4).
  *
- * Имена полей выровнены по уже существующим в репо источникам, чтобы adaptation
- * был переименованием, а не пересмотром:
+ * Имена полей выровнены по уже существующим в репо источникам:
  *  - trust / unknowns{question,whyItMatters} / primaryCause / alternatives
  *    - services/control-plane/src/proxima_control_plane/diagnosis/schema/diagnosis.draft.v1.json
  *  - RiskLevel R0..R3 - services/control-plane/src/proxima/ai/contracts.py:30
