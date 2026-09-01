@@ -1,5 +1,32 @@
 /* eslint-disable */
 // AUTO-GENERATED from contracts/*.schema.json by `make codegen` - DO NOT EDIT.
+export interface BriefV1 {
+  schema_version: 1;
+  data_status: unknown;
+  evaluation_day: string;
+  actual: Actual;
+  norm: Norm;
+  deviation_pct: DeviationPct;
+  signals: SignalV1[];
+  /**
+   * @minItems 1
+   */
+  source_refs: [string, ...string[]];
+}
+export interface Actual {
+  orders: number;
+  revenue: string;
+}
+export interface Norm {
+  orders: number;
+  revenue: string;
+  window_days: number;
+  sample_days: number;
+}
+export interface DeviationPct {
+  orders: number;
+  revenue: number;
+}
 export interface SignalV1 {
   schema_version: 1;
   signal_id: string;

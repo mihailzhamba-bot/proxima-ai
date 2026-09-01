@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "evaluation_day": "2026-08-29",
+  "metric": "orders",
+  "window_days": 14,
+  "sample_days": 14,
+  "value": 34.5,
+  "status": "ok",
+  "source_refs": []
+}

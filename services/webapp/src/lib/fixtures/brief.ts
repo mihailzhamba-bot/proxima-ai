@@ -1,7 +1,7 @@
 /*
  * Structural fixtures для утреннего брифа (PA-49/PA-50, fixtures-first 2026-08-25).
  * Обезличено: fixture-* идентификаторы, структурные суммы без привязки к боевому кабинету (DEC-006).
- * Типы живут в @/lib/data/types - форма данных общая для fixtures и будущего Postgres.
+ * UI-типы живут в @/lib/contracts/presentation; boundary-контракты генерируются рядом.
  */
 
 import type {
@@ -9,14 +9,14 @@ import type {
   BriefDigestItem,
   BriefSignal,
   BriefVariant,
-} from "@/lib/data/types";
+} from "@/lib/contracts/presentation";
 
 export type {
   BriefData,
   BriefDigestItem,
   BriefSignal,
   BriefVariant,
-} from "@/lib/data/types";
+} from "@/lib/contracts/presentation";
 
 const DAILY_SIGNALS: readonly BriefSignal[] = [
   {

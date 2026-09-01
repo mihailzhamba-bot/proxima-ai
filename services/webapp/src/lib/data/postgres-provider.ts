@@ -1,5 +1,5 @@
 import type { DataProvider } from "@/lib/data/provider";
-import type { BriefData, Metric } from "@/lib/data/types";
+import type { BriefData, Metric } from "@/lib/contracts/presentation";
 
 /*
  * Заглушка боевого источника. Реализуется, когда сойдутся два условия:

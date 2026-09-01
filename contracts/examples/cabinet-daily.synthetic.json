@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "day": "2026-08-29",
+  "orders": 42,
+  "revenue": "45678.90",
+  "source_refs": ["artifact://fixture-cabinet-daily/2026-08-29"]
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proxima.local/contracts/norm/v1",
+  "title": "NormV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "evaluation_day", "metric", "window_days", "sample_days", "value", "status", "source_refs"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "evaluation_day": { "type": "string", "format": "date" },
+    "metric": { "enum": ["orders", "revenue"] },
+    "window_days": { "type": "integer", "minimum": 1 },
+    "sample_days": { "type": "integer", "minimum": 0 },
+    "value": { "type": ["number", "string"] },
+    "status": { "enum": ["ok", "insufficient"] },
+    "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "metric": { "const": "orders" } } },
+      "then": { "properties": { "value": { "type": "number", "minimum": 0 } } }
+    },
+    {
+      "if": { "properties": { "metric": { "const": "revenue" } } },
+      "then": { "properties": { "value": { "type": "string", "pattern": "^-?[0-9]+\\.[0-9]{2}$" } } }
+    }
+  ]
+}

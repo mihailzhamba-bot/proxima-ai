@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { FxBadge } from "@/components/ui/fx-badge";
-import type { BriefSignal, SignalHypothesis } from "@/lib/data/types";
+import type { BriefSignal, SignalHypothesis } from "@/lib/contracts/presentation";
 import { formatRub } from "@/lib/format/rub";
 
 const RISK_HINTS: Record<BriefSignal["riskLevel"], string> = {

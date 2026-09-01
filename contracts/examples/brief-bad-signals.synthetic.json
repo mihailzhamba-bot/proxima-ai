@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "data_status": {},
+  "evaluation_day": "2026-08-29",
+  "actual": { "orders": 42, "revenue": "45678.90" },
+  "norm": { "orders": 35, "revenue": "34595.00", "window_days": 14, "sample_days": 14 },
+  "deviation_pct": { "orders": 20, "revenue": 32.04 },
+  "signals": [{ "schema_version": 1 }],
+  "source_refs": ["table://fixture-cabinet-daily/2026-08-29"]
+}

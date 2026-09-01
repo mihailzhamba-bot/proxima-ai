@@ -1,12 +1,12 @@
 /*
  * Метрическая полоса (R05): структурные обезличенные данные для 5 карточек.
- * Форма живёт в @/lib/data/types и общая для fixtures и будущего Postgres (PA-50).
+ * UI-форма живёт в @/lib/contracts/presentation и отделена от boundary-контрактов.
  * Значения структурные (DEC-006: unreleased, fixtures-режим).
  */
 
-import type { Metric } from "@/lib/data/types";
+import type { Metric } from "@/lib/contracts/presentation";
 
-export type { Metric, MetricFormat, MetricId } from "@/lib/data/types";
+export type { Metric, MetricFormat, MetricId } from "@/lib/contracts/presentation";
 
 /** Историческое имя формы метрики; сохранено, чтобы не трогать потребителей вне скоупа PA-50. */
 export type FixtureMetric = Metric;

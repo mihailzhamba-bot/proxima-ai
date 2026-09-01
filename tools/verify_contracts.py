@@ -7,6 +7,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import SchemaError, ValidationError
+from referencing import Registry, Resource
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,10 +18,18 @@ def load(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def validator(name: str) -> Draft202012Validator:
+def schema_registry() -> Registry:
+    resources = []
+    for path in CONTRACTS.glob("*.schema.json"):
+        schema = load(path)
+        resources.append((schema["$id"], Resource.from_contents(schema)))
+    return Registry().with_resources(resources)
+
+
+def validator(name: str, registry: Registry | None = None) -> Draft202012Validator:
     schema = load(CONTRACTS / f"{name}.schema.json")
     Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema, format_checker=FormatChecker())
+    return Draft202012Validator(schema, registry=registry or schema_registry(), format_checker=FormatChecker())
 
 
 def must_reject(checker: Draft202012Validator, value: dict, label: str) -> None:
@@ -58,9 +67,10 @@ def verify() -> None:
         raise ValueError("no contract schemas discovered")
     examples = CONTRACTS / "examples"
     values: dict[str, dict] = {}
+    registry = schema_registry()
     for schema_path in schemas:
         name = schema_path.name.removesuffix(".schema.json")
-        checker = validator(name)
+        checker = validator(name, registry)
         positive_path = examples / f"{name}.synthetic.json"
         if not positive_path.is_file():
             raise ValueError(f"missing positive fixture: schema={name}; expected={positive_path.name}")
@@ -72,16 +82,16 @@ def verify() -> None:
 
     artifact = copy.deepcopy(values["source-artifact"])
     del artifact["content_sha256"]
-    must_reject(validator("source-artifact"), artifact, "artifact without checksum")
+    must_reject(validator("source-artifact", registry), artifact, "artifact without checksum")
     artifact = copy.deepcopy(values["source-artifact"])
     del artifact["content_size"]
-    must_reject(validator("source-artifact"), artifact, "artifact without content size")
+    must_reject(validator("source-artifact", registry), artifact, "artifact without content size")
     attempt = copy.deepcopy(values["acquisition-attempt"])
     attempt["pagination"]["complete"] = False
-    must_reject(validator("acquisition-attempt"), attempt, "successful incomplete pagination")
+    must_reject(validator("acquisition-attempt", registry), attempt, "successful incomplete pagination")
     release = copy.deepcopy(values["domain-release"])
     release["atomic"] = False
-    must_reject(validator("domain-release"), release, "non-atomic published release")
+    must_reject(validator("domain-release", registry), release, "non-atomic published release")
     for field, invalid in (
         ("attempt_ids", ["not an id with spaces"]),
         ("artifact_ids", ["%%%"]),
@@ -89,27 +99,27 @@ def verify() -> None:
     ):
         release = copy.deepcopy(values["domain-release"])
         release[field] = invalid
-        must_reject(validator("domain-release"), release, f"invalid {field}")
+        must_reject(validator("domain-release", registry), release, f"invalid {field}")
 
     passport = copy.deepcopy(values["client-passport"])
     del passport["cogs_status"]
-    must_reject(validator("client-passport"), passport, "passport without cogs_status")
+    must_reject(validator("client-passport", registry), passport, "passport without cogs_status")
     passport = copy.deepcopy(values["client-passport"])
     passport["sales_drop_threshold_pct"] = 0
-    must_reject(validator("client-passport"), passport, "passport with zero sales drop threshold")
+    must_reject(validator("client-passport", registry), passport, "passport with zero sales drop threshold")
     passport = copy.deepcopy(values["client-passport"])
     passport["weekend_days"] = ["monday"]
-    must_reject(validator("client-passport"), passport, "passport with invalid weekday")
+    must_reject(validator("client-passport", registry), passport, "passport with invalid weekday")
 
     supply = copy.deepcopy(values["supply-plan"])
     supply["status"] = "принято"
-    must_reject(validator("supply-plan"), supply, "supply with non-ascii status")
+    must_reject(validator("supply-plan", registry), supply, "supply with non-ascii status")
     supply = copy.deepcopy(values["supply-plan"])
     supply["quantity"] = 0
-    must_reject(validator("supply-plan"), supply, "supply with zero quantity")
+    must_reject(validator("supply-plan", registry), supply, "supply with zero quantity")
     supply = copy.deepcopy(values["supply-plan"])
     del supply["entered_by"]
-    must_reject(validator("supply-plan"), supply, "supply without actor")
+    must_reject(validator("supply-plan", registry), supply, "supply without actor")
 
     negative_paths = sorted(examples.glob("*-bad-*.synthetic.json"))
     for fixture_path in negative_paths:
@@ -119,7 +129,7 @@ def verify() -> None:
             raise ValueError(f"negative fixture has no matching schema: fixture={fixture_path.name}; schema={name}")
         value = load(fixture_path)
         try:
-            validator(name).validate(value)
+            validator(name, registry).validate(value)
         except ValidationError as exc:
             print(f"negative rejected: fixture={fixture_path.name}; schema={name}; path={error_path(exc)}")
         else:
