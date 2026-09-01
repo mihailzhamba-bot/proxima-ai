@@ -348,7 +348,11 @@ note "terminal status: $STATUS"
 # stop-hook verdict: a red `make verify` makes verify-gate.sh deny, and a denied
 # stop must never be reported as success
 agent_final_response "$CID" >"$RUN_DIR/final-response.md" 2>/dev/null
-oh_curl GET "/api/conversations/$CID/events?limit=400" >"$RUN_DIR/events.json" 2>/dev/null
+# the events endpoint takes no query parameters; /events/search is the paginated
+# listing and is used as a fallback when the plain dump comes back empty
+oh_curl GET "/api/conversations/$CID/events" >"$RUN_DIR/events.json" 2>/dev/null
+[ -s "$RUN_DIR/events.json" ] \
+  || oh_curl GET "/api/conversations/$CID/events/search" >"$RUN_DIR/events.json" 2>/dev/null
 if grep -qi 'verify-gate: make verify PASS' "$RUN_DIR/events.json" 2>/dev/null; then
   GATE_HOOK="pass"
 elif grep -qi '"decision"[^}]*"deny"\|make verify failed' "$RUN_DIR/events.json" 2>/dev/null; then

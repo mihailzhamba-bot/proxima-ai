@@ -333,7 +333,14 @@ yourself — an OpenHands worker does, and you carry its commits back.
    and `gates`. Never re-run it with the same --run-id and --attempt; a retry
    needs `--attempt 2`.
 
-3. On `exit_code: 0` — merge the worker's commits into the story worktree:
+3. On `exit_code: 0`, first read `gates.stop_hook`:
+     - `pass`  — the sandbox stop hook saw `make verify` green.
+     - `deny`  — cannot happen at exit 0 (the bridge turns it into exit 4).
+     - `unknown` — the verdict was NOT found in the event dump. `make verify`
+       is then UNPROVEN: read logs/openhands-bridge/story-{number}/attempt-1/
+       final-response.md and confirm the worker reports a green verify before
+       you continue. If it does not, treat the story as failed and stop.
+   Then merge the worker's commits into the story worktree:
      git -C {repo_root}/{WORKTREE_BASE_PATH}/story-{number}-{short_description} \
        merge --ff-only <local_ref from the JSON>
    Then update sprint-status.yaml at the REPO ROOT:
