@@ -94,6 +94,8 @@ jobs:
           docker compose --profile jobs run --rm control-plane-admin make apply-migrations ENV_FILE=infra/jobs.env
       - name: Ledger recorded every migration
         working-directory: infra
+        env:
+          PROXIMA_SECRETS_DIR: /etc/proxima-ai/secrets
         run: |
           count="$(docker compose exec -T postgres sh -c \
             'psql -U "$(cat /run/secrets/postgres_user)" -d proxima -tAc "SELECT count(*) FROM schema_migrations"')"
