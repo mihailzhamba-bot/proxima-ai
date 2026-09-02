@@ -11,12 +11,12 @@ import { WbArtifactSink } from '../src/wb/recording-client.js';
 import { RunLedger } from '../src/wb/run-ledger.js';
 
 const collectorDsn = process.env.PROXIMA_TEST_DSN_COLLECTOR ?? '';
-const sandboxDsn = process.env.PROXIMA_TEST_DSN_SANDBOX ?? '';
-const ready = collectorDsn !== '' && sandboxDsn !== '';
+const postgresDsn = process.env.PROXIMA_TEST_POSTGRES_DSN ?? '';
+const ready = collectorDsn !== '' && postgresDsn !== '';
 const tenantId = 'amirova-test';
 
 async function seedTenant(): Promise<void> {
-  const client = new Client({ connectionString: sandboxDsn });
+  const client = new Client({ connectionString: postgresDsn });
   await client.connect();
   try { await client.query('INSERT INTO tenants (tenant_id) VALUES ($1) ON CONFLICT DO NOTHING', [tenantId]); }
   finally { await client.end(); }
@@ -31,7 +31,7 @@ async function setTenantGuc(pool: Pool): Promise<void> {
   await pool.query("SELECT set_config('proxima.tenant_id', $1, false)", [tenantId]);
 }
 
-test('run-ledger: running/succeeded/failed', { skip: ready ? false : 'PROXIMA_TEST_DSN_COLLECTOR not set (run via tools/pg_local_roundtrip.sh)' }, async () => {
+test('run-ledger: running/succeeded/failed', { skip: ready ? false : 'PROXIMA_TEST_DSN_COLLECTOR and PROXIMA_TEST_POSTGRES_DSN must be set (run via tools/pg_local_roundtrip.sh)' }, async () => {
   await seedTenant();
   const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-raw-'));
   const pool = new Pool({ connectionString: collectorDsn, max: 1 });
