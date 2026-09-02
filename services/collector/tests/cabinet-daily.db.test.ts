@@ -21,6 +21,9 @@ test('cabinet-daily: versions every day, S1/S2 sums', { skip }, async () => {
   await admin.connect();
   await collector.connect();
   try {
+    // data_status_current is scoped by the tenant GUC even for the owner role
+    // (AD-13): the superuser harness connection must set it before reading the view.
+    await admin.query("SELECT set_config('proxima.tenant_id', $1, false)", [tenantId]);
     await admin.query('INSERT INTO tenants (tenant_id) VALUES ($1) ON CONFLICT DO NOTHING', [tenantId]);
     await admin.query(
       `INSERT INTO collector_runs (run_id, tenant_id, kind, status, finished_at) VALUES

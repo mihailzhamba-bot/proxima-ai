@@ -82,7 +82,13 @@ async function openHarness(): Promise<Harness> {
     },
     async cleanup() {
       await db.end();
-      await withAdmin((client) => client.query('DELETE FROM collector_runs WHERE run_id = ANY($1::uuid[])', [runIds]));
+      // Story 1.6: the aggregator records earlier runs as inputs with ON DELETE
+      // RESTRICT (AD-3), so drop the input edges of this harness's runs first;
+      // row order inside a single multi-row DELETE is not guaranteed.
+      await withAdmin(async (client) => {
+        await client.query('DELETE FROM collector_run_inputs WHERE run_id = ANY($1::uuid[]) OR input_run_id = ANY($1::uuid[])', [runIds]);
+        await client.query('DELETE FROM collector_runs WHERE run_id = ANY($1::uuid[])', [runIds]);
+      });
       await rm(secrets, { recursive: true, force: true });
       await rm(rawRoot, { recursive: true, force: true });
     },
