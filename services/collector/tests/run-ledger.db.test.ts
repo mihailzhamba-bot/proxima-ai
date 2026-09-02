@@ -22,9 +22,11 @@ async function seedTenant(): Promise<void> {
   finally { await client.end(); }
 }
 
-async function assertTenantGucReset(pool: Pool): Promise<void> {
+async function assertTenantGucReset(pool: Pool, runId: string): Promise<void> {
   const result = await pool.query<{ tenant_id: string | null }>("SELECT current_setting('proxima.tenant_id', true) AS tenant_id");
-  assert.equal(result.rows[0]?.tenant_id, null, 'a released pool session must not retain a tenant GUC');
+  assert.ok(result.rows[0]?.tenant_id === null || result.rows[0]?.tenant_id === '', 'a released pool session must not retain a tenant GUC');
+  const invisible = await pool.query<{ count: string }>('SELECT count(*) FROM collector_runs WHERE run_id = $1', [runId]);
+  assert.equal(invisible.rows[0]?.count, '0', 'RLS must hide a run when the tenant GUC is absent');
 }
 
 async function setTenantGuc(pool: Pool): Promise<void> {
@@ -38,7 +40,7 @@ test('run-ledger: running/succeeded/failed', { skip: ready ? false : 'PROXIMA_TE
   try {
     const ledger = new RunLedger(pool);
     const succeeded = await ledger.open({ tenantId, kind: 'collect' });
-    await assertTenantGucReset(pool);
+    await assertTenantGucReset(pool, succeeded);
     await setTenantGuc(pool);
     const running = await pool.query<{ status: string }>('SELECT status FROM collector_runs WHERE run_id = $1', [succeeded]);
     assert.equal(running.rows[0]?.status, 'RUNNING');
@@ -49,7 +51,7 @@ test('run-ledger: running/succeeded/failed', { skip: ready ? false : 'PROXIMA_TE
     const second = await sink.store({ endpointId: 'statistics.sales', url: 'https://statistics-api.wildberries.ru/api/v1/supplier/sales', httpStatus: 500, responseHeaders: {}, body: Buffer.from('{"error":true}'), retrievedAt: new Date('2026-09-01T00:00:01.000Z'), attempt: 0 });
     assert.match(first.objectLocator, /^artifact:\/\/business-signal\/sha256\/[0-9a-f]{64}$/);
     assert.match(second.objectLocator, /^artifact:\/\/business-signal\/sha256\/[0-9a-f]{64}$/);
-    await assertTenantGucReset(pool);
+    await assertTenantGucReset(pool, succeeded);
     await setTenantGuc(pool);
     const artifacts = await pool.query<{ count: string }>('SELECT count(*) FROM wb_raw_artifacts WHERE run_id = $1', [succeeded]);
     assert.equal(artifacts.rows[0]?.count, '2');
