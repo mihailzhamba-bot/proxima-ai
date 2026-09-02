@@ -89,6 +89,12 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
         assert not can("proxima_webapp_readonly", "SELECT", "stg_wb_sales_latest")
         assert not can("proxima_run_janitor", "INSERT", "stg_wb_orders_obs")
 
+        # cabinet daily facts (Story 1.6): collector writes; norm/webapp read.
+        assert can("proxima_job_collector", "INSERT", "fact_cabinet_daily")
+        assert can("proxima_job_norm", "SELECT", "fact_cabinet_daily_current")
+        assert can("proxima_webapp_readonly", "SELECT", "data_status_current")
+        assert not can("proxima_job_norm", "INSERT", "fact_cabinet_daily")
+
 
 @pytest.mark.skipif(not os.environ.get("PROXIMA_TEST_POSTGRES_DSN"), reason="dedicated PostgreSQL DSN not configured")
 def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
@@ -110,6 +116,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         "wb_raw_artifacts",
         "stg_wb_orders_obs",
         "stg_wb_sales_obs",
+        "fact_cabinet_daily",
     }
     with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as connection:
         secured = {
@@ -122,7 +129,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         policy_count = connection.execute(
             "SELECT count(*) AS n FROM pg_policies WHERE schemaname = 'public'"
         ).fetchone()["n"]
-        assert policy_count == 36
+        assert policy_count == 40
         janitor_tables = {
             row["tablename"]
             for row in connection.execute(
@@ -136,6 +143,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
             "wb_raw_artifacts",
             "stg_wb_orders_obs",
             "stg_wb_sales_obs",
+            "fact_cabinet_daily",
         }
         non_invoker_views = [
             row["relname"]

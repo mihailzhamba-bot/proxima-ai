@@ -26,12 +26,12 @@ function driftCode(error: unknown): boolean {
   return error instanceof WbClientError && error.code === 'WB_SCHEMA_DRIFT';
 }
 
-test('collect args: tenant, date-from and statistics token file are required', () => {
+test('collect args: date-from is optional; tenant and statistics token file are required', () => {
   const args = parseCollectArgs(['--tenant', 'amirova-test', '--date-from', '2026-08-28', '--statistics-token-file', '/run/secrets/token']);
   assert.deepEqual(args, { tenantId: 'amirova-test', dateFrom: '2026-08-28', statisticsTokenFile: '/run/secrets/token' });
   assert.equal(parseCollectArgs(['--tenant', 'amirova-test', '--date-from', '2026-08-28T00:00:00', '--statistics-token-file', 'f']).dateFrom, '2026-08-28T00:00:00');
   assert.throws(() => parseCollectArgs(['--tenant', 'amirova-test', '--date-from', '2026-08-28']), /required option: --statistics-token-file/);
-  assert.throws(() => parseCollectArgs(['--tenant', 'amirova-test', '--statistics-token-file', 'f']), /required option: --date-from/);
+  assert.deepEqual(parseCollectArgs(['--tenant', 'amirova-test', '--statistics-token-file', 'f']), { tenantId: 'amirova-test', statisticsTokenFile: 'f' });
   assert.throws(() => parseCollectArgs(['--endpoint', 'statistics.orders']), /unknown option --endpoint/);
   assert.throws(() => parseCollectArgs(['--tenant', 'Amirova', '--date-from', '2026-08-28', '--statistics-token-file', 'f']), /--tenant must match/);
   assert.throws(() => parseCollectArgs(['--tenant', 'amirova-test', '--date-from', '28.08.2026', '--statistics-token-file', 'f']), /--date-from must be/);
