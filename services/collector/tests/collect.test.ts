@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { parseCollectArgs } from '../src/jobs/collect.js';
+import { parseCollectArgs, runCollect } from '../src/jobs/collect.js';
 import { WbClientError } from '../src/wb/client.js';
 import { DEFAULT_FIXTURE_ROOT } from '../src/wb/fixture-transport.js';
 import { toOrderObservations, toSaleObservations } from '../src/wb/observations.js';
@@ -84,4 +86,35 @@ test('observations: missing key, missing or zoned lastChangeDate and non-object 
   assert.throws(() => toOrderObservations([[first]], CONTENT_SHA), driftCode);
   assert.throws(() => toSaleObservations([{ ...first }], CONTENT_SHA), driftCode);
   assert.throws(() => toOrderObservations([first], 'not-a-sha'), RangeError);
+});
+
+function jwt(scopes: number): string {
+  const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ s: scopes, exp: 2_000_000_000 })).toString('base64url');
+  return `${header}.${payload}.fixture-signature`;
+}
+
+test('collect: a read-write or multi-category statistics token fails closed before any connection', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'proxima-collect-token-'));
+  try {
+    const uriFile = join(dir, 'proxima_collector_uri');
+    await writeFile(uriFile, 'postgresql://unused@127.0.0.1:1/unused\n', { mode: 0o600 });
+    const env = { COLLECTOR_DATABASE_URI_FILE: uriFile, PROXIMA_RAW_DIR: dir };
+    const transport = () => { throw new Error('network must not be touched'); };
+    const args = (tokenFile: string) => ({ tenantId: 'amirova-test', dateFrom: '2026-08-17', statisticsTokenFile: tokenFile });
+
+    const readWrite = join(dir, 'rw');
+    await writeFile(readWrite, `${jwt(1 << 5)}\n`, { mode: 0o600 });
+    await assert.rejects(() => runCollect(args(readWrite), { transport, env }), { code: 'TOKEN_SCOPE_INVALID' });
+
+    const twoCategories = join(dir, 'two');
+    await writeFile(twoCategories, `${jwt((1 << 30) | (1 << 5) | (1 << 1))}\n`, { mode: 0o600 });
+    await assert.rejects(() => runCollect(args(twoCategories), { transport, env }), { code: 'TOKEN_SCOPE_INVALID' });
+
+    const notJwt = join(dir, 'plain');
+    await writeFile(notJwt, 'statistics-fixture-token\n', { mode: 0o600 });
+    await assert.rejects(() => runCollect(args(notJwt), { transport, env }), { code: 'TOKEN_INVALID' });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

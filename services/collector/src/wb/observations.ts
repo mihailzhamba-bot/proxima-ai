@@ -112,9 +112,10 @@ function toObservations(rows: readonly unknown[], contentSha256: string, spec: O
 /**
  * Writes an observation set inside the caller's transaction (the `work`
  * callback of `RunLedger.succeed`, whose session already carries the tenant
- * GUC). Drift is checked before any insert so a failing run leaves no rows
- * behind even before the caller rolls back. Table and key column names come
- * from the closed spec table, never from input.
+ * GUC). Each batch checks drift before its own insert; earlier batches may
+ * already be written when a later one drifts, so "no observations of a failed
+ * run" is guaranteed by the caller's ROLLBACK, not by this function alone.
+ * Table and key column names come from the closed spec table, never from input.
  */
 export async function insertObservations(
   client: PoolClient,

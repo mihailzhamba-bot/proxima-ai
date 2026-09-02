@@ -18,7 +18,7 @@
 import { Pool } from 'pg';
 
 import { BusinessSignalRawStore } from '../business-signal/raw-store.js';
-import { readPrivateSecret } from '../business-signal/secrets.js';
+import { assertLeastPrivilegeToken, readPrivateSecret } from '../business-signal/secrets.js';
 import { sha256 } from '../intake/manifest.js';
 import { WbClient, WbClientError, parseJsonArray, type Clock } from '../wb/client.js';
 import { logRunStep } from '../wb/log.js';
@@ -91,6 +91,13 @@ function isOption(value: string | undefined): value is Option {
   return value !== undefined && (OPTIONS as readonly string[]).includes(value);
 }
 
+/** Stable code for logs and stderr: WbClientError / BusinessSignalError codes pass through. */
+function errorCode(error: unknown): string {
+  if (error instanceof WbClientError) return error.code;
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && code !== '' ? code : 'COLLECT_FAILED';
+}
+
 function requiredEnv(env: NodeJS.ProcessEnv, name: string): string {
   const value = env[name];
   if (!value) throw new Error(`${name} is not set`);
@@ -102,6 +109,9 @@ export async function runCollect(args: CollectArgs, deps: CollectDeps): Promise<
   const { tenantId, dateFrom } = args;
   const connectionString = await readPrivateSecret(requiredEnv(env, 'COLLECTOR_DATABASE_URI_FILE'), 'collector database URI file');
   const statisticsToken = await readPrivateSecret(args.statisticsTokenFile, 'WB statistics token file');
+  // WB API is READ-only by policy: a read-write or multi-category token fails
+  // closed here, before any connection or request is made.
+  assertLeastPrivilegeToken(statisticsToken, 'statistics');
   const rawRoot = requiredEnv(env, 'PROXIMA_RAW_DIR');
   const pool = new Pool({ connectionString, max: 2, application_name: 'proxima-collect' });
   try {
@@ -136,8 +146,9 @@ export async function runCollect(args: CollectArgs, deps: CollectDeps): Promise<
       });
       return { runId, tenantId, ...written };
     } catch (error) {
-      const code = error instanceof WbClientError ? error.code : 'COLLECT_FAILED';
-      log('failed', 'run failed; marking FAILED', { code }, 'error');
+      log('failed', 'run failed; marking FAILED', { code: errorCode(error) }, 'error');
+      // If the FAILED flip itself fails the run stays RUNNING; the original
+      // error still surfaces and Story 1.7's run tooling reconciles the ledger.
       await ledger.fail(tenantId, runId).catch((failError: unknown) => {
         const detail = failError instanceof Error ? failError.message : String(failError);
         log('failed', 'could not mark run FAILED', { detail }, 'error');
@@ -177,8 +188,7 @@ async function main(): Promise<void> {
 
 if (process.argv[1] && /[\\/]collect\.(?:ts|js)$/.test(process.argv[1])) {
   main().catch((error: unknown) => {
-    const code = error instanceof WbClientError ? error.code : 'COLLECT_FAILED';
-    process.stderr.write(`collect: ${code}: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`collect: ${errorCode(error)}: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exit(1);
   });
 }

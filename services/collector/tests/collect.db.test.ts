@@ -9,6 +9,7 @@ import { Client } from 'pg';
 import { runCollect, type CollectResult } from '../src/jobs/collect.js';
 import { WbClientError } from '../src/wb/client.js';
 import { DEFAULT_FIXTURE_ROOT, FixtureTransport, type FixtureScript } from '../src/wb/fixture-transport.js';
+import type { WbTransport } from '../src/wb/transport.js';
 
 const collectorDsn = process.env.PROXIMA_TEST_DSN_COLLECTOR ?? '';
 const postgresDsn = process.env.PROXIMA_TEST_POSTGRES_DSN ?? '';
@@ -18,38 +19,59 @@ const tenantId = 'amirova-test';
 const ORDERS_FIXTURE = 301;
 const SALES_FIXTURE = 295;
 
-async function seedTenant(): Promise<void> {
+/** Structural read-only WB statistics JWT (category bit 5 + read-only bit 30), no real claims. */
+function readOnlyStatisticsJwt(): string {
+  const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ s: (1 << 30) | (1 << 5), exp: 2_000_000_000 })).toString('base64url');
+  return `${header}.${payload}.fixture-signature`;
+}
+
+async function withAdmin<T>(work: (client: Client) => Promise<T>): Promise<T> {
   const client = new Client({ connectionString: postgresDsn });
   await client.connect();
-  try { await client.query('INSERT INTO tenants (tenant_id) VALUES ($1) ON CONFLICT DO NOTHING', [tenantId]); }
+  try { return await work(client); }
   finally { await client.end(); }
 }
 
 interface Harness {
-  env: NodeJS.ProcessEnv;
-  args: { tenantId: string; dateFrom: string; statisticsTokenFile: string };
   db: Client;
+  /** Runs `collect` through the private-file contract and remembers the run for cleanup. */
+  collect(transport: WbTransport): Promise<CollectResult>;
+  /** Id of the most recently opened run, including one that failed. */
+  lastRunId(): string;
   count(table: string, runId: string): Promise<number>;
   status(runId: string): Promise<string | undefined>;
   cleanup(): Promise<void>;
 }
 
-/** The job reads its DSN and token only through private files, exactly like production. */
+/**
+ * The job reads its DSN and token only through private files, exactly like
+ * production. The roundtrip database is shared by every *.db.test.ts file, so
+ * each test deletes its own runs on exit (cascade removes observations and
+ * artifacts) - the same "deletable by run_id" contract the janitor relies on.
+ */
 async function openHarness(): Promise<Harness> {
-  await seedTenant();
+  await withAdmin((client) => client.query('INSERT INTO tenants (tenant_id) VALUES ($1) ON CONFLICT DO NOTHING', [tenantId]));
   const secrets = await mkdtemp(join(tmpdir(), 'proxima-collect-secrets-'));
   const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-collect-raw-'));
   const uriFile = join(secrets, 'proxima_collector_uri');
   const tokenFile = join(secrets, 'amirova-test_wb_statistics_token');
   await writeFile(uriFile, `${collectorDsn}\n`, { mode: 0o600 });
-  await writeFile(tokenFile, 'statistics-fixture-token\n', { mode: 0o600 });
+  await writeFile(tokenFile, `${readOnlyStatisticsJwt()}\n`, { mode: 0o600 });
+  const env: NodeJS.ProcessEnv = { COLLECTOR_DATABASE_URI_FILE: uriFile, PROXIMA_RAW_DIR: rawRoot };
+  const args = { tenantId, dateFrom: '2026-08-17', statisticsTokenFile: tokenFile };
+  const runIds: string[] = [];
   const db = new Client({ connectionString: collectorDsn });
   await db.connect();
   await db.query("SELECT set_config('proxima.tenant_id', $1, false)", [tenantId]);
   return {
-    env: { COLLECTOR_DATABASE_URI_FILE: uriFile, PROXIMA_RAW_DIR: rawRoot },
-    args: { tenantId, dateFrom: '2026-08-17', statisticsTokenFile: tokenFile },
     db,
+    collect: (transport) => runCollect(args, { transport, env, onRunOpened: (runId) => { runIds.push(runId); } }),
+    lastRunId() {
+      const runId = runIds[runIds.length - 1];
+      assert.ok(runId, 'no run was opened');
+      return runId;
+    },
     async count(table, runId) {
       const result = await db.query<{ n: string }>(`SELECT count(*) AS n FROM ${table} WHERE run_id = $1`, [runId]);
       return Number(result.rows[0]?.n);
@@ -60,6 +82,7 @@ async function openHarness(): Promise<Harness> {
     },
     async cleanup() {
       await db.end();
+      await withAdmin((client) => client.query('DELETE FROM collector_runs WHERE run_id = ANY($1::uuid[])', [runIds]));
       await rm(secrets, { recursive: true, force: true });
       await rm(rawRoot, { recursive: true, force: true });
     },
@@ -78,7 +101,7 @@ function scriptedOrders(rows: unknown[]): FixtureTransport {
 test('collect: idempotent replay 0 new rows', { skip }, async () => {
   const h = await openHarness();
   try {
-    const first: CollectResult = await runCollect(h.args, { transport: new FixtureTransport().transport, env: h.env });
+    const first: CollectResult = await h.collect(new FixtureTransport().transport);
     assert.equal(await h.status(first.runId), 'SUCCEEDED');
     assert.deepEqual(first.orders, { received: ORDERS_FIXTURE, inserted: ORDERS_FIXTURE, skipped: 0 });
     assert.deepEqual(first.sales, { received: SALES_FIXTURE, inserted: SALES_FIXTURE, skipped: 0 });
@@ -94,7 +117,7 @@ test('collect: idempotent replay 0 new rows', { skip }, async () => {
     const artifact = await h.db.query<{ n: string }>('SELECT count(*) AS n FROM wb_raw_artifacts WHERE run_id = $1 AND content_sha256 = $2', [first.runId, sample.rows[0]?.content_sha256]);
     assert.equal(artifact.rows[0]?.n, '1', 'observation content_sha256 points at the recorded artifact');
 
-    const replay = await runCollect(h.args, { transport: new FixtureTransport().transport, env: h.env });
+    const replay = await h.collect(new FixtureTransport().transport);
     assert.notEqual(replay.runId, first.runId, 'a replay is a new run in the ledger');
     assert.equal(await h.status(replay.runId), 'SUCCEEDED');
     assert.deepEqual(replay.orders, { received: ORDERS_FIXTURE, inserted: 0, skipped: ORDERS_FIXTURE });
@@ -110,11 +133,11 @@ test('collect: idempotent replay 0 new rows', { skip }, async () => {
 test('collect: late change of the same srid is a second observation and _latest returns it', { skip }, async () => {
   const h = await openHarness();
   try {
-    const base = await runCollect(h.args, { transport: new FixtureTransport().transport, env: h.env });
+    const base = await h.collect(new FixtureTransport().transport);
     const rows = await ordersFixture();
     const target = rows[0] as Record<string, unknown> & { srid: string; lastChangeDate: string };
     const bumped = { ...target, lastChangeDate: '2026-08-31T09:15:00', isCancel: true, cancelDate: '2026-08-31T09:15:00' };
-    const late = await runCollect(h.args, { transport: scriptedOrders([bumped, ...rows.slice(1)]).transport, env: h.env });
+    const late = await h.collect(scriptedOrders([bumped, ...rows.slice(1)]).transport);
     assert.equal(await h.status(late.runId), 'SUCCEEDED');
     assert.deepEqual(late.orders, { received: ORDERS_FIXTURE, inserted: 1, skipped: ORDERS_FIXTURE - 1 });
     assert.equal(late.sales.inserted, 0);
@@ -123,12 +146,7 @@ test('collect: late change of the same srid is a second observation and _latest 
       [tenantId, target.srid],
     );
     assert.deepEqual(versions.rows.map((row) => row.last_change_at), [target.lastChangeDate, '2026-08-31T09:15:00']);
-    // The harness database is shared by every *.db.test.ts file, so the first
-    // version may belong to an earlier run of this file; only the late version
-    // is guaranteed to carry this test's run.
-    assert.notEqual(versions.rows[0]?.run_id, late.runId, 'the earlier version stays with the run that first observed it');
-    assert.equal(versions.rows[1]?.run_id, late.runId);
-    assert.equal(await h.status(base.runId), 'SUCCEEDED');
+    assert.deepEqual(versions.rows.map((row) => row.run_id), [base.runId, late.runId], 'each version keeps the run that first observed it');
     const latest = await h.db.query<{ run_id: string; last_change_at: string; is_cancel: boolean }>(
       "SELECT run_id, to_char(last_change_at AT TIME ZONE 'Europe/Moscow', 'YYYY-MM-DD\"T\"HH24:MI:SS') AS last_change_at, (payload->>'isCancel')::boolean AS is_cancel FROM stg_wb_orders_latest WHERE tenant_id = $1 AND srid = $2",
       [tenantId, target.srid],
@@ -143,16 +161,15 @@ test('collect: late change of the same srid is a second observation and _latest 
 test('collect: same key and lastChangeDate with another payload is WB_SCHEMA_DRIFT, run FAILED, no observations', { skip }, async () => {
   const h = await openHarness();
   try {
-    await runCollect(h.args, { transport: new FixtureTransport().transport, env: h.env });
+    await h.collect(new FixtureTransport().transport);
     const rows = await ordersFixture();
     const target = rows[0] as Record<string, unknown> & { totalPrice: number };
     const drifted = { ...target, totalPrice: target.totalPrice + 1 };
-    let failedRunId = '';
     await assert.rejects(
-      () => runCollect(h.args, { transport: scriptedOrders([drifted, ...rows.slice(1)]).transport, env: h.env, onRunOpened: (runId) => { failedRunId = runId; } }),
+      () => h.collect(scriptedOrders([drifted, ...rows.slice(1)]).transport),
       (error: unknown) => error instanceof WbClientError && error.code === 'WB_SCHEMA_DRIFT',
     );
-    assert.notEqual(failedRunId, '');
+    const failedRunId = h.lastRunId();
     assert.equal(await h.status(failedRunId), 'FAILED');
     assert.equal(await h.count('stg_wb_orders_obs', failedRunId), 0);
     assert.equal(await h.count('stg_wb_sales_obs', failedRunId), 0);
