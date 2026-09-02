@@ -1,7 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { SignalDetail } from "@/components/brief/signal-detail";
 import { FxBadge } from "@/components/ui/fx-badge";
-import type { BriefSignal } from "@/lib/data/types";
+import type { BriefSignal } from "@/lib/data/view-model";
 import { formatRub } from "@/lib/format/rub";
 import { gyrDotClass } from "@/lib/gyr";
 import { cn } from "@/lib/utils";

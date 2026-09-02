@@ -2,7 +2,7 @@ import { CircleDashed } from "lucide-react";
 import { FxBadge } from "@/components/ui/fx-badge";
 import { formatRubCompact } from "@/lib/format/rub";
 import { gyrDotClass } from "@/lib/gyr";
-import type { Metric as FixtureMetric } from "@/lib/data/types";
+import type { Metric as FixtureMetric } from "@/lib/data/view-model";
 import { Sparkline } from "@/components/metrics/sparkline";
 
 function formatClock(totalMinutes: number): string {

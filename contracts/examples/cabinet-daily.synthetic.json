@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "tenant_id": "fixture-tenant-001",
+  "calendar_day": "2026-08-29",
+  "orders_count": 57,
+  "cancelled_count": 3,
+  "sales_count": 41,
+  "returns_count": 2,
+  "revenue_rub": "83125.50",
+  "forpay_rub": "61204.75",
+  "source_refs": [
+    "artifact://business-signal/sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "artifact://business-signal/sha256/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  ]
+}

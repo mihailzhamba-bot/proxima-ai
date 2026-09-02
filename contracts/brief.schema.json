@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proxima.local/contracts/brief/v1",
+  "title": "BriefV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evaluation_day",
+    "data_status",
+    "actual",
+    "norm",
+    "deviation_pct",
+    "signals",
+    "source_refs"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "evaluation_day": {
+      "type": "string",
+      "format": "date",
+      "description": "The day the brief is about (= brief_day, = norm evaluation_day, AD-9)."
+    },
+    "data_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["last_full_day", "collected_at", "stale"],
+      "properties": {
+        "last_full_day": { "type": "string", "format": "date" },
+        "collected_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "finished_at of the last SUCCEEDED collect/backfill run (AD-7)."
+        },
+        "stale": { "type": "boolean" }
+      }
+    },
+    "actual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["orders", "revenue"],
+      "properties": {
+        "orders": { "type": "integer", "minimum": 0, "description": "Yesterday's cabinet orders (count)." },
+        "revenue": {
+          "type": "string",
+          "pattern": "^-?[0-9]+\\.[0-9]{2}$",
+          "description": "Money as a string with exactly two decimal places (AD-10)."
+        }
+      }
+    },
+    "norm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["orders", "revenue", "window_days", "sample_days"],
+      "properties": {
+        "orders": {
+          "type": "string",
+          "pattern": "^-?[0-9]+\\.[0-9]{2}$",
+          "description": "Median of orders as a string with two decimals - mirrors norm_daily.value numeric(14,2) (AD-8/AD-10); fractional part is legitimate for an even sample."
+        },
+        "revenue": {
+          "type": "string",
+          "pattern": "^-?[0-9]+\\.[0-9]{2}$",
+          "description": "Money as a string with exactly two decimal places (AD-10)."
+        },
+        "window_days": { "const": 14, "description": "D21: median of the last 14 full days before evaluation_day." },
+        "sample_days": { "type": "integer", "minimum": 0, "maximum": 14 }
+      }
+    },
+    "deviation_pct": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["orders", "revenue"],
+      "properties": {
+        "orders": { "type": "number", "description": "(yesterday - norm) / norm * 100 for orders." },
+        "revenue": { "type": "number", "description": "(yesterday - norm) / norm * 100 for revenue." }
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": { "$ref": "signal.schema.json" },
+      "description": "Anomalies ranked by money (AD-10 signal v1); empty until M-04 (AD-9)."
+    },
+    "source_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Evidence pointers (AD-1) behind the brief: fact versions, norm rows, artifacts; never empty."
+    }
+  }
+}

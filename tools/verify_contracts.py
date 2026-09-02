@@ -4,9 +4,12 @@ import copy
 import json
 import sys
 from pathlib import Path
+from urllib.parse import urljoin
 
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import SchemaError, ValidationError
+from referencing import Registry
+from referencing.jsonschema import DRAFT202012
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,10 +20,29 @@ def load(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def registry() -> Registry:
+    """Every schema resolvable by its own $id and by the URL a sibling-relative
+    ref resolves to. A ref like "signal.schema.json" is resolved against the
+    referrer's $id with its last segment dropped (base URI of ".../brief/v1"
+    is ".../brief/"), so each schema is registered under that key for every
+    possible referrer base."""
+    schemas = [(path.name, load(path)) for path in sorted(CONTRACTS.glob("*.schema.json"))]
+    bases = [schema["$id"] for _, schema in schemas]
+    resources = []
+    for file_name, schema in schemas:
+        keys = [schema["$id"], *(urljoin(base, file_name) for base in bases)]
+        for key in keys:
+            resources.append((key, DRAFT202012.create_resource(schema)))
+    return Registry().with_resources(resources)
+
+
+REGISTRY = registry()
+
+
 def validator(name: str) -> Draft202012Validator:
     schema = load(CONTRACTS / f"{name}.schema.json")
     Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema, format_checker=FormatChecker())
+    return Draft202012Validator(schema, format_checker=FormatChecker(), registry=REGISTRY)
 
 
 def must_reject(checker: Draft202012Validator, value: dict, label: str) -> None:
