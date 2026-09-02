@@ -123,7 +123,12 @@ test('collect: late change of the same srid is a second observation and _latest 
       [tenantId, target.srid],
     );
     assert.deepEqual(versions.rows.map((row) => row.last_change_at), [target.lastChangeDate, '2026-08-31T09:15:00']);
-    assert.deepEqual(versions.rows.map((row) => row.run_id), [base.runId, late.runId]);
+    // The harness database is shared by every *.db.test.ts file, so the first
+    // version may belong to an earlier run of this file; only the late version
+    // is guaranteed to carry this test's run.
+    assert.notEqual(versions.rows[0]?.run_id, late.runId, 'the earlier version stays with the run that first observed it');
+    assert.equal(versions.rows[1]?.run_id, late.runId);
+    assert.equal(await h.status(base.runId), 'SUCCEEDED');
     const latest = await h.db.query<{ run_id: string; last_change_at: string; is_cancel: boolean }>(
       "SELECT run_id, to_char(last_change_at AT TIME ZONE 'Europe/Moscow', 'YYYY-MM-DD\"T\"HH24:MI:SS') AS last_change_at, (payload->>'isCancel')::boolean AS is_cancel FROM stg_wb_orders_latest WHERE tenant_id = $1 AND srid = $2",
       [tenantId, target.srid],
