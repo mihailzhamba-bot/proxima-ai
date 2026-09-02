@@ -2,6 +2,8 @@
 
 Память между сессиями. Первое действие каждой сессии - прочитать этот файл и подтвердить заказчику, что подхватил верно.
 
+**Обновлено:** 02.09.2026 (VPS, Claude Code): влиты #48 (Story 1.3, реестр прогонов, миграция 011) и #46 (Story 2.2, контракты `cabinet-daily`/`norm`/`brief` + codegen в webapp) - 9/22 единиц сентября; CI на main зелёный с 1.3 и 2.2 вместе (`pg-roundtrip: PASS`, db-тестов 5). Пять застрявших CI-коммитов историй 1.0/1.9/1.12 влиты PR #49 (`ci/m01-workflow-commits`, cherry-pick + 3 фикса: SC2016 в `restore_check.sh`, `PROXIMA_SECRETS_DIR` в шаге ledger, без `PUPPETEER_SKIP_DOWNLOAD` в CI - иначе `architecture` без Chromium); теперь workflows `verify` (jobs `systemd-verify`, `verify` на ubuntu-24.04) и `images` (`build-images`, `apply-migrations-in-container`). Блокер PAT на VPS не существует: токен `gh`/`~/.git-credentials` уже со scope `workflow`; у OpenHands GitHub-токена нет по дизайну; у кондуктора нет файла `conductor_github_pat` (PR-обёртки не работают, таймер не установлен) - PAT для кондуктора решает Mike. Следующие единицы: 1.4 (от 1.3) и 2.3 (от 2.2).
+
 **Обновлено:** 01.09.2026 утро: ВСЕ 8 PR ночи влиты в main по явной делегации Mike («произвёл ревью, всё что надо сделал»): #35 docs+ADR+Jira-sync, #36 squash (1.0), #37 (1.1), #38 (1.2), #39 (1.10), #40 (1.12), #41 (2.1), #42 (1.9). Интеграционный `make verify` на main зелёный целиком (pg-roundtrip PASS, provision idempotent, db-tests 4, wb client gate). Готово 7/22 единиц сентября за первые сутки конвейера. В работе: Story 1.3 (GLM) и 2.2 (Fedor) от main. Блокер прежний: PAT без Workflows-права - 5 CI-коммитов лежат локально (worktrees story19/story112/m01step0).
 
 ## Что сделано
