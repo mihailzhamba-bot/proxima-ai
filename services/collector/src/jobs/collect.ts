@@ -19,6 +19,7 @@ import { Pool } from 'pg';
 
 import { BusinessSignalRawStore } from '../business-signal/raw-store.js';
 import { assertLeastPrivilegeToken, readPrivateSecret } from '../business-signal/secrets.js';
+import { aggregateCabinetDaily, type AggregateCabinetDailyResult } from '../facts/cabinet-daily.js';
 import { sha256 } from '../intake/manifest.js';
 import { WbClient, WbClientError, parseJsonArray, type Clock } from '../wb/client.js';
 import { logRunStep } from '../wb/log.js';
@@ -31,6 +32,7 @@ import {
 } from '../wb/observations.js';
 import { WbArtifactSink } from '../wb/recording-client.js';
 import { RunLedger } from '../wb/run-ledger.js';
+import { mskDay, mskToday } from '../wb/msk-day.js';
 import { networkTransport, type WbTransport } from '../wb/transport.js';
 
 const RUN_KIND = 'collect';
@@ -42,7 +44,7 @@ type Option = (typeof OPTIONS)[number];
 export interface CollectArgs {
   tenantId: string;
   /** Passed to WB verbatim as `dateFrom` together with `flag=0` (Moscow wall clock). */
-  dateFrom: string;
+  dateFrom?: string;
   statisticsTokenFile: string;
 }
 
@@ -62,6 +64,7 @@ export interface CollectResult {
   tenantId: string;
   orders: InsertObservationsResult;
   sales: InsertObservationsResult;
+  aggregate: AggregateCabinetDailyResult;
 }
 
 export function parseCollectArgs(argv: readonly string[]): CollectArgs {
@@ -77,14 +80,26 @@ export function parseCollectArgs(argv: readonly string[]): CollectArgs {
     values[key] = value;
     index += 1;
   }
-  for (const option of OPTIONS) {
+  for (const option of OPTIONS.filter((option) => option !== '--date-from')) {
     if (values[option] === undefined) throw new Error(`required option: ${option}`);
   }
   const tenantId = values['--tenant'] as string;
-  const dateFrom = values['--date-from'] as string;
+  const dateFrom = values['--date-from'];
   if (!TENANT_ID.test(tenantId)) throw new Error('--tenant must match ^[a-z0-9][a-z0-9_-]{2,63}$');
-  if (!DATE_FROM.test(dateFrom)) throw new Error('--date-from must be YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS (Moscow wall clock)');
-  return { tenantId, dateFrom, statisticsTokenFile: values['--statistics-token-file'] as string };
+  if (dateFrom !== undefined && !DATE_FROM.test(dateFrom)) throw new Error('--date-from must be YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS (Moscow wall clock)');
+  return { tenantId, ...(dateFrom === undefined ? {} : { dateFrom }), statisticsTokenFile: values['--statistics-token-file'] as string };
+}
+
+function shiftDay(day: string, offset: number): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
+}
+
+export function selectCollectDateFrom(explicit: string | undefined, lastFullDay: string | null, now: Date): { dateFrom: string; source: 'flag' | 'default'; runDay: string } {
+  const runDay = mskToday(now);
+  if (explicit !== undefined) return { dateFrom: explicit, source: 'flag', runDay };
+  const rollingFloor = shiftDay(runDay, -3);
+  const recoveryFloor = lastFullDay === null ? rollingFloor : shiftDay(lastFullDay, 1);
+  return { dateFrom: recoveryFloor < rollingFloor ? recoveryFloor : rollingFloor, source: 'default', runDay };
 }
 
 function isOption(value: string | undefined): value is Option {
@@ -106,7 +121,7 @@ function requiredEnv(env: NodeJS.ProcessEnv, name: string): string {
 
 export async function runCollect(args: CollectArgs, deps: CollectDeps): Promise<CollectResult> {
   const env = deps.env ?? process.env;
-  const { tenantId, dateFrom } = args;
+  const { tenantId } = args;
   const connectionString = await readPrivateSecret(requiredEnv(env, 'COLLECTOR_DATABASE_URI_FILE'), 'collector database URI file');
   const statisticsToken = await readPrivateSecret(args.statisticsTokenFile, 'WB statistics token file');
   // WB API is READ-only by policy: a read-write or multi-category token fails
@@ -121,6 +136,9 @@ export async function runCollect(args: CollectArgs, deps: CollectDeps): Promise<
     const log = (step: string, msg: string, extra: Record<string, unknown> = {}, level: 'info' | 'error' = 'info'): void =>
       logRunStep({ level, run_id: runId, tenant_id: tenantId, kind: RUN_KIND, step, msg, ...extra });
     try {
+      const selected = selectCollectDateFrom(args.dateFrom, args.dateFrom === undefined ? await ledger.lastFullDay(tenantId) : null, new Date(deps.clock?.now() ?? Date.now()));
+      const { dateFrom, runDay } = selected;
+      log('date-from', 'selected WB increment floor', { date_from: dateFrom, source: selected.source, run_day: runDay });
       const rawStore = await BusinessSignalRawStore.open(rawRoot, deps.repositoryRoot ?? process.cwd());
       const sink = new WbArtifactSink(tenantId, runId, rawStore, pool);
       const client = new WbClient(
@@ -137,13 +155,14 @@ export async function runCollect(args: CollectArgs, deps: CollectDeps): Promise<
       const sales = toSaleObservations(parseJsonArray(salesRecord.body, 'statistics.sales'), sha256(salesRecord.body));
       log('sales', 'fetched', { http_status: salesRecord.httpStatus, received: sales.received, distinct: sales.rows.length });
 
-      const written = await writeObservations(ledger, tenantId, runId, orders, sales);
+      const written = await writeObservations(ledger, tenantId, runId, orders, sales, mskDay(dateFrom), runDay);
       log('observations', 'committed with SUCCEEDED', {
         orders_inserted: written.orders.inserted,
         orders_skipped: written.orders.skipped,
         sales_inserted: written.sales.inserted,
         sales_skipped: written.sales.skipped,
       });
+      log('aggregate', 'cabinet daily versions written', { floor: mskDay(dateFrom), run_day: runDay, days: written.aggregate.days, input_runs: written.aggregate.inputRuns });
       return { runId, tenantId, ...written };
     } catch (error) {
       log('failed', 'run failed; marking FAILED', { code: errorCode(error) }, 'error');
@@ -167,23 +186,27 @@ async function writeObservations(
   runId: string,
   orders: ObservationSet,
   sales: ObservationSet,
-): Promise<{ orders: InsertObservationsResult; sales: InsertObservationsResult }> {
+  floor: string,
+  runDay: string,
+): Promise<{ orders: InsertObservationsResult; sales: InsertObservationsResult; aggregate: AggregateCabinetDailyResult }> {
   let ordersResult: InsertObservationsResult | undefined;
   let salesResult: InsertObservationsResult | undefined;
+  let aggregateResult: AggregateCabinetDailyResult | undefined;
   await ledger.succeed(tenantId, runId, async (client) => {
     ordersResult = await insertObservations(client, tenantId, runId, orders);
     salesResult = await insertObservations(client, tenantId, runId, sales);
+    aggregateResult = await aggregateCabinetDaily(client, { tenantId, runId, floor, runDay });
   });
-  if (ordersResult === undefined || salesResult === undefined) {
+  if (ordersResult === undefined || salesResult === undefined || aggregateResult === undefined) {
     throw new Error('collect: observations were not written inside the run transaction');
   }
-  return { orders: ordersResult, sales: salesResult };
+  return { orders: ordersResult, sales: salesResult, aggregate: aggregateResult };
 }
 
 async function main(): Promise<void> {
   const args = parseCollectArgs(process.argv.slice(2));
   const result = await runCollect(args, { transport: networkTransport() });
-  process.stdout.write(`${JSON.stringify({ run_id: result.runId, tenant_id: result.tenantId, kind: RUN_KIND, orders: result.orders, sales: result.sales })}\n`);
+  process.stdout.write(`${JSON.stringify({ run_id: result.runId, tenant_id: result.tenantId, kind: RUN_KIND, orders: result.orders, sales: result.sales, aggregate: result.aggregate })}\n`);
 }
 
 if (process.argv[1] && /[\\/]collect\.(?:ts|js)$/.test(process.argv[1])) {

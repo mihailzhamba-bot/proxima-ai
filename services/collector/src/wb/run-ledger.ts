@@ -60,6 +60,17 @@ export class RunLedger {
     } finally { await this.release(client); }
   }
 
+  async lastFullDay(tenantId: string): Promise<string | null> {
+    const client = await this.connect(tenantId);
+    try {
+      const result = await client.query<{ last_full_day: string | null }>(
+        'SELECT last_full_day::text FROM data_status_current WHERE tenant_id = $1',
+        [tenantId],
+      );
+      return result.rows[0]?.last_full_day ?? null;
+    } finally { await this.release(client); }
+  }
+
   async succeed(tenantId: string, runId: string, work?: (client: PoolClient) => Promise<void>): Promise<void> {
     const client = await this.connect(tenantId);
     try {

@@ -29,6 +29,8 @@ export {
   sha256,
 } from './intake/manifest.js';
 export { intakeManualWbXlsx } from './intake/manual-wb-xlsx.js';
+export { aggregateCabinetDaily, summarizeCabinetDaily } from './facts/cabinet-daily.js';
+export type { AggregateCabinetDailyResult, CabinetDailyFact, CabinetDailyInput, CabinetObservationRow } from './facts/cabinet-daily.js';
 export {
   IntakeError,
   MANUAL_EXPORT_RETRIEVAL_MODE,
