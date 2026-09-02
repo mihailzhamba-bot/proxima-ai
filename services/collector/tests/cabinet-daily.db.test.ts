@@ -77,9 +77,11 @@ test('cabinet-daily: versions every day, S1/S2 sums', { skip }, async () => {
       [tenantId, yesterday, aggregateRun, 'e'.repeat(64)],
     );
     assert.equal((await admin.query('SELECT stale FROM data_status_current WHERE tenant_id = $1', [tenantId])).rows[0]?.stale, false, 'fresh run complete through yesterday is not stale');
-    await admin.query("UPDATE collector_runs SET finished_at = CURRENT_TIMESTAMP - interval '25 hours' WHERE run_id = $1", [aggregateRun]);
+    // collected_at is the newest SUCCEEDED collect/backfill run of the tenant (AD-7):
+    // both harness runs must age, otherwise the fresh source run keeps it young.
+    await admin.query("UPDATE collector_runs SET finished_at = CURRENT_TIMESTAMP - interval '25 hours' WHERE run_id = ANY($1::uuid[])", [[aggregateRun, sourceRun]]);
     assert.equal((await admin.query('SELECT stale FROM data_status_current WHERE tenant_id = $1', [tenantId])).rows[0]?.stale, true, 'collected_at older than 24 hours is stale');
-    await admin.query('UPDATE collector_runs SET finished_at = CURRENT_TIMESTAMP WHERE run_id = $1', [aggregateRun]);
+    await admin.query('UPDATE collector_runs SET finished_at = CURRENT_TIMESTAMP WHERE run_id = ANY($1::uuid[])', [[aggregateRun, sourceRun]]);
     await admin.query('DELETE FROM fact_cabinet_daily WHERE run_id = $1 AND calendar_day = $2', [aggregateRun, yesterday]);
     assert.equal((await admin.query('SELECT stale FROM data_status_current WHERE tenant_id = $1', [tenantId])).rows[0]?.stale, true, 'an old last_full_day is stale even with fresh collected_at');
   } finally {
