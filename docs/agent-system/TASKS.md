@@ -6,7 +6,7 @@
 
 ### BMAD + BAD с делегированием реализации в OpenHands — implementation done (2026-09-01)
 
-Ветка `feat/bmad-bad` (от `origin/feat/orchestrator-conductor`). TEA-модуль, цели `claude-code`/`openhands`, BAD 1.2.0, мост `tools/orchestrator/bad_dev_story.sh` + 12 офлайн-тестов, решение D25, гейт «BAD не стартует при активном Дирижёре». Открыто: `gh auth login` (scope `workflow`) и живой сухой прогон моста — оба требуют Mike. Подробности — `docs/agent-system/HANDOFF.md`.
+Ветка `feat/bmad-bad` (от `origin/feat/orchestrator-conductor`). TEA-модуль, цели `claude-code`/`openhands`, BAD 1.2.0, мост `tools/orchestrator/bad_dev_story.sh` + 12 офлайн-тестов, решение D25, гейт «BAD не стартует при активном Дирижёре». Живой прогон моста пройден 01.09, `gh auth login` выполнен. 02.09 через мост забраны и отревьюены stories 1.3 (PR #48, с фикс-раундом) и 2.2 (PR #46). Открыто: мерж #43 → #47 → #48 → #46; до него BAD не стартует (его Phase 0 требует `main`). Подробности — `docs/agent-system/HANDOFF.md`.
 
 
 ### PA-41 W1 + SCN-008 adapter slice — implementation done (2026-08-27)
