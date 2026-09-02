@@ -14,7 +14,7 @@
 
 | Фикстура | Исходный полный ответ (30.08.2026) | Команда генерации (из корня репо, `SALT=~/.config/proxima/fixture-salt`) |
 |---|---|---|
-| `statistics/orders/sample.json` (295 строк, 14 дней 2026-08-17..30) | `statistics/supplier-orders/20260830T060041Z__dateFrom-2023-01-01_flag-0.json` | `python3 tools/anonymize_fixture.py <src> statistics/orders/sample.json --seed 42 --salt-file $SALT --limit-days 14 --max-bytes 200000` |
+| `statistics/orders/sample.json` (301 строка, 14 дней 2026-08-17..30) | `statistics/supplier-orders/20260830T060041Z__dateFrom-2023-01-01_flag-0.json` | `python3 tools/anonymize_fixture.py <src> statistics/orders/sample.json --seed 42 --salt-file $SALT --limit-days 14 --max-bytes 200000` |
 | `statistics/sales/sample.json` (295 строк, 14 дней 2026-08-17..30) | `statistics/supplier-sales/20260830T055939Z__dateFrom-2023-01-01_flag-0.json` | `python3 tools/anonymize_fixture.py <src> statistics/sales/sample.json --seed 42 --salt-file $SALT --limit-days 14 --max-bytes 200000` |
 | `analytics/sales_funnel_v3_history/sample.json` (3 nmId, 7 дней) | `analytics/sales-funnel-v3-history/20260830T141424Z__nmIDs-3_period-2026-08-24_2026-08-30_day.json` (HTTP 200) | `python3 tools/anonymize_fixture.py <src> analytics/sales_funnel_v3_history/sample.json --seed 42 --salt-file $SALT` |
 | `analytics/nm_report_downloads/sample.json` (список отчётов) | `analytics/nm-report-downloads/20260830T060719Z__list.json` | `python3 tools/anonymize_fixture.py <src> analytics/nm_report_downloads/sample.json --seed 42 --salt-file $SALT` |
