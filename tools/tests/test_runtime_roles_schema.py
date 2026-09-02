@@ -78,6 +78,17 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
         assert not can("proxima_webapp_readonly", "SELECT", "wb_raw_artifacts")
         assert not can("proxima_run_janitor", "INSERT", "collector_runs")
 
+        # observations (Story 1.4): only the collector writes and reads them; norm and
+        # webapp see facts, never staging; the janitor deletes through its LOGIN role.
+        assert can("proxima_job_collector", "INSERT", "stg_wb_orders_obs")
+        assert can("proxima_job_collector", "INSERT", "stg_wb_sales_obs")
+        assert can("proxima_job_collector", "SELECT", "stg_wb_orders_latest")
+        assert can("proxima_job_collector", "SELECT", "stg_wb_sales_latest")
+        assert not can("proxima_job_collector", "UPDATE", "stg_wb_orders_obs")
+        assert not can("proxima_job_norm", "SELECT", "stg_wb_orders_obs")
+        assert not can("proxima_webapp_readonly", "SELECT", "stg_wb_sales_latest")
+        assert not can("proxima_run_janitor", "INSERT", "stg_wb_orders_obs")
+
 
 @pytest.mark.skipif(not os.environ.get("PROXIMA_TEST_POSTGRES_DSN"), reason="dedicated PostgreSQL DSN not configured")
 def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
@@ -97,6 +108,8 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         "collector_runs",
         "collector_run_inputs",
         "wb_raw_artifacts",
+        "stg_wb_orders_obs",
+        "stg_wb_sales_obs",
     }
     with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as connection:
         secured = {
@@ -109,7 +122,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         policy_count = connection.execute(
             "SELECT count(*) AS n FROM pg_policies WHERE schemaname = 'public'"
         ).fetchone()["n"]
-        assert policy_count == 32
+        assert policy_count == 36
         janitor_tables = {
             row["tablename"]
             for row in connection.execute(
@@ -117,7 +130,13 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
                 " AND roles = ARRAY['proxima_run_janitor']::name[]"
             ).fetchall()
         }
-        assert janitor_tables == {"collector_runs", "collector_run_inputs", "wb_raw_artifacts"}
+        assert janitor_tables == {
+            "collector_runs",
+            "collector_run_inputs",
+            "wb_raw_artifacts",
+            "stg_wb_orders_obs",
+            "stg_wb_sales_obs",
+        }
         non_invoker_views = [
             row["relname"]
             for row in connection.execute(
