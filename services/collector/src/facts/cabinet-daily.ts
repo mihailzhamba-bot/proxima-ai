@@ -33,6 +33,8 @@ export interface CabinetObservationRow {
   readonly payload: Readonly<Record<string, unknown>>;
 }
 
+type QueryClient = Pick<PoolClient, 'query'>;
+
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const SHA = /^[0-9a-f]{64}$/;
 
@@ -93,7 +95,7 @@ export function summarizeCabinetDaily(
   }));
 }
 
-export async function aggregateCabinetDaily(client: PoolClient, input: CabinetDailyInput): Promise<AggregateCabinetDailyResult> {
+export async function aggregateCabinetDaily(client: QueryClient, input: CabinetDailyInput): Promise<AggregateCabinetDailyResult> {
   const observations = await client.query<CabinetObservationRow>(
     `SELECT 'order' AS kind, run_id AS "runId", content_sha256 AS "contentSha256", payload FROM stg_wb_orders_latest WHERE tenant_id = $1
      UNION ALL

@@ -53,7 +53,7 @@ test('cabinet-daily: versions every day, S1/S2 sums', { skip }, async () => {
     );
     await collector.query("SELECT set_config('proxima.tenant_id', $1, false)", [tenantId]);
     await collector.query('BEGIN');
-    const result = await aggregateCabinetDaily(collector as never, { tenantId, runId: aggregateRun, floor: '2026-08-17', runDay: '2026-08-31' });
+    const result = await aggregateCabinetDaily(collector, { tenantId, runId: aggregateRun, floor: '2026-08-17', runDay: '2026-08-31' });
     await collector.query('COMMIT');
     assert.deepEqual(result, { days: 14, inputRuns: 1 });
     await admin.query("UPDATE collector_runs SET status = 'SUCCEEDED', finished_at = CURRENT_TIMESTAMP + interval '1 second' WHERE run_id = $1", [aggregateRun]);
