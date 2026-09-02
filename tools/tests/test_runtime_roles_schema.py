@@ -109,7 +109,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         policy_count = connection.execute(
             "SELECT count(*) AS n FROM pg_policies WHERE schemaname = 'public'"
         ).fetchone()["n"]
-        assert policy_count == 31
+        assert policy_count == 32
         janitor_tables = {
             row["tablename"]
             for row in connection.execute(
