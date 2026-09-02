@@ -68,11 +68,14 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
         assert can("proxima_migration_owner", "UPDATE", "schema_migrations")
         assert not can("proxima_migration_owner", "INSERT", "fact_order_counts")
 
-        # run ledger: collector records evidence, norm/webapp read, and only
+        # run ledger: collector records evidence, norm updates ledger/input rows, and only
         # the janitor receives deletion through the provisioned LOGIN role.
         assert can("proxima_job_collector", "INSERT", "wb_raw_artifacts")
-        assert can("proxima_job_norm", "SELECT", "collector_runs")
-        assert can("proxima_webapp_readonly", "SELECT", "wb_raw_artifacts")
+        assert can("proxima_job_collector", "SELECT", "tenants")
+        assert can("proxima_job_norm", "UPDATE", "collector_runs")
+        assert can("proxima_job_norm", "INSERT", "collector_run_inputs")
+        assert can("proxima_webapp_readonly", "SELECT", "collector_runs")
+        assert not can("proxima_webapp_readonly", "SELECT", "wb_raw_artifacts")
         assert not can("proxima_run_janitor", "INSERT", "collector_runs")
 
 
@@ -106,7 +109,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         policy_count = connection.execute(
             "SELECT count(*) AS n FROM pg_policies WHERE schemaname = 'public'"
         ).fetchone()["n"]
-        assert policy_count == 32
+        assert policy_count == 31
         janitor_tables = {
             row["tablename"]
             for row in connection.execute(

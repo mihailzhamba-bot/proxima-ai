@@ -15,6 +15,13 @@ export interface RunLedgerInput {
   notes?: string;
 }
 
+export class RunLedgerError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RunLedgerError';
+  }
+}
+
 export class RunLedger {
   constructor(private readonly pool: Pool) {}
 
@@ -24,7 +31,18 @@ export class RunLedger {
       await client.query("SELECT set_config('proxima.tenant_id', $1, false)", [tenantId]);
       return client;
     } catch (error) {
+      client.release(error as Error);
+      throw error;
+    }
+  }
+
+  /** A pooled session must never retain its preceding run's tenant GUC. */
+  private async release(client: PoolClient): Promise<void> {
+    try {
+      await client.query('RESET proxima.tenant_id');
       client.release();
+    } catch (error) {
+      client.release(error as Error);
       throw error;
     }
   }
@@ -39,7 +57,7 @@ export class RunLedger {
       );
       logRunEvent('running', runId, input.tenantId);
       return runId;
-    } finally { client.release(); }
+    } finally { await this.release(client); }
   }
 
   async succeed(tenantId: string, runId: string, work?: (client: PoolClient) => Promise<void>): Promise<void> {
@@ -47,20 +65,26 @@ export class RunLedger {
     try {
       await client.query('BEGIN');
       await work?.(client);
-      await client.query("UPDATE collector_runs SET status = 'SUCCEEDED', finished_at = CURRENT_TIMESTAMP WHERE run_id = $1 AND status = 'RUNNING'", [runId]);
+      const result = await client.query("UPDATE collector_runs SET status = 'SUCCEEDED', finished_at = CURRENT_TIMESTAMP WHERE run_id = $1 AND status = 'RUNNING'", [runId]);
+      if (result.rowCount !== 1) {
+        throw new RunLedgerError(`cannot mark run ${runId} SUCCEEDED: expected one RUNNING row visible to tenant ${tenantId}, updated ${result.rowCount ?? 0}`);
+      }
       await client.query('COMMIT');
       logRunEvent('succeeded', runId, tenantId);
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
       throw error;
-    } finally { client.release(); }
+    } finally { await this.release(client); }
   }
 
   async fail(tenantId: string, runId: string): Promise<void> {
     const client = await this.connect(tenantId);
     try {
-      await client.query("UPDATE collector_runs SET status = 'FAILED', finished_at = CURRENT_TIMESTAMP WHERE run_id = $1 AND status = 'RUNNING'", [runId]);
+      const result = await client.query("UPDATE collector_runs SET status = 'FAILED', finished_at = CURRENT_TIMESTAMP WHERE run_id = $1 AND status = 'RUNNING'", [runId]);
+      if (result.rowCount !== 1) {
+        throw new RunLedgerError(`cannot mark run ${runId} FAILED: expected one RUNNING row visible to tenant ${tenantId}, updated ${result.rowCount ?? 0}`);
+      }
       logRunEvent('failed', runId, tenantId);
-    } finally { client.release(); }
+    } finally { await this.release(client); }
   }
 }

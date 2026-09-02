@@ -26,7 +26,15 @@ export class WbArtifactSink implements ArtifactSink {
         'INSERT INTO wb_raw_artifacts (artifact_id, tenant_id, run_id, endpoint_id, endpoint_path, http_status, response_headers, content_sha256, content_size, object_locator, manifest_sha256, retrieved_at, attempt) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)',
         [randomUUID(), this.tenantId, this.runId, input.endpointId, endpointPath, input.httpStatus, JSON.stringify(responseHeaders), raw.contentSha256, raw.contentSize, raw.objectLocator, raw.manifestSha256, input.retrievedAt, input.attempt + 1],
       );
-    } finally { client.release(); }
+    } finally {
+      try {
+        await client.query('RESET proxima.tenant_id');
+        client.release();
+      } catch (error) {
+        client.release(error as Error);
+        throw error;
+      }
+    }
     return { endpointId: input.endpointId, httpStatus: input.httpStatus, contentSha256: raw.contentSha256, contentSize: raw.contentSize, objectLocator: raw.objectLocator, retrievedAt: input.retrievedAt };
   }
 }
