@@ -1,6 +1,6 @@
 # DECISIONS — PROXIMA AI
 
-> Agent-relevant engineering decisions. The canonical, complete decision log (product + process, Russian) lives in `STATE.md` (корень) — this file only records decisions an agent must not reopen or accidentally revert, with pointers.
+> Agent-relevant engineering decisions. The canonical, complete decision log (product + process, Russian) lives in `DECISIONS.md` (repo root, D1-D26; `STATE.md` is session memory, not the decision register) — this file only records decisions an agent must not reopen or accidentally revert, with pointers.
 
 ## DEC-001 — TypeScript contract types are generated, never hand-written
 
@@ -110,4 +110,4 @@ Do not implement profit-based ₽-estimates against a guessed regime; do not int
 
 ---
 
-Numbering: increment, never reuse. Supersede instead of deleting. Product/strategy decisions (web-first, pricing, tracks, gates V1-V3) → see `STATE.md` (корень) and `docs/archive/planning-m1/PRODUCT-VISION.md`; do not duplicate them here.
+Numbering: increment, never reuse. Supersede instead of deleting. Product/strategy decisions (ladder, scope, thresholds, gates) → see `DECISIONS.md` (repo root). Historical note: entries below reference `STATE.md` because they predate 30.08.2026, when the decision register moved to `DECISIONS.md`. Legacy pointer (корень) and `docs/archive/planning-m1/PRODUCT-VISION.md`; do not duplicate them here.

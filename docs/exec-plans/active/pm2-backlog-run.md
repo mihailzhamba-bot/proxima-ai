@@ -1,3 +1,5 @@
+> **Статус на 03.09.2026: неактивен.** План относится к рамке M1/W1, снятой решением D2 (30.08.2026) в пользу лестницы M-00..M-05. Действующая нарезка - `_bmad-output/planning-artifacts/epics.md`, состояние - `STATE.md` и `docs/agent-system/HANDOFF.md`. Файл сохранён как история.
+
 # ExecPlan: PMM backlog-run — M2/M3 вертикальный срез
 
 *Created: 2026-08-17. Operator: Mike + orchestrator (Claude). Status: COMPLETE — прогон завершён, backlog среза живёт в PMM.*

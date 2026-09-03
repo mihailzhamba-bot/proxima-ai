@@ -1,3 +1,5 @@
+> **Статус на 03.09.2026: неактивен.** План относится к рамке M1/W1, снятой решением D2 (30.08.2026) в пользу лестницы M-00..M-05. Действующая нарезка - `_bmad-output/planning-artifacts/epics.md`, состояние - `STATE.md` и `docs/agent-system/HANDOFF.md`. Файл сохранён как история.
+
 # Exec Plan: PMM-5 LLM Analyst W1 (SCN-008/001/005, primary + alternatives + unknowns)
 
 | Поле | Значение |

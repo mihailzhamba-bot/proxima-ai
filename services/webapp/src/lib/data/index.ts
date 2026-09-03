@@ -1,11 +1,11 @@
 import { createFixturesProvider } from "@/lib/data/fixtures-provider";
 import { createPostgresProvider } from "@/lib/data/postgres-provider";
 import { type DataProvider, resolveDataMode } from "@/lib/data/provider";
-import type { DataMode } from "@/lib/data/types";
+import type { DataMode } from "@/lib/data/view-model";
 
 export type { DataProvider } from "@/lib/data/provider";
 export { DATA_MODE_ENV, DATA_MODES, isDataMode, resolveDataMode } from "@/lib/data/provider";
-export * from "@/lib/data/types";
+export * from "@/lib/data/view-model";
 
 const FACTORIES: Record<DataMode, () => DataProvider> = {
   fixtures: createFixturesProvider,

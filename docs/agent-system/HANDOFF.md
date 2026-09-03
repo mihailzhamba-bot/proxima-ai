@@ -4,6 +4,30 @@
 
 > If the current agent disappears right now, what must the next one know? Update after every meaningful stage.
 
+## 02.09.2026 (вечер) - PRD v2.2, дельта epics, роль Владислава (John, PM)
+
+Сделано: PRD доведён до v2.2 (`_bmad-output/planning-artifacts/prds/prd-PROXIMA-AI-2026-08-28/prd.md`; рецензия v3 `validation-report.md` grade Poor по правилу «есть critical», решения комнаты 2а-7а применены; документ для чтения - `decision-brief-2026-09-02.md`). Нарезка: `epics.md` обновлён дельтой (сентябрь по `sprint-change-proposal-2026-09-02.md` CP-1..CP-10; октябрь - детальные AC 4.0-4.4 и 5.0-5.3; раздел «PRD v2.2 → истории»); `sprint-status.yaml` пересобран (35 историй, 9 done); кандидаты M-06+ - `epics-candidates-m06.md`; Jira - `docs/state/JIRA-SYNC-BRIEF-2026-09-03.md` (на approve, записей нет). Владислав - `docs/agent-system/roles/analyst-vladislav.md` + журналы `docs/state/{CABINET-RECONCILIATION,RETRO-ALARM-LABELS,SM3-BASELINE}.md`. Батарея рецензентов PRD закреплена в `_bmad/custom/bmad-prd.toml` + `reviewers/`.
+
+Ждёт Mike: (1) две даты деплоя - 1.14 ≤ 20.09 (13.09 без бэкфилла), 2.6 ≤ 23.09; (2) approve `JIRA-SYNC-BRIEF-2026-09-03.md`; (3) доступы Владиславу по чек-листу хартии §3; (4) команда на коммит в ветку `docs/prd-ladder-2026-09-02` от `origin/main`; (5) CR к AD-6 и правка SPEC (OQ-16) - отдельными единицами `bmad-architecture`/`bmad-spec`. Гейт готовности проход 5 (`implementation-readiness.md`): CONCERNS - 5 из 14 находок прохода 4 закрыты, две новые high (Given 1.14 и приёмка 1.14 без `brief_current`) исправлены в `epics.md` в тот же вечер; остаток - правка канона SPEC/glossary/спайн (OQ-16, PA-64) и D25 в `DECISIONS.md` записан. Ничего не закоммичено; Jira и сервер не тронуты.
+
+Следующее действие: после дат Mike - зафиксировать их в PRD §13/§14 и epics NFR9, затем коммит; параллельно Story 1.5 с реальным бэкфиллом в main до 08.09 и Story 3.1 в работу.
+
+## 03.09.2026 (вечер) - закрыты пробелы документации (John, PM)
+
+Написано: `docs/operations/dev-onboarding.md` (вход для человека-разработчика) и `infra/local.env.example`; `docs/operations/access-provisioning.md` (выдача и отзыв доступов, включая почему доступ к боевой базе сегодня выдать нечем); `docs/operations/observability.md` (стандарт логов, статусов и алертов - закрывает пункт 6 DoD-чеклиста, который сам признавал «канона нет»); `docs/operations/incident-runbook.md` (семь сценариев от «нет сводки» до утечки токена); `docs/state/DATA-DICTIONARY.md` (все таблицы миграций 001-011 и планируемые 012-016: кто пишет, кто читает, чем удаляется).
+
+Обновлено: `README.md` переписан под лестницу (описывал снятую рамку M1 от 26.08); в routing-таблицу `AGENTS.md` добавлены строки на действующие требования - раньше каталога `_bmad-output/` не было ни в одном контрактном файле, и агент по инструкции приходил в архив M1; исправлены три указателя, называвшие каноном решений `STATE.md` (канон - `DECISIONS.md`); сам `STATE.md` обновлён до 03.09 с блоком расхождений канона; реестры в `docs/governance/` и шесть планов в `docs/exec-plans/active/` помечены архивом рамки M1.
+
+**Главное для конвейера:** канон противоречит принятым решениям в трёх местах - CAP-6 в SPEC всё ещё требует 8 недель воронки, AD-6 в спайне описывает старую цепочку (блокирует мерж Story 3.1), Deferred спайна не знает о пороге 30 %. Правки заведены как OQ-16 и задача PA-64. Подсистема кондуктора (пять коммитов 01.09, systemd-юниты, `ORCHESTRATOR.md`) не отражена ни в одном реестре решений и ни в одной архитектурной карте.
+
+## 03.09.2026 - роль Владислава v2 и Epic 6 (John, PM)
+
+Сделано: роль расширена решением Mike до независимого пересчёта всей цепочки - хартия v2 `docs/agent-system/roles/analyst-vladislav.md` (метод, 11 шагов сверки, эталоны `verification/golden/`, гейт `shadow`, право блокировать релиз, свои зоны кода, доступы), решения записаны как D26. В нарезке новый Epic 6 «Верификационный контур» (истории 6.1-6.5, 40 историй всего), критерии приёмки 1.14, 2.6 и 4.4 дополнены (CP-12..CP-14 в `sprint-change-proposal-2026-09-02.md`). PRD доведён до v2.3: §8.0 пять новых пунктов очереди, OQ-18 (конвенции расчёта), риск и правило релиза в §14/§15. Новый журнал `docs/state/SHADOW-RECONCILIATION.md`. Бриф Jira дополнен разделом 4б (эпик + пять задач).
+
+Две находки разведки, меняющие исполнение: (1) на боевой базе схема версии 6, RLS выключен, ролей спайна нет - доступ Владиславу к базе сегодня выдать нечем, роль заводится Story 6.4; (2) деньги в обезличенных фикстурах умножены на секретный коэффициент - W10/W35 по репозиторию невоспроизводимы, поэтому эталоны сначала на синтетике, недельные суммы - на полных фикстурах и в приёмке 1.14.
+
+Ждёт Mike: даты деплоя; approve брифа Jira; доступы Владиславу (§6.1 хартии) и решение по LOGIN-роли; конвенции расчёта (OQ-18) до первого пересчёта; команда на коммит.
+
 ## Current objective
 
 Ship M1 — a production-ready read-only data foundation for one pilot WB cabinet (Bogatova Belle Robe) with SHA-256 provenance from official WB evidence to PostgreSQL domain releases (Phase 2 of 8 in progress).

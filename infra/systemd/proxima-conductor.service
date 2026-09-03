@@ -12,7 +12,7 @@ Group=openhands-agent
 WorkingDirectory=/srv/proxima-ai/conductor
 Environment=CANONICAL_REPO=/srv/proxima-ai/conductor-repo
 Environment=CONDUCTOR_STATE_DIR=/srv/proxima-ai/conductor
-ExecStart=/srv/proxima-ai/conductor-repo-checkout/tools/orchestrator/conductor_tick.sh
+ExecStart=/usr/bin/env bash /srv/proxima-ai/conductor-repo-checkout/tools/orchestrator/conductor_tick.sh
 TimeoutStartSec=600
 ProtectHome=true
 NoNewPrivileges=false

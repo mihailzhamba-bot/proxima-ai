@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GYR_STATUSES, isGyrStatus } from "@/lib/gyr";
-import { RISK_LEVELS, type SignalHypothesis } from "@/lib/data/types";
+import { RISK_LEVELS, type SignalHypothesis } from "@/lib/data/view-model";
 import { getBrief, type BriefSignal } from "@/lib/fixtures/brief";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;

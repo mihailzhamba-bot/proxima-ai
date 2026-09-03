@@ -44,11 +44,11 @@ Verification: `make vps`; `bash infra/ssh-doctor`; Telegram delivery test (note 
 
 ## Jira PA (tracker)
 
-Purpose: primary task tracker (epics PA-34/35/36/37).
-Access: zhamba.atlassian.net via jira MCP.
-Safe operations: read/browse; comment/transitions per normal workflow.
-Dangerous operations: none code-level; do not create parallel tracking outside PA.
-Verification: task keys referenced in TASKS.md exist.
+Purpose: primary task tracker (epics PA-34/35/36/37 and the PMM product epics).
+Access: zhamba.atlassian.net via jira MCP. Codex exposes three read verbs only; the server-side pipeline has no Jira access at all (`docs/agent-system/ORCHESTRATOR.md`).
+Safe operations: read and browse.
+Dangerous operations: any write - create, edit, comment, transition. Writes happen only after Mike approves the sync tables (PRD §10, D17/D24); the source of truth for tasks is `epics.md` plus `sprint-status.yaml`, and synchronisation runs one way, repo to Jira. Tasks are never deleted. Do not create parallel tracking outside PA/PMM.
+Verification: task keys referenced in TASKS.md exist; every written task points at `epics.md#story-N-M`.
 
 ## Sibling source worktrees (Опрос-v2.2, torgstat-collector)
 

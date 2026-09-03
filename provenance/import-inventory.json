@@ -52,5 +52,55 @@
       "status_sha256_before": "e02a035d7885b7a9ead9e9eb8b13f4f2da202a3e3e57b52ad83a8eea8ae70fc3",
       "status_sha256_after": "e02a035d7885b7a9ead9e9eb8b13f4f2da202a3e3e57b52ad83a8eea8ae70fc3"
     }
-  ]
+  ],
+  "vendored_trees": {
+    "note": "Установленные библиотеки инструментов, а не импорт чужого кода в рантайм. Верификатор tools/verify_provenance.py покрывает только байт-точные импорты в services/collector/src/imported; эти деревья в рантайм продукта не входят и проверяются собственными манифестами источника, названными ниже. Запись существует, чтобы правило AGENTS.md про чужой код имело носитель, а читатель находил источник и версию.",
+    "recorded_at": "2026-09-03",
+    "trees": [
+      {
+        "name": "BMad Method core + bmm",
+        "version": "6.11.0",
+        "source": "built-in installer",
+        "installed_at": "2026-08-28",
+        "destinations": [
+          "_bmad/core",
+          "_bmad/bmm",
+          ".claude/skills/bmad-*",
+          ".agents/skills"
+        ],
+        "manifest": "_bmad/_config/manifest.yaml",
+        "file_hashes": "_bmad/_config/files-manifest.csv (SHA-256 на каждый установленный файл)",
+        "runtime_impact": "none - инструменты агентов, в сборку и в образы не попадают",
+        "review_status": "recorded_not_reviewed_line_by_line"
+      },
+      {
+        "name": "BMad Method Test Architecture Enterprise (TEA)",
+        "version": "v1.23.4",
+        "source_repository": "https://github.com/bmad-code-org/bmad-method-test-architecture-enterprise",
+        "source_commit": "f2cb09a5ebc1c16f65a52265bad50e831760c988",
+        "npm_package": "bmad-method-test-architecture-enterprise",
+        "installed_at": "2026-09-01",
+        "destinations": [
+          "_bmad/tea"
+        ],
+        "manifest": "_bmad/_config/manifest.yaml",
+        "file_hashes": "_bmad/_config/files-manifest.csv",
+        "runtime_impact": "none",
+        "review_status": "recorded_not_reviewed_line_by_line"
+      },
+      {
+        "name": "BAD - BMad Autonomous Development",
+        "version": "1.2.0",
+        "source_repository": "https://github.com/stephenleo/bmad-autonomous-development",
+        "installed_at": "2026-09-01",
+        "destinations": [
+          ".claude/skills/bad"
+        ],
+        "manifest": "skills-lock.json",
+        "file_hashes": "skills-lock.json поле computedHash на skills/bad/SKILL.md",
+        "runtime_impact": "none - ручной конвейер поверх BMAD, шаг реализации уходит воркеру OpenHands (D28)",
+        "review_status": "recorded_not_reviewed_line_by_line"
+      }
+    ]
+  }
 }

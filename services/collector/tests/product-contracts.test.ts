@@ -6,8 +6,11 @@ import test from 'node:test';
 import { Ajv2020, type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js';
 import { createRequire } from 'node:module';
 
+import type { BriefV1 } from '../src/contracts/brief.js';
+import type { CabinetDailyV1 } from '../src/contracts/cabinet-daily.js';
 import type { DecisionRecordV1 } from '../src/contracts/decision-record.js';
 import type { DiagnosisV1 } from '../src/contracts/diagnosis.js';
+import type { NormV1 } from '../src/contracts/norm.js';
 import type { SignalV1 } from '../src/contracts/signal.js';
 
 const root = new URL('../../../', import.meta.url);
@@ -22,6 +25,20 @@ function validator(schema: Record<string, unknown>): ValidateFunction {
   const ajv = new Ajv2020({ allErrors: true, strict: true, allowUnionTypes: true, strictRequired: false });
   addFormats(ajv);
   return ajv.compile(schema);
+}
+
+/**
+ * Story 2.2: brief.signals[] refers to signal v1 by the sibling file name
+ * "signal.schema.json". Ajv resolves that ref against the brief $id base
+ * ".../brief/", so the signal schema must be registered under that key.
+ */
+async function briefValidator(): Promise<ValidateFunction> {
+  const ajv = new Ajv2020({ allErrors: true, strict: true, allowUnionTypes: true, strictRequired: false });
+  addFormats(ajv);
+  const signal = await readJson<Record<string, unknown>>('contracts/signal.schema.json');
+  ajv.addSchema(signal, 'https://proxima.local/contracts/brief/signal.schema.json');
+  const brief = await readJson<Record<string, unknown>>('contracts/brief.schema.json');
+  return ajv.compile(brief);
 }
 
 function assertError(errors: ErrorObject[] | null | undefined, instancePath: string, keyword: string): void {
@@ -137,4 +154,94 @@ test('rejects rejected decision without reason and closed decision without outco
   };
   assert.equal(validate(closedWithoutOutcome), false);
   assertError(validate.errors, '', 'required');
+});
+
+test('validates the cabinet-daily fact with the generated CabinetDailyV1 shape', async () => {
+  const schema = await readJson<Record<string, unknown>>('contracts/cabinet-daily.schema.json');
+  const fact = await readJson<CabinetDailyV1>('contracts/examples/cabinet-daily.synthetic.json');
+  const validate = validator(schema);
+
+  assert.equal(validate(fact), true);
+  assert.equal(fact.calendar_day, '2026-08-29');
+  assert.equal(fact.revenue_rub, '83125.50');
+  assert.equal(fact.source_refs.length, 2);
+});
+
+test('rejects cabinet-daily whose money is not a two-decimal string', async () => {
+  const schema = await readJson<Record<string, unknown>>('contracts/cabinet-daily.schema.json');
+  const fact = await readJson<CabinetDailyV1>('contracts/examples/cabinet-daily.synthetic.json');
+  const validate = validator(schema);
+
+  const numericRevenue = { ...fact, revenue_rub: 83125.5 };
+  assert.equal(validate(numericRevenue), false);
+  assertError(validate.errors, '/revenue_rub', 'type');
+
+  const looseForpay = { ...fact, forpay_rub: '61204.7' };
+  assert.equal(validate(looseForpay), false);
+  assertError(validate.errors, '/forpay_rub', 'pattern');
+
+  const noEvidence = { ...fact, source_refs: [] };
+  assert.equal(validate(noEvidence), false);
+  assertError(validate.errors, '/source_refs', 'minItems');
+});
+
+test('validates the norm with the generated NormV1 shape', async () => {
+  const schema = await readJson<Record<string, unknown>>('contracts/norm.schema.json');
+  const norm = await readJson<NormV1>('contracts/examples/norm.synthetic.json');
+  const validate = validator(schema);
+
+  assert.equal(validate(norm), true);
+  assert.equal(norm.window_days, 14);
+  assert.equal(norm.sample_days, 14);
+  assert.equal(norm.status, 'ok');
+});
+
+test('rejects norm that claims ok on an incomplete window', async () => {
+  const schema = await readJson<Record<string, unknown>>('contracts/norm.schema.json');
+  const norm = await readJson<NormV1>('contracts/examples/norm.synthetic.json');
+  const validate = validator(schema);
+
+  const gapMarkedOk = { ...norm, sample_days: 9 };
+  assert.equal(validate(gapMarkedOk), false);
+  assert.ok(validate.errors?.some((error) => error.instancePath === '/status' && error.keyword === 'const'));
+
+  const fullMarkedInsufficient = { ...norm, status: 'insufficient' };
+  assert.equal(validate(fullMarkedInsufficient), false);
+
+  const otherWindow = { ...norm, window_days: 28 };
+  assert.equal(validate(otherWindow), false);
+  assertError(validate.errors, '/window_days', 'const');
+});
+
+test('validates the brief payload and composes signals by signal v1 $ref', async () => {
+  const validate = await briefValidator();
+  const brief = await readJson<BriefV1>('contracts/examples/brief.synthetic.json');
+
+  assert.equal(validate(brief), true);
+  assert.equal(brief.evaluation_day, '2026-08-29');
+  assert.equal(brief.norm.window_days, 14);
+  assert.equal(brief.signals.length, 1);
+  assert.equal(brief.signals[0]?.signal_id, 'fixture-signal-001');
+  assert.equal(typeof brief.actual.revenue, 'string');
+
+  const noSignals = { ...brief, signals: [] };
+  assert.equal(validate(noSignals), true);
+});
+
+test('rejects brief with a broken embedded signal and with empty source refs', async () => {
+  const validate = await briefValidator();
+  const brief = await readJson<BriefV1>('contracts/examples/brief.synthetic.json');
+
+  const brokenSignal = copy(brief);
+  brokenSignal.signals = [{ schema_version: 1, signal_id: 'x' } as unknown as SignalV1];
+  assert.equal(validate(brokenSignal), false);
+  assert.ok(validate.errors?.some((error) => error.instancePath.startsWith('/signals/0')));
+
+  const emptyRefs = { ...brief, source_refs: [] };
+  assert.equal(validate(emptyRefs), false);
+  assertError(validate.errors, '/source_refs', 'minItems');
+
+  const numericMoney = { ...brief, actual: { ...brief.actual, revenue: 31280 } };
+  assert.equal(validate(numericMoney), false);
+  assertError(validate.errors, '/actual/revenue', 'type');
 });

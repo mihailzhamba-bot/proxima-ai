@@ -69,7 +69,7 @@
 `orca orchestration task-list --json`, `dispatch-show --task <id> --json`.
 Работа, выполненная вне Orca-оркестрации, не называется orchestrated - фиксируется как обычная сессия.
 
-## BAD и Дирижёр: два конвейера, один за раз (D25, 01.09.2026)
+## BAD и Дирижёр: два конвейера, один за раз (D28, 01.09.2026)
 
 Ниже уровня оркестратора Orca живут два **исполнительных** конвейера над одной
 очередью `_bmad-output/implementation-artifacts/sprint-status.yaml`:

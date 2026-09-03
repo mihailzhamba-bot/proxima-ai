@@ -21,6 +21,20 @@ export function mskToday(now: Date = new Date()): string {
   return moscowDate(now.getTime(), now);
 }
 
+/**
+ * Zoneless WB wall-clock text (`2026-08-17T06:48:49`) as an unambiguous
+ * instant: the same text with the fixed Moscow offset. Moscow has had no DST
+ * since 2014, so the mapping is bijective and a stored `last_change_at` can be
+ * turned back into a WB `dateFrom` cursor (Story 1.5 --resume). Input that
+ * already carries a zone or has another shape is rejected, never guessed.
+ */
+export function mskInstant(value: string): string {
+  if (typeof value !== 'string' || !ZONELESS_DATETIME.test(value)) {
+    throw new RangeError(`mskInstant: expected zoneless Moscow datetime, got ${JSON.stringify(value)}`);
+  }
+  return `${value}+03:00`;
+}
+
 function moscowDate(epochMilliseconds: number, now: Date): string {
   return new Date(epochMilliseconds + moscowOffsetMinutes(now) * 60_000).toISOString().slice(0, 10);
 }

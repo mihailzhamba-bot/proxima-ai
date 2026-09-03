@@ -1,0 +1,377 @@
+[
+ {
+  "claim": "[106] Дневные ряды с недельным паттерном дают «in-season» ложные аномалии (точка в недельном диа",
+  "class": "method",
+  "pub_date": "2023-11-01"
+ },
+ {
+  "claim": "[108] Медиана/MAD вместо среднего/σ в z-score устойчивее при высокой доле аномалий",
+  "class": "method",
+  "pub_date": "2025-01-01"
+ },
+ {
+  "claim": "[110] Nahmias (1994): оценка цензурированного спроса с экспоненциальным сглаживанием среднего и ",
+  "class": "method",
+  "pub_date": "2020-02-01"
+ },
+ {
+  "claim": "[111] FreshRetailNet-50K/LT - stockout-annotated датасет цензурированного спроса для восстановле",
+  "class": "evidence",
+  "pub_date": "2025-05-01"
+ },
+ {
+  "claim": "[113] Кейс Ozon (2018): LightGBM обучается в 2 раза быстрее, MAE 1,01",
+  "class": "evidence",
+  "pub_date": "2018-11-01"
+ },
+ {
+  "claim": "[114] Стандартная кросс-валидация непригодна для временных рядов; нужны свои схемы оценки (skfor",
+  "class": "method",
+  "pub_date": "2023-11-01"
+ },
+ {
+  "claim": "[116] Prophet значимо лучше SARIMA/Random Forest на retail-датасетах, но хуже ARIMA на финансовы",
+  "class": "evidence",
+  "pub_date": "2026-01-01"
+ },
+ {
+  "claim": "[118] В исходнике `main` statsforecast классы `TSB` и `CrostonClassic` принимают `prediction_int",
+  "class": "version",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[121] FreshRetailNet-50K: 50 000 store-product почасовых рядов, 898 магазинов, 863 SKU с аннотац",
+  "class": "evidence",
+  "pub_date": "2025-05-01"
+ },
+ {
+  "claim": "[123] ruptures: релизы v1.1.10 2025-09-10, v1.1.9 2023-12-11; push 2026-07-06; 2078 звёзд; 35 от",
+  "class": "version",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[124] statsforecast: v2.1.1 2026-07-16, v2.1.0 2026-07-14, v2.0.3 2025-10-29, v2.0.0 2024-11-26;",
+  "class": "version",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[125] mlforecast: v1.1.0 2026-07-10, v1.0.31 2026-03-10, v1.0.3 2026-02-25; push 2026-09-01; 127",
+  "class": "version",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[126] sktime: v1.1.0 2026-07-28, v1.0.2 2026-07-26, v1.0.0/v1.0.1 2026-06-11, v0.40.1 2025-11-25",
+  "class": "version",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[127] darts: 0.46.1 2026-07-20, 0.46.0 2026-07-17, 0.45.0 2026-06-19, 0.44.1 2026-05-05, 0.43.0 ",
+  "class": "version",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[128] prophet: v1.4.0-patched 2026-08-15, v1.4.0 2026-08-01, v1.3.0 2026-01-27, v1.2.1 2025-10-2",
+  "class": "version",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[129] Prophet v1.4.0: прекращена поддержка Python < 3.10, статическая типизация, «optional regre",
+  "class": "version",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[130] pmdarima: v2.1.1 2025-11-17, v2.1.0 2025-11-13; последний push 2025-11-17 (≈9.5 мес. без и",
+  "class": "version",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[131] sktime v1.1.0 переименовал теги оценщиков (`ignores-exogeneous-X` → `capability:exogenous`",
+  "class": "version",
+  "pub_date": "2026-07-01"
+ },
+ {
+  "claim": "[134] В statsforecast конформные интервалы введены релизом v1.6.0 (2023-11-13): «Conformal Predi",
+  "class": "version",
+  "pub_date": "2026-07-01"
+ },
+ {
+  "claim": "[136] Ziel (IJF, arXiv 2107.06675): данные M5 «faces strong overdispersion and sporadic demand, ",
+  "class": "evidence",
+  "pub_date": "2021-11-01"
+ },
+ {
+  "claim": "[137] Wang, Kang, Petropoulos (arXiv 2304.03092 v4): «combinations perform better than individua",
+  "class": "evidence",
+  "pub_date": "2024-04-01"
+ },
+ {
+  "claim": "[138] Theodorou et al. (arXiv 2103.02941): по сравнению пространства признаков рядов данные M5 р",
+  "class": "evidence",
+  "pub_date": "2021-03-01"
+ },
+ {
+  "claim": "[141] sktime: 485 открытых issue с label:bug; старейшие открытые баги #421 «Theta model predicti",
+  "class": "sentiment",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[142] Prophet v1.4.0 выпущен 2024-08-01: «Drop support for Python <3.10», «full static typing su",
+  "class": "version",
+  "pub_date": "2024-08-01"
+ },
+ {
+  "claim": "[202] fullstats: один запрос в минуту на аккаунт, нельзя параллелить (независимое подтверждение)",
+  "class": "evidence",
+  "pub_date": "2026-07-01"
+ },
+ {
+  "claim": "[211] Пометка «Только на чтение» при выпуске токена WB API гарантирует, что через токен нельзя н",
+  "class": "api",
+  "pub_date": "2023-12-01"
+ },
+ {
+  "claim": "[215] 2026.08.25 добавлен POST /api/analytics/v1/stocks-report/seller-warehouses: остатки по скл",
+  "class": "version",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[222] Спецификации WB API меняются «несколько раз в неделю»; зеркало eslazarev/wildberries-sdk о",
+  "class": "evidence",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[223] Репозиторий github.com/wildberries-tech/api содержит один README от 24.06.2022 без OpenAPI",
+  "class": "evidence",
+  "pub_date": "2022-06-01"
+ },
+ {
+  "claim": "[224] Библиотека Dakword/WBSeller заархивирована владельцем 12.02.2026 (read-only) - её каталог ",
+  "class": "evidence",
+  "pub_date": "2026-02-01"
+ },
+ {
+  "claim": "[226] Последние коммиты в specs/ зеркала - 2026-09-02T03:08:10Z и 2026-09-01T03:07:26Z; info.ver",
+  "class": "version",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[300] JVO «События» отслеживает изменения цены, отгрузок, карточки, действия конкурентов и показ",
+  "class": "method",
+  "pub_date": "2024-02-01"
+ },
+ {
+  "claim": "[302] Sirena AI: «от 490 руб/мес», есть бесплатная версия и триал; 5/5 по 22 отзывам • Sirena AI",
+  "class": "pricing",
+  "pub_date": "2026-02-01"
+ },
+ {
+  "claim": "[306] sellerboard добавил метрику упущенной прибыли от стокаута за «the past 90 days, based on y",
+  "class": "version",
+  "pub_date": "2025-05-01"
+ },
+ {
+  "claim": "[307] Inventory Planner: lead time = «time that elapses between placing a purchase order and rec",
+  "class": "method",
+  "pub_date": "2025-09-01"
+ },
+ {
+  "claim": "[309] JVO на crmindex.ru: 4.6/5 по 24 отзывам; «сократила ручные операции на 80%» (2025-03-31); ",
+  "class": "sentiment",
+  "pub_date": "2025-07-01"
+ },
+ {
+  "claim": "[311] JVO с 11.11.2025 отказалась от тарифов: «баланс списывается только тогда, когда вы запуска",
+  "class": "pricing",
+  "pub_date": "2025-11-01"
+ },
+ {
+  "claim": "[312] Независимое подтверждение модели JVO: «Пользователи получают полный доступ к платформе без",
+  "class": "pricing",
+  "pub_date": "2025-11-01"
+ },
+ {
+  "claim": "[313] Цены по обзору uniseller: Stat4Market «2 500 рублей в месяц»; Moneyplace «от 10 000 до 55 ",
+  "class": "pricing",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[317] Недоступность страниц: sellerboard.com/pricing → HTTP 404; sostocked.com/pricing → HTTP 40",
+  "class": "evidence",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[402] Community-скрипт использует `POST https://advert-api.wb.ru/adv/v2/fullstats` (массив `days",
+  "class": "api",
+  "pub_date": "2025-01-01"
+ },
+ {
+  "claim": "[405] «Wildberries не показывает ДРР в готовом виде»; данные собираются вручную из нескольких ра",
+  "class": "evidence",
+  "pub_date": "2026-07-01"
+ },
+ {
+  "claim": "[407] Amazon-референс (Seller Labs): break-even ACoS = (цена − COGS − комиссии)/цена; порог мину",
+  "class": "method",
+  "pub_date": "2026-03-01"
+ },
+ {
+  "claim": "[410] Marketguru тарифы: 4 990 ₽/мес (биддер 10 кампаний), 19 990 ₽/мес (50), 29 990 ₽/мес (200)",
+  "class": "pricing",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[411] Uniseller-обзор: MPSTATS от 6 990 ₽ (биддер), Маяк от 6 249 ₽, JVO по запросу (AI-рекоменд",
+  "class": "pricing",
+  "pub_date": "2026-05-01"
+ },
+ {
+  "claim": "[416] Спецификация `specs/08-promotion.yaml` в eslazarev/wildberries-sdk содержит read-пути `/ad",
+  "class": "api",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[417] GitHub-топик wildberries-api: salacoste/daytona-wildberries-typescript-sdk (TS, 7★, 2026-0",
+  "class": "version",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[503] Встроенный ИИ WB (с Russ) генерирует и автоматически публикует ответы на отзывы; ранее тол",
+  "class": "pattern",
+  "pub_date": "2025-02-01"
+ },
+ {
+  "claim": "[504] Дата запуска нативного ИИ-ответчика WB конфликтует: click.ru - 2025-02-19, kubnews - 2026-",
+  "class": "evidence",
+  "pub_date": "2026-02-01"
+ },
+ {
+  "claim": "[507] 152-ФЗ: с 01.07.2025 первичный сбор ПДн граждан РФ - только в базах в России; передача в и",
+  "class": "legal",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[508] Оператором ПДн остаётся компания, а не разработчик нейросети; «обезличенные» данные ИИ мож",
+  "class": "legal",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[512] Джем: Стандарт 22 990 ₽/30 дней, Расширенный 42 990 ₽/30 дней; отчёт по запросам - «показы",
+  "class": "pricing",
+  "pub_date": "2026-03-01"
+ },
+ {
+  "claim": "[524] Пост «Пресс-служба RWB • Веб-превью канала @rwb_press_service (последние посты на 2026-09-",
+  "class": "Wildberries",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[527] Нативный ИИ-ответчик WB на отзывы анонсирован постом 1347 с датой 2026-02-19: «даст возмож",
+  "class": "evidence",
+  "pub_date": "2026-02-01"
+ },
+ {
+  "claim": "[528] Embed-рендер поста 1347 показал «February 19, 2025»; противоречие снято монотонностью ID (",
+  "class": "evidence",
+  "pub_date": "2026-02-01"
+ },
+ {
+  "claim": "[529] Хронология ИИ по отзывам WB: 2026-01-22 «Важное из отзывов» (/1302), 2026-02-17 ML-фильтры",
+  "class": "evidence",
+  "pub_date": "2026-01-01"
+ },
+ {
+  "claim": "[530] BerryLM-XL - топ-3 MERA, 0.835; «более 1 млрд рублей дополнительной выручки» от ИИ-инструм",
+  "class": "evidence",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[534] Бейдж «Выбор покупателей» для товаров с рейтингом 4.7+ и 40+ отзывов - платформенная связь",
+  "class": "evidence",
+  "pub_date": "2025-07-01"
+ },
+ {
+  "claim": "[535] Исследование WB: «лидирующие карточки» дают 43% намерения покупки в женской одежде (методи",
+  "class": "evidence",
+  "pub_date": "2026-05-01"
+ },
+ {
+  "claim": "[536] Джем за два года: 500 тыс. A/B-тестов",
+  "class": "evidence",
+  "pub_date": "2026-04-01"
+ },
+ {
+  "claim": "[537] WBot - чат-бот аналитики продавца в мобильных приложениях WB (тестирование)",
+  "class": "evidence",
+  "pub_date": "2025-08-01"
+ },
+ {
+  "claim": "[600] reportDetailByPeriod (v5, statistics-api) отдаёт поля ppvz_sales_commission, delivery_rub,",
+  "class": "api",
+  "pub_date": "2026-03-01"
+ },
+ {
+  "claim": "[601] Ловушка двойного вычета: комиссия уже учтена в «К перечислению Продавцу» - вычитать повтор",
+  "class": "method",
+  "pub_date": "2026-07-01"
+ },
+ {
+  "claim": "[603] Старый /reportDetailByPeriod отключён для данных с 29.01.2024; с 08.05.2024 метод доступен",
+  "class": "version",
+  "pub_date": "2024-05-01"
+ },
+ {
+  "claim": "[606] MPSTATS перечисляет компоненты юнит-экономики: закупка/упаковка/доставка, комиссия, логист",
+  "class": "method",
+  "pub_date": "2025-03-01"
+ },
+ {
+  "claim": "[609] Расхождение аналитики с финотчётом - «основная боль растущего селлера», от ста рублей до д",
+  "class": "sentiment",
+  "pub_date": "2025-12-01"
+ },
+ {
+  "claim": "[614] WB объявил отключение `GET /api/v5/supplier/reportDetailByPeriod` 15.07.2026; замена - `PO",
+  "class": "api",
+  "pub_date": "2026-04-01"
+ },
+ {
+  "claim": "[615] Реклама (WB Продвижение) и подписка «Джем» попадают в столбец «Прочие удержания/выплаты» ф",
+  "class": "method",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[616] В кабинете WB есть «Отчет - платное хранение» со стоимостью хранения по каждой позиции; тр",
+  "class": "api",
+  "pub_date": "2023-11-01"
+ },
+ {
+  "claim": "[620] JVO с ноября 2025 работает без подписок - «баланс списывается только тогда, когда вы запус",
+  "class": "pricing",
+  "pub_date": "2025-11-01"
+ },
+ {
+  "claim": "[622] Changelog spec-derived SDK фиксирует удаление `GET /api/v5/supplier/reportDetailByPeriod` ",
+  "class": "version",
+  "pub_date": "2026-07-01"
+ },
+ {
+  "claim": "[623] Замена v5: POST на домене `finance-api.wildberries.ru`, camelCase, суммы строками, токены ",
+  "class": "api",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[624] Статья 1С-интеграции: v5 актуален на 08.05.24, v1 недоступен с 29.01.24; поля `ppvz_for_pa",
+  "class": "api",
+  "pub_date": "2024-05-01"
+ },
+ {
+  "claim": "[625] Ответ отчёта платного хранения (`ResponsePaidStorage`) содержит по дням и по `nmId` поля `",
+  "class": "api",
+  "pub_date": "2024-09-01"
+ },
+ {
+  "claim": "[626] Отчёт платного хранения по API асинхронный (`get_paid_storage (async report)`), строки ста",
+  "class": "api",
+  "pub_date": "2026-09-01"
+ }
+]
