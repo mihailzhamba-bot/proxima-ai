@@ -200,7 +200,9 @@ if grep -q "^# fail [1-9]" "${DELETE_LOG}" || grep -q "^not ok" "${DELETE_LOG}";
   cat "${DELETE_LOG}" >&2
   exit 1
 fi
-if grep -q "^# skip" "${DELETE_LOG}"; then
+# node:test always prints a "# skipped N" summary line, so the guard has to look
+# at the count: matching the word alone fires on "# skipped 0" and fails every run.
+if grep -qE "^# skipped [1-9]" "${DELETE_LOG}"; then
   echo "pg-roundtrip: FAIL (delete-run db-tests skipped while a DSN was available)" >&2
   cat "${DELETE_LOG}" >&2
   exit 1
