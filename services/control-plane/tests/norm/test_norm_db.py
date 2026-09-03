@@ -23,7 +23,8 @@ TENANT = "amirova-test"
 EVALUATION_DAY = date(2026, 8, 29)
 # Заказы окна: два средних значения 34 и 35, поэтому норма = 34.5 (D27).
 ORDERS = (28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41)
-# Выручка: два средних 34594.00 и 34596.00, медиана ровно 34595.00.
+# Выручка: ряд с шагом 2 вокруг базы так, что два средних значения окна -
+# base-1 и base+1, поэтому медиана равна базе точно (проверка D27 на деньгах).
 REVENUE_BASE = Decimal("34595.00")
 
 pytestmark = pytest.mark.skipif(
@@ -33,8 +34,8 @@ pytestmark = pytest.mark.skipif(
 
 
 def _revenue(offset: int) -> Decimal:
-    """Симметричный ряд вокруг базы: медиана окна равна базе точно."""
-    return REVENUE_BASE + Decimal(offset - 7) * Decimal(2)
+    """Ряд вокруг базы: у 14 точек средние - индексы 6 и 7, то есть base-1 и base+1."""
+    return REVENUE_BASE + (Decimal(offset) - Decimal("6.5")) * Decimal(2)
 
 
 @pytest.fixture
@@ -65,7 +66,12 @@ def seeded() -> str:
     yield seed_run
     with psycopg.connect(OWNER_DSN, autocommit=True) as owner:
         owner.execute("SELECT set_config('proxima.tenant_id', %s, false)", (TENANT,))
-        owner.execute("DELETE FROM collector_runs WHERE tenant_id = %s AND kind IN ('norm', 'collect')", (TENANT,))
+        # Порядок обязателен: collector_run_inputs.input_run_id ссылается на
+        # collector_runs без каскада, поэтому зависимые прогоны нормы уходят
+        # первыми, а входной collect - только после них (то же замыкание, что
+        # делает tools/delete_run.py по AD-3).
+        owner.execute("DELETE FROM collector_runs WHERE tenant_id = %s AND kind = 'norm'", (TENANT,))
+        owner.execute("DELETE FROM collector_runs WHERE tenant_id = %s AND kind = 'collect'", (TENANT,))
 
 
 def _norm_rows(connection: psycopg.Connection) -> dict[str, tuple[Decimal, int, str]]:
