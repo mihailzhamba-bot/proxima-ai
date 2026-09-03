@@ -1,6 +1,13 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFixturesProvider } from "@/lib/data/fixtures-provider";
-import { createPostgresProvider, POSTGRES_PROVIDER_NOT_IMPLEMENTED } from "@/lib/data/postgres-provider";
+import {
+  createPostgresProvider,
+  POSTGRES_PROVIDER_NOT_IMPLEMENTED,
+  type DatabasePool,
+} from "@/lib/data/postgres-provider";
 import { DATA_MODE_ENV, getDataProvider, resetDataProvider, resolveDataMode } from "@/lib/data";
 import { register } from "@/instrumentation";
 
@@ -9,8 +16,24 @@ import { register } from "@/instrumentation";
  * а не правкой компонентов. Тест держит именно контракт шва, не разметку.
  */
 
+const stubPool = (): DatabasePool => ({
+  on() {},
+  async connect() {
+    throw new Error("stub pool must not connect");
+  },
+  async end() {},
+});
+
+function postgresEnv(): Record<string, string> {
+  const dir = mkdtempSync(join(tmpdir(), "proxima-webapp-test-"));
+  const path = join(dir, "webapp_uri");
+  writeFileSync(path, "postgresql://webapp:secret@127.0.0.1:1/proxima", { mode: 0o600 });
+  return { WEBAPP_TENANT_ID: "amirova-test", WEBAPP_DATA_DATABASE_URI_FILE: path };
+}
+
 afterEach(() => {
   delete process.env[DATA_MODE_ENV];
+  delete process.env.WEBAPP_TENANT_ID;
   resetDataProvider();
 });
 
@@ -39,6 +62,7 @@ describe("getDataProvider — выбор провайдера", () => {
 
   it("режим postgres отдаёт postgres-провайдер без правки вызывающего кода", () => {
     process.env[DATA_MODE_ENV] = "postgres";
+    process.env.WEBAPP_TENANT_ID = "amirova-test";
     resetDataProvider();
     expect(getDataProvider().mode).toBe("postgres");
   });
@@ -89,12 +113,18 @@ describe("fixtures-провайдер — форма данных стабиль
   });
 });
 
-describe("postgres-провайдер — fail-closed до PMM-29 и роли webapp_readonly", () => {
-  it("бриф не подменяется пустым экраном, а падает явно", async () => {
-    await expect(createPostgresProvider().getBrief("daily")).rejects.toThrow(POSTGRES_PROVIDER_NOT_IMPLEMENTED);
+describe("postgres-провайдер — сводка по AD-9, метрики дашборда ещё нет", () => {
+  it("создание без tenant роняется явно: конфиг не может притвориться поднявшимся webapp", () => {
+    expect(() => createPostgresProvider({}, { createPool: stubPool })).toThrow(/WEBAPP_TENANT_ID/);
   });
 
-  it("метрики ведут себя так же", async () => {
-    await expect(createPostgresProvider().getMetrics()).rejects.toThrow(POSTGRES_PROVIDER_NOT_IMPLEMENTED);
+  it("метрики дашборда в postgres-режиме пока не реализованы и падают явно", async () => {
+    const provider = createPostgresProvider(postgresEnv(), { createPool: stubPool });
+    await expect(provider.getMetrics()).rejects.toThrow(POSTGRES_PROVIDER_NOT_IMPLEMENTED);
+  });
+
+  it("сводка требует файл URI: без него первый запрос падает с именем переменной", async () => {
+    const provider = createPostgresProvider({ WEBAPP_TENANT_ID: "amirova-test" }, { createPool: stubPool });
+    await expect(provider.getSummary()).rejects.toThrow(/WEBAPP_DATA_DATABASE_URI_FILE/);
   });
 });

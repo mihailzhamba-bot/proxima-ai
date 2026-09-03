@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { BriefV1 } from "@/lib/contracts/brief";
 import type { CabinetDailyV1 } from "@/lib/contracts/cabinet-daily";
 import type { NormV1 } from "@/lib/contracts/norm";
-import type { BriefWirePayload } from "@/lib/data/postgres-provider";
+import type { BriefWirePayload } from "@/lib/data/view-model";
 
 /*
  * Story 2.2: webapp читает те же контракты, что и control-plane (AD-9/AD-10).

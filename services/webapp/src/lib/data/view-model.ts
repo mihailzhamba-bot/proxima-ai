@@ -14,6 +14,7 @@
  */
 
 import type { GyrStatus } from "@/lib/gyr";
+import type { BriefV1 } from "@/lib/contracts/brief";
 
 /** Откуда UI берёт данные. Переключается конфигом, не правкой компонентов. */
 export type DataMode = "fixtures" | "postgres";
@@ -92,6 +93,48 @@ export type BriefData = {
   attentionCount: number;
   digest: readonly BriefDigestItem[];
   dataMode: DataMode;
+};
+
+/** Payload брифа как он лежит в brief_current.payload (AD-9); читается postgres-провайдером. */
+export type BriefWirePayload = BriefV1;
+
+/**
+ * Сводка «вчера против нормы» (AD-9). Значения - как они лежат в payload
+ * `brief_current`: деньги строками с двумя знаками (AD-10), отклонение -
+ * уже округлённое число (D27). Форматирование и цвет - дело компонента,
+ * не провайдера.
+ */
+export type SummaryMetric = {
+  /** Факт дня: заказы в штуках, выручка строкой AD-10. */
+  actual: number | string;
+  /** Норма строкой AD-10 (медиана с дробной частью); null - нормы нет (blocked). */
+  norm: string | null;
+  /** Отклонение %; null - отклонение не называется (insufficient/blocked). */
+  deviationPct: number | null;
+};
+
+/** Почему на экране нет (или есть) цифры: статусы `brief_daily` + режим «только статус» (AD-9). */
+export type SummaryStatus = "ok" | "insufficient" | "blocked" | "no-brief";
+
+export type BriefSummary = {
+  status: SummaryStatus;
+  /** День сводки (brief_day / evaluation_day), ISO. */
+  briefDay: string | null;
+  orders: SummaryMetric | null;
+  revenue: SummaryMetric | null;
+  /** «норма копится: 9/14 дней» - из payload.norm.sample_days/window_days. */
+  normProgress: { sampleDays: number; windowDays: number } | null;
+  /**
+   * Статус данных (AD-7): из `data_status_current`. null - строк в view нет вовсе,
+   * сбор не проходил никогда; тогда цифр на экране не бывает.
+   */
+  dataStatus: DataStatusInfo | null;
+};
+
+export type DataStatusInfo = {
+  lastFullDay: string;
+  collectedAt: string;
+  stale: boolean;
 };
 
 export type MetricId = "signals" | "revenue-day" | "orders-day" | "oos-risks" | "freshness";
