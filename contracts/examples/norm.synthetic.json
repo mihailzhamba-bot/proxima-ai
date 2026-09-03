@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "tenant_id": "fixture-tenant-001",
+  "evaluation_day": "2026-08-29",
+  "metric": "orders",
+  "window_days": 14,
+  "sample_days": 14,
+  "value": "58.50",
+  "status": "ok",
+  "source_refs": [
+    "artifact://business-signal/sha256/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  ]
+}

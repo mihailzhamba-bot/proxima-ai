@@ -5,7 +5,10 @@ import { compile } from "json-schema-to-typescript";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CONTRACTS_DIR = join(ROOT, "contracts");
-const OUT_DIR = join(ROOT, "services", "collector", "src", "contracts");
+const TARGETS = [
+  ["services", "collector", "src", "contracts"],
+  ["services", "webapp", "src", "lib", "contracts"],
+];
 
 const BANNER =
   "/* eslint-disable */\n// AUTO-GENERATED from contracts/*.schema.json by `make codegen` - DO NOT EDIT.\n";
@@ -17,15 +20,21 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-await mkdir(OUT_DIR, { recursive: true });
+for (const target of TARGETS) {
+  await mkdir(join(ROOT, ...target), { recursive: true });
+}
 
 for (const file of files) {
   const schema = JSON.parse(await readFile(join(CONTRACTS_DIR, file), "utf8"));
   const name = basename(file, ".schema.json");
   const ts = await compile(schema, name, {
     bannerComment: "",
+    cwd: CONTRACTS_DIR,
     style: { singleQuote: true, semi: true },
   });
-  await writeFile(join(OUT_DIR, `${name}.ts`), BANNER + ts + "\n", "utf8");
-  console.log(`codegen: ${file} -> services/collector/src/contracts/${name}.ts`);
+  for (const target of TARGETS) {
+    await writeFile(join(ROOT, ...target, `${name}.ts`), BANNER + ts + "\n", "utf8");
+    console.log(`codegen: ${file} -> ${target.join("/")}/${name}.ts`);
+  }
 }
+

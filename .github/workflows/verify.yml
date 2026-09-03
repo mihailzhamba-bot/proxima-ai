@@ -8,8 +8,24 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  systemd-verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+      - name: Verify systemd units
+        run: systemd-analyze verify infra/systemd/*.service infra/systemd/*.timer
+      - name: Check bash syntax
+        run: bash -n tools/morning_run.sh tools/proxima_alert.sh tools/restore_check.sh infra/backup/proxima-pg-backup.sh
+      - name: Lint shell scripts
+        run: shellcheck tools/morning_run.sh tools/proxima_alert.sh tools/restore_check.sh
+      - name: Check morning command rendering
+        run: tools/morning_run.sh amirova-test --dry-run
+
+  verify:
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -21,4 +37,5 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-16
       - run: make verify

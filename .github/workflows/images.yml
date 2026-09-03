@@ -1,0 +1,103 @@
+# Story 1.9 / AD-6 / AD-15: docker build of both job images and apply-migrations
+# inside control-plane-admin against a compose PG16 service container.
+# GitHub-hosted runners have docker + compose v2 preinstalled; no extra actions.
+name: images
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Root .dockerignore keeps secrets and toolchain state out of the context (AD-6)
+        run: |
+          set -euo pipefail
+          for pattern in '^\.env$' '^\.git$' '^node_modules' 'fixtures/' '^_bmad-output/$'; do
+            grep -Eq "${pattern}" .dockerignore || { echo ".dockerignore missing: ${pattern}"; exit 1; }
+          done
+          # A recursive **/fixtures/ mask would strip services/webapp/src/lib/fixtures
+          # (imported by production pages) from the context and break `next build`.
+          ! grep -Eq '^\*\*/fixtures/' .dockerignore
+          test ! -f .env
+      - name: Build collector, control-plane and webapp images (root context)
+        run: |
+          docker build -f services/collector/Dockerfile -t proxima-ai/collector:ci .
+          docker build -f services/control-plane/Dockerfile -t proxima-ai/control-plane:ci .
+          # Webapp production pages import @/lib/fixtures (brief, styleguide): a root-only
+          # /fixtures/ dockerignore mask keeps them in the context; `next build` fails
+          # outright if the imports do not resolve.
+          docker build -f services/webapp/Dockerfile -t proxima-ai/webapp:ci .
+      - name: Both images run as UID 1010 and carry no host secrets
+        run: |
+          for image in proxima-ai/collector:ci proxima-ai/control-plane:ci; do
+            uid="$(docker run --rm "${image}" id -u)"
+            test "${uid}" = "1010" || { echo "${image}: expected USER 1010, got ${uid}"; exit 1; }
+            docker run --rm --entrypoint sh "${image}" -c \
+              '! find / -maxdepth 4 -name .env -not -path "/proc/*" -not -path "/sys/*" | grep -q .'
+            # jobs.env arrives via compose bind mount only — nothing baked into the image.
+            docker run --rm --entrypoint sh "${image}" -c '! test -f /app/infra/jobs.env'
+            echo "${image}: USER ${uid}, no .env in image"
+          done
+
+  apply-migrations-in-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Dummy secret files, values never leave the runner. Owner 1010:1010 0600 (AD-6):
+      # control-plane runs as USER 1010 and apply_migrations refuses group/world-readable files.
+      - name: Provision placeholder secrets and build the admin image
+        working-directory: infra
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /etc/proxima-ai/secrets
+          printf 'proxima_owner\n' | sudo tee /etc/proxima-ai/secrets/postgres_user >/dev/null
+          printf 'ci-placeholder-password\n' | sudo tee /etc/proxima-ai/secrets/postgres_password >/dev/null
+          printf 'postgres://proxima_collector:ci@postgres:5432/proxima\n' | sudo tee /etc/proxima-ai/secrets/proxima_collector_uri >/dev/null
+          printf 'postgres://proxima_norm:ci@postgres:5432/proxima\n' | sudo tee /etc/proxima-ai/secrets/proxima_norm_uri >/dev/null
+          printf 'postgres://proxima_webapp:ci@postgres:5432/proxima\n' | sudo tee /etc/proxima-ai/secrets/proxima_webapp_uri >/dev/null
+          sudo chown -R 1010:1010 /etc/proxima-ai/secrets
+          sudo chmod 600 /etc/proxima-ai/secrets/*
+          PROXIMA_SECRETS_DIR=/etc/proxima-ai/secrets docker compose build control-plane-admin
+      - name: Base and overlay compose configs are valid
+        working-directory: infra
+        env:
+          PROXIMA_SECRETS_DIR: /etc/proxima-ai/secrets
+          WEBAPP_TENANT_ID: amirova-test
+        run: |
+          docker compose config >/dev/null
+          docker compose --profile jobs config > /tmp/jobs-config.yaml
+          docker compose -f compose.yaml -f webapp.staging.compose.yaml config > /tmp/staging-config.yaml
+          grep -Eq 'WEBAPP_REQUIRE_AUTH: .?false' /tmp/staging-config.yaml
+          grep -q 'WEBAPP_DATA_DATABASE_URI_FILE: /run/secrets/proxima_webapp_uri' /tmp/staging-config.yaml
+          grep -Eq 'host_ip: 127\.0\.0\.1' /tmp/staging-config.yaml
+      - name: collector service never receives owner secrets (AD-15)
+        run: |
+          collector_secrets="$(awk '/^  [a-z]/{in_service = ($0 ~ /^  collector:/)} in_service && /source:/{print $3}' /tmp/jobs-config.yaml)"
+          echo "collector mounts: ${collector_secrets}"
+          test "${collector_secrets}" = "proxima_collector_uri"
+          grep -q 'COLLECTOR_DATABASE_URI_FILE: /run/secrets/proxima_collector_uri' /tmp/jobs-config.yaml
+      - name: apply-migrations inside control-plane-admin against compose PG16
+        working-directory: infra
+        env:
+          PROXIMA_SECRETS_DIR: /etc/proxima-ai/secrets
+        run: |
+          docker compose up -d --wait postgres
+          docker compose --profile jobs run --rm control-plane-admin make apply-migrations ENV_FILE=infra/jobs.env
+      - name: Ledger recorded every migration
+        working-directory: infra
+        env:
+          PROXIMA_SECRETS_DIR: /etc/proxima-ai/secrets
+        run: |
+          count="$(docker compose exec -T postgres sh -c \
+            'psql -U "$(cat /run/secrets/postgres_user)" -d proxima -tAc "SELECT count(*) FROM schema_migrations"')"
+          echo "schema_migrations: ${count}"
+          test "${count}" = "$(ls ../db/migrations/*.sql | wc -l)"

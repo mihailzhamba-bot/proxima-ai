@@ -17,6 +17,7 @@
     "seed-signal-config": "node dist/cli/seed-signal-config.js",
     "validate-signal-inputs": "node dist/cli/validate-signal-inputs.js",
     "stockout-signal": "node dist/cli/stockout-signal.js",
+    "collect": "node dist/jobs/collect.js",
     "test": "tsx --test $(ls tests/*.test.ts | grep -v '\\.db\\.test\\.ts$' | tr '\\n' ' ') && npm run build && node --input-type=module --eval \"import('@proxima/collector').then((module) => { if (typeof module.redactValue !== 'function' || typeof module.intakeManualWbXlsx !== 'function') process.exit(1) })\"",
     "typecheck": "tsc --noEmit",
     "test:db": "tsx --test --test-concurrency=1 tests/*.db.test.ts"

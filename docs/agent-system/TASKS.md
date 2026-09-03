@@ -2,6 +2,12 @@
 
 > Snapshot of task state in this repo. Full backlog lives in Jira project PA (zhamba.atlassian.net); this file mirrors only what an agent needs to resume work.
 
+## Snapshot 02.09.2026 (вечер)
+
+- 02.09.2026 PRD v2.2 + дельта epics + Jira sync-brief + роль Владислава: DONE (John); ждёт Mike - даты деплоя, approve брифа, доступы Владиславу, команда на коммит (см. HANDOFF 02.09 вечер).
+- 03.09.2026 Документация разработки: dev-onboarding, access-provisioning, observability, incident-runbook, DATA-DICTIONARY, README под лестницу, routing-таблица на действующие требования, исправлены указатели на канон решений: DONE (John); не закоммичено; ждёт Mike - решение по трём расхождениям канона (OQ-16, PA-64) и по конвенциям расчёта (OQ-18).
+- 03.09.2026 Роль Владислава v2 (теневой пересчёт цепочки, право блокировать релиз, свои зоны кода) + Epic 6 из пяти историй + PRD v2.3 + D26: DONE (John); ждёт Mike - конвенции расчёта (OQ-18), LOGIN-роль аналитика для чтения базы, approve раздела 4б брифа Jira (см. HANDOFF 03.09).
+
 ## Active main task
 
 ### PA-41 W1 + SCN-008 adapter slice — implementation done (2026-08-27)
@@ -19,8 +25,8 @@ COLLECTOR-WB-BRANCHES (former active task, implementation landed at `1a211c9`..`
 3. Track B PA-39: **аудит завершён 2026-08-23** - артефакты `docs/audits/pa-39-scenario-engine-audit.md` + `pa-39-import-allowlist.yaml` (27 записей: W1 18 / W2 8 / settings-adaptation 1) + `pa-39-hash-transcript.txt` (27/27 PASS); machine-верификация поймала и закрыла ошибку переноса хэша; reviewer re-check: 0 blockers после фиксов. Ключевые решения grill-сеанса: пин `53b7d604`, PMM-29 проектирует контракты с нуля (PA-41 adaptation-коммитом перепривязывает), PA-41 = W1 (не ждёт PMM-29) + W2 (после PMM-29). W1 verbatim импортирован и SCN-008 adapter slice завершён 2026-08-27; W2 ждёт PMM-29.
 4. ~~Phase 2 `02-02`~~ — **cancelled by Mike 2026-08-25**; выбран вариант A: закрыть Phase 2 с descope criterion №5 и перенести visible facts в Phase 3/6. Документальный синк и Jira-переход ещё не выполнены.
 5. Phase 2 leftovers: CI pipeline green run on the cancellation/revert PRs; observed-XLSX parser больше не нужен (02-02 отменён; машина уезжает в Phase 4).
-6. From Mike (inputs): READ-only Analytics перевыпуск (не горит; закрывает RW-исключение), production Bogatova token, interview slots, COGS data; инвентаризация прочих юрлиц для ADR-0001 (Q2) и подтверждение ставок бухгалтером (Q1, Q3, Q4).
-7. Analyst week-1 onboarding (2026-09-01, план утверждён грилль-сеансом): `docs/agent-system/ONBOARDING-analyst-week1.md`. Тикеты: PMM-58 (data-quality, relates PMM-28), PMM-59 (data dictionary, первый PR), бриф в PMM-22. Ручные шаги Mike: NDA → GitHub/Jira invites → branch protection check → обезличенная выгрузка. VPS-доступ аналитику не выдаётся.
+6. From Mike (inputs): READ-only Analytics перевыпуск (не горит; закрывает RW-исключение), production Bogatova token, interview slots, AI-ops analyst onboarding (02.09: аналитик = Владислав, хартия `docs/agent-system/roles/analyst-vladislav.md`, доступы по чек-листу §3), COGS data; инвентаризация прочих юрлиц для ADR-0001 (Q2) и подтверждение ставок бухгалтером (Q1, Q3, Q4).
+7. Онбординг Владислава: маршрут первой недели - `docs/agent-system/ONBOARDING-analyst-week1.md` (шаги хартии §8). Ручные шаги Mike: NDA, приглашения в GitHub и Jira, проверка branch protection на `main`, копия каталога фикстур. Доступ к серверу и к боевой базе не выдаётся - роль в базе заводится отдельной единицей (Story 6.4).
 
 ## Done (recent)
 - 2026-08-28 PMM-5 (LLM Analyst W1) done: `proxima_control_plane.diagnosis` (fixtures-first, mock LLM, draft-схема, DATA anti-injection, fail-closed retry/timeout, rollback-флаг, JSONL-аудит, CLI run/eval) + eval 12/12; PR #29 merged `6c29398`, make verify PASS, Jira Готово (DoD PMM-12). Известные ограничения PMM-31 - в Jira-комментарии 10377. Грилль-бриф: `docs/exec-plans/active/pmm-5-llm-analyst-w1.md`.

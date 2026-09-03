@@ -16,7 +16,7 @@
 - WB API только READ: split-токен с битом read-only на категорию; новый эндпоинт - сначала в allowlist `tools/verify_business_signal.py`. Analytics-токен на сервере пока read-write (PA-13) - только read-эндпоинты отчётов.
 - Тесты - на фикстурах `fixtures/wb-api/` (gitignored, копия на VPS в `~/signal-inputs/fixtures/wb-api/`); живой WB API - только когда без него никак, ответ сразу в фикстуру.
 - Каждая запись в БД помечена `run_id`, идемпотентна и удаляется по `run_id` целиком - требование к любому новому писателю.
-- В Jira (PA, PMM) не писать до Ворот 2 (`DECISIONS.md`); задачи не удалять никогда.
+- В Jira (PA, PMM) пишем только после approve таблиц синхронизации Mike (PRD §10, D17/D24: истина по задачам - файлы репозитория, направление одно, репо → Jira); задачи не удалять никогда. Ворота 2 пройдены 30.08.2026 (`DECISIONS.md`), запрета на запись больше нет - остался порядок approve.
 - Один write-capable агент на рабочее дерево; параллельно - только read-only исследование. Стейджить только свои файлы: `git add <files>`, не `git add -A` / `git add .`.
 - Не редактировать `services/collector/src/contracts/*.ts` - менять `contracts/*.schema.json` и `make codegen`; ручные правки тихо перезаписываются.
 - Миграции `db/migrations/NNN_*.sql` не править и не переименовывать - только новая `NNN+1_<snake>.sql`, additive-only, `BEGIN…COMMIT`, self-checksum (`tools/verify_migrations.py`).
@@ -51,7 +51,10 @@
 
 - Переименование миграции без правки `INSERT INTO schema_migrations` ломает checksum - три коммита 29.08 (`fa57aa9`, `31cf85f`, `ad89513`).
 - Codex падает на голом `enabled = false` в `[mcp_servers.X]` `.codex/config.toml` (27.08, PA-39/PA-41/PMM-12); канарейка - `codex mcp list` в `scripts/agent/verify`.
-- `.openhands/hooks/verify-gate.sh` требует `DATABASE_URI` из `.env.task`, хотя `make verify` его не читает - без переменной stop-hook отказывает.
+- `.openhands/hooks/verify-gate.sh` с `646ecb1` (31.08) `DATABASE_URI` не требует: `.env.task` подхватывается, если есть, гейт = только `make verify`. К разговорам, запущенным через `tools/orchestrator/` (`bad_dev_story.sh`, воркеры дирижёра), `.openhands/hooks.json` не применяется вовсе (`hook_config = null`) - красный `make verify` в песочнице ничего не остановит, гейт гоняется снаружи и в CI.
+- На VPS claudette (песочница OpenHands под `openhands-agent` и сессии Claude Code под `proxima-admin`) нет PG16 `initdb`: `pg-roundtrip: SKIP`, `*.db.test.ts` и матрица политик выполняются только в CI на PR. Db-тесты писать строго по образцу `services/collector/tests/collect.db.test.ts`; с миграции 013 cleanup сначала снимает рёбра `collector_run_inputs` (`input_run_id` - `ON DELETE RESTRICT`, AD-3) и только потом удаляет прогоны, а `data_status_current` отдаёт строки только с GUC `proxima.tenant_id`, даже под owner-ролью (02.09.2026, PR #51).
+- `make architecture` требует `chrome-headless-shell` версии из lock-файла в `~/.cache/puppeteer`; `PUPPETEER_SKIP_DOWNLOAD=1` его не ставит, а сетевая загрузка с VPS падает (`All providers failed`). Рабочий способ под `proxima-admin` - скопировать каталог `chrome-headless-shell/linux-<ver>` из кэша `openhands-agent`, где он уже есть (02.09.2026).
+- `tools/orchestrator/bad_dev_story.sh` (ветка `feat/bmad-bad`, PR #47): `--run-id` без точек (`story-1-6`), `--branch` только `feat|fix|docs|chore/*`, `--source-dir` - чекаут с каталогом `.git` (linked worktree отвергается), результат - `refs/openhands/<run-id>/<attempt>/head` в source-dir. Story 1.6 прошла dispatch → PR за 15 мин (02.09.2026).
 
 <!-- /bmad:context -->
 
@@ -81,9 +84,25 @@ Do not ask the user "where did we stop". Recover state from repository files fir
 | Что | Где |
 |---|---|
 | Текущее состояние, открытые вопросы, с чего начинать сессию | `STATE.md` (корень) |
+| **Действующие требования: что строим** | `_bmad-output/planning-artifacts/prds/prd-PROXIMA-AI-2026-08-28/prd.md` (PRD, зонт лестницы) |
+| **Канонический контракт сентября** (CAP-1..CAP-8) | `_bmad-output/specs/spec-wb-morning-brief/SPEC.md` + `glossary.md` |
+| **Архитектурные инварианты AD-1..AD-18** | `_bmad-output/planning-artifacts/architecture/architecture-proxima-ai-2026-08-30/ARCHITECTURE-SPINE.md` |
+| **Нарезка на эпики и истории; статусы** | `_bmad-output/planning-artifacts/epics.md`; `_bmad-output/implementation-artifacts/sprint-status.yaml` |
+| Гейт готовности нарезки к реализации | `_bmad-output/planning-artifacts/implementation-readiness.md` |
+| Предложения по правкам нарезки (OLD → NEW) | `_bmad-output/planning-artifacts/sprint-change-proposal-*.md` |
+| Кандидаты ступеней M-06+ | `_bmad-output/planning-artifacts/epics-candidates-m06.md` |
+| Эталоны независимого пересчёта (зона аналитика) | `verification/golden/` (создаётся Story 6.1) |
+| Управление: DoD-чеклист, реестры рисков и допущений | `docs/governance/` (реестры M2-среза - архив, действующие - PRD §14 и §9) |
+| **Вход для нового человека-разработчика** | `docs/operations/dev-onboarding.md` |
+| Выдача и отзыв доступов человеку | `docs/operations/access-provisioning.md` |
+| Стандарт логов, статусов и алертов | `docs/operations/observability.md` |
+| Что делать при сбое, расхождении цифр, утечке токена | `docs/operations/incident-runbook.md` |
+| **Словарь данных: таблицы, кто пишет, кто читает** | `docs/state/DATA-DICTIONARY.md` |
+| Прочие операционные инструкции | `docs/operations/business-signal-runbook.md`, `agent-toolset.md` |
+| Аудиты импортированного кода | `docs/audits/` |
 | Решения D1-D22: лестница M-00..M-05 вместо M1, среды, конвейер, Ворота 1 (30.08.2026) | `DECISIONS.md` (корень) |
 | Факты инвентаризации: сервер, веб-морда, WB API, миграция, база регрессии | `docs/state/*.md` |
-| Продуктовое видение M1 (архив, не текущие требования) | `docs/archive/planning-m1/PRODUCT-VISION.md` |
+| Продуктовое видение M1 - **архив снятой рамки** (D2 30.08 заменил M1 лестницей; действующее видение - PRD §1) | `docs/archive/planning-m1/PRODUCT-VISION.md` |
 | M1 roadmap, фазы, гейты (архив, заменён лестницей M-00..M-05) | `docs/archive/planning-m1/ROADMAP.md` |
 | Требования M1 (архив) | `docs/archive/planning-m1/REQUIREMENTS.md` |
 | Состояние M1 на 25-29.08 (архив) | `docs/archive/planning-m1/STATE.md` |
@@ -95,6 +114,7 @@ Do not ask the user "where did we stop". Recover state from repository files fir
 | Current state + exact next action (agent handoff) | `docs/agent-system/HANDOFF.md` |
 | Active task snapshot | `docs/agent-system/TASKS.md` |
 | Agent-system role map (which doc fills which role) | `docs/agent-system/README.md` |
+| Роль второго человека (Владислав: независимый пересчёт цепочки, эталоны и гейт `shadow`, право блокировать релиз, сверка с кабинетом, приёмка по AC) | `docs/agent-system/roles/analyst-vladislav.md` |
 | Rules: MUST / SHOULD / MAY | `docs/agent-system/RULES.md` |
 | Verification stack + rubrics | `docs/agent-system/EVALS.md` + `scripts/agent/verify` |
 | Stable facts, pitfalls, preferences | `docs/agent-system/MEMORY.md` |
@@ -158,7 +178,7 @@ host key, агент, реальный вход и туннель, и печат
 
 ## MCP-серверы проекта
 
-`.mcp.json` (Claude Code), `.codex/config.toml` (Codex), `opencode.json` (opencode) держат только `jira-atlassian` (read-only до Ворот 2) и `node_repl` (`tools/node_repl_server.js` отсутствует - см. `docs/state/MIGRATION-GAPS.md` §5). context7 и Postgres MCP - user-level конфиги, не проектные; секреты в конфиги и Git не попадают.
+`.mcp.json` (Claude Code), `.codex/config.toml` (Codex), `opencode.json` (opencode) держат только `jira-atlassian` (в `.codex/config.toml` открыты три read-глагола; запись - после approve таблиц Mike, D17/D24) и `node_repl` (`tools/node_repl_server.js` отсутствует - см. `docs/state/MIGRATION-GAPS.md` §5). context7 и Postgres MCP - user-level конфиги, не проектные; секреты в конфиги и Git не попадают.
 
 ## Жёсткие запреты (fail-closed)
 
@@ -187,10 +207,11 @@ host key, агент, реальный вход и туннель, и печат
 ## Working contract (English summary of the binding rules)
 
 - Sequence: understand → plan → execute → verify → document. No state skips; INBOX → CODE → DONE is forbidden.
-- **One main active task per repo.** A new main task starts only when the previous one is DONE, BLOCKED, or explicitly re-prioritized by Mike. New ideas go to the Jira PA/PMM backlog (writes only after Ворота 2, see `DECISIONS.md`), not into active work.
+- **One main active task per repo.** A new main task starts only when the previous one is DONE, BLOCKED, or explicitly re-prioritized by Mike. New ideas go to the Jira PA/PMM backlog (writes only after Mike approves the sync tables, see PRD §10 and D17/D24), not into active work.
 - Every number needs a source and a date. Unknown → `UNKNOWN`. Never invent metrics, prices, statuses, cabinet IDs, SKU.
 - Important knowledge lands in files (routing table above), not in chat memory.
 - Fail closed: verification failed → work is NOT done. Fix, or mark BLOCKED with reason + handoff in `docs/agent-system/HANDOFF.md`.
+- Red CI on a worker's story PR: the orchestrator may fix the test harness only (test files, fixtures, cleanup order, DSN/GUC plumbing) and says so in the report; job code and SQL stay untouched - diagnosis and report to Mike, or a fix round to the worker after an explicit go (2026-09-02, story 1.6).
 - Destructive/irreversible actions (production data, force push, secrets rotation, deploys, infra deletion) require explicit Mike approval (see «Жёсткие запреты»).
 - Parallel agents only for independent work; reviewer does not blindly trust the worker.
 - Repeated mistake → build a guardrail (rule / test / verify step / doc), not just an apology.

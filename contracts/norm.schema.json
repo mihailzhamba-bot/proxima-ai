@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proxima.local/contracts/norm/v1",
+  "title": "NormV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tenant_id", "evaluation_day", "metric", "window_days", "sample_days", "value", "status", "source_refs"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "tenant_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{2,63}$" },
+    "evaluation_day": {
+      "type": "string",
+      "format": "date",
+      "description": "The assessed day = last full day (AD-8); the window never includes it."
+    },
+    "metric": { "enum": ["orders", "revenue"] },
+    "window_days": {
+      "const": 14,
+      "description": "Median of the 14 calendar days before evaluation_day (D21, AD-8). A different window is a new schema version."
+    },
+    "sample_days": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 14,
+      "description": "Days of the window that have a version in fact_cabinet_daily_current; a gap must stay visible."
+    },
+    "value": {
+      "type": "string",
+      "pattern": "^-?[0-9]+\\.[0-9]{2}$",
+      "description": "Money/amount as a string with exactly two decimal places (AD-10); mirrors the DB numeric(14,2) column. Median of the sampled days. Calculation conventions (D27): with an even sample the median is the arithmetic mean of the two middle values, so for orders it may carry a fractional part; money rounds half-up to two decimals, and the whole computation runs in decimal arithmetic, never binary floating point."
+    },
+    "status": { "enum": ["ok", "insufficient"] },
+    "source_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Evidence pointers (AD-1): content_sha256 of the fact versions the median was taken over; never empty."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "sample_days": { "type": "integer", "maximum": 13 } }, "required": ["sample_days"] },
+      "then": { "properties": { "status": { "const": "insufficient" } } }
+    },
+    {
+      "if": { "properties": { "sample_days": { "type": "integer", "minimum": 14 } }, "required": ["sample_days"] },
+      "then": { "properties": { "status": { "const": "ok" } } }
+    }
+  ]
+}

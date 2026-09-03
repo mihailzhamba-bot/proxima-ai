@@ -17,7 +17,9 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
             for row in connection.execute(
                 "SELECT rolname FROM pg_roles WHERE rolname IN ("
                 "'proxima_migration_owner', 'proxima_source_publisher',"
-                "'proxima_release_publisher', 'proxima_data_health_read')"
+                "'proxima_release_publisher', 'proxima_data_health_read',"
+                "'proxima_job_collector', 'proxima_job_norm',"
+                "'proxima_webapp_readonly', 'proxima_run_janitor')"
             ).fetchall()
         }
         assert roles == {
@@ -25,6 +27,10 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
             "proxima_source_publisher",
             "proxima_release_publisher",
             "proxima_data_health_read",
+            "proxima_job_collector",
+            "proxima_job_norm",
+            "proxima_webapp_readonly",
+            "proxima_run_janitor",
         }
         for role in roles:
             row = connection.execute(
@@ -62,6 +68,33 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
         assert can("proxima_migration_owner", "UPDATE", "schema_migrations")
         assert not can("proxima_migration_owner", "INSERT", "fact_order_counts")
 
+        # run ledger: collector records evidence, norm updates ledger/input rows, and only
+        # the janitor receives deletion through the provisioned LOGIN role.
+        assert can("proxima_job_collector", "INSERT", "wb_raw_artifacts")
+        assert can("proxima_job_collector", "SELECT", "tenants")
+        assert can("proxima_job_norm", "UPDATE", "collector_runs")
+        assert can("proxima_job_norm", "INSERT", "collector_run_inputs")
+        assert can("proxima_webapp_readonly", "SELECT", "collector_runs")
+        assert not can("proxima_webapp_readonly", "SELECT", "wb_raw_artifacts")
+        assert not can("proxima_run_janitor", "INSERT", "collector_runs")
+
+        # observations (Story 1.4): only the collector writes and reads them; norm and
+        # webapp see facts, never staging; the janitor deletes through its LOGIN role.
+        assert can("proxima_job_collector", "INSERT", "stg_wb_orders_obs")
+        assert can("proxima_job_collector", "INSERT", "stg_wb_sales_obs")
+        assert can("proxima_job_collector", "SELECT", "stg_wb_orders_latest")
+        assert can("proxima_job_collector", "SELECT", "stg_wb_sales_latest")
+        assert not can("proxima_job_collector", "UPDATE", "stg_wb_orders_obs")
+        assert not can("proxima_job_norm", "SELECT", "stg_wb_orders_obs")
+        assert not can("proxima_webapp_readonly", "SELECT", "stg_wb_sales_latest")
+        assert not can("proxima_run_janitor", "INSERT", "stg_wb_orders_obs")
+
+        # cabinet daily facts (Story 1.6): collector writes; norm/webapp read.
+        assert can("proxima_job_collector", "INSERT", "fact_cabinet_daily")
+        assert can("proxima_job_norm", "SELECT", "fact_cabinet_daily_current")
+        assert can("proxima_webapp_readonly", "SELECT", "data_status_current")
+        assert not can("proxima_job_norm", "INSERT", "fact_cabinet_daily")
+
 
 @pytest.mark.skipif(not os.environ.get("PROXIMA_TEST_POSTGRES_DSN"), reason="dedicated PostgreSQL DSN not configured")
 def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
@@ -78,6 +111,12 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         "wb_analytics_report_tasks",
         "raw_wb_analytics_responses",
         "stg_wb_nm_report_rows",
+        "collector_runs",
+        "collector_run_inputs",
+        "wb_raw_artifacts",
+        "stg_wb_orders_obs",
+        "stg_wb_sales_obs",
+        "fact_cabinet_daily",
     }
     with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as connection:
         secured = {
@@ -90,7 +129,22 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         policy_count = connection.execute(
             "SELECT count(*) AS n FROM pg_policies WHERE schemaname = 'public'"
         ).fetchone()["n"]
-        assert policy_count == 23
+        assert policy_count == 40
+        janitor_tables = {
+            row["tablename"]
+            for row in connection.execute(
+                "SELECT tablename FROM pg_policies WHERE schemaname = 'public'"
+                " AND roles = ARRAY['proxima_run_janitor']::name[]"
+            ).fetchall()
+        }
+        assert janitor_tables == {
+            "collector_runs",
+            "collector_run_inputs",
+            "wb_raw_artifacts",
+            "stg_wb_orders_obs",
+            "stg_wb_sales_obs",
+            "fact_cabinet_daily",
+        }
         non_invoker_views = [
             row["relname"]
             for row in connection.execute(
