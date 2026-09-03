@@ -81,9 +81,25 @@ Do not ask the user "where did we stop". Recover state from repository files fir
 | Что | Где |
 |---|---|
 | Текущее состояние, открытые вопросы, с чего начинать сессию | `STATE.md` (корень) |
+| **Действующие требования: что строим** | `_bmad-output/planning-artifacts/prds/prd-PROXIMA-AI-2026-08-28/prd.md` (PRD, зонт лестницы) |
+| **Канонический контракт сентября** (CAP-1..CAP-8) | `_bmad-output/specs/spec-wb-morning-brief/SPEC.md` + `glossary.md` |
+| **Архитектурные инварианты AD-1..AD-18** | `_bmad-output/planning-artifacts/architecture/architecture-proxima-ai-2026-08-30/ARCHITECTURE-SPINE.md` |
+| **Нарезка на эпики и истории; статусы** | `_bmad-output/planning-artifacts/epics.md`; `_bmad-output/implementation-artifacts/sprint-status.yaml` |
+| Гейт готовности нарезки к реализации | `_bmad-output/planning-artifacts/implementation-readiness.md` |
+| Предложения по правкам нарезки (OLD → NEW) | `_bmad-output/planning-artifacts/sprint-change-proposal-*.md` |
+| Кандидаты ступеней M-06+ | `_bmad-output/planning-artifacts/epics-candidates-m06.md` |
+| Эталоны независимого пересчёта (зона аналитика) | `verification/golden/` (создаётся Story 6.1) |
+| Управление: DoD-чеклист, реестры рисков и допущений | `docs/governance/` (реестры M2-среза - архив, действующие - PRD §14 и §9) |
+| **Вход для нового человека-разработчика** | `docs/operations/dev-onboarding.md` |
+| Выдача и отзыв доступов человеку | `docs/operations/access-provisioning.md` |
+| Стандарт логов, статусов и алертов | `docs/operations/observability.md` |
+| Что делать при сбое, расхождении цифр, утечке токена | `docs/operations/incident-runbook.md` |
+| **Словарь данных: таблицы, кто пишет, кто читает** | `docs/state/DATA-DICTIONARY.md` |
+| Прочие операционные инструкции | `docs/operations/business-signal-runbook.md`, `agent-toolset.md` |
+| Аудиты импортированного кода | `docs/audits/` |
 | Решения D1-D22: лестница M-00..M-05 вместо M1, среды, конвейер, Ворота 1 (30.08.2026) | `DECISIONS.md` (корень) |
 | Факты инвентаризации: сервер, веб-морда, WB API, миграция, база регрессии | `docs/state/*.md` |
-| Продуктовое видение M1 (архив, не текущие требования) | `docs/archive/planning-m1/PRODUCT-VISION.md` |
+| Продуктовое видение M1 - **архив снятой рамки** (D2 30.08 заменил M1 лестницей; действующее видение - PRD §1) | `docs/archive/planning-m1/PRODUCT-VISION.md` |
 | M1 roadmap, фазы, гейты (архив, заменён лестницей M-00..M-05) | `docs/archive/planning-m1/ROADMAP.md` |
 | Требования M1 (архив) | `docs/archive/planning-m1/REQUIREMENTS.md` |
 | Состояние M1 на 25-29.08 (архив) | `docs/archive/planning-m1/STATE.md` |
@@ -95,6 +111,7 @@ Do not ask the user "where did we stop". Recover state from repository files fir
 | Current state + exact next action (agent handoff) | `docs/agent-system/HANDOFF.md` |
 | Active task snapshot | `docs/agent-system/TASKS.md` |
 | Agent-system role map (which doc fills which role) | `docs/agent-system/README.md` |
+| Роль второго человека (Владислав: независимый пересчёт цепочки, эталоны и гейт `shadow`, право блокировать релиз, сверка с кабинетом, приёмка по AC) | `docs/agent-system/roles/analyst-vladislav.md` |
 | Rules: MUST / SHOULD / MAY | `docs/agent-system/RULES.md` |
 | Verification stack + rubrics | `docs/agent-system/EVALS.md` + `scripts/agent/verify` |
 | Stable facts, pitfalls, preferences | `docs/agent-system/MEMORY.md` |
