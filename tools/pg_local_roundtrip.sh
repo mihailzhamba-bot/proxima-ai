@@ -125,4 +125,28 @@ if [[ "${PASSED}" -eq 0 ]]; then
 fi
 echo "pg-roundtrip: collector db-tests: ${PASSED} passed"
 
+# Norm db-tests are Python and self-skip without PROXIMA_TEST_DSN_NORM, so the
+# plain `make test` never runs them; here the DSN exists, and a silent skip must
+# not pass for green - that is exactly how pg-roundtrip itself can lie.
+NORM_LOG="${WORK}/norm-db-tests.log"
+echo "pg-roundtrip: norm db-tests (PROXIMA_TEST_DSN_NORM)"
+if ! (cd "${REPO_ROOT}" && uv run --python 3.14 --project services/control-plane --extra test \
+      pytest services/control-plane/tests/norm/test_norm_db.py -q) >"${NORM_LOG}" 2>&1; then
+  echo "pg-roundtrip: FAIL (norm db-tests)" >&2
+  cat "${NORM_LOG}" >&2
+  exit 1
+fi
+if grep -q "skipped" "${NORM_LOG}"; then
+  echo "pg-roundtrip: FAIL (norm db-tests skipped while a DSN was available)" >&2
+  cat "${NORM_LOG}" >&2
+  exit 1
+fi
+NORM_PASSED="$(sed -n 's/^\([0-9][0-9]*\) passed.*$/\1/p' "${NORM_LOG}" | tail -1)"
+if [[ "${NORM_PASSED:-0}" -lt 4 ]]; then
+  echo "pg-roundtrip: FAIL (norm db-tests reported ${NORM_PASSED:-0} passed, expected at least 4)" >&2
+  cat "${NORM_LOG}" >&2
+  exit 1
+fi
+echo "norm: median window, insufficient 9/14"
+
 echo "pg-roundtrip: PASS"

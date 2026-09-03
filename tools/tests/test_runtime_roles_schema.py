@@ -95,6 +95,18 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
         assert can("proxima_webapp_readonly", "SELECT", "data_status_current")
         assert not can("proxima_job_norm", "INSERT", "fact_cabinet_daily")
 
+        # norm (Story 2.3): AD-11 lists this role's grants explicitly and says ALL on
+        # norm_daily, which in the ledger means SELECT, INSERT and UPDATE - the DELETE
+        # grant lives in provision-runtime-roles.sh. Do not narrow UPDATE away: the rule
+        # that a job touches only status and finished_at is a convention plus this RLS
+        # matrix, not a missing grant.
+        assert can("proxima_job_norm", "INSERT", "norm_daily")
+        assert can("proxima_job_norm", "SELECT", "norm_daily_current")
+        assert can("proxima_webapp_readonly", "SELECT", "norm_daily_current")
+        assert can("proxima_job_norm", "UPDATE", "norm_daily")
+        assert not can("proxima_job_collector", "SELECT", "norm_daily")
+        assert not can("proxima_webapp_readonly", "INSERT", "norm_daily")
+
 
 @pytest.mark.skipif(not os.environ.get("PROXIMA_TEST_POSTGRES_DSN"), reason="dedicated PostgreSQL DSN not configured")
 def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
@@ -117,6 +129,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         "stg_wb_orders_obs",
         "stg_wb_sales_obs",
         "fact_cabinet_daily",
+        "norm_daily",
     }
     with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as connection:
         secured = {
@@ -129,7 +142,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         policy_count = connection.execute(
             "SELECT count(*) AS n FROM pg_policies WHERE schemaname = 'public'"
         ).fetchone()["n"]
-        assert policy_count == 40
+        assert policy_count == 43
         janitor_tables = {
             row["tablename"]
             for row in connection.execute(
@@ -144,6 +157,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
             "stg_wb_orders_obs",
             "stg_wb_sales_obs",
             "fact_cabinet_daily",
+            "norm_daily",
         }
         non_invoker_views = [
             row["relname"]
