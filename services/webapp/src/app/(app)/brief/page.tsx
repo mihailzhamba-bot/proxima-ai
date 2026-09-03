@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BriefSummaryBlock } from "@/components/brief/brief-summary";
 import { BriefVerdict } from "@/components/brief/brief-verdict";
 import { Digest } from "@/components/brief/digest";
 import { SignalRow } from "@/components/brief/signal-row";
@@ -16,7 +17,8 @@ type BriefPageProps = {
 export default async function BriefPage({ searchParams }: BriefPageProps) {
   const params = await searchParams;
   const variant: BriefVariant = params.view === "quiet" ? "quiet" : "daily";
-  const brief = await getDataProvider().getBrief(variant);
+  const provider = getDataProvider();
+  const [brief, summary] = await Promise.all([provider.getBrief(variant), provider.getSummary()]);
   const firstCritical = brief.signals[0];
 
   return (
@@ -28,6 +30,9 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
           attentionCount={brief.attentionCount}
           firstCriticalId={firstCritical?.id}
         />
+      </SectionErrorBoundary>
+      <SectionErrorBoundary title="Вчера против нормы">
+        <BriefSummaryBlock summary={summary} />
       </SectionErrorBoundary>
       {brief.signals.length > 0 && (
         <SectionErrorBoundary title="Критичные сигналы">
