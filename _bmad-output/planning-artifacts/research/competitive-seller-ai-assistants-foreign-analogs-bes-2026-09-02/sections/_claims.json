@@ -1,0 +1,522 @@
+[
+ {
+  "claim": "[107] Запуск агента «Helium» 24.08.2026: корневые причины, «next best actions aligned to profitability, growth, or efficiency ",
+  "class": "features",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[108] Пресс-релиз: агент «diagnoses problems, surfaces opportunities, and recommends actions across your entire Amazon operati",
+  "class": "trajectory",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[109] Анонс Helium 10 MCP Connector (Claude, ChatGPT), 03.08.2026 (сниппет)",
+  "class": "trajectory",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[113] Независимый обзор агента Helium: «goes live on August 24, 2026»; пример диагноза (margin 22%→18%, TACOS) и рекомендации;",
+  "class": "features",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[114] Helium 10 Diamond «$359» помесячно / «$279/month» при годовой; «Alert for frauds» - 20 products на Platinum vs 600 ASINs",
+  "class": "pricing",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[115] Helium 10 Alerts доступен с Platinum с лимитом «5 ASINs lifetime»; «checks for changes approximately every 4 days» - «a ",
+  "class": "features",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[123] Метод прогноза Sellerboard: «adjusted sales velocity … adjusted by the 'weight' entered per period», сезонные коэффициен",
+  "class": "features",
+  "pub_date": "2023-05-01"
+ },
+ {
+  "claim": "[124] Sellerboard: «automatically notified whether it's time to restock the FBA warehouse or to place a new order with your su",
+  "class": "features",
+  "pub_date": "2020-10-01"
+ },
+ {
+  "claim": "[126] Sellerboard «includes PPC analytics showing true profit after ad spend», «does not include bid management or campaign cr",
+  "class": "features",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[130] Агент «can monitor merchant inventory levels, analyze demand patterns, optimize shipments, identify slow-moving products",
+  "class": "trajectory",
+  "pub_date": "2025-09-01"
+ },
+ {
+  "claim": "[131] «always-on AI agent», «currently available to U.S. merchants at no cost and will be introduced in more countries in the ",
+  "class": "positioning",
+  "pub_date": "2025-09-01"
+ },
+ {
+  "claim": "[132] Project Amelia - бета genAI-ассистента для US-продавцов на Amazon Bedrock, сентябрь 2024 (сниппет)",
+  "class": "trajectory",
+  "pub_date": "2024-09-01"
+ },
+ {
+  "claim": "[133] Хронология Seller Assistant: «US rollout Dec 2025», EU/UK Q1 2026, «full autonomy» Q2 2026; Canvas для US/UK в марте 202",
+  "class": "trajectory",
+  "pub_date": "2026-07-01"
+ },
+ {
+  "claim": "[134] «Agentic AI requests permission before taking actions. You can set it to 'suggest only' … or 'auto-approve' …»; та же хр",
+  "class": "features",
+  "pub_date": "2025-12-01"
+ },
+ {
+  "claim": "[135] «with permission from the seller, takes action on their behalf»; «inventory optimization, advertising strategy, complian",
+  "class": "traction",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[140] Sherlock: «Surfaces meaningful changes», «Shows the most likely explanation», «Recommends specific next actions», «advis",
+  "class": "features",
+  "pub_date": "2026-05-01"
+ },
+ {
+  "claim": "[141] Sherlock «detect performance anomalies…, diagnose root causes, and recommend actions»; «As of June 2026 … still in limit",
+  "class": "trajectory",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[202] SoStocked (независимый обзор): прогноз «up to 12 months ahead» с seasonality/trends/promotions/past stockouts; reorder a",
+  "class": "features",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[207] Sage Copilot: «Retail Intelligence Agent … priority replenishments, overdue purchase orders, and missing cost data», «gu",
+  "class": "features",
+  "pub_date": "2026-03-01"
+ },
+ {
+  "claim": "[208] Inventory Planner в Shopify App Store: 4.4/5, 130 отзывов, 85% 5★, 9% 1★; 1★ 2025-10-20 (sync, $4k/год, поддержка), 5★ 2",
+  "class": "sentiment",
+  "pub_date": "2025-12-01"
+ },
+ {
+  "claim": "[210] Inventory Planner (Capterra): подтверждены настраиваемые алгоритмы, seasonality settings, stockout corrections, lead tim",
+  "class": "sentiment",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[214] Flieber в Shopify App Store (текст вендора): Essentials $299, Pro $399, Max $599 в мес, 14-day trial; «AI-based, omni-ch",
+  "class": "pricing",
+  "pub_date": "2023-10-01"
+ },
+ {
+  "claim": "[217] Prediko changelog: Pia + Slack (апр. 2026), «schedule Pia insights via email», «Slack, WhatsApp & Email Notifications li",
+  "class": "trajectory",
+  "pub_date": "2026-03-01"
+ },
+ {
+  "claim": "[221] Независимый обзор Prediko: «Prediko Insights» (insight cards), агенты - «future vision»; Pia, Slack, PO-команды отсутств",
+  "class": "positioning",
+  "pub_date": "2026-02-01"
+ },
+ {
+  "claim": "[227] FeedbackFive (независимо): Basic Free, Pro $29.99, Pro Plus $59.99, Enterprise $99.99, Enterprise Plus $199.99; подтверж",
+  "class": "pricing",
+  "pub_date": "2025-12-01"
+ },
+ {
+  "claim": "[229] Inventory Hero MCP-сервер в стороннем реестре: Registry Active, Transport HTTP; «shared AI Employee Handbook that persis",
+  "class": "features",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[230] Forecastly: «As of September 15, 2021, Forecastly is no longer available», функции в Jungle Scout; исторически «$80/mont",
+  "class": "trajectory",
+  "pub_date": "2025-07-01"
+ },
+ {
+  "claim": "[236] Amazon MIL: «We've launched a new Minimum Inventory Level metric … to avoid the recently announced low-inventory-level f",
+  "class": "features",
+  "pub_date": "2024-01-01"
+ },
+ {
+  "claim": "[303] Pacvue DSP: creative-level auto-pause on inventory / Buy Box, «Automated budget pacing & overspend stops», programmatic ",
+  "class": "features",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[305] Pacvue Agent «governed execution» with built-in guardrails, approval steps and audit trail (attributed to Pacvue press r",
+  "class": "features",
+  "pub_date": "2026-04-01"
+ },
+ {
+  "claim": "[311] Independent confirmation of Perpetua tiers: Essentials $695 flat up to $10,000; Growth $695 + % (percent not publicly di",
+  "class": "pricing",
+  "pub_date": "2026-05-01"
+ },
+ {
+  "claim": "[312] Perpetua SP Inventory Recommendations: inventory threshold (FBA/FBM/both) → recommendation to pause / re-enable ads → ma",
+  "class": "features",
+  "pub_date": "2024-10-01"
+ },
+ {
+  "claim": "[315] Perpetua min/max bids set per target segment (Branded/Unbranded/Competitor/Category); bids below min raised, above max c",
+  "class": "features",
+  "pub_date": "2026-03-01"
+ },
+ {
+  "claim": "[324] Teikametrics forecast «up to 365 days forward», SKU-level, «tracks current rate of sale»; method, seasonality, overrides",
+  "class": "features",
+  "pub_date": "2024-07-01"
+ },
+ {
+  "claim": "[328] Quartile Trustpilot 1-2★ (read, r3): 4.8/5 at 562 reviews, 10% one-star; quotes on spend up without growth, unanswered e",
+  "class": "sentiment",
+  "pub_date": "2025-03-01"
+ },
+ {
+  "claim": "[330] Skai press release: Celeste AI closed beta «over 50 clients», «30-50% efficiency gains and 10-20% performance improvemen",
+  "class": "trajectory",
+  "pub_date": "2025-05-01"
+ },
+ {
+  "claim": "[333] Adbrew pricing: Standard «$799/month or % of ad spend, whichever is greater» up to $500K ad spend; Enterprise Custom abo",
+  "class": "pricing",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[336] RevenueGeeks m19 review: Autopilot $59 (€49) fixed SP only; Professional $479 + 3% (€400) with SB/SD/DSP, AMC reporting,",
+  "class": "pricing",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[339] Helium 10 Ads (Adtomic): rules engine «the most flexible available», Max Impressions / Max Orders algorithms, campaign t",
+  "class": "features",
+  "pub_date": "2021-05-01"
+ },
+ {
+  "claim": "[340] SellerApp on Amazon Ads Agent: announced unBoxed 2025, «entered beta throughout 2026», access mainly DSP/AMC, «not yet a",
+  "class": "features",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[341] Amazon Ads Agent primary: «Campaigns only launch after you review and approve»; pacing «across hundreds of campaigns»; a",
+  "class": "features",
+  "pub_date": "2025-11-01"
+ },
+ {
+  "claim": "[342] Ads Agent in AMC «(beta)»: «Anyone with access to Amazon Marketing Cloud», regions NA/SA/EU/ME/APAC; natural-language SQ",
+  "class": "trajectory",
+  "pub_date": "2025-11-01"
+ },
+ {
+  "claim": "[343] Amazon Ads MCP Server open beta: partners with active API credentials; «creating, updating, or deleting campaigns», repo",
+  "class": "features",
+  "pub_date": "2026-02-01"
+ },
+ {
+  "claim": "[344] Amazon CES 2026: Full-Funnel Campaigns set up «using natural language, with AI assisting creative, audience strategies, ",
+  "class": "trajectory",
+  "pub_date": "2026-01-01"
+ },
+ {
+  "claim": "[347] Adweek: Ads Agent announced at unBoxed (Nov 2025); «can draft campaigns, optimize bids, manage targeting across channels",
+  "class": "features",
+  "pub_date": "2025-11-01"
+ },
+ {
+  "claim": "[354] SellerStack Inventory Protection: tiers by days-to-stockout 14+ / 7-14 / 3-7 / 0 days → bid down 25% / 50% / 90% / 99% (",
+  "class": "features",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[400] Публичный запуск Moby Agents 23.07.2025; «proactive, autonomous AI agents … step-by-step recommendations»; «new teammate",
+  "class": "trajectory",
+  "pub_date": "2025-07-01"
+ },
+ {
+  "claim": "[407] GA Moby 2 19.05.2026; «AI Operating System for Ecommerce»; три Moby Specialists (Media Buyer, Creative Director, Convers",
+  "class": "features",
+  "pub_date": "2026-05-01"
+ },
+ {
+  "claim": "[408] Синдикация релиза Moby 2: оркестрация «across frontier AI models including GPT, Claude, and Gemini»; Compass «single con",
+  "class": "features",
+  "pub_date": "2026-05-01"
+ },
+ {
+  "claim": "[413] Sidekick Pulse: «personalized recommendations and next steps … using market trends and data from your store»; Sidekick -",
+  "class": "features",
+  "pub_date": "2026-01-01"
+ },
+ {
+  "claim": "[414] Pulse «converts … data into next best actions, displayed on a redesigned Admin home»; Campaign Autopilot early access, F",
+  "class": "trajectory",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[419] Spring '26 Edition: Sidekick «on every screen … powers a redesigned home through Pulse»; Campaign Autopilot «across Face",
+  "class": "trajectory",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[420] Запуск Campaign Autopilot: каналы Meta ads, Microsoft Advertising, Shop Campaigns, Shopify Messaging; «Coming soon: Chat",
+  "class": "features",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[421] Независимый обзор: «Sidekick recommends. You approve.»; ритм «Thirty minutes per week»; четыре guardrail'а (себестоимост",
+  "class": "features",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[428] Lebesgue: 4.9/5, 120 отзывов (117×5★, 0×4★, 0×3★, 1×2★, 2×1★); похвала: «The AI tools are phenomenal» (2026-04-09), «Cla",
+  "class": "sentiment",
+  "pub_date": "2026-09-01"
+ },
+ {
+  "claim": "[431] Lebesgue: seed $3M, лид Interactive Venture Partners (Bridge Investments, Fil Rouge Capital, K20 Fund), объявлен 21.01.2",
+  "class": "trajectory",
+  "pub_date": "2025-01-01"
+ },
+ {
+  "claim": "[432] Тот же seed-раунд; «trusted by 10,000+ eCommerce brands» - повтор пресс-релиза, не независимое подтверждение",
+  "class": "traction",
+  "pub_date": "2025-01-01"
+ },
+ {
+  "claim": "[443] Predictive LTV: горизонты 3/6/12/24 мес; «forecast the monthly sales of each individual customer over their lifetime»; в",
+  "class": "features",
+  "pub_date": "2021-04-01"
+ },
+ {
+  "claim": "[444] ML-атрибуция («assign a percentage attribution to each campaign or touch»), прогноз каналов и симуляции «at different sp",
+  "class": "features",
+  "pub_date": "2024-02-01"
+ },
+ {
+  "claim": "[448] Magic Dash: «Ask it a question and it will automatically generate a dashboard»; «observations»; scheduled reports / emai",
+  "class": "features",
+  "pub_date": "2025-06-01"
+ },
+ {
+  "claim": "[449] Маркетинг: «3x repeat purchases while cutting time spent on analysis by 90%» (без источника); анонс Magic Dash 12.2023",
+  "class": "positioning",
+  "pub_date": "2023-12-01"
+ },
+ {
+  "claim": "[452] Синдикация релиза о запуске Moby Agents с датой 23.07.2025 (spot-check; один upstream с [400])",
+  "class": "trajectory",
+  "pub_date": "2025-07-01"
+ },
+ {
+  "claim": "[453] Trade-пересказ запуска Moby; в сводке выдачи - бета Moby Agents с начала апреля 2025 (низкая уверенность)",
+  "class": "trajectory",
+  "pub_date": "2025-07-01"
+ },
+ {
+  "claim": "[500] Amazon Seller Assistant: мониторинг инвентаря, slow-movers до storage fees, compliance-алерты (UL); «If the seller appro",
+  "class": "features",
+  "pub_date": "2025-09-01"
+ },
+ {
+  "claim": "[501] Amazon: rollout US 12.2025, Canvas 03.2026, EU/UK Q1-Q2 2026; трёхуровневые права (suggest-only/auto-approve/manual-only",
+  "class": "trajectory",
+  "pub_date": "2026-07-01"
+ },
+ {
+  "claim": "[502] Amazon: «identify slow-moving products before they incur storage fees», «analyze demand patterns»; «currently available ",
+  "class": "features",
+  "pub_date": "2025-09-01"
+ },
+ {
+  "claim": "[503] Amazon: «suggest only … or auto-approve», «full autonomy Q2 2026», «rollout began in December 2025», «free for all Selle",
+  "class": "features",
+  "pub_date": "2025-12-01"
+ },
+ {
+  "claim": "[504] Amazon: «Yes, it's free to use»; страница описывает роли Seller Central (View/Edit, admin grant access), а не режимы аге",
+  "class": "pricing",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[506] Дата анонса агентного Amazon Seller Assistant 17.09.2025 (слаг URL; тело 403)",
+  "class": "trajectory",
+  "pub_date": "2025-09-01"
+ },
+ {
+  "claim": "[507] Дата анонса 17.09.2025 (заголовок из выдачи)",
+  "class": "trajectory",
+  "pub_date": "2025-09-01"
+ },
+ {
+  "claim": "[511] TikTok Shop Seller Assistant: агентный, «take action on your behalf (with your permission)»; resolving violations, chang",
+  "class": "features",
+  "pub_date": "2026-07-01"
+ },
+ {
+  "claim": "[512] TikTok Shop «How Seller Assistant Works»: 24/7, «keeping full control», «checks conditions»; действия - трек-номера, cla",
+  "class": "features",
+  "pub_date": "2026-06-01"
+ },
+ {
+  "claim": "[514] Rakuten RMS AI アシスタント β: rollout с 2024-03-28; R-Karte «データを解説» - アクセス人数/客単価/転換率, YoY-тренд; черновики ответов покупател",
+  "class": "features",
+  "pub_date": "2024-04-01"
+ },
+ {
+  "claim": "[515] Rakuten: >50% магазинов пробовали, >20% регулярно; модули R-Karte/R-Messe/R-Storefront; «業務効率が上がった»; цель «トリプル20»",
+  "class": "traction",
+  "pub_date": "2025-01-01"
+ },
+ {
+  "claim": "[516] Rakuten: ~половина из ~50 тыс. магазинов ежемесячно используют AI; データ分析エージェント 30.04.2026 - «要因の考察や次に確認すべき分析ポイント», 72,9%",
+  "class": "traction",
+  "pub_date": "2026-07-01"
+ },
+ {
+  "claim": "[517] Rakuten β (2024): «データを解説» - «単純に数字の変化についてさらっと言及しているだけ», чат generic, over-reliance; ответ ~10 с; описание из изображени",
+  "class": "sentiment",
+  "pub_date": "2024-03-01"
+ },
+ {
+  "claim": "[519] Allegro asystent AI: объясняет изменения балла качества продаж, зоны оптимизации, отвечает по регламентам/Akademia; «dos",
+  "class": "features",
+  "pub_date": "2026-04-01"
+ },
+ {
+  "claim": "[520] Allegro: балл качества влияет на позиционирование; ассистент предлагает правки описаний, недостающие параметры; планы по",
+  "class": "features",
+  "pub_date": "2026-04-01"
+ },
+ {
+  "claim": "[524] 生意参谋: с 04.2024 три платных версии слиты в бесплатную 市场洞察, возврат неиспользованных средств; 店小蜜 и 图片空间 бесплатны",
+  "class": "pricing",
+  "pub_date": "2024-03-01"
+ },
+ {
+  "claim": "[525] 生意参谋: с апреля 2024 все модули бесплатны, оплаченным подписчикам - возврат",
+  "class": "pricing",
+  "pub_date": "2024-03-01"
+ },
+ {
+  "claim": "[528] Mercado Libre нативный AI: черновики ответов + ручное одобрение каждого; 43% вопросов вне рабочего времени; бесплатен; «",
+  "class": "features",
+  "pub_date": "2026-04-01"
+ },
+ {
+  "claim": "[532] Nubimetrics vs Real Trends (2021): Pack 360 USD 54/144/432, модуль USD 20; слабости - нет публикатора, вопросов, мессенд",
+  "class": "pricing",
+  "pub_date": "2021-01-01"
+ },
+ {
+  "claim": "[533] Shopee Shop AI Assistant: автоответы pre/post-sales, FAQ, welcome, трекинг заказов; «available to selected sellers»; цен",
+  "class": "features",
+  "pub_date": "2025-06-01"
+ },
+ {
+  "claim": "[538] Flipkart: AI-дашборды на хинди/региональных языках с голосом - «demand forecasting, pricing intelligence, trend analysis",
+  "class": "features",
+  "pub_date": "2026-05-01"
+ },
+ {
+  "claim": "[600] Точка Банк приобрёл 100% MPStats 9 февраля 2026; оценка актива 2 млрд ₽; заявленная доля «около 80%» сегмента аналитики ",
+  "class": "trajectory",
+  "pub_date": "2026-02-01"
+ },
+ {
+  "claim": "[601] Покупка MPStats Точкой — второй издатель того же события",
+  "class": "trajectory",
+  "pub_date": "2026-02-01"
+ },
+ {
+  "claim": "[602] Покупка MPStats Точкой; источник цифры «около 80%» — пресс-релиз, независимой оценки нет",
+  "class": "trajectory",
+  "pub_date": "2026-02-01"
+ },
+ {
+  "claim": "[603] Подключение AI-агентов к данным MPSTATS как ключевой ход; биддер с 90-дневным журналом (All Events / Bids / Clusters / A",
+  "class": "features",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[607] 46 отзывов, рейтинг 2.9/5; датированный негатив: «рекомендация привела к убытку в 250 000 рублей» (12.03.2026, 2★), возв",
+  "class": "sentiment",
+  "pub_date": "2025-02-01"
+ },
+ {
+  "claim": "[609] «Система предупреждает о критичных ошибках, полных или частичных out-of-stock товарах и формирует задачи»; числа «100+ м",
+  "class": "features",
+  "pub_date": "2025-02-01"
+ },
+ {
+  "claim": "[615] Чат по API-данным магазина WB/Ozon; «не просто цифры, а готовые рекомендации» (что пополнить, где снизить ставки, какие ",
+  "class": "features",
+  "pub_date": "2026-08-01"
+ },
+ {
+  "claim": "[621] Wildberries запустил ИИ-ассистента «Помощник» в подписке «Джем» (WB Партнёры, приложение и веб): чат по продажам, остатк",
+  "class": "features",
+  "pub_date": "2026-05-01"
+ },
+ {
+  "claim": "[622] WB «Помощник»: чат в WB Partners по воронке, заказам/выкупам, нише, остаткам и дефициту, запросам и позициям, отменам, р",
+  "class": "features",
+  "pub_date": "2026-05-01"
+ },
+ {
+  "claim": "[624] Ozon «Умный ассистент» в ЛК продавца: анализ данных магазина, персональные рекомендации, свободный диалог с контекстом, ",
+  "class": "features",
+  "pub_date": "2026-04-01"
+ },
+ {
+  "claim": "[625] «Ozon запустил ИИ-ассистента для продавцов в личном кабинете» — второй издатель того же релиза",
+  "class": "trajectory",
+  "pub_date": "2026-04-01"
+ },
+ {
+  "claim": "[626] Точка Банк «AI Ассистент селлера» в Telegram: автоматический P&L, рекомендации по продажам и марже, подключение по API-т",
+  "class": "features",
+  "pub_date": "2026-01-01"
+ },
+ {
+  "claim": "[627] Точка: телеграм-чат; «нейросеть сама формирует отчёт о прибылях и убытках», «даёт рекомендации по росту продаж и маржи»;",
+  "class": "features",
+  "pub_date": "2026-01-01"
+ },
+ {
+  "claim": "[630] «Расширили возможности A/B тестов» карточек — без сверки план/факт",
+  "class": "features",
+  "pub_date": "2026-05-01"
+ },
+ {
+  "claim": "[635] Wildberries запускает автоматические ответы на отзывы с помощью ИИ",
+  "class": "trajectory",
+  "pub_date": "2026-02-01"
+ },
+ {
+  "claim": "[641] «AI-функции доступны с подпиской „Джем“»",
+  "class": "features",
+  "pub_date": "2026-05-01"
+ },
+ {
+  "claim": "[646] Точка: ИИ-ассистент для продавцов WB, бесплатно в I кв. 2026; экосистема «Точка Маркетплейсы» — расчётный счёт, бухгалте",
+  "class": "trajectory",
+  "pub_date": "2026-01-01"
+ },
+ {
+  "claim": "[647] Механика: токен API WB в чат, шаблон себестоимости, на выходе P&L, график, сравнение с конкурентами и рекомендации в PDF",
+  "class": "features",
+  "pub_date": "2026-01-01"
+ },
+ {
+  "claim": "[648] «Подобные инструменты уже развивают Яндекс Маркет и Wildberries» — платформенные ассистенты у трёх маркетплейсов",
+  "class": "trajectory",
+  "pub_date": "2026-04-01"
+ },
+ {
+  "claim": "[650] Ozon запустил пилот AI-ассистента для покупателей",
+  "class": "trajectory",
+  "pub_date": "2026-08-01"
+ }
+]
