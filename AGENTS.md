@@ -51,7 +51,10 @@
 
 - Переименование миграции без правки `INSERT INTO schema_migrations` ломает checksum - три коммита 29.08 (`fa57aa9`, `31cf85f`, `ad89513`).
 - Codex падает на голом `enabled = false` в `[mcp_servers.X]` `.codex/config.toml` (27.08, PA-39/PA-41/PMM-12); канарейка - `codex mcp list` в `scripts/agent/verify`.
-- `.openhands/hooks/verify-gate.sh` требует `DATABASE_URI` из `.env.task`, хотя `make verify` его не читает - без переменной stop-hook отказывает.
+- `.openhands/hooks/verify-gate.sh` с `646ecb1` (31.08) `DATABASE_URI` не требует: `.env.task` подхватывается, если есть, гейт = только `make verify`. К разговорам, запущенным через `tools/orchestrator/` (`bad_dev_story.sh`, воркеры дирижёра), `.openhands/hooks.json` не применяется вовсе (`hook_config = null`) - красный `make verify` в песочнице ничего не остановит, гейт гоняется снаружи и в CI.
+- На VPS claudette (песочница OpenHands под `openhands-agent` и сессии Claude Code под `proxima-admin`) нет PG16 `initdb`: `pg-roundtrip: SKIP`, `*.db.test.ts` и матрица политик выполняются только в CI на PR. Db-тесты писать строго по образцу `services/collector/tests/collect.db.test.ts`; с миграции 013 cleanup сначала снимает рёбра `collector_run_inputs` (`input_run_id` - `ON DELETE RESTRICT`, AD-3) и только потом удаляет прогоны, а `data_status_current` отдаёт строки только с GUC `proxima.tenant_id`, даже под owner-ролью (02.09.2026, PR #51).
+- `make architecture` требует `chrome-headless-shell` версии из lock-файла в `~/.cache/puppeteer`; `PUPPETEER_SKIP_DOWNLOAD=1` его не ставит, а сетевая загрузка с VPS падает (`All providers failed`). Рабочий способ под `proxima-admin` - скопировать каталог `chrome-headless-shell/linux-<ver>` из кэша `openhands-agent`, где он уже есть (02.09.2026).
+- `tools/orchestrator/bad_dev_story.sh` (ветка `feat/bmad-bad`, PR #47): `--run-id` без точек (`story-1-6`), `--branch` только `feat|fix|docs|chore/*`, `--source-dir` - чекаут с каталогом `.git` (linked worktree отвергается), результат - `refs/openhands/<run-id>/<attempt>/head` в source-dir. Story 1.6 прошла dispatch → PR за 15 мин (02.09.2026).
 
 <!-- /bmad:context -->
 
@@ -208,6 +211,7 @@ host key, агент, реальный вход и туннель, и печат
 - Every number needs a source and a date. Unknown → `UNKNOWN`. Never invent metrics, prices, statuses, cabinet IDs, SKU.
 - Important knowledge lands in files (routing table above), not in chat memory.
 - Fail closed: verification failed → work is NOT done. Fix, or mark BLOCKED with reason + handoff in `docs/agent-system/HANDOFF.md`.
+- Red CI on a worker's story PR: the orchestrator may fix the test harness only (test files, fixtures, cleanup order, DSN/GUC plumbing) and says so in the report; job code and SQL stay untouched - diagnosis and report to Mike, or a fix round to the worker after an explicit go (2026-09-02, story 1.6).
 - Destructive/irreversible actions (production data, force push, secrets rotation, deploys, infra deletion) require explicit Mike approval (see «Жёсткие запреты»).
 - Parallel agents only for independent work; reviewer does not blindly trust the worker.
 - Repeated mistake → build a guardrail (rule / test / verify step / doc), not just an apology.
