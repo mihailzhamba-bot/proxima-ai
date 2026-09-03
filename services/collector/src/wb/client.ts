@@ -171,7 +171,7 @@ export class WbClient {
 
   async request(
     endpointId: WbEndpointSpec['id'],
-    input: { query?: WbRequestQuery; body?: unknown } = {},
+    input: { query?: WbRequestQuery; body?: unknown; artifactPageSequence?: number } = {},
   ): Promise<WbResponseRecord> {
     const spec = WB_ENDPOINTS[endpointId];
     if (!spec) throw new WbClientError('WB_ENDPOINT_UNKNOWN', `unknown WB endpoint ${String(endpointId)}`);
@@ -203,7 +203,10 @@ export class WbClient {
       const responseHeaders = filterResponseHeaders(Object.entries(response.headers ?? {}));
       const retrievedAt = response.retrievedAt ?? new Date(this.clock.now());
       if (this.sink) {
-        await this.sink.store({ endpointId: spec.id, url, httpStatus: response.status, responseHeaders, body: response.body, retrievedAt, attempt });
+        const pageSequence = input.artifactPageSequence ?? 1;
+        if (!Number.isSafeInteger(pageSequence) || pageSequence < 1) throw new RangeError('artifactPageSequence must be a positive integer');
+        const sequence = (pageSequence - 1) * (this.maxRetries + 1) + attempt + 1;
+        await this.sink.store({ endpointId: spec.id, url, httpStatus: response.status, responseHeaders, body: response.body, retrievedAt, attempt, sequence });
       }
 
       if (response.status === RETRYABLE_STATUS) {
