@@ -144,3 +144,37 @@ nmIDs - топ-3 по числу строк в фикстуре `supplier-sales`
 ## Формат бэкапа (31.08.2026, факт)
 
 `/var/backups/proxima/YYYY-MM-DD-{proxima,proxima_dev}.sql.gz` - локально **plain gzip, без age**; age-ключи (`backup_age_key.txt` 0600 root, `backup_age_recipient` 0644) используются скриптом только для S3-копии. `proxima-pg-backup.sh` снят в `infra/backup/` (sha256 `d29feb24…`). Для `proxima-restore-check@` локальный дамп: `gunzip | psql` без age; AD-17 уточнён.
+
+## Остатки (02.09.2026, OQ-13)
+
+Разведка по разрешению Mike 02.09.2026 (план «проверка PRD v2», ветка 3): три read-вызова с сервера токеном категории «Аналитика» (`/etc/proxima-ai/secrets/wb_analytics_token`, подстановка через `sudo -n cat`, значение не выводилось). Ответы и заголовки ответов - фикстуры на VPS, без заголовков авторизации. В БД и код ничего не записано. Поводом были факты из зеркала спецификации OpenAPI (ресёрч R2, уверенность средняя); ниже - что подтвердилось живым вызовом.
+
+| Вызов | Статус | Что вернул | Лимит из заголовков | Размер, время | Фикстура |
+|---|---|---|---|---|---|
+| `POST analytics /api/analytics/v1/stocks-report/wb-warehouses`, тело `{"params":{"nmIDs":[],"limit":50,"offset":0}}` (форма из `wb-client.ts:166`) | **200** | `data.items[]` - 444 строки с полями `nmId`, `chrtId`, `warehouseId`, `warehouseName`, `regionName`, `quantity`, `inWayToClient`, `inWayFromClient`; пустой `nmIDs` отдаёт весь кабинет, строка = размер × склад; `limit` ограничивает не строки (444 > 50), вероятно - число nmId на страницу (не проверено) | `x-ratelimit-limit: 1`, `x-ratelimit-remaining: 0` - **измеренный лимит 1 запрос на окно** (период окна в заголовках не назван; зеркало спецификации давало 3/мин - расхождение) | 76 608 B, 1.89 s | `analytics/stocks-report-wb-warehouses/20260902T130436Z__stocks_probe.json` |
+| `POST analytics /api/v2/nm-report/downloads`, `reportType: STOCK_HISTORY_DAILY_CSV`, `params` как у `DETAIL_HISTORY_REPORT` (`nmIDs`, `startDate`, `endDate`, `timezone`, `aggregationLevel`) | **400** `Invalid request body` | `decode CSVDailyStocksParams: … decode field "params": invalid: currentPeriod (field required), stockType (field required), skipDeletedNm (field required)` - тип отчёта **существует и распознан**, отказа по подписке нет; тело должно нести `currentPeriod`, `stockType`, `skipDeletedNm` (те же параметры, что у метода остатков в спецификации). Задача не создана, квота не потрачена | `x-ratelimit-limit: 3`, `remaining: 2` (3/мин, как на 30.08) | 289 B, 0.62 s | `analytics/nm-report-downloads/20260902T130459Z__create_stock_history.json` |
+| `GET analytics /api/v2/nm-report/downloads` | **200** | `data[]` - 2 задачи, обе `detail_history_report`, `SUCCESS`, окна `08-28..09-02` (создана `2026-09-02 01:04:29`) и `08-27..09-01` (`2026-09-01 01:03:43`), ~8 КБ - внешний потребитель токена продолжает создавать отчёт ежедневно (D20) | `x-ratelimit-limit: 3`, `remaining: 2` | 391 B, 0.51 s | `analytics/nm-report-downloads/20260902T130520Z__list.json` |
+
+Выводы для реестра AD-4 и OQ-13:
+
+- **Срез остатков по складам есть** и уже пригоден для `fact_stock_daily` при ежедневном снимке: поля дают остаток и «в пути» по каждому размеру и складу с регионом. Лимит по заголовку - 1 запрос на окно; пагинация по `offset` при полном кабинете (444 строк за один ответ при `limit 50`) требует отдельной проверки семантики `limit`. Кандидат на включение в реестр (новый AD, OQ-13).
+- **Дневная история остатков через CSV `STOCK_HISTORY_DAILY_CSV` доступна на этом токене без подписки «Джем»** (отказа по подписке не было); обязательные параметры - `currentPeriod`, `stockType`, `skipDeletedNm`. Глубина `currentPeriod` и формат CSV не проверены: нужен один повторный вызов с исправленным телом и скачивание файла.
+- Расхождение с зеркалом спецификации: лимит `stocks-report` 1 (заголовок) против 3/мин (зеркало). Приоритет у живого замера; в PRD и отчёте R2 уверенность по лимиту понижена.
+
+### Лог вызовов (UTC 02.09.2026)
+
+| Время | Вызов | Тело / параметры | Статус | Время | Байт | Фикстура |
+|---|---|---|---|---|---|---|
+| 13:04:36 | POST analytics `stocks-report/wb-warehouses` | `nmIDs: [], limit 50, offset 0` | 200 | 1.89 s | 76 608 | `analytics/stocks-report-wb-warehouses/20260902T130436Z__stocks_probe.json` |
+| 13:04:59 | POST analytics `nm-report/downloads` | `STOCK_HISTORY_DAILY_CSV`, params в форме DETAIL_HISTORY_REPORT | 400 | 0.62 s | 289 | `analytics/nm-report-downloads/20260902T130459Z__create_stock_history.json` |
+| 13:05:20 | GET analytics `nm-report/downloads` | - | 200 | 0.51 s | 391 | `analytics/nm-report-downloads/20260902T130520Z__list.json` |
+| 13:10:44 | POST analytics `nm-report/downloads` | `STOCK_HISTORY_DAILY_CSV`, `params: {currentPeriod: {start: 2026-08-26, end: 2026-09-01}, stockType: "", skipDeletedNm: true}` | 200 `{"data": "Началось формирование файла/отчета"}` | 0.87 s | 77 | `analytics/nm-report-downloads/20260902T131044Z__create_stock_history_v2.json` |
+| 13:11:50 | GET analytics `nm-report/downloads` | - | 200; задача `SUCCESS` через ~65 с | 0.51 s | 568 | `analytics/nm-report-downloads/20260902T131150Z__list_after_create.json` |
+| 13:11:51 | GET analytics `nm-report/downloads/file/{id}` | - | 200, `application/zip` | 0.59 s | 12 203 | `analytics/nm-report-downloads/20260902T131151Z__download_stock_history.bin` |
+
+### Дневная история остатков - подтверждено (второй заход, 3 вызова по отдельному ок Mike)
+
+- Тип отчёта `STOCK_HISTORY_DAILY_CSV` создаётся на токене «Аналитика» **без подписки «Джем»**; обязательные `params`: `currentPeriod {start, end}`, `stockType` (пусто = все), `skipDeletedNm`. Формирование заняло меньше 65 секунд; лимит создания и списка - 3/мин по заголовкам; квота 1 из 20 в сутки (D20: внешний потребитель тратит ещё 1).
+- Файл - ZIP с одним CSV (`<id>.csv`, разделитель запятая): 787 строк данных за 7 дней. Колонки: `VendorCode, Name, NmID, SubjectName, BrandName, SizeName, ChrtID, OfficeName` и далее по одной колонке на дату (`26.08.2026 … 01.09.2026`) с остатком в штуках. Строка = артикул × размер (`ChrtID`) × склад (`OfficeName`: склады WB и «Свой склад»). Даты - в формате `dd.mm.yyyy`, широкий формат, для загрузки нужен unpivot по датам.
+- Глубина `currentPeriod` назад **не проверена** (запрошено 7 дней); проверить одним вызовом с `start = 2026-03-01` в единице работы (кандидат на бэкфилл истории остатков).
+- Вывод для OQ-13: источник дневной истории остатков есть на текущем токене, для `fact_stock_daily` достаточно ежедневного снимка через `stocks-report/wb-warehouses` (лимит 1 на окно) плюс еженедельного CSV как источника истории и сверки. Включение в реестр AD-4 - новый AD; фикстура CSV содержит реальные названия товаров кабинета - в git только после обезличивания (`tools/anonymize_fixture.py`, D15).

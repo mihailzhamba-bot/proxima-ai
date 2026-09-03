@@ -1,34 +1,52 @@
 # PROXIMA AI
 
-Private read-only data foundation for one WB pilot. M1 keeps official WB evidence immutable, publishes operational, inventory and financial domains independently, and exposes provenance through a private Data Health control-plane.
+Приватная платформа для владельца кабинетов Wildberries. Каждое утро система сама собирает данные кабинета по официальному WB API, считает норму и показывает на экране `/brief` одну строку: «вчера N заказов против нормы M, отклонение x %». Дальше по лестнице - аномалии с ценой в рублях, гипотеза причины с проверкой, запись решения и сверка «сработало ли».
 
-## Architecture
+Два правила, которые объясняют почти всё в этом репозитории: **в WB только чтение** (любая запись - архитектурное нарушение) и **у каждой цифры есть источник** (артефакт ответа WB или детерминированный расчёт; LLM объясняет, но не считает).
 
-- Visual entrypoint: `docs/architecture/system.mmd`
-- Data path: `docs/architecture/data-flow.mmd`
-- One-VPS boundary: `docs/architecture/deployment.mmd`
-- Delivery and review loop: `docs/architecture/delivery.mmd`
+## Где что лежит
 
-Render all maps with `make architecture`. Run the complete local contract with `make verify`.
+| Что нужно | Файл |
+|---|---|
+| Что строим и зачем, по ступеням | `_bmad-output/planning-artifacts/prds/prd-PROXIMA-AI-2026-08-28/prd.md` |
+| Канонический контракт сентября (CAP-1..CAP-8) | `_bmad-output/specs/spec-wb-morning-brief/SPEC.md` + `glossary.md` |
+| Архитектурные инварианты AD-1..AD-18 | `_bmad-output/planning-artifacts/architecture/architecture-proxima-ai-2026-08-30/ARCHITECTURE-SPINE.md` |
+| Нарезка на эпики и истории | `_bmad-output/planning-artifacts/epics.md`, статусы - `_bmad-output/implementation-artifacts/sprint-status.yaml` |
+| Решения D1-D26 (канон) | `DECISIONS.md` |
+| Состояние на сегодня и следующий шаг | `STATE.md`, `docs/agent-system/HANDOFF.md` |
+| Факты по WB API (лимиты, окна, мёртвые методы) | `docs/state/API-FACTS.md`, `docs/adr/0007-wb-read-endpoints-and-limits.md` |
+| Контракт для агентов и правила работы | `AGENTS.md` |
+| Роль второго человека (независимая проверка расчётов) | `docs/agent-system/roles/analyst-vladislav.md` |
 
-## Implemented now
+Архитектурные карты: `docs/architecture/*.mmd` (рендер - `make architecture`). Внимание: карты описывают рамку M1 и ждут обновления под лестницу.
 
-- TypeScript collector/data-plane package with provenance-bound safety primitives.
-- Python 3.14 control-plane package boundary.
-- PostgreSQL 16 private Compose skeleton and self-recording bootstrap migration.
-- Cross-language artifact, attempt and domain-release contracts.
-- Reproducible Selectel staging-VPS bootstrap: SSH hardening, private Docker host, capacity-monitor contract and a disabled-by-default systemd timer.
+## Лестница M-00..M-05
 
-## Staging VPS
+| Ступень | Что появляется | Срок |
+|---|---|---|
+| M-00 разведка API | факты по эндпоинтам, лимитам, глубине | сделано 30.08.2026 |
+| M-01 сбор и хранение | дневной ряд кабинета копится сам, статус данных на экране | сентябрь |
+| M-01b воронка фоном | воронка по товарам копится из v3 | сентябрь |
+| M-02 база нормы | норма = медиана 14 полных дней | сентябрь |
+| M-03 сводка | «вчера против нормы» каждое утро - **граница сентября, гейт 30.09.2026** | сентябрь |
+| M-04 аномалии | список по потерянной выручке в разрезе SKU и категории | октябрь |
+| M-05 план действий | гипотеза, проверка, решение, сверка исхода | октябрь |
+| M-06+ | модули решений и прогнозов по магазину | предложение, ждёт решения |
 
-The approved host is Selectel Cloud in Russia at `135.106.186.210`: Ubuntu 24.04 LTS, 6 vCPU, a 12 GiB RAM class and a 120 GiB NVMe class. These dimensions were observed by SSH preflight on 2026-08-13 and retained by Mike the same day. The 3,000 RUB monthly budget cap remains, but the actual Selectel monthly price is not yet verified. The machine has only TCP/22 inbound; any future private UI is reached through an SSH tunnel.
+## Стек и запуск
 
-Before bootstrap, create the Selectel security group with only TCP/22 inbound and prepare one public SSH key for `proxima-admin`. From a clean temporary checkout of this private repository on the fresh host, run `sudo PROXIMA_SECURITY_GROUP_VERIFIED=yes PROXIMA_ADMIN_PUBLIC_KEY_FILE=/path/to/public-key bash infra/bootstrap/bootstrap-vps.sh`. It copies that exact clean checkout into `/srv/proxima-ai/repo`, so later operation does not depend on agent forwarding or a server-side GitHub credential.
+Node.js 22 (collector, webapp), Python 3.14 через uv (control-plane, tools), PostgreSQL 16, один VPS. Локально:
 
-The host monitor is enabled since 2026-08-15: `proxima-host-monitor.timer` runs every minute, delivery into the private Telegram chat was tested end-to-end as `proxima-monitor` (HTTP 200 `ok:true`), and the first service run wrote `/var/lib/proxima-ai-monitor/state.json`. The Telegram secrets live at `/etc/proxima-ai/secrets/telegram_bot_token` and `telegram_chat_id` (owner `proxima-admin`, group `proxima-monitor`, mode `0640`, so both the collector and the monitor can read them). Selectel filters the default `api.telegram.org` addresses, so `/etc/hosts` pins `api.telegram.org` to `149.154.167.220` (backup: `/etc/hosts.bak-2026-08-15`); if Telegram delivery ever fails again, re-test that pin first. The monitor sends sanitized capacity alerts and makes no resize or other paid change automatically. Business data remains blocked until the backup guardrail is ready; complete recovery is still Phase 7.
+```bash
+npm ci                       # PUPPETEER_SKIP_DOWNLOAD=1, иначе тянет Chromium
+uv sync --python 3.14 --project services/control-plane --extra test --locked
+make verify                  # единый гейт: типы, тесты, контракты, миграции, границы, секреты
+```
 
-For the one-off Day 1 API proof, run `sudo bash infra/bootstrap/prepare-day1-runtime.sh` after bootstrap. It creates an ignored path-only `.env`, generates PostgreSQL credentials under `/etc/proxima-ai/secrets`, installs the pinned `httpx` probe environment and starts the private PostgreSQL container. Install five split read-only personal tokens, one per category, at `/etc/proxima-ai/secrets/wb_statistics_token`, `wb_analytics_token`, `wb_finance_token`, `wb_prices_token` and `wb_promotion_token`, each granting only its category (`Статистика`, `Аналитика`, `Финансы`, `Цены и скидки`, `Продвижение`), owned by `proxima-admin` with mode `0600`; never put a token value in `.env`, shell history or Git. While the staging Analytics token remains read-write, append `--allow-analytics-read-write` to the probe command below (it widens only the Analytics category; Statistics and Finance stay READ-only). Then run `sudo -u proxima-admin /srv/proxima-ai/wb-probe-venv/bin/python tools/wb_api_probe.py --env-file .env --allow-analytics-read-write`. The command prints the real seven-day sales JSON and a safe receipt covering ping checks of all five WB API domains; exact responses are content-addressed outside Git under `/srv/proxima-ai/data/day1-wb-api`.
+`make verify` без локального PostgreSQL 16 печатает `pg-roundtrip: SKIP` и выходит с кодом 0 - миграции при этом не проверены. Подробный вход для нового разработчика: `docs/operations/dev-onboarding.md`. Словарь данных - `docs/state/DATA-DICTIONARY.md`, работа при сбоях - `docs/operations/incident-runbook.md`.
 
-The async Analytics CSV proof uses the same prepared runtime. Install the test cabinet's read-only personal Analytics token at `/etc/proxima-ai/secrets/wb_analytics_token`, owned by `proxima-admin` with mode `0600`; while the installed token is still read-write, append `--allow-analytics-read-write`. From `/srv/proxima-ai/repo`, run `sudo -u proxima-admin /srv/proxima-ai/wb-probe-venv/bin/python tools/wb_async_report.py --env-file .env --tenant-id amirova-test --period latest-closed-week --allow-analytics-read-write`. The collector reserves its client-generated UUID and daily quota slot in PostgreSQL before any create request, resumes that UUID after failure, treats `WAITING`, `PROCESSING` and `RETRY` as wait states, and stores every exact response as base64-backed JSONB before inspection. Its stdout contains only task metadata, SHA-256 and byte size; it never prints the raw report.
+## Как здесь работают
 
-Official WB intake, normalized facts, live scheduling, Data Health and the production Compose stack are implemented only in their owning roadmap phases. Torgstat live browser/session automation is not part of M1 and has no production entrypoint.
+Одна единица работы = одна ветка + один PR + один результат, который заказчик проверяет одним действием. Пишет либо конвейер ИИ-агентов (OpenHands под надзором), либо человек - по одним и тем же правилам: `make verify` зелёный, независимое ревью, мерж делает владелец проекта. Сервер только на чтение; деплой - по явной команде с записанным планом отката.
+
+Полный контракт работы - `AGENTS.md`; он же первый файл, который читает любой агент.

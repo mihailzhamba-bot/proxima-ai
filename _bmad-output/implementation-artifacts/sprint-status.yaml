@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 19:45
-last_updated: 09-02-2026
+last_updated: 09-03-2026 12:00
 project: PROXIMA AI
 project_key: NOKEY
 tracking_system: file-system
@@ -39,8 +39,8 @@ development_status:
   1-0-шаг-0-живые-проверки-артефакты-и-обвязка-claude: done
   1-1-wb-клиент-с-реестром-эндпоинтов-и-гейт-обкатка-конвейера-цел: done
   1-2-ts-pg-harness-в-make-verify: done
-  1-3-реестр-прогонов-роли-и-приёмник-артефактов: review
-  1-4-наблюдения-заказов-и-продаж: review
+  1-3-реестр-прогонов-роли-и-приёмник-артефактов: done
+  1-4-наблюдения-заказов-и-продаж: backlog
   1-5-бэкфилл-истории-из-артефактов-и-живого-хвоста: backlog
   1-6-дневной-ряд-кабинета-и-статус-данных: backlog
   1-7-откат-прогона: backlog
@@ -55,7 +55,7 @@ development_status:
 
   epic-2: in-progress
   2-1-принять-контракты-сигнала-из-ветки-pmm29: done
-  2-2-контракты-нормы-и-сводки-с-генерацией-типов-для-webapp: review
+  2-2-контракты-нормы-и-сводки-с-генерацией-типов-для-webapp: done
   2-3-норма-по-медиане-14-дней: backlog
   2-4-материализованная-сводка-дня: backlog
   2-5-brief-показывает-вчера-против-нормы: backlog
@@ -63,21 +63,32 @@ development_status:
   epic-2-retrospective: optional
 
   epic-3: backlog
-  3-0-шаг-0-глубина-async-csv-claude: backlog
+  3-0-шаг-0-глубина-async-csv-claude-октябрь-d23: backlog
   3-1-воронка-v3-ежедневно: backlog
-  3-2-загрузка-csv-как-прогон-реестра: backlog
-  3-3-промоушен-csv-в-наблюдения-и-факты: backlog
-  3-4-релиз-воронки-claude: backlog
+  3-2-загрузка-csv-как-прогон-реестра-октябрь-d23: backlog
+  3-3-промоушен-csv-в-наблюдения-и-факты-октябрь-d23: backlog
+  3-4-релиз-воронки-claude-октябрь-d23: backlog
   epic-3-retrospective: optional
 
   epic-4: backlog
+  4-0-измерение-sku-и-категории-для-аномалий: backlog
   4-1-детектор-нормы-на-реальных-фактах: backlog
   4-2-порог-тревоги-и-ранжирование-по-деньгам: backlog
   4-3-аномалии-на-brief-в-разрезе-sku-и-категории: backlog
+  4-4-порог-тревоги-как-значение-конфигурации-с-источником-и-датой: backlog
   epic-4-retrospective: optional
 
   epic-5: backlog
+  5-0-ad-записи-из-webapp: backlog
   5-1-реальный-llm-провайдер-диагноза-с-eval-гейтом: backlog
   5-2-диагноз-и-что-проверить-в-сводке: backlog
   5-3-запись-решения-и-сверка-ожидаемого-с-фактом: backlog
   epic-5-retrospective: optional
+
+  epic-6: backlog
+  6-1-теневой-пересчёт-сентябрьской-цепочки-и-первые-эталоны: backlog
+  6-2-гейт-сверки-с-эталоном-в-make-verify: backlog
+  6-3-инструмент-ретро-тревог-и-разметка-событий: backlog
+  6-4-доступ-аналитика-к-данным-и-пересчёт-на-живых-данных: backlog
+  6-5-пересчёт-октябрьского-контура: backlog
+  epic-6-retrospective: optional
