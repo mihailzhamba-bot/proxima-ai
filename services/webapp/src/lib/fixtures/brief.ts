@@ -8,6 +8,7 @@ import type {
   BriefData,
   BriefDigestItem,
   BriefSignal,
+  BriefSummary,
   BriefVariant,
 } from "@/lib/data/view-model";
 
@@ -15,6 +16,7 @@ export type {
   BriefData,
   BriefDigestItem,
   BriefSignal,
+  BriefSummary,
   BriefVariant,
 } from "@/lib/data/view-model";
 
@@ -155,6 +157,26 @@ const BASE_DIGEST: readonly BriefDigestItem[] = [
 
 function moscowDateIso(now: Date = new Date()): string {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Moscow" }).format(now);
+}
+
+/**
+ * Структурный образец сводки «вчера против нормы» (DEC-006: fixture-дни).
+ * Числа повторяют синтетику контракта brief (verify_brief): 27 против 34.5
+ * и 41 141 против 34 595 - с теми же знаками отклонений.
+ */
+export function getSummary(): BriefSummary {
+  return {
+    status: "ok",
+    briefDay: "2026-08-29",
+    orders: { actual: 27, norm: "34.50", deviationPct: -21.7 },
+    revenue: { actual: "41141.00", norm: "34595.00", deviationPct: 18.9 },
+    normProgress: { sampleDays: 14, windowDays: 14 },
+    dataStatus: {
+      lastFullDay: "2026-08-29",
+      collectedAt: "2026-08-30T02:41:12.000Z",
+      stale: false,
+    },
+  };
 }
 
 /** Геттер брифа: daily — редакционный день с critical-строками, quiet — «критичных нет» (R06.1). */

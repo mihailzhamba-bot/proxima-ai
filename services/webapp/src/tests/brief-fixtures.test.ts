@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { GYR_STATUSES, isGyrStatus } from "@/lib/gyr";
 import { RISK_LEVELS, type SignalHypothesis } from "@/lib/data/view-model";
-import { getBrief, type BriefSignal } from "@/lib/fixtures/brief";
+import { getBrief, getSummary, type BriefSignal } from "@/lib/fixtures/brief";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const MONEY_STRING = /^-?[0-9]+\.[0-9]{2}$/;
 
 function expectHypothesisGrounded(hypothesis: SignalHypothesis, signal: BriefSignal) {
   expect(hypothesis.id.startsWith("fixture-")).toBe(true);
@@ -103,5 +104,21 @@ describe("getBrief — шов провайдера брифа", () => {
     expect(quiet.signals).toHaveLength(0);
     expect(quiet.digest.length).toBeGreaterThanOrEqual(2);
     expect(quiet.attentionCount).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("getSummary — структурный образец сводки «вчера против нормы»", () => {
+  it("форма совпадает с проводным payload: деньги строками AD-10, отклонение числом", () => {
+    const summary = getSummary();
+    expect(summary.status).toBe("ok");
+    expect(summary.briefDay).toMatch(ISO_DATE);
+    expect(summary.orders?.actual).toBe(27);
+    expect(summary.orders?.norm).toMatch(MONEY_STRING);
+    expect(summary.orders?.deviationPct).toBe(-21.7);
+    expect(summary.revenue?.actual).toMatch(MONEY_STRING);
+    expect(summary.revenue?.norm).toMatch(MONEY_STRING);
+    expect(summary.revenue?.deviationPct).toBe(18.9);
+    expect(summary.normProgress).toEqual({ sampleDays: 14, windowDays: 14 });
+    expect(summary.dataStatus?.stale).toBe(false);
   });
 });

@@ -1,4 +1,10 @@
-import type { BriefData, BriefVariant, DataMode, Metric } from "@/lib/data/view-model";
+import type {
+  BriefData,
+  BriefSummary,
+  BriefVariant,
+  DataMode,
+  Metric,
+} from "@/lib/data/view-model";
 
 /*
  * Шов между UI и источником данных (PA-50, критерий приёмки №3).
@@ -8,6 +14,8 @@ import type { BriefData, BriefVariant, DataMode, Metric } from "@/lib/data/view-
 export type DataProvider = {
   readonly mode: DataMode;
   getBrief(variant: BriefVariant): Promise<BriefData>;
+  /** Сводка «вчера против нормы» (AD-9); fixtures-провайдер отдаёт структурный образец. */
+  getSummary(): Promise<BriefSummary>;
   getMetrics(): Promise<readonly Metric[]>;
 };
 
