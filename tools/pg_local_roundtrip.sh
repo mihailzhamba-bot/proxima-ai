@@ -155,7 +155,7 @@ if grep -q "skipped" "${NORM_LOG}"; then
 fi
 NORM_PASSED="$(sed -n 's/^\([0-9][0-9]*\) passed.*$/\1/p' "${NORM_LOG}" | tail -1)"
 if [[ "${NORM_PASSED:-0}" -lt 4 ]]; then
-  echo "pg-roundtrip: FAIL (norm db-tests reported ${NORM_PASSED:-0} passed, expected at least 4)" >&2
+  echo "pg-roundtrip: FAIL (norm db-tests reported ${NORM_PASSED:-0} passed, expected at least 5)" >&2
   cat "${NORM_LOG}" >&2
   exit 1
 fi
@@ -208,7 +208,7 @@ if grep -qE "^# skipped [1-9]" "${DELETE_LOG}"; then
   exit 1
 fi
 DELETE_PASSED="$(sed -n 's/^# pass \([0-9][0-9]*\)$/\1/p' "${DELETE_LOG}" | awk '{s+=$1} END {printf "%d", s}')"
-if [[ "${DELETE_PASSED}" -lt 4 ]]; then
+if [[ "${DELETE_PASSED}" -lt 5 ]]; then
   echo "pg-roundtrip: FAIL (delete-run db-tests reported ${DELETE_PASSED:-0} passed, expected at least 4)" >&2
   cat "${DELETE_LOG}" >&2
   exit 1
