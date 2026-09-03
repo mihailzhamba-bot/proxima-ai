@@ -21,7 +21,7 @@
 - Не редактировать `services/collector/src/contracts/*.ts` - менять `contracts/*.schema.json` и `make codegen`; ручные правки тихо перезаписываются.
 - Миграции `db/migrations/NNN_*.sql` не править и не переименовывать - только новая `NNN+1_<snake>.sql`, additive-only, `BEGIN…COMMIT`, self-checksum (`tools/verify_migrations.py`).
 - Заморожено до октября: auth-зона webapp (`src/lib/auth*`, `src/app/api/auth/`, `src/app/login/`) и verbatim-дерево `services/control-plane/src/proxima/`. `db/`, `infra/`, `Makefile`, `src/lib/db/` открыты для единиц M-01.
-- Чужой код - только через `provenance/import-inventory.json` + attestation (`make provenance`); Torgstat и браузерная автоматизация в runtime запрещены (`tools/verify_runtime_boundary.py`).
+- Чужой код - только через `provenance/import-inventory.json` + attestation (`make provenance`). Гейт байт-точен, но покрывает **только** рантайм-импорты в `services/collector/src/imported`; установленные библиотеки инструментов (BMAD, TEA, BAD) в рантайм не входят и записываются разделом `vendored_trees` того же файла со ссылкой на манифест источника; Torgstat и браузерная автоматизация в runtime запрещены (`tools/verify_runtime_boundary.py`).
 
 ## Where things are
 

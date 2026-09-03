@@ -10,6 +10,11 @@
 
 ## Active main task
 
+### BMAD + BAD с делегированием реализации в OpenHands — implementation done (2026-09-01)
+
+Ветка `feat/bad-pipeline` (замена `feat/bmad-bad`, PR #47 закрыт как перенесённый). TEA-модуль, цели `claude-code`/`openhands`, BAD 1.2.0, мост `tools/orchestrator/bad_dev_story.sh` + 12 офлайн-тестов, решение **D28** (записано как D25 01.09, переномеровано при мерже 03.09), гейт «BAD не стартует при активном Дирижёре». Живой прогон моста пройден 01.09. Через мост забраны и отревьюены stories 1.3 (PR #48) и 2.2 (PR #46) - обе в `main`. PR #43 (Дирижёр) смержен 03.09; вендоренные деревья записаны в `provenance/import-inventory.json`. Подробности - `docs/agent-system/HANDOFF.md`.
+
+
 ### PA-41 W1 + SCN-008 adapter slice — implementation done (2026-08-27)
 
 Главная цель: V1-сигнал. PA-41 W1 импортирован из source pin `53b7d604` строго по 18-файловому allowlist; destination SHA-256 совпадает 18/18. `pydantic==2.13.4` добавлен в control-plane и `uv.lock` обновлён.

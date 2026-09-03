@@ -32,6 +32,40 @@
 
 Ship M1 — a production-ready read-only data foundation for one pilot WB cabinet (Bogatova Belle Robe) with SHA-256 provenance from official WB evidence to PostgreSQL domain releases (Phase 2 of 8 in progress).
 
+## Последнее (01.09.2026): BMAD достроен, BAD установлен, шаг реализации ведёт в OpenHands
+
+Ветка `feat/bmad-bad` от `origin/feat/orchestrator-conductor`. Сделано:
+
+- BMAD 6.11.0 достроен: модуль **TEA v1.23.4**, цели установки `claude-code` (появился `.claude/skills/`, 59 скиллов) и `openhands`. Конфиги `_bmad/config.toml` + `_bmad/{core,bmm,tea}/config.yaml` целы, рендер скиллов проверен.
+- `gh` 2.45.0 из Ubuntu universe (стороннего репозитория не добавлял). **`gh auth login` за Mike** - токену нужен scope `workflow`, иначе повторится блокер 31.08.
+- BAD 1.2.0 в `.claude/skills/bad/` (`npx skills add … --copy`, запись источника - `skills-lock.json`). Настроен: `max_parallel_stories: 3`, `auto_pr_merge: false`, statusline- и activity-хуки в `.claude/settings.local.json` (поставлен `jq` - без него activity-хук молча ничего не пишет).
+- Шаг 3 BAD переписан на `tools/orchestrator/bad_dev_story.sh` (новый; `lib.sh` переиспользован, скрипты Дирижёра не тронуты). 12 офлайн-тестов - `tools/tests/test_bad_dev_story.py`.
+- Решение D25 в `DECISIONS.md`; правила сосуществования - `ORCHESTRATION.md`.
+
+**Живой прогон моста сделан 01.09.2026** (Дирижёр остановлен Mike, `gh auth login` выполнен, scopes включают `workflow`). Шесть попыток, каждая вскрыла свой дефект - все починены коммитом `6e12f25`; седьмая прошла целиком: 1 коммит, все гейты зелёные, коммит - потомок записанной базы. Артефакты убраны.
+
+## 02.09.2026: 1.3 и 2.2 забраны, четыре PR открыты
+
+Дирижёр остановлен Mike, `gh auth login` выполнен. Обе несобранные истории вынуты из песочниц OpenHands бандлами (push оттуда невозможен), прогнаны через гейты входящего диапазона и `make verify`, отревьюены по чек-листу `ORCHESTRATOR.md`:
+
+- **Story 1.3** → PR **#48**, ветка `feat/m01-story-1.3`, CI зелёный. Четыре фикс-раунда в живой conversation `07f644d6`, история не переписана. Раунд 1 — ревью: два CRITICAL (тихий 0-row UPDATE в `RunLedger`; GUC арендатора переживал прогон на `pg.Pool`) и MAJOR (гранты против AD-11). Раунды 2-4 — нашёл CI: `policy_count` off-by-one, `seedTenant` сеял в пустую `proxima_test` через sandbox-DSN, `assertTenantGucReset` ждал NULL вместо `''` после `RESET` кастомного GUC. Заодно в тест добавлена прямая проверка RLS: без GUC прогон не виден.
+- **Story 2.2** → PR **#46**, ветка `feat/m03-story-2.2-v2`. Из двух расходящихся реализаций Mike выбрал версию песочницы (новее, есть `msk_day` по AD-7 и `contracts.test.ts`). PR **#44** закрыт комментарием со ссылкой; ветка `feat/m03-story-2.2` в origin оставлена как единственная копия первой попытки. Блокеров нет; правка `tools/verify_contracts.py` разобрана построчно — добавляет `referencing.Registry`, ни одна проверка не ослаблена.
+- **Инфраструктура** → PR **#47** (`feat/bmad-bad` на базе `feat/orchestrator-conductor`) и **#43** (Дирижёр). Порядок мержа жёсткий: сначала #43, потом #47.
+
+`sprint-status.yaml`: 1.3 и 2.2 → `review` (по коммиту в своей ветке).
+
+**Почему BAD ещё не запущен.** Его Phase 0 первым делом делает `git switch main`, а на `main` нет ни моста, ни скилла BAD, ни TEA — всё это в #43 и #47. Плюс пока 1.3/2.2 не смержены, эпик 1 не пускает 1.4. То есть запуск упирается ровно в четыре мержа.
+
+**Свойство контура, вскрытое этими раундами.** В песочнице OpenHands нет PostgreSQL: `pg-roundtrip` там SKIP, `*.db.test.ts` не исполняются вообще. Значит любая история с db-тестом уезжает из песочницы непроверенной, и первым её реально запускает CI. Три из четырёх раундов по 1.3 — именно этот класс. Для таких историй закладывать 2-3 круга CI как норму, а не как отклонение.
+
+**Факт про CI, проверенный 02.09:** `pg-roundtrip` в CI **выполняется** — `pg_local_roundtrip.sh` находит PostgreSQL 16 на ubuntu-раннере, хотя `.github/workflows/verify.yml` его не ставит явно; `*.db.test.ts` там гоняются по-настоящему. Локально на этом VPS `initdb` нет, поэтому шаг даёт SKIP: **локальный зелёный ничего не доказывает про db-тесты**, ориентироваться надо на CI. Первое впечатление «тест зелёный только на маке» было ошибочным и снято комментарием в PR #48.
+
+**Требует внимания прямо сейчас:** Дирижёр остановлен, и два его воркера остались в состоянии `finished`, но **несобранными** - story 1.3 (`feat/m01-story-1.3`, conversation `07f644d6`) и story 2.2 (`feat/m03-story-2.2`, `d067112d`), деревья чистые. Их коммиты живут в workspace'ах OpenHands и не потеряются, но в `sprint-status.yaml` обе висят `in-progress`. Забрать их можно либо снова включив таймер Дирижёра (он соберёт их первым же тиком), либо руками через `collect_branch.sh`. **До сбора таймер лучше не включать одновременно с работой BAD.**
+
+**Осталось за Mike:** мерж четырёх PR по порядку — #43, #47, #48, #46.
+
+**Заметка:** строка в `bmad:context` блоке AGENTS.md про `DATABASE_URI` из `.env.task` устарела - требование снято коммитом `646ecb1`. Блок управляется скиллом `bmad-project-context`, руками не правил; поправить при следующем рефреше блока.
+
 ## Current task
 
 **PA-13 enforcement rollback оставлен по решению Mike 2026-08-25;** live Jira всё ещё «В работе» и требует ручной актуализации: исходная цель superseded, successor = READ-only Analytics token → повторный revert. **Plan 02-02 cancelled; выбран Phase 2 вариант A (close with descope), Jira-переход ещё не выполнен.**

@@ -60,6 +60,14 @@
 | NW-5 | Серверные чекауты без живого remote - `git pull` невозможен | сервер: `sudo git -C /srv/proxima-ai/repo remote -v \| wc -l; git -C ~/proxima-webapp-staging/repo remote -v \| head -1; ls /tmp/pa49-head.bundle` | `0` (HEAD `fd95fcb` 25.08); `origin /tmp/pa49-head.bundle`; файла нет (HEAD `bae976c` 26.08) |
 | NW-6 | Алиас `proxima-app` (LocalForward 3000) на маке неоднозначен | мак: `lsof -nP -iTCP:3000 -sTCP:LISTEN` | порт 3000 занят локальным `wildberries-mcp --http` (pid 842, IPv6). Форвард биндится на IPv4 и `curl localhost:3000/brief` даёт 200 с title Proxima, но зависит от порядка ::1/127.0.0.1. В регрессии - явный `-L 13000` (WT-19) |
 
+## Мост BAD → OpenHands (01.09.2026)
+
+- **WT-BAD-1.** `uv run --python 3.14 --project services/control-plane --extra test pytest tools/tests/test_bad_dev_story.py` - 12 тестов, офлайн: провижин из бандла, ноль remote'ов, гейты (база, контрактные файлы, ancestry, запрещённые пути, неизменность существующих миграций, секрет-скан, грязное дерево, ноль коммитов), коллизия workspace, валидация аргументов. Входит в `make verify` через `tools/tests`.
+- **WT-BAD-2.** Гейт Дирижёра: при активном `codex-conductor.timer` вызов `tools/orchestrator/bad_dev_story.sh --preflight-only` обязан вернуть exit 3. Проверено 01.09.2026.
+- **WT-BAD-3.** Живой круг проверен 01.09.2026 (Дирижёр остановлен, профиль `fedor`, ветка `chore/bad-smoke` от `81ddddf`): provision → dispatch → wait → collect → fetch, 1 коммит в `refs/openhands/bad-smoke/6/head`, все гейты `pass` кроме `stop_hook: unknown`. Прогон занял ~35 с. Артефакты и workspace удалены после проверки.
+- **Факт, найденный этим прогоном:** `.openhands/hooks.json` (стоп-гейт с `make verify`) к разговорам agent-server **не применяется** - `hook_config` равен `null` и у моста, и у воркеров Дирижёра. Красный `make verify` в песочнице никого не остановит; гейт обязан гоняться снаружи (Дирижёр - шаг 3 своего тика, BAD - шаг 4 в `SKILL.md`).
+- **Ловушка, стоившая двух попыток:** `working_dir` разговора обязан быть **корнем workspace**, а не чекаутом. Профиль `fedor` - это Codex поверх ACP; стартуя внутри чекаута, он читает проектный `.codex/config.toml` и падает с `ACPInitError ... invalid transport` (та же причина, что в «Known pitfalls» AGENTS.md от 27.08). Поэтому путь к репозиторию должен быть назван в самом промте.
+
 ## Не удалось проверить
 
 1. **Telegram-алерты** host-monitor и zone-check - нужен реальный инцидент (запись/останов сервиса запрещены). Проверено косвенно: `state.json` `active: {}`, лог zone-check `ok`.
