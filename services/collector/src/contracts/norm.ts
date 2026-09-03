@@ -19,7 +19,7 @@ export type NormV1 = {
    */
   sample_days: number;
   /**
-   * Money/amount as a string with exactly two decimal places (AD-10); mirrors the DB numeric(14,2) column. Median of the sampled days; for orders it may carry a fractional part (median of an even sample).
+   * Money/amount as a string with exactly two decimal places (AD-10); mirrors the DB numeric(14,2) column. Median of the sampled days. Calculation conventions (D27): with an even sample the median is the arithmetic mean of the two middle values, so for orders it may carry a fractional part; money rounds half-up to two decimals, and the whole computation runs in decimal arithmetic, never binary floating point.
    */
   value: string;
   status: 'ok' | 'insufficient';

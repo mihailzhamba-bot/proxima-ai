@@ -41,11 +41,11 @@ export interface BriefV1 {
   };
   deviation_pct: {
     /**
-     * (yesterday - norm) / norm * 100 for orders.
+     * (yesterday - norm) / norm * 100 for orders. Calculation conventions (D27): rounded to 0.1 of a percentage point exactly once, at the last step after the division; intermediates keep full precision.
      */
     orders: number;
     /**
-     * (yesterday - norm) / norm * 100 for revenue.
+     * (yesterday - norm) / norm * 100 for revenue. Calculation conventions (D27): rounded to 0.1 of a percentage point exactly once, at the last step after the division; intermediates keep full precision.
      */
     revenue: number;
   };

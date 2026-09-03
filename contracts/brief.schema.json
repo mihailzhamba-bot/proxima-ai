@@ -72,8 +72,8 @@
       "additionalProperties": false,
       "required": ["orders", "revenue"],
       "properties": {
-        "orders": { "type": "number", "description": "(yesterday - norm) / norm * 100 for orders." },
-        "revenue": { "type": "number", "description": "(yesterday - norm) / norm * 100 for revenue." }
+        "orders": { "type": "number", "description": "(yesterday - norm) / norm * 100 for orders. Calculation conventions (D27): rounded to 0.1 of a percentage point exactly once, at the last step after the division; intermediates keep full precision." },
+        "revenue": { "type": "number", "description": "(yesterday - norm) / norm * 100 for revenue. Calculation conventions (D27): rounded to 0.1 of a percentage point exactly once, at the last step after the division; intermediates keep full precision." }
       }
     },
     "signals": {
