@@ -129,20 +129,41 @@ def closure_run_ids(inputs: dict[uuid.UUID, list[uuid.UUID]], root: uuid.UUID) -
 
 
 def fetch_inputs(connection: psycopg.Connection, tenant_id: str, root: uuid.UUID) -> dict[uuid.UUID, list[uuid.UUID]]:
+    """Edges of the closure around `root`, expanded until the frontier is empty.
+
+    One query around the root is not enough: it returns a single hop, and the
+    closure is transitive by definition (AD-3). In the daily chain
+    `collect -> norm -> brief` the edges are (norm, collect) and (brief, norm),
+    so a one-hop fetch around `collect` never sees `brief` - and because
+    `collector_run_inputs.input_run_id` is ON DELETE RESTRICT, the deletion then
+    fails on a live referencing row instead of quietly dropping fewer rows.
+
+    So the frontier is expanded instead: every newly discovered run is queried in
+    the next round, until a round adds nothing. Bounded by the size of the actual
+    closure, not by the size of the table.
+    """
     if tenant_id is None:
         return {}
-    rows = connection.execute(
-        """
-        SELECT i.run_id, i.input_run_id
-        FROM collector_run_inputs i
-        JOIN collector_runs r ON r.run_id = i.run_id AND r.tenant_id = i.tenant_id
-        WHERE i.tenant_id = %s AND (i.run_id = %s OR i.input_run_id = %s)
-        """,
-        (tenant_id, root, root),
-    ).fetchall()
     inputs: dict[uuid.UUID, list[uuid.UUID]] = {}
-    for row in rows:
-        inputs.setdefault(row[0], []).append(row[1])
+    seen: set[uuid.UUID] = set()
+    frontier: set[uuid.UUID] = {root}
+    while frontier:
+        rows = connection.execute(
+            """
+            SELECT i.run_id, i.input_run_id
+            FROM collector_run_inputs i
+            JOIN collector_runs r ON r.run_id = i.run_id AND r.tenant_id = i.tenant_id
+            WHERE i.tenant_id = %s AND (i.run_id = ANY(%s) OR i.input_run_id = ANY(%s))
+            """,
+            (tenant_id, list(frontier), list(frontier)),
+        ).fetchall()
+        seen |= frontier
+        discovered: set[uuid.UUID] = set()
+        for run_id, input_run_id in rows:
+            if input_run_id not in inputs.setdefault(run_id, []):
+                inputs[run_id].append(input_run_id)
+            discovered.update({run_id, input_run_id})
+        frontier = discovered - seen
     return inputs
 
 

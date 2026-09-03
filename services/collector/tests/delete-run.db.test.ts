@@ -146,6 +146,31 @@ async function runVisible(dsn: string, runId: string, withGuc: boolean): Promise
   }
 }
 
+test('delete_run: closure from the leaf ancestor reaches the far end of the chain', { skip }, async () => {
+  // The middle node was the only case exercised, and it hid a real defect: the
+  // closure query fetched a single hop, so deleting the input at the end of the
+  // chain never saw the run two steps above it. That is not a smaller deletion -
+  // collector_run_inputs.input_run_id is ON DELETE RESTRICT, so the DELETE fails
+  // on a live referencing row. The daily collect -> norm -> brief chain has
+  // exactly this shape, and collect is the run an operator actually removes.
+  const graph = await seedGraph();
+  try {
+    const dry = await runDeleteTool({ tenant: tenantId, run: graph.collect.runId, dryRun: true });
+    assert.equal(dry.status, 0, `dry-run failed: ${dry.stderr}`);
+    const counts = JSON.parse(dry.stdout.replace(/^delete_run: dry-run closure /, ''));
+    assert.deepEqual(counts, { runs: 3, artifacts: 2, run_inputs: 2 }, 'the whole chain, not just the first hop');
+
+    const done = await runDeleteTool({ tenant: tenantId, run: graph.collect.runId });
+    assert.equal(done.status, 0, `deletion failed: ${done.stderr}`);
+    for (const run of [graph.collect, graph.backfill, graph.norm]) {
+      assert.equal(await runVisible(collectorDsn, run.runId, true), 0, `${run.kind} run must be gone`);
+    }
+    assert.equal(await runVisible(collectorDsn, graph.unrelated.runId, true), 1, 'an unrelated run must survive');
+  } finally {
+    await cleanupRuns([graph.collect.runId, graph.backfill.runId, graph.norm.runId, graph.unrelated.runId]);
+  }
+});
+
 test('delete_run: closure', { skip }, async () => {
   const graph = await seedGraph();
   try {
