@@ -155,6 +155,29 @@ if [[ "${NORM_PASSED:-0}" -lt 4 ]]; then
 fi
 echo "norm: median window, insufficient 9/14"
 
+# Brief db-tests (Story 2.4) share the norm DSN and add the webapp DSN for the
+# RLS matrix; the same no-silent-skip rule applies.
+BRIEF_LOG="${WORK}/brief-db-tests.log"
+echo "pg-roundtrip: brief db-tests (PROXIMA_TEST_DSN_NORM, PROXIMA_TEST_DSN_WEBAPP)"
+if ! (cd "${REPO_ROOT}" && uv run --python 3.14 --project services/control-plane --extra test \
+      pytest services/control-plane/tests/brief/test_brief_db.py -q) >"${BRIEF_LOG}" 2>&1; then
+  echo "pg-roundtrip: FAIL (brief db-tests)" >&2
+  cat "${BRIEF_LOG}" >&2
+  exit 1
+fi
+if grep -q "skipped" "${BRIEF_LOG}"; then
+  echo "pg-roundtrip: FAIL (brief db-tests skipped while a DSN was available)" >&2
+  cat "${BRIEF_LOG}" >&2
+  exit 1
+fi
+BRIEF_PASSED="$(sed -n 's/^\([0-9][0-9]*\) passed.*$/\1/p' "${BRIEF_LOG}" | tail -1)"
+if [[ "${BRIEF_PASSED:-0}" -lt 7 ]]; then
+  echo "pg-roundtrip: FAIL (brief db-tests reported ${BRIEF_PASSED:-0} passed, expected at least 7)" >&2
+  cat "${BRIEF_LOG}" >&2
+  exit 1
+fi
+echo "brief: ok, insufficient, blocked, brief_current, webapp RLS"
+
 # Story 1.7: delete_run closure over collector_run_inputs plus the AD-11/AD-12
 # RLS matrix, both through the real janitor LOGIN role. The db-test shells out
 # to tools/delete_run.py via the project interpreter (psycopg lives there).

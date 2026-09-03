@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "evaluation_day": "2026-08-29",
+  "data_status": {
+    "last_full_day": "2026-08-29",
+    "collected_at": "2026-08-30T02:41:12Z",
+    "stale": false
+  },
+  "actual": null,
+  "norm": null,
+  "deviation_pct": null,
+  "signals": [],
+  "source_refs": [
+    "table://fact_cabinet_daily/2026-08-29",
+    "table://norm_daily/2026-08-29"
+  ],
+  "reason": "norm version missing for evaluation_day"
+}

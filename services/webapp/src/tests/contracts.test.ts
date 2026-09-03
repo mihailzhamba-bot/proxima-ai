@@ -51,9 +51,13 @@ describe("contract: brief", () => {
   it("synthetic example satisfies the generated type", () => {
     const brief = readExample("brief.synthetic.json") as BriefV1;
     expect(brief.evaluation_day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(brief.actual.revenue).toMatch(MONEY_STRING);
-    expect(brief.norm.revenue).toMatch(MONEY_STRING);
-    expect(brief.norm.window_days).toBe(14);
+    // norm and actual are nullable in the contract because a blocked or
+    // insufficient day genuinely has none; the ok example must have both.
+    expect(brief.actual).not.toBeNull();
+    expect(brief.norm).not.toBeNull();
+    expect(brief.actual!.revenue).toMatch(MONEY_STRING);
+    expect(brief.norm!.revenue).toMatch(MONEY_STRING);
+    expect(brief.norm!.window_days).toBe(14);
     expect(brief.signals.length).toBe(1);
     expect(brief.signals[0]?.rub_assessment?.value_rub).toMatch(MONEY_STRING);
     expect(brief.source_refs.length).toBeGreaterThanOrEqual(1);
@@ -61,9 +65,9 @@ describe("contract: brief", () => {
 
   it("money travels as strings with two decimals everywhere (AD-10)", () => {
     const brief = readExample("brief.synthetic.json") as BriefV1;
-    expect(typeof brief.actual.revenue).toBe("string");
-    expect(typeof brief.norm.revenue).toBe("string");
-    expect(typeof brief.norm.orders).toBe("string");
+    expect(typeof brief.actual!.revenue).toBe("string");
+    expect(typeof brief.norm!.revenue).toBe("string");
+    expect(typeof brief.norm!.orders).toBe("string");
   });
 
   it("is the wire shape the postgres provider will decode (Story 2.4)", () => {

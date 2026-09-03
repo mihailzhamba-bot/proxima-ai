@@ -15,5 +15,5 @@ CREATE POLICY tenant_isolation_janitor ON business_signal_runs FOR ALL TO proxim
 
 -- checksum-policy: normalized-self-v1
 INSERT INTO schema_migrations (version, name, sha256)
-VALUES (15, 'delete_run_support', '52af2ee11403f2d61c1c082b764ae4fc459670f30cc2aaa7263113a1993ef8ba');
+VALUES (16, 'delete_run_support', '1f5573a66f5e0f344c8c4ab63bb78c3a40ac7457dbf14537749fa8ab531973f5');
 COMMIT;
