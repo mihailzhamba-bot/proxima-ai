@@ -194,7 +194,11 @@ def test_insufficient_norm_status_copies_into_brief_status(seeded: str) -> None:
         connection.execute("SELECT set_config('proxima.tenant_id', %s, false)", (TENANT,))
         result = _payload_with_status(connection)
     assert result["status"] == "insufficient"
-    assert result["payload"]["sample_days"] == 9
+    # Форма payload не зависит от статуса (D30): норма отдаётся как есть,
+    # отклонение против неполного окна числом не называется.
+    assert result["payload"]["norm"]["sample_days"] == 9
+    assert result["payload"]["deviation_pct"] is None
+    assert result["payload"]["actual"]["orders"] == ACTUAL_ORDERS
 
 
 def test_missing_norm_versions_block_the_day(seeded: str) -> None:
@@ -203,6 +207,10 @@ def test_missing_norm_versions_block_the_day(seeded: str) -> None:
         connection.execute("SELECT set_config('proxima.tenant_id', %s, false)", (TENANT,))
         result = _payload_with_status(connection)
     assert result["status"] == "blocked"
+    # Отсутствие записано явно, а не пропущенным ключом (D30).
+    assert result["payload"]["norm"] is None
+    assert result["payload"]["deviation_pct"] is None
+    assert result["payload"]["reason"]
 
 
 def test_webapp_role_sees_brief_current_only_with_tenant_guc(seeded: str) -> None:
