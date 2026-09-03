@@ -28,6 +28,32 @@ test('cabinet-daily: versions every artifact day, S1/S2 sums through backfill', 
     assert.equal((await h.admin.query('SELECT stale FROM data_status_current WHERE tenant_id=$1', [tenantId])).rows[0]?.stale, false, 'fresh backfill complete through yesterday is not stale');
     await h.admin.query("UPDATE collector_runs SET finished_at=CURRENT_TIMESTAMP - interval '25 hours' WHERE run_id=$1", [result.runId]);
     assert.equal((await h.admin.query('SELECT stale FROM data_status_current WHERE tenant_id=$1', [tenantId])).rows[0]?.stale, true, 'a backfill older than 24 hours is stale');
+    // AD-7: stale has two independent causes. The second one - a fresh collection
+    // that nonetheless stops short of yesterday - is the reason the OR exists, so
+    // it needs its own case: a fresh finished_at must not hide an old last_full_day.
+    await h.admin.query('UPDATE collector_runs SET finished_at=CURRENT_TIMESTAMP WHERE run_id=$1', [result.runId]);
+    await h.admin.query('UPDATE fact_cabinet_daily SET calendar_day=$2::date - 3 WHERE run_id=$1 AND calendar_day=$2', [result.runId, yesterday]);
+    const behind = (await h.admin.query('SELECT last_full_day::text AS day, stale FROM data_status_current WHERE tenant_id=$1', [tenantId])).rows[0];
+    assert.equal(behind?.stale, true, 'a fresh run that stops short of yesterday is still stale');
+    assert.equal(behind?.day, (await h.admin.query<{ d: string }>('SELECT ($1::date - 3)::text AS d', [yesterday])).rows[0]?.d, 'last_full_day is the newest versioned day, not the run time');
+  } finally { await h.cleanup(); }
+});
+
+test('cabinet-daily: a second run records the first run as its input (AD-3 closure)', { skip }, async () => {
+  // The transitive closure tools/delete_run.py walks is built from collector_run_inputs.
+  // A single backfill owns its own observations, so the link only appears once a second
+  // run aggregates versions someone else collected - that is the case worth pinning.
+  const h = await openBackfillHarness(collectorDsn, postgresDsn);
+  try {
+    const first = await h.run();
+    const second = await h.run();
+    assert.notEqual(second.runId, first.runId);
+    const inputs = await h.admin.query<{ input_run_id: string }>(
+      'SELECT input_run_id::text FROM collector_run_inputs WHERE tenant_id=$1 AND run_id=$2',
+      [tenantId, second.runId],
+    );
+    assert.deepEqual(inputs.rows.map((row) => row.input_run_id), [first.runId], 'the replay names the run whose observations it rolled up');
+    assert.equal((await h.admin.query('SELECT count(*)::int AS n FROM collector_run_inputs WHERE run_id=$1', [first.runId])).rows[0]?.n, 0);
   } finally { await h.cleanup(); }
 });
 
