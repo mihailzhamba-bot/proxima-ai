@@ -14,6 +14,9 @@ export interface BriefV1 {
     collected_at: string;
     stale: boolean;
   };
+  /**
+   * Null when the evaluated day has no fact version at all (status blocked). Absence is written as null, never as a missing key, for the same reason as norm and deviation_pct.
+   */
   actual: {
     /**
      * Yesterday's cabinet orders (count).
@@ -23,7 +26,10 @@ export interface BriefV1 {
      * Money as a string with exactly two decimal places (AD-10).
      */
     revenue: string;
-  };
+  } | null;
+  /**
+   * Null when the day has no usable norm: no version for evaluation_day (status blocked) or an incomplete window (status insufficient). Absence is written as null, never as a missing key - a reader must be able to tell 'not computed' from 'not looked at'. The trustworthiness of a non-null value is carried by brief_daily.status, not by the payload.
+   */
   norm: {
     /**
      * Median of orders as a string with two decimals - mirrors norm_daily.value numeric(14,2) (AD-8/AD-10); fractional part is legitimate for an even sample.
@@ -38,7 +44,10 @@ export interface BriefV1 {
      */
     window_days: 14;
     sample_days: number;
-  };
+  } | null;
+  /**
+   * Null when the day has no usable norm: no version for evaluation_day (status blocked) or an incomplete window (status insufficient). Absence is written as null, never as a missing key - a reader must be able to tell 'not computed' from 'not looked at'. The trustworthiness of a non-null value is carried by brief_daily.status, not by the payload.
+   */
   deviation_pct: {
     /**
      * (yesterday - norm) / norm * 100 for orders. Calculation conventions (D27): rounded to 0.1 of a percentage point exactly once, at the last step after the division; intermediates keep full precision.
@@ -48,7 +57,7 @@ export interface BriefV1 {
      * (yesterday - norm) / norm * 100 for revenue. Calculation conventions (D27): rounded to 0.1 of a percentage point exactly once, at the last step after the division; intermediates keep full precision.
      */
     revenue: number;
-  };
+  } | null;
   /**
    * Anomalies ranked by money (AD-10 signal v1); empty until M-04 (AD-9).
    */
@@ -59,6 +68,10 @@ export interface BriefV1 {
    * @minItems 1
    */
   source_refs: [string, ...string[]];
+  /**
+   * Why the day carries no norm. Present only when the brief is blocked.
+   */
+  reason?: string;
 }
 export interface SignalV1 {
   schema_version: 1;

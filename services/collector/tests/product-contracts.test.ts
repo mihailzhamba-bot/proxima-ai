@@ -219,6 +219,10 @@ test('validates the brief payload and composes signals by signal v1 $ref', async
 
   assert.equal(validate(brief), true);
   assert.equal(brief.evaluation_day, '2026-08-29');
+  // The ok fixture must carry both; norm/actual are nullable only for the
+  // insufficient and blocked days, and the type now says so.
+  assert.ok(brief.norm);
+  assert.ok(brief.actual);
   assert.equal(brief.norm.window_days, 14);
   assert.equal(brief.signals.length, 1);
   assert.equal(brief.signals[0]?.signal_id, 'fixture-signal-001');
