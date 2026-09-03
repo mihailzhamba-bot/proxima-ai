@@ -17,6 +17,12 @@ PGBIN=""
 for candidate in /opt/homebrew/opt/postgresql@16/bin /usr/lib/postgresql/16/bin /usr/local/opt/postgresql@16/bin "$(dirname "$(command -v initdb 2>/dev/null || true)")"; do
   if [[ -x "${candidate}/initdb" ]] && "${candidate}/initdb" --version 2>/dev/null | grep -qE 'PostgreSQL[)] 16\.'; then PGBIN="${candidate}"; break; fi
 done
+if [[ -z "${PGBIN}" && -n "${PROXIMA_PG16_BIN:-}" && -x "${PROXIMA_PG16_BIN}/initdb" ]] \
+   && "${PROXIMA_PG16_BIN}/initdb" --version 2>/dev/null | grep -qE 'PostgreSQL[)] 16\.'; then
+  # Opt-in escape hatch for environments whose PostgreSQL 16 tools live
+  # outside the searched paths (e.g. container toolchains on PATH shims).
+  PGBIN="${PROXIMA_PG16_BIN}"
+fi
 if [[ -z "${PGBIN}" ]]; then
   echo "pg-roundtrip: SKIP (no local initdb found; disposable PostgreSQL 16 unavailable)"
   exit 0
@@ -111,6 +117,12 @@ export PROXIMA_TEST_DSN_SANDBOX="${DSN_SANDBOX}"
 
 # Only *.db.test.ts run here; the plain `make test` glob excludes them.
 DB_LOG="${WORK}/collector-db-tests.log"
+# tools/delete_run.py needs psycopg, and delete-run.db.test.ts shells out to it.
+# That test matches the generic tests/*.db.test.ts glob as well as its own step,
+# so the interpreter is resolved once here and exported for both - a bare python3
+# has no psycopg and the test would fail in the glob while passing in its step.
+PROJECT_PY="$(cd "${REPO_ROOT}" && uv run --python 3.14 --project services/control-plane --extra test python -c 'import sys; print(sys.executable)')"
+export PROXIMA_TEST_PYTHON="${PROJECT_PY}"
 echo "pg-roundtrip: collector db-tests (*.db.test.ts, PROXIMA_TEST_DSN_<ROLE>)"
 if ! (cd "${REPO_ROOT}" && npm --workspace @proxima/collector run test:db) >"${DB_LOG}" 2>&1; then
   echo "pg-roundtrip: FAIL (collector db-tests)" >&2
@@ -143,7 +155,7 @@ if grep -q "skipped" "${NORM_LOG}"; then
 fi
 NORM_PASSED="$(sed -n 's/^\([0-9][0-9]*\) passed.*$/\1/p' "${NORM_LOG}" | tail -1)"
 if [[ "${NORM_PASSED:-0}" -lt 4 ]]; then
-  echo "pg-roundtrip: FAIL (norm db-tests reported ${NORM_PASSED:-0} passed, expected at least 4)" >&2
+  echo "pg-roundtrip: FAIL (norm db-tests reported ${NORM_PASSED:-0} passed, expected at least 5)" >&2
   cat "${NORM_LOG}" >&2
   exit 1
 fi
@@ -171,5 +183,36 @@ if [[ "${BRIEF_PASSED:-0}" -lt 7 ]]; then
   exit 1
 fi
 echo "brief: ok, insufficient, blocked, brief_current, webapp RLS"
+
+# Story 1.7: delete_run closure over collector_run_inputs plus the AD-11/AD-12
+# RLS matrix, both through the real janitor LOGIN role. The db-test shells out
+# to tools/delete_run.py via the project interpreter (psycopg lives there).
+echo "pg-roundtrip: delete-run db-tests (closure, rls matrix; PROXIMA_TEST_DSN_JANITOR)"
+DELETE_LOG="${WORK}/delete-run-db-tests.log"
+if ! (cd "${REPO_ROOT}" && \
+      npm --workspace @proxima/collector exec -- tsx --test --test-concurrency=1 tests/delete-run.db.test.ts) >"${DELETE_LOG}" 2>&1; then
+  echo "pg-roundtrip: FAIL (delete-run db-tests)" >&2
+  cat "${DELETE_LOG}" >&2
+  exit 1
+fi
+if grep -q "^# fail [1-9]" "${DELETE_LOG}" || grep -q "^not ok" "${DELETE_LOG}"; then
+  echo "pg-roundtrip: FAIL (delete-run db-tests reported failures)" >&2
+  cat "${DELETE_LOG}" >&2
+  exit 1
+fi
+# node:test always prints a "# skipped N" summary line, so the guard has to look
+# at the count: matching the word alone fires on "# skipped 0" and fails every run.
+if grep -qE "^# skipped [1-9]" "${DELETE_LOG}"; then
+  echo "pg-roundtrip: FAIL (delete-run db-tests skipped while a DSN was available)" >&2
+  cat "${DELETE_LOG}" >&2
+  exit 1
+fi
+DELETE_PASSED="$(sed -n 's/^# pass \([0-9][0-9]*\)$/\1/p' "${DELETE_LOG}" | awk '{s+=$1} END {printf "%d", s}')"
+if [[ "${DELETE_PASSED}" -lt 5 ]]; then
+  echo "pg-roundtrip: FAIL (delete-run db-tests reported ${DELETE_PASSED:-0} passed, expected at least 4)" >&2
+  cat "${DELETE_LOG}" >&2
+  exit 1
+fi
+echo "delete_run: closure (${DELETE_PASSED} tests incl. rls: matrix)"
 
 echo "pg-roundtrip: PASS"
