@@ -2,6 +2,14 @@
 
 > Snapshot of task state in this repo. Full backlog lives in Jira project PA (zhamba.atlassian.net); this file mirrors only what an agent needs to resume work.
 
+## Snapshot 03.09.2026 (вечер)
+
+Конвейер сведён в `main`: Дирижёр, мост в OpenHands, модули BMAD TEA и BAD. Шесть PR смержены за день, пять открытых остались от эпохи до 30.08 (#34, #32, #31, #26, #3) и ждут решения Mike: закрыть или доработать.
+
+Очередь готова к запуску, три слота: 1.5 (бэкфилл), 1.7 (откат прогона), 2.3 (норма). Вне слотов - Владислав на Story 6.1 и `bmad-architecture` на PA-64 (CR к AD-6, держит мерж 3.1).
+
+BLOCKED: 3.1 держит ротация токена (OQ-10) и PA-64; 1.14 и 2.6 держат даты деплоя в календаре Mike; 6.4 держит отсутствие роли аналитика в боевой базе; запись в Jira держит approve таблиц.
+
 ## Snapshot 02.09.2026 (вечер)
 
 - 02.09.2026 PRD v2.2 + дельта epics + Jira sync-brief + роль Владислава: DONE (John); ждёт Mike - даты деплоя, approve брифа, доступы Владиславу, команда на коммит (см. HANDOFF 02.09 вечер).
