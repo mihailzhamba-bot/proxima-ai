@@ -30,6 +30,13 @@ def test_window_crosses_a_month_boundary_without_arithmetic_of_its_own() -> None
     assert window[-1] == date(2026, 2, 28)
 
 
+def test_window_crosses_a_year_boundary() -> None:
+    window = norm_window(date(2026, 1, 1))
+    assert window[0] == date(2025, 12, 18)
+    assert window[-1] == date(2025, 12, 31)
+    assert len(window) == WINDOW_DAYS
+
+
 def test_median_of_an_odd_sample_is_the_middle_value() -> None:
     assert median([Decimal(3), Decimal(1), Decimal(2)]) == Decimal(2)
 
