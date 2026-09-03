@@ -19,6 +19,8 @@ export interface WbArtifactSinkInput {
   readonly body: Buffer;
   readonly retrievedAt: Date;
   readonly attempt: number;
+  /** Unique, one-based position of this response in the run's endpoint stream. */
+  readonly sequence: number;
 }
 
 /**
