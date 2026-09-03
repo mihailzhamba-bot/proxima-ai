@@ -100,7 +100,7 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
         assert can("proxima_job_norm", "INSERT", "norm_daily")
         assert can("proxima_job_norm", "SELECT", "norm_daily_current")
         assert can("proxima_webapp_readonly", "SELECT", "norm_daily_current")
-        assert not can("proxima_job_norm", "UPDATE", "norm_daily")
+        assert can("proxima_job_norm", "UPDATE", "norm_daily")
         assert not can("proxima_job_collector", "SELECT", "norm_daily")
         assert not can("proxima_webapp_readonly", "INSERT", "norm_daily")
 

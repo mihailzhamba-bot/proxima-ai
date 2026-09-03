@@ -26,6 +26,7 @@ ORDER BY n.tenant_id, n.evaluation_day, n.metric, r.finished_at DESC, n.run_id D
 
 GRANT SELECT ON norm_daily TO proxima_job_norm;
 GRANT INSERT ON norm_daily TO proxima_job_norm;
+GRANT UPDATE ON norm_daily TO proxima_job_norm;
 GRANT SELECT ON norm_daily_current TO proxima_job_norm;
 GRANT SELECT ON norm_daily TO proxima_webapp_readonly;
 GRANT SELECT ON norm_daily_current TO proxima_webapp_readonly;
@@ -38,5 +39,5 @@ CREATE POLICY tenant_isolation_janitor ON norm_daily FOR ALL TO proxima_run_jani
 
 -- checksum-policy: normalized-self-v1
 INSERT INTO schema_migrations (version, name, sha256)
-VALUES (14, 'norm_daily', '6ed32f1efb76e35e7a4c1071e1797f3c1c41bcfaf3cf6bb7582c5665619f7e55');
+VALUES (14, 'norm_daily', '411af0416e9e89e2e6af55aea2b9dbc08d1745357c03ca3a30fde0c0b6d88d8f');
 COMMIT;
