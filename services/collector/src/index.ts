@@ -51,7 +51,10 @@ export type { ArtifactSink, WbArtifact, WbArtifactSinkInput } from './wb/artifac
 export { WbArtifactSink } from './wb/recording-client.js';
 export { RunLedger, RunLedgerError } from './wb/run-ledger.js';
 export type { CollectorRunKind, CollectorRunStatus, RunLedgerInput } from './wb/run-ledger.js';
-export { logRunEvent } from './wb/log.js';
+export { logRunEvent, logRunStep } from './wb/log.js';
+export type { RunStepEvent } from './wb/log.js';
+export { insertObservations, toOrderObservations, toSaleObservations } from './wb/observations.js';
+export type { InsertObservationsResult, ObservationSet, WbObservation } from './wb/observations.js';
 export {
   MAX_RETRIES_AFTER_RATE_LIMIT,
   RateBudget,
@@ -62,7 +65,7 @@ export {
 } from './wb/client.js';
 export type { Clock, WbClientOptions, WbResponseRecord } from './wb/client.js';
 export { FixtureTransport } from './wb/fixture-transport.js';
-export { mskDay, mskToday } from './wb/msk-day.js';
+export { mskDay, mskInstant, mskToday } from './wb/msk-day.js';
 export { WB_ENDPOINTS, WB_ENDPOINT_LIST, endpointLimit, wbEndpoint } from './wb/registry.js';
 export type { WbEndpointId, WbEndpointSpec, WbTokenCategory } from './wb/registry.js';
 export { buildUrl, networkTransport, retryDelayMilliseconds } from './wb/transport.js';

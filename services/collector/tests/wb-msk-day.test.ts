@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { mskDay, mskToday } from '../src/wb/msk-day.js';
+import { mskDay, mskInstant, mskToday } from '../src/wb/msk-day.js';
 
 function withTimeZone<T>(zone: string | undefined, run: () => T): T {
   const previous = process.env.TZ;
@@ -63,4 +63,15 @@ test('mskDay agrees with Intl for the Moscow zone', () => {
   const instant = new Date('2026-08-29T21:30:00Z');
   const expected = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', dateStyle: 'short' }).format(instant);
   assert.equal(mskDay(instant), expected);
+});
+
+test('mskInstant: zoneless WB text becomes a fixed +03:00 instant, anything else is rejected', () => {
+  assert.equal(mskInstant('2026-08-17T06:48:49'), '2026-08-17T06:48:49+03:00');
+  assert.equal(mskInstant('2026-08-17T06:48:49.5'), '2026-08-17T06:48:49.5+03:00');
+  assert.equal(Date.parse(mskInstant('2026-08-29T23:30:00')), Date.parse('2026-08-29T20:30:00Z'));
+  assert.equal(mskDay(mskInstant('2026-08-29T23:30:00')), '2026-08-29');
+  assert.throws(() => mskInstant('2026-08-17T06:48:49Z'), RangeError);
+  assert.throws(() => mskInstant('2026-08-17T06:48:49+03:00'), RangeError);
+  assert.throws(() => mskInstant('2026-08-17'), RangeError);
+  assert.throws(() => mskInstant(''), RangeError);
 });
