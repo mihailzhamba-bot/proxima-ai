@@ -16,7 +16,7 @@ export class WbArtifactSink implements ArtifactSink {
     const endpointPath = new URL(input.url).pathname;
     const source = `official_wb_${wbEndpoint(input.endpointId).token}` as SignalSource;
     const raw = await this.rawStore.persist({
-      runId: this.runId, source, stage: input.endpointId, pageSequence: input.attempt + 1,
+      runId: this.runId, source, stage: input.endpointId, pageSequence: input.sequence,
       endpointPath, httpStatus: input.httpStatus, retrievedAt: input.retrievedAt, responseHeaders, body: input.body,
     });
     const client = await this.pool.connect();
@@ -24,7 +24,7 @@ export class WbArtifactSink implements ArtifactSink {
       await client.query("SELECT set_config('proxima.tenant_id', $1, false)", [this.tenantId]);
       await client.query(
         'INSERT INTO wb_raw_artifacts (artifact_id, tenant_id, run_id, endpoint_id, endpoint_path, http_status, response_headers, content_sha256, content_size, object_locator, manifest_sha256, retrieved_at, attempt) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)',
-        [randomUUID(), this.tenantId, this.runId, input.endpointId, endpointPath, input.httpStatus, JSON.stringify(responseHeaders), raw.contentSha256, raw.contentSize, raw.objectLocator, raw.manifestSha256, input.retrievedAt, input.attempt + 1],
+        [randomUUID(), this.tenantId, this.runId, input.endpointId, endpointPath, input.httpStatus, JSON.stringify(responseHeaders), raw.contentSha256, raw.contentSize, raw.objectLocator, raw.manifestSha256, input.retrievedAt, input.sequence],
       );
     } finally {
       try {

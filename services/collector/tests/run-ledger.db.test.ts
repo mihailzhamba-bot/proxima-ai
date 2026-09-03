@@ -47,8 +47,8 @@ test('run-ledger: running/succeeded/failed', { skip: ready ? false : 'PROXIMA_TE
 
     const rawStore = await BusinessSignalRawStore.open(rawRoot, process.cwd());
     const sink = new WbArtifactSink(tenantId, succeeded, rawStore, pool);
-    const first = await sink.store({ endpointId: 'statistics.orders', url: 'https://statistics-api.wildberries.ru/api/v1/supplier/orders', httpStatus: 200, responseHeaders: { 'content-type': 'application/json' }, body: Buffer.from('[]'), retrievedAt: new Date('2026-09-01T00:00:00.000Z'), attempt: 0 });
-    const second = await sink.store({ endpointId: 'statistics.sales', url: 'https://statistics-api.wildberries.ru/api/v1/supplier/sales', httpStatus: 500, responseHeaders: {}, body: Buffer.from('{"error":true}'), retrievedAt: new Date('2026-09-01T00:00:01.000Z'), attempt: 0 });
+    const first = await sink.store({ endpointId: 'statistics.orders', url: 'https://statistics-api.wildberries.ru/api/v1/supplier/orders', httpStatus: 200, responseHeaders: { 'content-type': 'application/json' }, body: Buffer.from('[]'), retrievedAt: new Date('2026-09-01T00:00:00.000Z'), attempt: 0, sequence: 1 });
+    const second = await sink.store({ endpointId: 'statistics.sales', url: 'https://statistics-api.wildberries.ru/api/v1/supplier/sales', httpStatus: 500, responseHeaders: {}, body: Buffer.from('{"error":true}'), retrievedAt: new Date('2026-09-01T00:00:01.000Z'), attempt: 0, sequence: 1 });
     assert.match(first.objectLocator, /^artifact:\/\/business-signal\/sha256\/[0-9a-f]{64}$/);
     assert.match(second.objectLocator, /^artifact:\/\/business-signal\/sha256\/[0-9a-f]{64}$/);
     await assertTenantGucReset(pool, succeeded);
@@ -63,7 +63,7 @@ test('run-ledger: running/succeeded/failed', { skip: ready ? false : 'PROXIMA_TE
 
     const failed = await ledger.open({ tenantId, kind: 'collect' });
     const failedSink = new WbArtifactSink(tenantId, failed, rawStore, pool);
-    await failedSink.store({ endpointId: 'statistics.orders', url: 'https://statistics-api.wildberries.ru/api/v1/supplier/orders', httpStatus: 500, responseHeaders: {}, body: Buffer.from('failure-evidence'), retrievedAt: new Date('2026-09-01T00:00:02.000Z'), attempt: 0 });
+    await failedSink.store({ endpointId: 'statistics.orders', url: 'https://statistics-api.wildberries.ru/api/v1/supplier/orders', httpStatus: 500, responseHeaders: {}, body: Buffer.from('failure-evidence'), retrievedAt: new Date('2026-09-01T00:00:02.000Z'), attempt: 0, sequence: 1 });
     await assert.rejects(async () => { throw new Error('artificial processing failure'); });
     await ledger.fail(tenantId, failed);
     await setTenantGuc(pool);
