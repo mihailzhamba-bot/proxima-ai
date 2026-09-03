@@ -117,6 +117,12 @@ export PROXIMA_TEST_DSN_SANDBOX="${DSN_SANDBOX}"
 
 # Only *.db.test.ts run here; the plain `make test` glob excludes them.
 DB_LOG="${WORK}/collector-db-tests.log"
+# tools/delete_run.py needs psycopg, and delete-run.db.test.ts shells out to it.
+# That test matches the generic tests/*.db.test.ts glob as well as its own step,
+# so the interpreter is resolved once here and exported for both - a bare python3
+# has no psycopg and the test would fail in the glob while passing in its step.
+PROJECT_PY="$(cd "${REPO_ROOT}" && uv run --python 3.14 --project services/control-plane --extra test python -c 'import sys; print(sys.executable)')"
+export PROXIMA_TEST_PYTHON="${PROJECT_PY}"
 echo "pg-roundtrip: collector db-tests (*.db.test.ts, PROXIMA_TEST_DSN_<ROLE>)"
 if ! (cd "${REPO_ROOT}" && npm --workspace @proxima/collector run test:db) >"${DB_LOG}" 2>&1; then
   echo "pg-roundtrip: FAIL (collector db-tests)" >&2
@@ -182,9 +188,8 @@ echo "brief: ok, insufficient, blocked, brief_current, webapp RLS"
 # RLS matrix, both through the real janitor LOGIN role. The db-test shells out
 # to tools/delete_run.py via the project interpreter (psycopg lives there).
 echo "pg-roundtrip: delete-run db-tests (closure, rls matrix; PROXIMA_TEST_DSN_JANITOR)"
-PROJECT_PY="$(cd "${REPO_ROOT}" && uv run --python 3.14 --project services/control-plane --extra test python -c 'import sys; print(sys.executable)')"
 DELETE_LOG="${WORK}/delete-run-db-tests.log"
-if ! (cd "${REPO_ROOT}" && PROXIMA_TEST_PYTHON="${PROJECT_PY}" \
+if ! (cd "${REPO_ROOT}" && \
       npm --workspace @proxima/collector exec -- tsx --test --test-concurrency=1 tests/delete-run.db.test.ts) >"${DELETE_LOG}" 2>&1; then
   echo "pg-roundtrip: FAIL (delete-run db-tests)" >&2
   cat "${DELETE_LOG}" >&2
