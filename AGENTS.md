@@ -16,7 +16,7 @@
 - WB API только READ: split-токен с битом read-only на категорию; новый эндпоинт - сначала в allowlist `tools/verify_business_signal.py`. Analytics-токен на сервере пока read-write (PA-13) - только read-эндпоинты отчётов.
 - Тесты - на фикстурах `fixtures/wb-api/` (gitignored, копия на VPS в `~/signal-inputs/fixtures/wb-api/`); живой WB API - только когда без него никак, ответ сразу в фикстуру.
 - Каждая запись в БД помечена `run_id`, идемпотентна и удаляется по `run_id` целиком - требование к любому новому писателю.
-- В Jira (PA, PMM) не писать до Ворот 2 (`DECISIONS.md`); задачи не удалять никогда.
+- В Jira (PA, PMM) пишем только после approve таблиц синхронизации Mike (PRD §10, D17/D24: истина по задачам - файлы репозитория, направление одно, репо → Jira); задачи не удалять никогда. Ворота 2 пройдены 30.08.2026 (`DECISIONS.md`), запрета на запись больше нет - остался порядок approve.
 - Один write-capable агент на рабочее дерево; параллельно - только read-only исследование. Стейджить только свои файлы: `git add <files>`, не `git add -A` / `git add .`.
 - Не редактировать `services/collector/src/contracts/*.ts` - менять `contracts/*.schema.json` и `make codegen`; ручные правки тихо перезаписываются.
 - Миграции `db/migrations/NNN_*.sql` не править и не переименовывать - только новая `NNN+1_<snake>.sql`, additive-only, `BEGIN…COMMIT`, self-checksum (`tools/verify_migrations.py`).
@@ -178,7 +178,7 @@ host key, агент, реальный вход и туннель, и печат
 
 ## MCP-серверы проекта
 
-`.mcp.json` (Claude Code), `.codex/config.toml` (Codex), `opencode.json` (opencode) держат только `jira-atlassian` (read-only до Ворот 2) и `node_repl` (`tools/node_repl_server.js` отсутствует - см. `docs/state/MIGRATION-GAPS.md` §5). context7 и Postgres MCP - user-level конфиги, не проектные; секреты в конфиги и Git не попадают.
+`.mcp.json` (Claude Code), `.codex/config.toml` (Codex), `opencode.json` (opencode) держат только `jira-atlassian` (в `.codex/config.toml` открыты три read-глагола; запись - после approve таблиц Mike, D17/D24) и `node_repl` (`tools/node_repl_server.js` отсутствует - см. `docs/state/MIGRATION-GAPS.md` §5). context7 и Postgres MCP - user-level конфиги, не проектные; секреты в конфиги и Git не попадают.
 
 ## Жёсткие запреты (fail-closed)
 
@@ -207,7 +207,7 @@ host key, агент, реальный вход и туннель, и печат
 ## Working contract (English summary of the binding rules)
 
 - Sequence: understand → plan → execute → verify → document. No state skips; INBOX → CODE → DONE is forbidden.
-- **One main active task per repo.** A new main task starts only when the previous one is DONE, BLOCKED, or explicitly re-prioritized by Mike. New ideas go to the Jira PA/PMM backlog (writes only after Ворота 2, see `DECISIONS.md`), not into active work.
+- **One main active task per repo.** A new main task starts only when the previous one is DONE, BLOCKED, or explicitly re-prioritized by Mike. New ideas go to the Jira PA/PMM backlog (writes only after Mike approves the sync tables, see PRD §10 and D17/D24), not into active work.
 - Every number needs a source and a date. Unknown → `UNKNOWN`. Never invent metrics, prices, statuses, cabinet IDs, SKU.
 - Important knowledge lands in files (routing table above), not in chat memory.
 - Fail closed: verification failed → work is NOT done. Fix, or mark BLOCKED with reason + handoff in `docs/agent-system/HANDOFF.md`.
