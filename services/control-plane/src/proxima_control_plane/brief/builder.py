@@ -124,8 +124,35 @@ def build_day_payload(
     return DayDeviation(brief_day=brief_day, status="ok", payload=payload)
 
 
-def insufficient_day(brief_day: date, norms: Sequence[MetricNorm]) -> DayDeviation:
-    """Норма есть, но неполная: сводка не строится, пропуск виден (AD-9)."""
+def _envelope(brief_day: date, actual: MetricActual | None, data_status: DataStatus, source_refs: Sequence[str]) -> dict:
+    """Общая для всех трёх статусов часть payload: она известна всегда."""
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "evaluation_day": brief_day.isoformat(),
+        "data_status": {
+            "last_full_day": data_status.last_full_day.isoformat(),
+            "collected_at": data_status.collected_at,
+            "stale": data_status.stale,
+        },
+        "actual": None if actual is None else {"orders": actual.orders, "revenue": _money(actual.revenue)},
+        "signals": list(SIGNALS_UNTIL_EPIC_4),
+        "source_refs": list(source_refs),
+    }
+
+
+def insufficient_day(
+    brief_day: date,
+    actual: MetricActual,
+    norms: Sequence[MetricNorm],
+    data_status: DataStatus,
+    source_refs: Sequence[str],
+) -> DayDeviation:
+    """Норма есть, но окно неполное: пропуск виден, отклонение не называется (AD-9).
+
+    Норму отдаём как есть - она посчитана на имеющихся днях и это факт. Отклонение
+    против неполной нормы числом не называем: `null` честнее, чем цифра, за которую
+    нельзя ручаться. Какому числу верить, читатель узнаёт из `brief_daily.status`.
+    """
     by_metric = {norm.metric: norm for norm in norms}
     orders_norm = by_metric["orders"]
     revenue_norm = by_metric["revenue"]
@@ -134,20 +161,32 @@ def insufficient_day(brief_day: date, norms: Sequence[MetricNorm]) -> DayDeviati
             raise ValueError(f"insufficient_day requires insufficient norms, got {norm.metric}={norm.status}")
     if orders_norm.sample_days != revenue_norm.sample_days:
         raise ValueError("norm metrics disagree on sample_days; refusing to hide the disagreement")
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "evaluation_day": brief_day.isoformat(),
+    payload = _envelope(brief_day, actual, data_status, source_refs)
+    payload["norm"] = {
+        "orders": _money(orders_norm.value),
+        "revenue": _money(revenue_norm.value),
         "window_days": orders_norm.window_days,
         "sample_days": orders_norm.sample_days,
     }
+    payload["deviation_pct"] = None
     return DayDeviation(brief_day=brief_day, status="insufficient", payload=payload)
 
 
-def blocked_day(brief_day: date) -> DayDeviation:
-    """Версий нормы за день нет: сводка заблокирована, а не ноль (AD-9)."""
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "evaluation_day": brief_day.isoformat(),
-        "reason": "norm version missing for evaluation_day",
-    }
+def blocked_day(
+    brief_day: date,
+    actual: MetricActual | None,
+    data_status: DataStatus,
+    source_refs: Sequence[str],
+    reason: str = "norm version missing for evaluation_day",
+) -> DayDeviation:
+    """Версий нормы за день нет: сводка заблокирована, а не обнулена (AD-9).
+
+    Форма payload не меняется от статуса - меняются значения. Отсутствующая норма
+    записывается как `null`, потому что пропущенный ключ и явное «нет» читаются
+    по-разному, а причина называется словами.
+    """
+    payload = _envelope(brief_day, actual, data_status, source_refs)
+    payload["norm"] = None
+    payload["deviation_pct"] = None
+    payload["reason"] = reason
     return DayDeviation(brief_day=brief_day, status="blocked", payload=payload)

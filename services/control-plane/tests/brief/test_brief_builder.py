@@ -86,18 +86,25 @@ def test_money_strings_carry_exactly_two_decimals() -> None:
     assert day.payload["norm"]["orders"] == "34.50"  # дробная часть медианы законна (AD-10)
 
 
-def test_insufficient_norms_give_an_insufficient_day_without_payload_numbers() -> None:
+def test_insufficient_norms_keep_the_shape_and_refuse_to_name_a_deviation() -> None:
     day = day_from_rows(DAY, 27, Decimal("41141.00"), insufficient_norms(), STATUS, [])
     assert day.status == "insufficient"
-    assert day.payload["sample_days"] == 9
-    assert "deviation_pct" not in day.payload
-    assert "actual" not in day.payload
+    # The norm is real - it was computed on the days that exist - so it is reported.
+    assert day.payload["norm"]["sample_days"] == 9
+    assert day.payload["actual"]["orders"] == 27
+    # The deviation against an incomplete norm is not a number we stand behind.
+    assert day.payload["deviation_pct"] is None
 
 
-def test_missing_norm_versions_give_a_blocked_day() -> None:
+def test_missing_norm_versions_give_a_blocked_day_with_explicit_nulls() -> None:
     day = build_day(DAY, [], None, STATUS, [])
     assert day.status == "blocked"
     assert day.payload["reason"]
+    # Absence is written down, not left out: a missing key and an explicit "none"
+    # read differently, and only the second one says "we looked".
+    assert day.payload["norm"] is None
+    assert day.payload["deviation_pct"] is None
+    assert day.payload["actual"] is None
 
 
 def test_one_metric_only_is_blocked_not_half_a_summary() -> None:

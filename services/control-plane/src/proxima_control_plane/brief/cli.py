@@ -14,7 +14,7 @@ from datetime import date
 from decimal import Decimal
 
 from proxima_control_plane.brief import assembler, loader, run_ledger, writer
-from proxima_control_plane.norm.log import log_run_event
+from proxima_control_plane.brief.log import log_run_event
 
 
 def _parse_day(value: str) -> date:
@@ -37,12 +37,15 @@ def _cmd_run(args: argparse.Namespace) -> int:
         data_status = loader.read_data_status(connection, tenant_id)
         fact_run_ids = loader.read_fact_run_ids(connection, tenant_id, brief_day)
         norm_run_ids = loader.read_norm_input_run_ids(connection, tenant_id, brief_day)
-        day = assembler.build_day(brief_day, norms, actual, data_status, fact_run_ids)
         input_run_ids = sorted(set(fact_run_ids) | set(norm_run_ids))
-        if day.status == "ok" and not input_run_ids:
-            raise ValueError("brief payload without inputs: refusing to write a source-free summary")
+        # Прогон открывается до сборки, а не после: если сборка упадёт - например,
+        # норма законно равна нулю и отклонение не определено - попытка обязана
+        # остаться в реестре как FAILED, а не исчезнуть вместе с трейсбеком (AD-3).
         run_id = run_ledger.open_run(connection, tenant_id, notes=f"brief_day={brief_day.isoformat()}")
         try:
+            day = assembler.build_day(brief_day, norms, actual, data_status, fact_run_ids)
+            if day.status == "ok" and not input_run_ids:
+                raise ValueError("brief payload without inputs: refusing to write a source-free summary")
             log_run_event("inputs-read", run_id, tenant_id)
             run_ledger.succeed(
                 connection,

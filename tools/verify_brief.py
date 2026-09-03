@@ -39,6 +39,13 @@ def main() -> None:
     assert payload["data_status"]["stale"] is False
     assert day.status == "ok"
     assert "status" not in payload  # status lives in the brief_daily column, not in the contract payload
+    # All three documented statuses must satisfy the same contract. Validating only
+    # the ok case is how a green gate can sit on top of two unchecked shapes.
+    for status, other in (("insufficient", build_insufficient_day()), ("blocked", build_blocked_day())):
+        assert other.status == status, other.status
+        jsonschema.Draft202012Validator(schema, registry=load_registry()).validate(other.payload)
+        assert other.payload["deviation_pct"] is None, other.payload["deviation_pct"]
+        assert set(payload) - {"reason"} <= set(other.payload), "every status carries the same keys"
     print(f"brief: payload valid, orders {payload['deviation_pct']['orders']}%")
 # == END GATE SKELETON (do not remove; make verify greps this line) ==
 
@@ -54,6 +61,28 @@ def build_synthetic_day():
             MetricNorm("orders", Decimal("34.50"), 14, 14, "ok"),
             MetricNorm("revenue", Decimal("34595.00"), 14, 14, "ok"),
         ],
+        DataStatus(date(2026, 8, 29), "2026-08-30T02:41:12+00:00", False),
+        fact_run_ids=["a1b2c3d4"],
+    )
+
+
+def build_insufficient_day():
+    """Same day, but the norm window is incomplete: the norm is real, the deviation is not named."""
+    return day_from_rows(
+        date(2026, 8, 29), 27, Decimal("41141.00"),
+        [
+            MetricNorm("orders", Decimal("34.50"), 14, 9, "insufficient"),
+            MetricNorm("revenue", Decimal("34595.00"), 14, 9, "insufficient"),
+        ],
+        DataStatus(date(2026, 8, 29), "2026-08-30T02:41:12+00:00", False),
+        fact_run_ids=["a1b2c3d4"],
+    )
+
+
+def build_blocked_day():
+    """No norm version for the day at all: blocked, with the reason said in words."""
+    return day_from_rows(
+        date(2026, 8, 29), 27, Decimal("41141.00"), [],
         DataStatus(date(2026, 8, 29), "2026-08-30T02:41:12+00:00", False),
         fact_run_ids=["a1b2c3d4"],
     )
