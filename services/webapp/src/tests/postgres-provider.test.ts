@@ -147,6 +147,22 @@ describe("provider: data status states (Story 1.11)", () => {
     expect(log.queries.filter((text) => !text.includes("set_config"))).toHaveLength(2); // ровно два SELECT (AD-9)
   });
 
+  it("живой статус ушёл вперёд: вчерашняя сводка не выдаётся за свежую", async () => {
+    // Ровно то, что AD-9 называет в Prevents. Раньше правило сверялось с копией
+    // data_status внутри payload, а она снимается в момент записи и всегда равна
+    // brief_day - сравнение было тождественно истинным, и цифры показывались.
+    const payload = briefPayload();
+    const { provider } = makeProvider((text) =>
+      text.includes(STATUS_SQL)
+        ? [{ last_full_day: "2026-08-30", collected_at: "2026-08-31T02:41:12.000Z", stale: false }]
+        : [{ brief_day: payload.evaluation_day, status: "ok", payload }],
+    );
+    const summary = await provider.getSummary();
+    expect(summary.status).toBe("stale");
+    expect(summary.orders).toBeNull();
+    expect(summary.revenue).toBeNull();
+  });
+
   it("stale: предупреждение вместо цифр", async () => {
     const { provider } = makeProvider((text) =>
       text.includes(STATUS_SQL) ? [{ ...FRESH_STATUS, stale: true }] : [],
@@ -165,10 +181,15 @@ describe("provider: data status states (Story 1.11)", () => {
     expect(summary.orders).toBeNull();
   });
 
-  it("getBrief в режиме «только статус» добавляет пометку в дайджест", async () => {
-    const { provider } = makeProvider(() => []);
-    const brief = await provider.getBrief("daily");
-    expect(brief.digest.at(-1)?.text).toContain("Сводка ещё не считается");
+  it("отрисовка страницы стоит ровно двух SELECT, а не трёх (AD-9)", async () => {
+    // Страница зовёт getBrief и getSummary вместе. Раньше оба читали brief_current,
+    // и на одну отрисовку уходило три запроса при двух разрешённых. Признак
+    // «сводки ещё нет» теперь несёт статус сводки, а не второе чтение той же строки.
+    const { provider, log } = makeProvider(() => []);
+    const [brief, summary] = await Promise.all([provider.getBrief("daily"), provider.getSummary()]);
+    expect(log.queries.filter((text) => !text.includes("set_config"))).toHaveLength(2);
+    expect(summary.status).toBe("no-brief");
+    expect(brief.digest.every((entry) => entry.id !== "postgres-brief-pending")).toBe(true);
   });
 });
 

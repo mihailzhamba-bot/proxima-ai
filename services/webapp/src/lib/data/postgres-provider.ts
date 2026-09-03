@@ -185,22 +185,10 @@ export function createPostgresProvider(
      * «сводка ещё не считается» в дайджесте; цифры сводки приносит getSummary().
      */
     async getBrief(variant: BriefVariant): Promise<BriefData> {
-      const brief = getFixturesBrief(variant);
-      const row = await readBriefRow();
-      if (row !== null) {
-        return brief;
-      }
-      return {
-        ...brief,
-        digest: [
-          ...brief.digest,
-          {
-            id: "postgres-brief-pending",
-            tone: "neutral",
-            text: "Сводка ещё не считается: ждём первый утренний прогон",
-          },
-        ],
-      };
+      // Читателей ровно два SELECT на отрисовку (AD-9), поэтому brief_current
+      // читает только getSummary. Признак «сводка ещё не считается» страница берёт
+      // из его статуса no-brief, а не из второго чтения той же строки.
+      return getFixturesBrief(variant);
     },
 
     /** Сводка «вчера против нормы» с правилом показа AD-9. */
@@ -217,8 +205,15 @@ export function createPostgresProvider(
         };
       }
       const payload = row.payload;
-      const dayMatches = row.brief_day === payload.data_status.last_full_day;
-      const showNumbers = row.status === "ok" && payload.data_status.stale === false && dayMatches;
+      // Правило AD-9 сверяется с живым data_status_current, а не с копией внутри
+      // payload: та копия снята в момент записи брифа и всегда совпадает с brief_day,
+      // поэтому сравнение с ней тождественно истинно. Ровно этот случай AD-9 и
+      // называет в Prevents - вчерашняя сводка, показанная как свежая: сбор ушёл
+      // вперёд, норма и бриф за новый день ещё не посчитаны, а экран рисует цифры.
+      // Нет живого статуса данных - свежесть подтвердить нечем, поэтому цифры не
+      // показываются: fail-closed, а не «наверное, всё в порядке».
+      const dayMatches = dataStatus !== null && row.brief_day === dataStatus.lastFullDay;
+      const showNumbers = row.status === "ok" && dataStatus?.stale === false && dayMatches;
       // Сводка формально ok, но верить цифрам нельзя (stale или день уже не последний
       // полный): на экране предупреждение, а не числа - тот же fail-closed, что и в AC 1.11.
       const status: SummaryStatus = showNumbers ? "ok" : row.status === "ok" ? ("stale" as SummaryStatus) : (row.status as SummaryStatus);

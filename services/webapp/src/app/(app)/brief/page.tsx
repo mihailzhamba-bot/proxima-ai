@@ -18,7 +18,23 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
   const params = await searchParams;
   const variant: BriefVariant = params.view === "quiet" ? "quiet" : "daily";
   const provider = getDataProvider();
-  const [brief, summary] = await Promise.all([provider.getBrief(variant), provider.getSummary()]);
+  const [baseBrief, summary] = await Promise.all([provider.getBrief(variant), provider.getSummary()]);
+  // До первого успешного прогона сводки экран не пустой, а с пометкой. Признак
+  // берётся из статуса сводки, чтобы brief_current не читался второй раз (AD-9).
+  const brief =
+    summary.status === "no-brief"
+      ? {
+          ...baseBrief,
+          digest: [
+            ...baseBrief.digest,
+            {
+              id: "postgres-brief-pending",
+              tone: "neutral" as const,
+              text: "Сводка ещё не считается: ждём первый утренний прогон",
+            },
+          ],
+        }
+      : baseBrief;
   const firstCritical = brief.signals[0];
 
   return (
