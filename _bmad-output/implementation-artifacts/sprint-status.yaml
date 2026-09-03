@@ -31,7 +31,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 19:45
-last_updated: 09-03-2026 22:00
+last_updated: 09-04-2026 00:00
 project: PROXIMA AI
 project_key: NOKEY
 tracking_system: file-system
@@ -45,7 +45,7 @@ development_status:
   1-4-наблюдения-заказов-и-продаж: done
   1-5-бэкфилл-истории-из-артефактов-и-живого-хвоста: done
   1-6-дневной-ряд-кабинета-и-статус-данных: done
-  1-7-откат-прогона: backlog
+  1-7-откат-прогона: done
   1-8-тестовая-база-и-сандбокс-openhands: backlog
   1-9-образы-compose-и-staging-overlay: done
   1-10-принять-провайдер-данных-webapp-из-ветки-ai-pa-50: done
@@ -60,7 +60,7 @@ development_status:
   2-2-контракты-нормы-и-сводки-с-генерацией-типов-для-webapp: done
   2-3-норма-по-медиане-14-дней: done
   2-4-материализованная-сводка-дня: done
-  2-5-brief-показывает-вчера-против-нормы: backlog
+  2-5-brief-показывает-вчера-против-нормы: done
   2-6-релиз-m-03-сводка-приходит-каждое-утро-claude: backlog
   epic-2-retrospective: optional
 
