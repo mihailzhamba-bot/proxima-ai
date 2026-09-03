@@ -27,7 +27,7 @@
 export PUPPETEER_SKIP_DOWNLOAD=1      # иначе npm ci тянет Chromium
 npm ci
 uv sync --python 3.14 --project services/control-plane --extra test --locked
-cp .env.example .env                  # значения секретов не заполняются локально
+cp infra/local.env.example .env       # значения секретов не заполняются локально
 make verify
 ```
 
@@ -44,6 +44,8 @@ make verify
 - `next build` переписывает отслеживаемый `services/webapp/next-env.d.ts` - после сборки вернуть файл.
 - Хук перед коммитом не активен, пока не выполнено `git config core.hooksPath .githooks`.
 - При длинном пути к проекту: `TMPDIR=/tmp make verify`.
+- Файл с именем `.env*` в Git роняет гейт: `tools/secret_scan.py` отклоняет такое имя
+  до чтения содержимого, поэтому образец окружения лежит как `infra/local.env.example`.
 - `docs/agent-system/HANDOFF.md` частично исторический; текущее состояние - `STATE.md` и `DECISIONS.md`.
 - Архитектурные карты `docs/architecture/*.mmd` описывают снятую рамку M1, хотя рендерятся внутри гейта.
 
