@@ -17,6 +17,12 @@ PGBIN=""
 for candidate in /opt/homebrew/opt/postgresql@16/bin /usr/lib/postgresql/16/bin /usr/local/opt/postgresql@16/bin "$(dirname "$(command -v initdb 2>/dev/null || true)")"; do
   if [[ -x "${candidate}/initdb" ]] && "${candidate}/initdb" --version 2>/dev/null | grep -qE 'PostgreSQL[)] 16\.'; then PGBIN="${candidate}"; break; fi
 done
+if [[ -z "${PGBIN}" && -n "${PROXIMA_PG16_BIN:-}" && -x "${PROXIMA_PG16_BIN}/initdb" ]] \
+   && "${PROXIMA_PG16_BIN}/initdb" --version 2>/dev/null | grep -qE 'PostgreSQL[)] 16\.'; then
+  # Opt-in escape hatch for environments whose PostgreSQL 16 tools live
+  # outside the searched paths (e.g. container toolchains on PATH shims).
+  PGBIN="${PROXIMA_PG16_BIN}"
+fi
 if [[ -z "${PGBIN}" ]]; then
   echo "pg-roundtrip: SKIP (no local initdb found; disposable PostgreSQL 16 unavailable)"
   exit 0
@@ -148,5 +154,35 @@ if [[ "${NORM_PASSED:-0}" -lt 4 ]]; then
   exit 1
 fi
 echo "norm: median window, insufficient 9/14"
+
+# Story 1.7: delete_run closure over collector_run_inputs plus the AD-11/AD-12
+# RLS matrix, both through the real janitor LOGIN role. The db-test shells out
+# to tools/delete_run.py via the project interpreter (psycopg lives there).
+echo "pg-roundtrip: delete-run db-tests (closure, rls matrix; PROXIMA_TEST_DSN_JANITOR)"
+PROJECT_PY="$(cd "${REPO_ROOT}" && uv run --python 3.14 --project services/control-plane --extra test python -c 'import sys; print(sys.executable)')"
+DELETE_LOG="${WORK}/delete-run-db-tests.log"
+if ! (cd "${REPO_ROOT}" && PROXIMA_TEST_PYTHON="${PROJECT_PY}" \
+      npm --workspace @proxima/collector exec -- tsx --test --test-concurrency=1 tests/delete-run.db.test.ts) >"${DELETE_LOG}" 2>&1; then
+  echo "pg-roundtrip: FAIL (delete-run db-tests)" >&2
+  cat "${DELETE_LOG}" >&2
+  exit 1
+fi
+if grep -q "^# fail [1-9]" "${DELETE_LOG}" || grep -q "^not ok" "${DELETE_LOG}"; then
+  echo "pg-roundtrip: FAIL (delete-run db-tests reported failures)" >&2
+  cat "${DELETE_LOG}" >&2
+  exit 1
+fi
+if grep -q "^# skip" "${DELETE_LOG}"; then
+  echo "pg-roundtrip: FAIL (delete-run db-tests skipped while a DSN was available)" >&2
+  cat "${DELETE_LOG}" >&2
+  exit 1
+fi
+DELETE_PASSED="$(sed -n 's/^# pass \([0-9][0-9]*\)$/\1/p' "${DELETE_LOG}" | awk '{s+=$1} END {printf "%d", s}')"
+if [[ "${DELETE_PASSED}" -lt 4 ]]; then
+  echo "pg-roundtrip: FAIL (delete-run db-tests reported ${DELETE_PASSED:-0} passed, expected at least 4)" >&2
+  cat "${DELETE_LOG}" >&2
+  exit 1
+fi
+echo "delete_run: closure (${DELETE_PASSED} tests incl. rls: matrix)"
 
 echo "pg-roundtrip: PASS"

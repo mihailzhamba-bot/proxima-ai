@@ -130,6 +130,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         "stg_wb_sales_obs",
         "fact_cabinet_daily",
         "norm_daily",
+        "business_signal_runs",
     }
     with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as connection:
         secured = {
@@ -142,7 +143,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         policy_count = connection.execute(
             "SELECT count(*) AS n FROM pg_policies WHERE schemaname = 'public'"
         ).fetchone()["n"]
-        assert policy_count == 43
+        assert policy_count == 44
         janitor_tables = {
             row["tablename"]
             for row in connection.execute(
@@ -158,6 +159,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
             "stg_wb_sales_obs",
             "fact_cabinet_daily",
             "norm_daily",
+            "business_signal_runs",
         }
         non_invoker_views = [
             row["relname"]
