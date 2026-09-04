@@ -97,6 +97,7 @@ Do not ask the user "where did we stop". Recover state from repository files fir
 | Выдача и отзыв доступов человеку | `docs/operations/access-provisioning.md` |
 | Стандарт логов, статусов и алертов | `docs/operations/observability.md` |
 | Что делать при сбое, расхождении цифр, утечке токена | `docs/operations/incident-runbook.md` |
+| **Порядок первого релиза M-01 на сервере, с планом отката** | `docs/operations/release-m01.md` |
 | **Словарь данных: таблицы, кто пишет, кто читает** | `docs/state/DATA-DICTIONARY.md` |
 | Прочие операционные инструкции | `docs/operations/business-signal-runbook.md`, `agent-toolset.md` |
 | Аудиты импортированного кода | `docs/audits/` |
