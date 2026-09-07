@@ -89,7 +89,7 @@ def check_replay_contract(rows: list[dict[str, str]]) -> None:
     store.clear()  # delete_run.py cascades observations/facts of the promote run
     require(promote() == 21, "replay after delete must restore all product-days from durable task rows")
     db_test = read(DB_TEST)
-    for marker in ("tools/delete_run.py", "lifecycle FAILED does not suppress durable rows", "source: 'csv'", "report task survives promote deletion"):
+    for marker in ("delete_run.py", "lifecycle FAILED does not suppress durable rows", "source: 'csv'", "report task survives promote deletion"):
         require(marker in db_test, f"PostgreSQL test lost {marker!r}")
 
 
