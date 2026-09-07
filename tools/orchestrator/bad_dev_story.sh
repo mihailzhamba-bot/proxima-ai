@@ -55,7 +55,7 @@ EX_INTEGRITY=7     # base mismatch, ancestry, forbidden path, secret in diff
 RUN_ID=""; BRANCH=""; BASE_REF=""; PROMPT_FILE=""; SOURCE_DIR=""
 PROFILE_NAME="fedor"; ATTEMPT=1; TIMEOUT=5400; SIMULATE_WORKER=""
 POLL_MIN=10; POLL_MAX=60; IDLE_CONFIRMATIONS=2; MAX_UNKNOWN=5
-MAX_ITERATIONS=500; PREFLIGHT_ONLY=0; KEEP_WORKSPACE=0
+MAX_ITERATIONS=500; TITLE_LLM_PROFILE="${BRIDGE_TITLE_LLM_PROFILE:-glm-5.3}"; PREFLIGHT_ONLY=0; KEEP_WORKSPACE=0
 ALLOW_PATHS=""; CONTRACT_FILES=""
 DEFAULT_CONTRACT_FILES="AGENTS.md
 _bmad-output/planning-artifacts/epics.md
@@ -356,9 +356,9 @@ case "$PROFILE_NAME" in fedor) PROFILE="$PROFILE_FEDOR" ;; glm) PROFILE="$PROFIL
 # the workspace root that file is out of scope. The dispatch prompt therefore
 # has to name the checkout subdirectory explicitly.
 PAYLOAD="$(mktemp)"; chmod 600 "$PAYLOAD"
-python3 - "$CID" "$WS" "$PROMPT_FILE" "$PROFILE" "$PAYLOAD" "$RUN_ID" "$ATTEMPT" "$MAX_ITERATIONS" <<'PY'
+python3 - "$CID" "$WS" "$PROMPT_FILE" "$PROFILE" "$PAYLOAD" "$RUN_ID" "$ATTEMPT" "$MAX_ITERATIONS" "$TITLE_LLM_PROFILE" <<'PY'
 import json, re, sys
-cid, ws, prompt, profile, out, run_id, attempt, max_iter = sys.argv[1:9]
+cid, ws, prompt, profile, out, run_id, attempt, max_iter, title_profile = sys.argv[1:10]
 json.dump({
     "conversation_id": cid,
     "workspace": {"kind": "LocalWorkspace", "working_dir": ws},
@@ -373,6 +373,11 @@ json.dump({
     "confirmation_policy": {"kind": "NeverConfirm"},
     "tags": {"bridge": "baddevstory", "run": re.sub(r"[^a-z0-9]", "", run_id), "attempt": str(attempt)},
     "autotitle": True,
+    # ACP profiles (Codex over ACP) carry no LLM of their own, so without an
+    # explicit title profile the server falls back to OpenAI with no key and
+    # logs "Missing credentials" on every dispatch. Titles go through the
+    # GLM LLM profile that every worker conversation can reach.
+    "title_llm_profile": title_profile,
 }, open(out, "w", encoding="utf-8"), ensure_ascii=False)
 PY
 RESP="$(oh_curl POST /api/conversations "$PAYLOAD")"
