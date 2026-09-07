@@ -26,6 +26,14 @@ Safe operations: read-only queries; `make apply-migrations` on staging per runbo
 Dangerous operations: `drop table`, data deletion, writes to immutable evidence tables, pointing production release pointers by hand — all require explicit Mike approval.
 Verification: `make migrations`; query results carry provenance refs.
 
+## OpenHands test database sandbox
+
+Purpose: give the agent a complete, writable copy of production-shaped data without access to the main `proxima` database.
+Access: provision creates `proxima_sandbox_uri`; copy `infra/openhands/env.task.template` to `.env.task`, set the provisioned tenant id, and keep the URI in `/etc/proxima-ai/secrets/proxima_sandbox_uri` (0600). The hook loads `DATABASE_URI` from that file and rejects a configured URI that does not target `proxima_test`.
+Safe operations: `PROXIMA_TENANT_ID=<tenant> make test-db-refresh`; reads and writes through `DATABASE_URI` affect only `proxima_test`.
+Dangerous operations: refresh terminates sessions and drops/recreates `proxima_test`; never override `PROXIMA_TEST_DATABASE` with `proxima` and never grant `proxima_sandbox` CONNECT to the main database. The script rejects identical main/test names.
+Verification: `make verify`; with local PostgreSQL 16 the gate prints `test-db-refresh: sandbox sees copy` after two consecutive refreshes, a non-empty fact read, a test-table insert, and a refused sandbox connection to `proxima`.
+
 ## Wildberries API (official, READ-only)
 
 Purpose: official evidence intake (statistics, analytics, finance, prices, promotion).

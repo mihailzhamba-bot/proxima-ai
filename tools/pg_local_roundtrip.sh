@@ -115,6 +115,45 @@ export PROXIMA_TEST_DSN_WEBAPP="${DSN_WEBAPP}"
 export PROXIMA_TEST_DSN_JANITOR="${DSN_JANITOR}"
 export PROXIMA_TEST_DSN_SANDBOX="${DSN_SANDBOX}"
 
+# Story 1.8: put one production-shaped fact in the main database, rebuild the
+# test copy twice, then prove that the sandbox can read and write the copy but
+# cannot connect to the main database. The marker table is deliberately
+# created in the disposable source database so pg_dump must carry it across.
+REFRESH_TENANT="refresh-harness"
+REFRESH_RUN="00000000-0000-4000-8000-000000000018"
+"${PGBIN}/psql" -h 127.0.0.1 -p "${PORT}" -U proxima_roundtrip -d proxima -v ON_ERROR_STOP=1 <<SQL >/dev/null
+INSERT INTO tenants (tenant_id) VALUES ('${REFRESH_TENANT}') ON CONFLICT DO NOTHING;
+INSERT INTO collector_runs (run_id, tenant_id, kind, status, finished_at)
+VALUES ('${REFRESH_RUN}', '${REFRESH_TENANT}', 'collect', 'SUCCEEDED', CURRENT_TIMESTAMP)
+ON CONFLICT DO NOTHING;
+INSERT INTO fact_cabinet_daily
+  (tenant_id, calendar_day, run_id, orders_count, cancelled_count, sales_count,
+   returns_count, revenue_rub, forpay_rub, evidence_sha256)
+VALUES
+  ('${REFRESH_TENANT}', CURRENT_DATE - 1, '${REFRESH_RUN}', 1, 0, 1, 0, 1.00, 1.00,
+   ARRAY['0000000000000000000000000000000000000000000000000000000000000018'::char(64)])
+ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS sandbox_refresh_probe (value text NOT NULL);
+SQL
+
+REFRESH_ENV=(PGHOST=127.0.0.1 PGPORT="${PORT}" PGUSER=proxima_roundtrip
+             PROXIMA_PSQL_PATH="${PGBIN}/psql" PROXIMA_PG_DUMP_PATH="${PGBIN}/pg_dump"
+             PROXIMA_TENANT_ID="${REFRESH_TENANT}")
+echo "pg-roundtrip: test-db-refresh (run 1 of 2)"
+env "${REFRESH_ENV[@]}" bash "${REPO_ROOT}/tools/test_db_refresh.sh"
+echo "pg-roundtrip: test-db-refresh (run 2 of 2)"
+env "${REFRESH_ENV[@]}" bash "${REPO_ROOT}/tools/test_db_refresh.sh"
+
+FACT_COUNT="$("${PGBIN}/psql" "${DSN_SANDBOX}" -v ON_ERROR_STOP=1 -tAc 'SELECT count(*) FROM fact_cabinet_daily_current')"
+[[ "${FACT_COUNT}" -gt 0 ]] || { echo "pg-roundtrip: FAIL (sandbox sees no copied facts)" >&2; exit 1; }
+"${PGBIN}/psql" "${DSN_SANDBOX}" -v ON_ERROR_STOP=1 -c "INSERT INTO sandbox_refresh_probe(value) VALUES ('copy-only')" >/dev/null
+SANDBOX_MAIN_DSN="$(printf '%s' "${DSN_SANDBOX}" | sed 's|/proxima_test$|/proxima|')"
+if "${PGBIN}/psql" "${SANDBOX_MAIN_DSN}" -v ON_ERROR_STOP=1 -c 'SELECT 1' >/dev/null 2>&1; then
+  echo "pg-roundtrip: FAIL (sandbox connected to main database)" >&2
+  exit 1
+fi
+echo "test-db-refresh: sandbox sees copy"
+
 # Only *.db.test.ts run here; the plain `make test` glob excludes them.
 DB_LOG="${WORK}/collector-db-tests.log"
 # tools/delete_run.py needs psycopg, and delete-run.db.test.ts shells out to it.
