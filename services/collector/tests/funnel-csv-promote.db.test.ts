@@ -3,7 +3,8 @@ import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import test from 'node:test';
 
@@ -11,6 +12,7 @@ import { Client } from 'pg';
 
 import { promoteFunnelCsv } from '../src/jobs/funnel-csv-promote.js';
 import { canonicalJson, sha256 } from '../src/intake/manifest.js';
+import { DEFAULT_FIXTURE_ROOT } from '../src/wb/fixture-transport.js';
 
 const execFileAsync = promisify(execFile);
 const collectorDsn = process.env.PROXIMA_TEST_DSN_COLLECTOR ?? '';
@@ -20,7 +22,8 @@ const python = process.env.PROXIMA_TEST_PYTHON ?? '';
 const ready = collectorDsn !== '' && janitorDsn !== '' && postgresDsn !== '' && python !== '';
 const skip = ready ? false : 'run via tools/pg_local_roundtrip.sh with collector, janitor, postgres DSNs and project Python';
 const tenantId = 'funnel-csv-harness';
-const fixturePath = resolve('services/collector/tests/fixtures/wb-api/analytics/nm_report_downloads/funnel_csv_promote.json');
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const fixturePath = join(DEFAULT_FIXTURE_ROOT, 'analytics/nm_report_downloads/funnel_csv_promote.json');
 
 async function admin<T>(work: (client: Client) => Promise<T>): Promise<T> {
   const client = new Client({ connectionString: postgresDsn });
@@ -59,9 +62,9 @@ test('funnel_csv: promote, csv preference, delete_run and replay without a new r
          (task_id, tenant_id, report_type, period_from, period_to, timezone, aggregation_level, request_body,
           lifecycle_status, downloaded_sha256, downloaded_size, downloaded_at, parsed_row_count, staged_row_count, collector_run_id)
          VALUES ($1, $2, 'DETAIL_HISTORY_REPORT', DATE '2026-08-24', DATE '2026-08-30', 'Europe/Moscow', 'day',
-          jsonb_build_object('id', $1::text, 'reportType', 'DETAIL_HISTORY_REPORT'),
+          jsonb_build_object('id', $5::text, 'reportType', 'DETAIL_HISTORY_REPORT'),
           'FAILED', $3, 100, CURRENT_TIMESTAMP, 21, 21, $4)`,
-        [taskId, tenantId, reportSha, downloadRun],
+        [taskId, tenantId, reportSha, downloadRun, taskId],
       );
       for (const [index, payload] of fixture.entries()) {
         await client.query(
@@ -105,8 +108,8 @@ test('funnel_csv: promote, csv preference, delete_run and replay without a new r
       assert.deepEqual(preferred.rows, [{ source: 'csv', open_card: 101 }]);
     } finally { await db.end(); }
 
-    const deleted = await execFileAsync(python, ['tools/delete_run.py', '--tenant', tenantId, '--run', first.runId], {
-      cwd: resolve('.'), env: { ...process.env, JANITOR_DATABASE_URI: janitorDsn },
+    const deleted = await execFileAsync(python, [join(repoRoot, 'tools', 'delete_run.py'), '--tenant', tenantId, '--run', first.runId], {
+      cwd: repoRoot, env: { ...process.env, JANITOR_DATABASE_URI: janitorDsn },
     });
     assert.match(deleted.stdout, /delete_run: deleted closure/);
 
@@ -144,8 +147,8 @@ test('funnel_csv invalid durable row fails atomically and marks the run FAILED',
          (task_id, tenant_id, report_type, period_from, period_to, timezone, aggregation_level, request_body, lifecycle_status,
           downloaded_sha256, downloaded_size, downloaded_at, parsed_row_count, staged_row_count, collector_run_id)
          VALUES ($1, $2, 'DETAIL_HISTORY_REPORT', CURRENT_DATE - 1, CURRENT_DATE - 1, 'Europe/Moscow', 'day',
-          jsonb_build_object('id', $1::text, 'reportType', 'DETAIL_HISTORY_REPORT'), 'DOWNLOADED', $3, 1, CURRENT_TIMESTAMP, 1, 1, $4)`,
-        [taskId, tenantId, 'e'.repeat(64), downloadRun],
+          jsonb_build_object('id', $5::text, 'reportType', 'DETAIL_HISTORY_REPORT'), 'DOWNLOADED', $3, 1, CURRENT_TIMESTAMP, 1, 1, $4)`,
+        [taskId, tenantId, 'e'.repeat(64), downloadRun, taskId],
       );
       await client.query("INSERT INTO stg_wb_nm_report_rows (task_id, row_number, nm_id, row_date, payload) VALUES ($1, 1, 12345001, CURRENT_DATE - 1, '{\"nmID\":\"12345001\",\"dt\":\"2026-08-24\"}'::jsonb)", [taskId]);
     });
