@@ -107,6 +107,21 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
         assert not can("proxima_job_collector", "SELECT", "norm_daily")
         assert not can("proxima_webapp_readonly", "INSERT", "norm_daily")
 
+        # funnel (Story 3.1, AD-5/AD-11): the collector observes and versions; norm reads
+        # the versions only; staging stays with the collector; the webapp has no grant yet.
+        assert can("proxima_job_collector", "INSERT", "stg_wb_funnel_obs")
+        assert can("proxima_job_collector", "SELECT", "stg_wb_funnel_latest")
+        assert can("proxima_job_collector", "INSERT", "fact_funnel_daily")
+        assert can("proxima_job_collector", "SELECT", "fact_funnel_daily_current")
+        assert can("proxima_job_norm", "SELECT", "fact_funnel_daily")
+        assert can("proxima_job_norm", "SELECT", "fact_funnel_daily_current")
+        assert not can("proxima_job_collector", "UPDATE", "stg_wb_funnel_obs")
+        assert not can("proxima_job_collector", "UPDATE", "fact_funnel_daily")
+        assert not can("proxima_job_norm", "SELECT", "stg_wb_funnel_obs")
+        assert not can("proxima_job_norm", "INSERT", "fact_funnel_daily")
+        assert not can("proxima_webapp_readonly", "SELECT", "fact_funnel_daily_current")
+        assert not can("proxima_run_janitor", "INSERT", "stg_wb_funnel_obs")
+
 
 @pytest.mark.skipif(not os.environ.get("PROXIMA_TEST_POSTGRES_DSN"), reason="dedicated PostgreSQL DSN not configured")
 def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
@@ -132,6 +147,8 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         "norm_daily",
         "business_signal_runs",
         "brief_daily",
+        "stg_wb_funnel_obs",
+        "fact_funnel_daily",
     }
     with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as connection:
         secured = {
@@ -144,7 +161,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         policy_count = connection.execute(
             "SELECT count(*) AS n FROM pg_policies WHERE schemaname = 'public'"
         ).fetchone()["n"]
-        assert policy_count == 47
+        assert policy_count == 52
         janitor_tables = {
             row["tablename"]
             for row in connection.execute(
@@ -162,6 +179,8 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
             "norm_daily",
             "business_signal_runs",
             "brief_daily",
+            "stg_wb_funnel_obs",
+            "fact_funnel_daily",
         }
         non_invoker_views = [
             row["relname"]

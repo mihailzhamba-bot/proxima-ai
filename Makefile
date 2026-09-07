@@ -1,7 +1,7 @@
-.PHONY: agent-toolset apply-migrations architecture boundary brief business-signal codegen collect-wb-analytics contracts install migrations pg-roundtrip probe-wb-api provenance secrets test test-db-refresh typecheck verify vps wb-async-report wb-client webapp-build webapp-lint
+.PHONY: agent-toolset apply-migrations architecture boundary brief business-signal codegen collect-wb-analytics contracts funnel install migrations pg-roundtrip probe-wb-api provenance secrets test test-db-refresh typecheck verify vps wb-async-report wb-client webapp-build webapp-lint
 
 
-verify: install codegen typecheck test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal wb-client brief wb-async-report
+verify: install codegen typecheck test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal wb-client brief wb-async-report funnel
 
 install:
 	npm ci
@@ -80,3 +80,6 @@ brief:
 # Story 3.2: wb_async_report.py as a funnel_csv_download ledger run (contract gate, stdlib only).
 wb-async-report:
 	uv run --python 3.14 python tools/verify_wb_async_report.py
+
+funnel:
+	uv run --python 3.14 python tools/verify_funnel.py
