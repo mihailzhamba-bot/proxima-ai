@@ -254,4 +254,34 @@ if [[ "${DELETE_PASSED}" -lt 5 ]]; then
 fi
 echo "delete_run: closure (${DELETE_PASSED} tests incl. rls: matrix)"
 
+# Story 3.1: the funnel_v3 job end to end on the fixture - 21 observations,
+# replay 0, changed payload versions, run_day not versioned, a failed batch
+# keeping the received ones, RLS matrix - through the collector/norm/webapp
+# LOGIN roles. The glob above already ran the file; this step refuses a silent skip.
+echo "pg-roundtrip: funnel db-tests (PROXIMA_TEST_DSN_COLLECTOR, PROXIMA_TEST_DSN_NORM, PROXIMA_TEST_DSN_WEBAPP)"
+FUNNEL_LOG="${WORK}/funnel-db-tests.log"
+if ! (cd "${REPO_ROOT}" && \
+      npm --workspace @proxima/collector exec -- tsx --test --test-concurrency=1 tests/funnel-v3.db.test.ts) >"${FUNNEL_LOG}" 2>&1; then
+  echo "pg-roundtrip: FAIL (funnel db-tests)" >&2
+  cat "${FUNNEL_LOG}" >&2
+  exit 1
+fi
+if grep -q "^# fail [1-9]" "${FUNNEL_LOG}" || grep -q "^not ok" "${FUNNEL_LOG}"; then
+  echo "pg-roundtrip: FAIL (funnel db-tests reported failures)" >&2
+  cat "${FUNNEL_LOG}" >&2
+  exit 1
+fi
+if grep -qE "^# skipped [1-9]" "${FUNNEL_LOG}"; then
+  echo "pg-roundtrip: FAIL (funnel db-tests skipped while the DSNs were available)" >&2
+  cat "${FUNNEL_LOG}" >&2
+  exit 1
+fi
+FUNNEL_PASSED="$(sed -n 's/^# pass \([0-9][0-9]*\)$/\1/p' "${FUNNEL_LOG}" | awk '{s+=$1} END {printf "%d", s}')"
+if [[ "${FUNNEL_PASSED}" -lt 2 ]]; then
+  echo "pg-roundtrip: FAIL (funnel db-tests reported ${FUNNEL_PASSED:-0} passed, expected at least 2)" >&2
+  cat "${FUNNEL_LOG}" >&2
+  exit 1
+fi
+echo "funnel_v3: db ${FUNNEL_PASSED} tests (21 obs, replay 0, versions, coverage, rls)"
+
 echo "pg-roundtrip: PASS"
