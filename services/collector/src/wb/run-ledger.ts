@@ -88,10 +88,14 @@ export class RunLedger {
     } finally { await this.release(client); }
   }
 
-  async fail(tenantId: string, runId: string): Promise<void> {
+  /** `notes` (optional) records why - e.g. the funnel coverage summary; the row keeps its existing notes otherwise. */
+  async fail(tenantId: string, runId: string, notes?: string): Promise<void> {
     const client = await this.connect(tenantId);
     try {
-      const result = await client.query("UPDATE collector_runs SET status = 'FAILED', finished_at = CURRENT_TIMESTAMP WHERE run_id = $1 AND status = 'RUNNING'", [runId]);
+      const result = await client.query(
+        "UPDATE collector_runs SET status = 'FAILED', finished_at = CURRENT_TIMESTAMP, notes = COALESCE($2, notes) WHERE run_id = $1 AND status = 'RUNNING'",
+        [runId, notes ?? null],
+      );
       if (result.rowCount !== 1) {
         throw new RunLedgerError(`cannot mark run ${runId} FAILED: expected one RUNNING row visible to tenant ${tenantId}, updated ${result.rowCount ?? 0}`);
       }
