@@ -1,0 +1,23 @@
+[
+  {"nmID":"12345001","dt":"2026-08-24","open_card":"101","cart":"31","orders":"11","orders_sum_rub":"1100.10","buyouts":"8","buyouts_sum_rub":"800.08"},
+  {"nmID":"12345001","dt":"2026-08-25","open_card":"102","cart":"32","orders":"12","orders_sum_rub":"1200.20","buyouts":"9","buyouts_sum_rub":"900.09"},
+  {"nmID":"12345001","dt":"2026-08-26","open_card":"103","cart":"33","orders":"13","orders_sum_rub":"1300.30","buyouts":"10","buyouts_sum_rub":"1000.10"},
+  {"nmID":"12345001","dt":"2026-08-27","open_card":"104","cart":"34","orders":"14","orders_sum_rub":"1400.40","buyouts":"11","buyouts_sum_rub":"1100.11"},
+  {"nmID":"12345001","dt":"2026-08-28","open_card":"105","cart":"35","orders":"15","orders_sum_rub":"1500.50","buyouts":"12","buyouts_sum_rub":"1200.12"},
+  {"nmID":"12345001","dt":"2026-08-29","open_card":"106","cart":"36","orders":"16","orders_sum_rub":"1600.60","buyouts":"13","buyouts_sum_rub":"1300.13"},
+  {"nmID":"12345001","dt":"2026-08-30","open_card":"107","cart":"37","orders":"17","orders_sum_rub":"1700.70","buyouts":"14","buyouts_sum_rub":"1400.14"},
+  {"nmID":"12345002","dt":"2026-08-24","open_card":"201","cart":"41","orders":"21","orders_sum_rub":"2100.21","buyouts":"18","buyouts_sum_rub":"1800.18"},
+  {"nmID":"12345002","dt":"2026-08-25","open_card":"202","cart":"42","orders":"22","orders_sum_rub":"2200.22","buyouts":"19","buyouts_sum_rub":"1900.19"},
+  {"nmID":"12345002","dt":"2026-08-26","open_card":"203","cart":"43","orders":"23","orders_sum_rub":"2300.23","buyouts":"20","buyouts_sum_rub":"2000.20"},
+  {"nmID":"12345002","dt":"2026-08-27","open_card":"204","cart":"44","orders":"24","orders_sum_rub":"2400.24","buyouts":"21","buyouts_sum_rub":"2100.21"},
+  {"nmID":"12345002","dt":"2026-08-28","open_card":"205","cart":"45","orders":"25","orders_sum_rub":"2500.25","buyouts":"22","buyouts_sum_rub":"2200.22"},
+  {"nmID":"12345002","dt":"2026-08-29","open_card":"206","cart":"46","orders":"26","orders_sum_rub":"2600.26","buyouts":"23","buyouts_sum_rub":"2300.23"},
+  {"nmID":"12345002","dt":"2026-08-30","open_card":"207","cart":"47","orders":"27","orders_sum_rub":"2700.27","buyouts":"24","buyouts_sum_rub":"2400.24"},
+  {"nmID":"12345003","dt":"2026-08-24","open_card":"301","cart":"51","orders":"31","orders_sum_rub":"3100.31","buyouts":"28","buyouts_sum_rub":"2800.28"},
+  {"nmID":"12345003","dt":"2026-08-25","open_card":"302","cart":"52","orders":"32","orders_sum_rub":"3200.32","buyouts":"29","buyouts_sum_rub":"2900.29"},
+  {"nmID":"12345003","dt":"2026-08-26","open_card":"303","cart":"53","orders":"33","orders_sum_rub":"3300.33","buyouts":"30","buyouts_sum_rub":"3000.30"},
+  {"nmID":"12345003","dt":"2026-08-27","open_card":"304","cart":"54","orders":"34","orders_sum_rub":"3400.34","buyouts":"31","buyouts_sum_rub":"3100.31"},
+  {"nmID":"12345003","dt":"2026-08-28","open_card":"305","cart":"55","orders":"35","orders_sum_rub":"3500.35","buyouts":"32","buyouts_sum_rub":"3200.32"},
+  {"nmID":"12345003","dt":"2026-08-29","open_card":"306","cart":"56","orders":"36","orders_sum_rub":"3600.36","buyouts":"33","buyouts_sum_rub":"3300.33"},
+  {"nmID":"12345003","dt":"2026-08-30","open_card":"307","cart":"57","orders":"37","orders_sum_rub":"3700.37","buyouts":"34","buyouts_sum_rub":"3400.34"}
+]

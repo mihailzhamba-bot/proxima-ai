@@ -1,7 +1,7 @@
-.PHONY: agent-toolset apply-migrations architecture boundary brief business-signal codegen collect-wb-analytics contracts funnel install migrations pg-roundtrip probe-wb-api provenance secrets test test-db-refresh typecheck verify vps wb-async-report wb-client webapp-build webapp-lint
+.PHONY: agent-toolset apply-migrations architecture boundary brief business-signal codegen collect-wb-analytics contracts funnel funnel-csv install migrations pg-roundtrip probe-wb-api provenance secrets test test-db-refresh typecheck verify vps wb-async-report wb-client webapp-build webapp-lint
 
 
-verify: install codegen typecheck test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal wb-client brief wb-async-report funnel
+verify: install codegen typecheck test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal wb-client brief wb-async-report funnel funnel-csv
 
 install:
 	npm ci
@@ -83,3 +83,7 @@ wb-async-report:
 
 funnel:
 	uv run --python 3.14 python tools/verify_funnel.py
+
+# Story 3.3: durable CSV rows promote into shared funnel facts and replay after deletion.
+funnel-csv:
+	uv run --python 3.14 python tools/verify_funnel_csv.py

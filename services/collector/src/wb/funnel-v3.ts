@@ -21,6 +21,7 @@ import { wbEndpoint } from './registry.js';
 
 export const FUNNEL_ENDPOINT = 'analytics.sales_funnel_v3_history' as const;
 export const FUNNEL_SOURCE = 'v3' as const;
+export type FunnelSource = 'v3' | 'csv';
 /** WB accepts at most 20 nmIds per call (registry `maxPerPage`, API-FACTS). */
 export const FUNNEL_BATCH_SIZE = wbEndpoint(FUNNEL_ENDPOINT).maxPerPage ?? 20;
 /** Window start offset: `run_day-6` is the confirmed WB boundary (API-FACTS). */
@@ -215,6 +216,7 @@ export async function insertFunnelObservations(
   tenantId: string,
   runId: string,
   batch: FunnelBatch,
+  source: FunnelSource = FUNNEL_SOURCE,
 ): Promise<InsertFunnelObservationsResult> {
   if (batch.rows.length === 0) return { received: batch.received, inserted: 0, skipped: 0 };
   const values = JSON.stringify(batch.rows.map((row) => ({
@@ -231,13 +233,13 @@ export async function insertFunnelObservations(
   })));
   const result = await client.query(
     `INSERT INTO stg_wb_funnel_obs (tenant_id, nm_id, calendar_day, source, canonical_sha256, run_id, evidence_sha256,
-       open_card, cart, orders, orders_sum_rub, buyouts, buyouts_sum_rub, payload)
+       open_card, cart, orders, orders_sum_rub, buyouts, buyouts_sum_rub, payload, observed_at)
      SELECT $1::text, v.nm_id, v.calendar_day, $4::text, v.canonical_sha256, $2::uuid, $3::text,
-       v.open_card, v.cart, v.orders, v.orders_sum_rub::numeric, v.buyouts, v.buyouts_sum_rub::numeric, v.payload
+       v.open_card, v.cart, v.orders, v.orders_sum_rub::numeric, v.buyouts, v.buyouts_sum_rub::numeric, v.payload, clock_timestamp()
      FROM jsonb_to_recordset($5::jsonb) AS v(nm_id bigint, calendar_day date, canonical_sha256 text, open_card integer, cart integer,
        orders integer, orders_sum_rub text, buyouts integer, buyouts_sum_rub text, payload jsonb)
      ON CONFLICT (tenant_id, nm_id, calendar_day, source, canonical_sha256) DO NOTHING`,
-    [tenantId, runId, batch.evidenceSha256, FUNNEL_SOURCE, values],
+    [tenantId, runId, batch.evidenceSha256, source, values],
   );
   const inserted = result.rowCount ?? 0;
   return { received: batch.received, inserted, skipped: batch.rows.length - inserted };

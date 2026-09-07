@@ -20,6 +20,7 @@
     "collect": "node dist/jobs/collect.js",
     "backfill": "node dist/jobs/backfill.js",
     "funnel-v3": "node dist/jobs/funnel-v3.js",
+    "funnel-csv-promote": "node dist/jobs/funnel-csv-promote.js",
     "test": "tsx --test $(ls tests/*.test.ts | grep -v '\\.db\\.test\\.ts$' | tr '\\n' ' ') && npm run build && node --input-type=module --eval \"import('@proxima/collector').then((module) => { if (typeof module.redactValue !== 'function' || typeof module.intakeManualWbXlsx !== 'function') process.exit(1) })\"",
     "typecheck": "tsc --noEmit",
     "test:db": "tsx --test --test-concurrency=1 tests/*.db.test.ts"
