@@ -2,9 +2,9 @@
 
 > Snapshot of task state in this repo. Full backlog lives in Jira project PA (zhamba.atlassian.net); this file mirrors only what an agent needs to resume work.
 
-## Активная задача: ночной прогон 07-08.09.2026 (оркестратор Claude Code → OpenHands)
+## Ночной прогон 07-08.09.2026 - выполнен (D31)
 
-Решение D31. Очередь: 1.8 (собрать ветку Дирижёра, PA-60) → KF-3 ‖ 3.1 (PMM-51) → 3.2 → 3.3 (после мержа 3.1). Два слота, профили `fedor`/`glm`. Мерж в `main` по зелёному CI выполняет оркестратор; до двух фикс-раундов на историю, потом `blocked`. `codex-conductor.timer` выключен на ночь. Состояние прогона - `~/orca/proxima-ai-night/logs/night-2026-09-07/state.json` (вне git); стоп-кран - файл `~/orca/proxima-ai-night/STOP`. Отчёт утром - `HANDOFF.md`, раздел «Ночь 07-08.09.2026», плюс таблица синхронизации Jira под approve Mike.
+Шесть единиц смержены в `main`: 1.8 (#73), KF-3 (#75), 3.2 (#76), 3.1 (#78), PA-65 (#80), 3.3 (#82); мост #81, D31 #72. `blocked` нет. Отчёт, инциденты, таблица синхронизации Jira и рекомендации - `HANDOFF.md`, раздел «Ночь 07-08.09.2026». Ждёт Mike: approve таблицы Jira; решения по открытым вопросам 3.1/3.2/3.3 (в PR); включение `codex-conductor.timer` после обновления его чекаута; следующий шаг - AD для Story 4.0.
 
 ## Snapshot 03.09.2026 (модули M-06+)
 
