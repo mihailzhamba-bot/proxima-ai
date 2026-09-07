@@ -479,3 +479,46 @@ def test_migration_verifier_additive_check_covers_all_existing_migrations() -> N
     migrations = load_tool("verify_migrations")
     for path in sorted((ROOT / "db" / "migrations").glob("*.sql")):
         migrations.assert_additive_only(path.read_text(encoding="utf-8"), path.name)
+
+
+def test_wb_async_report_gate_is_fail_closed() -> None:
+    gate = load_tool("verify_wb_async_report")
+    gate.verify()
+
+
+def test_wb_async_report_gate_prints_the_run_ledger_line() -> None:
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "verify_wb_async_report.py")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "wb_async_report: run ledger\n"
+
+
+def test_wb_async_report_gate_rejects_tenant_autocreate_and_lost_tests(tmp_path: Path) -> None:
+    gate = load_tool("verify_wb_async_report")
+    original = (ROOT / "tools" / "wb_async_report.py").read_text(encoding="utf-8")
+    regressed = tmp_path / "wb_async_report.py"
+    regressed.write_text(
+        original + '\n\ndef _legacy(connection, tenant_id):\n    connection.execute("INSERT INTO tenants (tenant_id) VALUES (%s) ON CONFLICT DO NOTHING", (tenant_id,))\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="never insert into tenants"):
+        gate.verify(tool_path=regressed)
+
+    without_guc = tmp_path / "without_guc.py"
+    without_guc.write_text(original.replace("SELECT set_config(%s, %s, false)", "SELECT 1"), encoding="utf-8")
+    with pytest.raises(ValueError, match="set_config"):
+        gate.verify(tool_path=without_guc)
+
+    missing_tests = tmp_path / "test_wb_async_report.py"
+    missing_tests.write_text("def test_something_else() -> None:\n    pass\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="missing test test_second_run_in_a_day_does_not_create_a_report"):
+        gate.verify(unit_tests=missing_tests)
+
+    unwired = tmp_path / "Makefile"
+    unwired.write_text("verify: install test\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="wb-async-report"):
+        gate.verify(makefile=unwired)
