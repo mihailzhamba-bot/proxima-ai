@@ -8,7 +8,7 @@
  */
 import type { PoolClient } from 'pg';
 
-import { FUNNEL_SOURCE } from '../wb/funnel-v3.js';
+import { FUNNEL_SOURCE, type FunnelSource } from '../wb/funnel-v3.js';
 
 export interface FunnelProductDay {
   readonly nmId: number;
@@ -19,6 +19,7 @@ export interface FunnelDailyInput {
   readonly tenantId: string;
   readonly runId: string;
   readonly productDays: readonly FunnelProductDay[];
+  readonly source?: FunnelSource;
 }
 
 export interface VersionFunnelDailyResult {
@@ -29,6 +30,7 @@ export interface VersionFunnelDailyResult {
 type QueryClient = Pick<PoolClient, 'query'>;
 
 export async function versionFunnelDaily(client: QueryClient, input: FunnelDailyInput): Promise<VersionFunnelDailyResult> {
+  const source = input.source ?? FUNNEL_SOURCE;
   const keys = new Map<string, FunnelProductDay>();
   for (const productDay of input.productDays) keys.set(`${productDay.nmId}:${productDay.calendarDay}`, productDay);
   if (keys.size === 0) return { versions: 0, inputRuns: 0 };
@@ -40,7 +42,7 @@ export async function versionFunnelDaily(client: QueryClient, input: FunnelDaily
        l.open_card, l.cart, l.orders, l.orders_sum_rub, l.buyouts, l.buyouts_sum_rub
      FROM jsonb_to_recordset($3::jsonb) AS p(nm_id bigint, calendar_day date)
      JOIN stg_wb_funnel_latest l ON l.tenant_id = $1::text AND l.source = $4::text AND l.nm_id = p.nm_id AND l.calendar_day = p.calendar_day`,
-    [input.tenantId, input.runId, pairs, FUNNEL_SOURCE],
+    [input.tenantId, input.runId, pairs, source],
   );
   if ((versions.rowCount ?? 0) !== keys.size) {
     throw new Error(`funnel-daily: expected ${keys.size} versions from stg_wb_funnel_latest, wrote ${versions.rowCount ?? 0}`);
@@ -52,7 +54,7 @@ export async function versionFunnelDaily(client: QueryClient, input: FunnelDaily
      JOIN stg_wb_funnel_latest l ON l.tenant_id = $1::text AND l.source = $4::text AND l.nm_id = p.nm_id AND l.calendar_day = p.calendar_day
      WHERE l.run_id <> $2::uuid
      ON CONFLICT (tenant_id, run_id, input_run_id) DO NOTHING`,
-    [input.tenantId, input.runId, pairs, FUNNEL_SOURCE],
+    [input.tenantId, input.runId, pairs, source],
   );
   return { versions: versions.rowCount ?? 0, inputRuns: inputs.rowCount ?? 0 };
 }

@@ -19,6 +19,12 @@
 | `analytics/sales_funnel_v3_history/sample.json` (3 nmId, 7 дней) | `analytics/sales-funnel-v3-history/20260830T141424Z__nmIDs-3_period-2026-08-24_2026-08-30_day.json` (HTTP 200) | `python3 tools/anonymize_fixture.py <src> analytics/sales_funnel_v3_history/sample.json --seed 42 --salt-file $SALT` |
 | `analytics/nm_report_downloads/sample.json` (список отчётов) | `analytics/nm-report-downloads/20260830T060719Z__list.json` | `python3 tools/anonymize_fixture.py <src> analytics/nm_report_downloads/sample.json --seed 42 --salt-file $SALT` |
 
+`analytics/nm_report_downloads/funnel_csv_promote.json` — synthetic-фикстура
+Story 3.3: 3 обезличенных `nmID` × 7 дней, 21 строка payload в форме,
+которую `complete_download` сохраняет из CSV. Ключи `nmID` и `dt` подтверждены
+загрузчиком. Имена шести метрических колонок повторяют `CSV_COLUMN_MAP` и являются
+`[ASSUMPTION until Story 3.0]`; после Story 3.0 меняются одна таблица и фикстура.
+
 Что обезличено (структура и календарные дни сохранены):
 
 - `nmId` -> перенумерация 12345001, ...; `subjectId` -> 9001, ... (порядок первого вхождения);
