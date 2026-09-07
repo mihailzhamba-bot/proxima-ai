@@ -1,3 +1,22 @@
+"""Crash-safe WB Analytics async CSV collector: phase 1 of the `funnel_csv` job.
+
+Story 3.2 (AD-3, AD-5, AD-11): every invocation is one `collector_runs` row of
+kind `funnel_csv_download`, opened RUNNING before any work and closed
+SUCCEEDED/FAILED with `finished_at` (the FAILED flip is a separate autocommit,
+so a failed run never hides behind RUNNING). The session GUC
+`proxima.tenant_id` is the first statement on the connection (AD-13). The
+tenant must already exist: this tool never creates `tenants` rows. A report is
+created at most once per Moscow day: before the first create the tool lists
+`nm-report/downloads` and, when a report was already created today, closes the
+run SUCCEEDED with a `daily-report-guard` note instead of creating another.
+
+The tool runs under the owner URI (POSTGRES_USER_FILE/POSTGRES_PASSWORD_FILE):
+the single exception to AD-11 until the phase moves to TypeScript (M-04).
+
+stdout carries exactly one JSON summary line; run-ledger and step events are
+JSON lines on stderr. No line ever carries a token, a URL body or a payload.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -31,11 +50,23 @@ MOSCOW = ZoneInfo("Europe/Moscow")
 UTC = ZoneInfo("UTC")
 API_ROOT = "https://seller-analytics-api.wildberries.ru/api/v2/nm-report/downloads"
 REPORT_TYPE = "DETAIL_HISTORY_REPORT"
+# AD-3/AD-5: phase 1 of funnel_csv is its own ledger run; the row is created by
+# this tool. Kinds and statuses mirror the CHECK constraints of migration 011.
+RUN_KIND = "funnel_csv_download"
+RUN_KINDS = frozenset({"collect", "backfill", "funnel_v3", "funnel_csv_download", "funnel_csv_promote", "norm", "brief"})
+RUN_CLOSED_STATUSES = frozenset({"SUCCEEDED", "FAILED"})
+# AD-13: session GUC every RLS policy reads; set as the first statement.
+TENANT_GUC = "proxima.tenant_id"
 POLL_INTERVAL_SECONDS = 21
 DAILY_REPORT_QUOTA = 20
 MAX_CREATE_REPLAYS = 2
 MAX_REGENERATIONS = 2
 NOT_FOUND_BEFORE_REPLAY = 3
+# Daily-report guard: attempts on the unfiltered downloads list before the
+# first create (429 waits on the retry header in between).
+MAX_LIST_ATTEMPTS = 3
+PERIOD_LATEST_CLOSED_WEEK = "latest-closed-week"
+PERIOD_RANGE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})")
 SAFE_ENV_KEYS = frozenset(
     {
         "WB_STATISTICS_TOKEN_FILE",
@@ -99,6 +130,9 @@ class TaskRecord:
     downloaded_size: int | None = None
     parsed_row_count: int | None = None
     staged_row_count: int | None = None
+    # AD-3 audit link (migration 011, no CASCADE): the ledger run that produced
+    # or is producing the download.
+    collector_run_id: uuid.UUID | None = None
 
     @classmethod
     def from_row(cls, row: Mapping[str, object]) -> TaskRecord:
@@ -120,6 +154,7 @@ class TaskRecord:
             downloaded_size=int(row["downloaded_size"]) if row.get("downloaded_size") is not None else None,
             parsed_row_count=int(row["parsed_row_count"]) if row.get("parsed_row_count") is not None else None,
             staged_row_count=int(row["staged_row_count"]) if row.get("staged_row_count") is not None else None,
+            collector_run_id=uuid.UUID(str(row["collector_run_id"])) if row.get("collector_run_id") is not None else None,
         )
 
 
@@ -172,7 +207,9 @@ class RawEnvelope:
 
 
 class ReportRepository(Protocol):
-    def reserve_task(self, tenant_id: str, period_from: date, period_to: date, quota_date: date) -> tuple[TaskRecord, bool]: ...
+    def open_run(self, tenant_id: str, kind: str, *, git_sha: str | None = None, image_id: str | None = None) -> uuid.UUID: ...
+    def close_run(self, run_id: uuid.UUID, status: str) -> None: ...
+    def reserve_task(self, tenant_id: str, period_from: date, period_to: date, quota_date: date, collector_run_id: uuid.UUID) -> tuple[TaskRecord, bool]: ...
     def get_task(self, task_id: uuid.UUID) -> TaskRecord: ...
     def mark_initial_create_sent(self, task_id: uuid.UUID) -> TaskRecord: ...
     def reserve_followup_post(self, task_id: uuid.UUID, action: str, quota_date: date) -> TaskRecord: ...
@@ -251,6 +288,71 @@ def latest_closed_week(now: datetime) -> tuple[date, date]:
     return current_monday - timedelta(days=7), current_monday - timedelta(days=1)
 
 
+def parse_period(value: str, now: datetime) -> tuple[date, date]:
+    """`latest-closed-week` (default) or an explicit `YYYY-MM-DD..YYYY-MM-DD`.
+
+    The explicit form exists for manual replays (AD-5). Both ends are Moscow
+    calendar days and the range must be closed: it ends before today (AD-7,
+    a day is a fact only once it is full).
+    """
+    if value == PERIOD_LATEST_CLOSED_WEEK:
+        return latest_closed_week(now)
+    match = PERIOD_RANGE_RE.fullmatch(value)
+    if match is None:
+        raise WbAsyncReportError(f"--period must be {PERIOD_LATEST_CLOSED_WEEK} or YYYY-MM-DD..YYYY-MM-DD")
+    try:
+        period_from, period_to = (date.fromisoformat(part) for part in match.groups())
+    except ValueError as error:
+        raise WbAsyncReportError("--period dates must be valid ISO calendar dates") from error
+    if period_from > period_to:
+        raise WbAsyncReportError("--period start must not be after its end")
+    if now.tzinfo is None:
+        raise WbAsyncReportError("now must be timezone-aware")
+    if period_to >= now.astimezone(MOSCOW).date():
+        raise WbAsyncReportError("--period must end on a closed day (before today, Europe/Moscow)")
+    return period_from, period_to
+
+
+def parse_created_at(value: object) -> datetime | None:
+    """`createdAt` of the downloads list, e.g. `2026-08-30 04:17:23`.
+
+    A naive timestamp is read as UTC (D20 dates the external consumer's reports
+    by this field in UTC); an offset, when present, wins. Unparseable or absent
+    values yield None so the caller can decide whether that is drift.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip())
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def reports_created_on(body: object, day: date) -> int:
+    """Reports in a `GET nm-report/downloads` body created on the Moscow `day`.
+
+    Fail-closed on shape: a body without a `data` list, or a non-empty list
+    where no entry carries a readable `createdAt`, is schema drift, because a
+    silent zero would let the daily guard create a second report.
+    """
+    data = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(data, list):
+        raise WbAsyncReportError("downloads list schema drift")
+    readable = 0
+    created_today = 0
+    for item in data:
+        created_at = parse_created_at(item.get("createdAt")) if isinstance(item, dict) else None
+        if created_at is None:
+            continue
+        readable += 1
+        if created_at.astimezone(MOSCOW).date() == day:
+            created_today += 1
+    if data and readable == 0:
+        raise WbAsyncReportError("downloads list schema drift: no readable createdAt")
+    return created_today
+
+
 def build_request(task_id: uuid.UUID, tenant_id: str, period_from: date, period_to: date) -> dict[str, object]:
     return {
         "id": str(task_id),
@@ -295,9 +397,61 @@ class PostgresReportRepository:
     def get_task(self, task_id: uuid.UUID) -> TaskRecord:
         return self._row(task_id)
 
-    def reserve_task(self, tenant_id: str, period_from: date, period_to: date, quota_date: date) -> tuple[TaskRecord, bool]:
+    def bind_tenant(self, tenant_id: str) -> None:
+        """AD-13: the session GUC, first statement on the connection.
+
+        The owner URI bypasses RLS, but the convention is the same for every
+        job (AD-3: "Python-jobs - та же схема"), so the autocommit steps and
+        the transactions of one run share one tenant on the session.
+        """
+        self.connection.execute("SELECT set_config(%s, %s, false)", (TENANT_GUC, tenant_id))
+
+    def _require_tenant(self, tenant_id: str) -> None:
+        """AD-5: the tenant must exist; this tool never creates `tenants` rows."""
+        row = self.connection.execute("SELECT 1 AS present FROM tenants WHERE tenant_id = %s", (tenant_id,)).fetchone()
+        if row is None:
+            raise WbAsyncReportError(
+                f"tenant {tenant_id} does not exist: the collector never creates tenants (AD-5); add the tenants row first"
+            )
+
+    def open_run(self, tenant_id: str, kind: str, *, git_sha: str | None = None, image_id: str | None = None) -> uuid.UUID:
+        """AD-3 step (1): `INSERT collector_runs … RUNNING` as its own autocommit."""
+        if kind not in RUN_KINDS:
+            raise WbAsyncReportError(f"invalid collector run kind: {kind}")
         with self.connection.transaction():
-            self.connection.execute("INSERT INTO tenants (tenant_id) VALUES (%s) ON CONFLICT DO NOTHING", (tenant_id,))
+            self._require_tenant(tenant_id)
+            run_id = uuid.uuid4()
+            self.connection.execute(
+                """
+                INSERT INTO collector_runs (run_id, tenant_id, kind, status, git_sha, image_id)
+                VALUES (%s, %s, %s, 'RUNNING', %s, %s)
+                """,
+                (run_id, tenant_id, kind, git_sha, image_id),
+            )
+            return run_id
+
+    def close_run(self, run_id: uuid.UUID, status: str) -> None:
+        """Closes the run: only `status` and `finished_at` change (AD-11 convention).
+
+        Exactly one RUNNING row must flip; zero rows means the run is already
+        closed or invisible, and that is an error, never a silent success.
+        """
+        if status not in RUN_CLOSED_STATUSES:
+            raise WbAsyncReportError(f"invalid collector run status: {status}")
+        with self.connection.transaction():
+            cursor = self.connection.execute(
+                """
+                UPDATE collector_runs SET status = %s, finished_at = CURRENT_TIMESTAMP
+                WHERE run_id = %s AND status = 'RUNNING'
+                """,
+                (status, run_id),
+            )
+            if cursor.rowcount != 1:
+                raise WbAsyncReportError(f"cannot mark run {run_id} {status}: expected one RUNNING row, updated {cursor.rowcount}")
+
+    def reserve_task(self, tenant_id: str, period_from: date, period_to: date, quota_date: date, collector_run_id: uuid.UUID) -> tuple[TaskRecord, bool]:
+        with self.connection.transaction():
+            self._require_tenant(tenant_id)
             self.connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (self._lock_key(tenant_id, quota_date),))
             existing = self.connection.execute(
                 """
@@ -307,7 +461,18 @@ class PostgresReportRepository:
                 (tenant_id, REPORT_TYPE, period_from, period_to),
             ).fetchone()
             if existing is not None:
-                return TaskRecord.from_row(existing), False
+                # The audit link follows the run that produces the download: a
+                # run resuming an unfinished task takes it over, a run that only
+                # finds the task already DOWNLOADED leaves the producer in place.
+                self.connection.execute(
+                    """
+                    UPDATE wb_analytics_report_tasks
+                    SET collector_run_id = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE task_id = %s AND lifecycle_status <> 'DOWNLOADED'
+                    """,
+                    (collector_run_id, existing["task_id"]),
+                )
+                return self._row(uuid.UUID(str(existing["task_id"]))), False
             if self._daily_quota_used(tenant_id, quota_date) >= DAILY_REPORT_QUOTA:
                 raise QuotaExhausted(f"daily report quota exhausted for {tenant_id} on {quota_date.isoformat()}")
             task_id = uuid.uuid4()
@@ -316,10 +481,10 @@ class PostgresReportRepository:
                 """
                 INSERT INTO wb_analytics_report_tasks (
                     task_id, tenant_id, report_type, period_from, period_to, timezone,
-                    aggregation_level, request_body, lifecycle_status
-                ) VALUES (%s, %s, %s, %s, %s, 'Europe/Moscow', 'day', %s, 'RESERVED')
+                    aggregation_level, request_body, lifecycle_status, collector_run_id
+                ) VALUES (%s, %s, %s, %s, %s, 'Europe/Moscow', 'day', %s, 'RESERVED', %s)
                 """,
-                (task_id, tenant_id, REPORT_TYPE, period_from, period_to, Jsonb(request_body)),
+                (task_id, tenant_id, REPORT_TYPE, period_from, period_to, Jsonb(request_body), collector_run_id),
             )
             self.connection.execute(
                 """
@@ -602,6 +767,20 @@ def validate_spool_dir(path: Path) -> Path:
     return path.resolve()
 
 
+def log_run_event(event: str, run_id: uuid.UUID, tenant_id: str) -> None:
+    """Run-ledger lifecycle line (`running`/`succeeded`/`failed`) on stderr, the
+    same shape as the TypeScript jobs; ids and the tenant only."""
+    line = {"event": f"run-ledger:{event}", "run_id": str(run_id), "tenant_id": tenant_id, "kind": RUN_KIND, "at": datetime.now(UTC).isoformat()}
+    print(json.dumps(line, ensure_ascii=False, sort_keys=True), file=sys.stderr)
+
+
+def log_run_step(run_id: uuid.UUID, tenant_id: str, step: str, msg: str, *, level: str = "info", **extra: object) -> None:
+    """One JSON line per job step: `{ts, level, run_id, tenant_id, kind, step, msg, …}`.
+    Extra fields are counts, codes and ids only - never payloads, URLs or secrets."""
+    line = {"ts": datetime.now(UTC).isoformat(), "level": level, "run_id": str(run_id), "tenant_id": tenant_id, "kind": RUN_KIND, "step": step, "msg": msg, **extra}
+    print(json.dumps(line, ensure_ascii=False, sort_keys=True), file=sys.stderr)
+
+
 def json_body(response: httpx.Response, stage: str) -> object:
     try:
         return json.loads(response.content)
@@ -674,6 +853,8 @@ class AsyncReportCollector:
         self.monotonic = monotonic
         self.sleep = sleep
         self.max_wait_seconds = max_wait_seconds
+        # The ledger run of the last collect(); the summary line reports it.
+        self.run_id: uuid.UUID | None = None
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": self.token}
@@ -684,18 +865,85 @@ class AsyncReportCollector:
     def _capture(self, task_id: uuid.UUID, stage: str, response: httpx.Response) -> None:
         self.recorder.capture(task_id, stage, response, self.now())
 
-    def collect(self, tenant_id: str, period_from: date, period_to: date) -> TaskRecord:
+    def collect(self, tenant_id: str, period_from: date, period_to: date, *, git_sha: str | None = None, image_id: str | None = None) -> TaskRecord:
+        """One ledger run (AD-3): RUNNING before any work, SUCCEEDED after it,
+        FAILED as a separate autocommit when anything raises. A missing tenant
+        fails here, before the run row, the task row or any network request."""
+        run_id = self.repository.open_run(tenant_id, RUN_KIND, git_sha=git_sha, image_id=image_id)
+        self.run_id = run_id
+        log_run_event("running", run_id, tenant_id)
+        try:
+            task = self._collect(run_id, tenant_id, period_from, period_to)
+        except Exception as error:
+            log_run_step(run_id, tenant_id, "failed", "run failed; marking FAILED", level="error", error=type(error).__name__)
+            # If the FAILED flip itself fails the run stays RUNNING; the original
+            # error still surfaces and Story 1.7's run tooling reconciles the ledger.
+            try:
+                self.repository.close_run(run_id, "FAILED")
+            except Exception as close_error:
+                log_run_step(run_id, tenant_id, "failed", "could not mark run FAILED", level="error", detail=str(close_error))
+            else:
+                log_run_event("failed", run_id, tenant_id)
+            raise
+        self.repository.close_run(run_id, "SUCCEEDED")
+        log_run_event("succeeded", run_id, tenant_id)
+        return task
+
+    def _collect(self, run_id: uuid.UUID, tenant_id: str, period_from: date, period_to: date) -> TaskRecord:
         self.recorder.recover()
-        task, created = self.repository.reserve_task(tenant_id, period_from, period_to, self._quota_date())
+        task, created = self.repository.reserve_task(tenant_id, period_from, period_to, self._quota_date(), run_id)
         if task.lifecycle_status == "DOWNLOADED":
             return task
         if task.lifecycle_status == "BLOCKED":
             raise WbAsyncReportError(f"task {task.task_id} is blocked: inspect raw responses and last_error_code")
         deadline = self.monotonic() + self.max_wait_seconds
         if created or task.lifecycle_status == "RESERVED":
+            # AD-5: at most one created report per Moscow day, checked against
+            # the live downloads list, not only against this database.
+            created_today = self._reports_created_today(task)
+            if created_today:
+                log_run_step(
+                    run_id,
+                    tenant_id,
+                    "daily-report-guard",
+                    "a report was already created today (Europe/Moscow); not creating another, task stays RESERVED",
+                    task_id=str(task.task_id),
+                    quota_date=self._quota_date().isoformat(),
+                    reports_created_today=created_today,
+                )
+                return task
             task = self.repository.mark_initial_create_sent(task.task_id)
             self._post_create(task)
         return self._poll_until_downloaded(task.task_id, deadline)
+
+    def _reports_created_today(self, task: TaskRecord) -> int:
+        """`GET nm-report/downloads` (unfiltered list) before the first create.
+
+        Fail-closed: when the list cannot be read the report is not created and
+        the run fails; a rerun resumes the same RESERVED task. The response is
+        captured like every other WB answer (stage `status`: same endpoint,
+        same GET, no filter).
+        """
+        for attempt in range(1, MAX_LIST_ATTEMPTS + 1):
+            try:
+                response = self.client.get(API_ROOT, headers=self._headers())
+            except httpx.HTTPError:
+                self.repository.record_error(task.task_id, "LIST_NETWORK_FAILURE")
+                raise WbAsyncReportError("downloads list request failed; no report is created until the list is checked")
+            self._capture(task.task_id, "status", response)
+            if response.status_code == 429 and attempt < MAX_LIST_ATTEMPTS:
+                self.sleep(retry_delay(response))
+                continue
+            if response.status_code != 200:
+                code = "LIST_ACCESS_DENIED" if response.status_code in {401, 402, 403} else f"LIST_HTTP_{response.status_code}"
+                self.repository.record_error(task.task_id, code)
+                raise WbAsyncReportError(f"downloads list failed with HTTP {response.status_code}")
+            try:
+                return reports_created_on(json_body(response, "list"), self._quota_date())
+            except WbAsyncReportError:
+                self.repository.record_error(task.task_id, "LIST_SCHEMA_DRIFT")
+                raise
+        raise WbAsyncReportError("downloads list attempts exhausted")
 
     def _post_create(self, task: TaskRecord) -> None:
         try:
@@ -892,7 +1140,10 @@ class AsyncReportCollector:
             raise
 
 
-def connect_repository(env: Mapping[str, str]) -> PostgresReportRepository:
+def connect_repository(env: Mapping[str, str], tenant_id: str | None = None) -> PostgresReportRepository:
+    """Owner-URI connection (AD-11 exception for phase 1). With `tenant_id` the
+    session GUC is the first statement on the connection (AD-3/AD-13);
+    `apply_migrations` connects without a tenant."""
     required = ("POSTGRES_USER_FILE", "POSTGRES_PASSWORD_FILE")
     missing = [key for key in required if not env.get(key)]
     if missing:
@@ -909,14 +1160,21 @@ def connect_repository(env: Mapping[str, str]) -> PostgresReportRepository:
         autocommit=True,
         row_factory=dict_row,
     )
-    return PostgresReportRepository(connection)
+    repository = PostgresReportRepository(connection)
+    if tenant_id is not None:
+        repository.bind_tenant(tenant_id)
+    return repository
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Crash-safe WB Analytics CSV collector", allow_abbrev=False)
     parser.add_argument("--env-file", type=Path, default=Path(".env"))
     parser.add_argument("--tenant-id", required=True)
-    parser.add_argument("--period", choices=("latest-closed-week",), default="latest-closed-week")
+    parser.add_argument(
+        "--period",
+        default=PERIOD_LATEST_CLOSED_WEEK,
+        help=f"{PERIOD_LATEST_CLOSED_WEEK} (default) or an explicit closed range YYYY-MM-DD..YYYY-MM-DD in the Moscow calendar",
+    )
     parser.add_argument("--max-wait-seconds", type=float, default=3600)
     parser.add_argument(
         "--allow-analytics-read-write",
@@ -940,27 +1198,38 @@ def main(argv: list[str] | None = None) -> int:
     now = datetime.now(MOSCOW)
     token = read_secret(Path(token_path), private_only=True, label="WB Analytics token file")
     validate_analytics_token(token, now=now, allow_read_write=args.allow_analytics_read_write)
-    period_from, period_to = latest_closed_week(now)
-    repository = connect_repository(env)
+    period_from, period_to = parse_period(args.period, now)
+    repository = connect_repository(env, tenant_id=args.tenant_id)
     recorder = DurableRawRecorder(Path(spool_path), repository)
     with httpx.Client(
         timeout=httpx.Timeout(60),
         follow_redirects=False,
         headers={"User-Agent": "proxima-ai-wb-async-report/1"},
     ) as client:
-        result = AsyncReportCollector(
+        collector = AsyncReportCollector(
             repository,
             recorder,
             client,
             token,
             max_wait_seconds=args.max_wait_seconds,
-        ).collect(args.tenant_id, period_from, period_to)
+        )
+        # Same labels as the TypeScript jobs (morning_run.sh exports them).
+        result = collector.collect(
+            args.tenant_id,
+            period_from,
+            period_to,
+            git_sha=os.environ.get("PROXIMA_GIT_SHA") or None,
+            image_id=os.environ.get("PROXIMA_IMAGE_ID") or None,
+        )
     print(
         json.dumps(
             {
                 "status": result.lifecycle_status,
                 "task_id": str(result.task_id),
                 "tenant_id": result.tenant_id,
+                "run_id": str(collector.run_id),
+                "run_kind": RUN_KIND,
+                "collector_run_id": str(result.collector_run_id) if result.collector_run_id is not None else None,
                 "report_type": REPORT_TYPE,
                 "period_from": result.period_from.isoformat(),
                 "period_to": result.period_to.isoformat(),

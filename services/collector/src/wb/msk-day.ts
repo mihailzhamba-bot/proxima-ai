@@ -50,19 +50,22 @@ function moscowOffsetMinutes(now: Date): number {
     parts = new Intl.DateTimeFormat('en-US', {
       timeZone: 'Europe/Moscow',
       year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
     }).formatToParts(now);
   } catch {
     return MSK_UTC_OFFSET_MINUTES;
   }
-  const field = (type: Intl.DateTimeFormatPartTypes): number => {
-    const raw = parts.find((part) => part.type === type)?.value ?? '';
-    return Number(raw === '24' ? '00' : raw);
-  };
+  const field = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((part) => part.type === type)?.value ?? '');
   const year = field('year');
   const month = field('month');
   const day = field('day');
-  const hour = field('hour');
+  // An engine that ignores `hourCycle` and renders midnight as hour 24 keeps
+  // the calendar day of the instant, so only the hour is folded back to 0.
+  // Nothing else may be rewritten: a blanket `'24' -> '00'` on every part
+  // also zeroed minute :24 and the 24th day of the month, shifting the
+  // sampled offset by 24 minutes or a full day (KF-3).
+  const hour = field('hour') % 24;
   const minute = field('minute');
   const second = field('second');
   if ([year, month, day, hour, minute, second].some((value) => !Number.isSafeInteger(value))) {
