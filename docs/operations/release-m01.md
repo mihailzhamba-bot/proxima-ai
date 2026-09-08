@@ -447,12 +447,12 @@ bash tools/rehearsal_run.sh check --root "$ROOT"
 ```
 `steps` - `proxima_control_plane.norm run` и `proxima_control_plane.brief run` (модули `tools/morning_run.sh`). `check` печатает ledger (`schema_migrations`, `collector_runs`, `data_status_current`, `norm_daily_current`, `brief_current`) и таблицу W10/W35 против `docs/state/API-FACTS.md` (`649 | 700860.00`, `225 | 263089.00`); расхождение - exit 1. Для W35 действует оговорка `UNKNOWN` из `API-FACTS.md` (эталон снят с неполного снимка 30.08): при сошедшемся W10 сверять дни 24-29.08 по отдельности, решение - Mike, не «починить цифру». `all --live --root "$ROOT"` = `up → backfill → tail → steps → check` одной командой; `init` и `down` всегда отдельно.
 
-**Витрина на данных репетиции** (по желанию, после `steps`). Тот же проект с третьим `-f` - overlay `infra/webapp.staging.compose.yaml`; переменные уже в `<root>/.env`: `WEBAPP_DATA_MODE=postgres`, `WEBAPP_TENANT_ID=amirova-test`, `PROXIMA_WEBAPP_PORT=3001` (боевой `proxima-webapp-staging` на 3000 не трогается). URI приходит файлом `/run/secrets/proxima_webapp_uri` (env `WEBAPP_DATA_DATABASE_URI_FILE`, `services/webapp/src/lib/data/postgres-provider.ts:37`): роль `proxima_webapp`, член `proxima_webapp_readonly`, хост `postgres:5432` внутри сети репетиции - файл создан `init`, роль - provision в `up`.
+**Витрина на данных репетиции** (по желанию, после `steps`). Тот же проект с третьим `-f` - overlay `infra/webapp.staging.compose.yaml`; переменные уже в `<root>/.env`: `WEBAPP_DATA_MODE=postgres`, `WEBAPP_TENANT_ID=amirova-test`, `PROXIMA_WEBAPP_PORT=3434` (боевой `proxima-webapp-staging` на 3000 не трогается). URI приходит файлом `/run/secrets/proxima_webapp_uri` (env `WEBAPP_DATA_DATABASE_URI_FILE`, `services/webapp/src/lib/data/postgres-provider.ts:37`): роль `proxima_webapp`, член `proxima_webapp_readonly`, хост `postgres:5432` внутри сети репетиции - файл создан `init`, роль - provision в `up`.
 ```bash
 sudo docker compose --env-file "$ROOT/.env" -p proxima-rehearsal \
   -f infra/compose.yaml -f infra/compose.rehearsal.yaml -f infra/webapp.staging.compose.yaml \
   up -d --build webapp
-ssh -N -L 3001:127.0.0.1:3001 proxima   # с машины Mike; затем http://127.0.0.1:3001/brief
+ssh -N -L 3434:127.0.0.1:3434 proxima   # с машины Mike; затем http://127.0.0.1:3434/brief
 ```
 Хостовый порт `5434` нужен только для клиента с хоста (psql на хосте нет): URI `postgresql://proxima_webapp:<пароль из <root>/secrets/proxima_webapp_password>@127.0.0.1:5434/proxima` - пароль читать `sudo -n cat`, в файл `0600` своего пользователя, не в чат и не в лог.
 
