@@ -38,15 +38,42 @@ Sprint-status: 4.0-4.3 `done`, Epic 4 `in-progress`. Закрыты старые
 
 **Следующее:** 4.4 после разметки ретро-тревог Владислава (PMM-126); Epic 5 требует решений Mike (5.0 AD, 5.1 egress PMM-31); релизный трек - по D33 с Владиславом.
 
-### Трек сбора данных (08.09, после D35)
+### Трек сбора данных (08.09, после D35) - единицы дня выполнены, репетиция SUCCEEDED
 
-**Диагноз.** В `main` построен весь конвейер (джобы `collect`/`backfill`/`funnel-v3`/`funnel-csv-promote`, ledger `collector_runs`, откат по `run_id`, роли/RLS, образы, compose, systemd-юниты, runbook `docs/operations/release-m01.md`; `norm` → `brief`; `/brief` на Postgres) - на сервере из него не работает ничего: схема 6 против 18 в коде, `collector_runs` нет, таймеров `proxima-*` нет (кроме `proxima-host-monitor`), чекаут `/srv/proxima-ai/repo` на `fd95fcb`, данные WB - 25.08 16:33 UTC. Ни одно утро через новый конвейер не проходило; цепочка не прогонялась на реальных артефактах 31.08 - только CI на фикстурах (`docs/state/RELEASE-READINESS-1.14.md` §5, `docs/state/INVENTORY.md:66`).
+**Итог (вечер 08.09 UTC):** девять PR в `main` (#108-#116), репетиция цепочки 1.14 на VPS прошла с живым хвостом - все четыре прогона ledger `SUCCEEDED`, гейт §4 пройден; боевой контур не тронут (схема 6, таймеров `proxima-*` нет). Решения Mike за день: D35 (четыре пункта, ~10:30 UTC) + «Дополнения по репетиции» (~13:40 UTC, четыре: правило гейта §4 по дням, определение заказов «на момент `run_day − 3`» + открытый вопрос Владиславу в 6.1/6.3, секрет webapp `1001:1001`, полоса метрик скрыта) - всё в `DECISIONS.md` D35. Стенд репетиции оставлен работать, пока Mike не посмотрит `/brief`.
 
-**Баг live-network.** `WB_ALLOW_LIVE_NETWORK=1` (fail-closed по AD-4) не выставлен ни в `infra/jobs.env`, ни в `infra/compose.yaml`, ни в live-tail runbook §3 (`release-m01.md:239`), ни в `tools/morning_run.sh`; `collect.ts:223` → `networkTransport()` → `WB_NETWORK_FORBIDDEN` (`transport.ts:34-37`). Чинит U-A1 (`fix/live-network-env`, флаг + гейт `tools/verify_live_network.py`).
+**Диагноз (утро, D35).** Конвейер целиком построен в `main` (джобы `collect`/`backfill`/`funnel-v3`/`funnel-csv-promote`, ledger `collector_runs`, откат по `run_id`, роли/RLS, образы, compose, systemd-юниты, runbook `docs/operations/release-m01.md`, `norm` → `brief`, `/brief` на Postgres), но на сервере из него не работало ничего: схема 6 против 18 в коде, `collector_runs` нет, таймеров нет, чекаут `/srv/proxima-ai/repo` на `fd95fcb`, данные WB - 25.08 16:33 UTC; цепочка ни разу не прогонялась на реальных артефактах 31.08. Найден баг релизного пути: `WB_ALLOW_LIVE_NETWORK=1` (AD-4) не выставлен нигде в контуре деплоя → утренний `collect` упал бы на `WB_NETWORK_FORBIDDEN`. Закрыто за день (таблица ниже).
 
-**План (D35).** A - сегодняшние единицы: U-A1; U-A2 (`infra/compose.rehearsal.yaml` + `tools/rehearsal_run.sh`, compose-проект `proxima-rehearsal`, одноразовый postgres `127.0.0.1:5434`, боевая база и `/srv/proxima-ai` не трогаются); U-A3 (readiness v2 + `WORKS-TODAY.md` + исполнитель runbook по D7); U-A4 (статус Story 1.11). B - репетиция на VPS с живым хвостом: 2 read-вызова `statistics.orders`/`statistics.sales` (`flag=0`) на statistics-токене с сервера, выполняет оркестратор, ответы в CAS-артефакты репетиционного raw-каталога, значение токена не печатается, после - `docker compose -p proxima-rehearsal down -v`. C - релиз 1.14 вт 15.09 по runbook после Story 6.1 Владислава (в `main` до пт 11.09), только по слову «деплой». Story 4.4 и Epic 5 заморожены до трёх SUCCEEDED утр подряд; Источники v2 (остатки, финотчёт, реклама, цены) - отдельный эпик после первого утра, не создан.
+| PR | Ветка | Единица | Что вошло |
+|---|---|---|---|
+| #108 | `docs/d35-collector-track` | D35 | решение в `DECISIONS.md`, active task в `TASKS.md`, утренняя версия этого раздела |
+| #109 | `chore/story-1.11-done` | U-A4 | Story 1.11 → `done`: объём отгружен в Story 2.5 (CP-5) |
+| #110 | `fix/live-network-env` | U-A1 | `WB_ALLOW_LIVE_NETWORK=1` у сервиса `collector` в `infra/compose.yaml` + гейт `tools/verify_live_network.py` (`make live-network`) + runbook §3/§5 |
+| #111 | `feat/rehearsal-stack` | U-A2 | `infra/compose.rehearsal.yaml` (проект `proxima-rehearsal`, postgres `127.0.0.1:5434`), `tools/rehearsal_run.sh` (`init → up → backfill → tail --live → steps → check → down`), runbook «Репетиция на VPS (D35, не деплой)» |
+| #112 | `docs/rehearsal-facts-2026-09-08` | B | факты репетиции в `docs/state/API-FACTS.md` + эталон W10 с копейками |
+| #113 | `docs/readiness-1.14-v2` | U-A3 | `RELEASE-READINESS-1.14.md` v2 (блокеры B1-B10) + блок конвейера в `WORKS-TODAY.md` + исполнитель runbook по D7 |
+| #114 | `fix/webapp-metrics-postgres-mode` | B10 | `MetricStrip` скрыт при `supportsMetrics=false` (postgres-режим давал 500 на каждой странице); «Сводка ещё не считается» вместо «Сбор не проходил больше суток», пока первая сводка не посчитана |
+| #115 | `fix/webapp-secret-uid` | B9 | `proxima_webapp_uri`/`_password` - владелец `1001:1001` (uid образа webapp) в `provision-runtime-roles.sh`, `init` репетиции, runbook §1.2/§1.4, memlog |
+| #116 | `docs/w35-gate-rule` | дополнение D35 | гейт §4: W35 по дням; глоссарий - заказы «на момент `run_day − 3`»; дополнение D35 в `DECISIONS.md`; `rehearsal_run.sh check` реализует правило; readiness и бриф аналитика ссылаются на правило |
 
-**Следующее действие:** смержить U-A1 и U-A2 по зелёному CI, прогнать репетицию на VPS (B), затем readiness v2 (U-A3).
+**Репетиция (B).** 13:10:14-13:11:55 UTC, `main` `1c5e256`, стенд `proxima-rehearsal`, корень `~/orca/rehearsal`, postgres `127.0.0.1:5434`, webapp `127.0.0.1:3434` (пересобран на `fcab598`, после #114). Схема `18|18`; provision ×2 идемпотентен; `backfill` SUCCEEDED (`run_day` 2026-08-31, 183 дня, orders 13 386, sales 10 675, nm_subjects 201, nm_rows 36 783); живой хвост `collect` SUCCEEDED - ровно 2 read-вызова (`dateFrom=2026-08-27`; orders 353 строк / 217 пропущено, sales 215 / 191), боевой `wb_statistics_token` прошёл `assertLeastPrivilegeToken`, значение токена не печаталось; `norm` + `brief` SUCCEEDED; `data_status_current` 2026-09-07 `stale=false`; `brief_current` 2026-09-07 `ok`. Гейт §4: W10 649 | 700 860.50 = пересчёт фикстуры; W35 по дням 8/8 PASS после #116. `/brief` на стенде: 07.09 заказы 30 против нормы 26.5 (+13.2 %), выручка 25 450 ₽ против нормы 35 466 ₽ (−28.2 %), аномалии по SKU: 2 critical / 5 attention. Полный разбор - `API-FACTS.md` «Репетиция цепочки 1.14 на VPS», `RELEASE-READINESS-1.14.md` §4-§5.
+
+**Уборка (после того как Mike посмотрел стенд; `rm -rf` - только с его подтверждения):** `bash tools/rehearsal_run.sh down --root ~/orca/rehearsal && sudo rm -rf ~/orca/rehearsal`; остановить при уборке также превью webapp на фикстурах `127.0.0.1:3100` (`next start` из `~/orca/proxima-ai-night`, запущено утром, ещё работает).
+
+**Что осталось до релиза 1.14 (вт 15.09, D33):**
+
+- B1 - Story 6.1 Владислава в `main` до пт 11.09 (CP-12); ни одного коммита Владислава в `origin/main`, waiver D26 не пишется.
+- B2 - слово «деплой» от Mike в день релиза + шаги runbook §1 на сервере (переименование токенов под AD-13 с `1010:1010 0600`, правка `.env`, raw-каталог `/srv/proxima-ai/raw`) - делает Mike или Claude по слову «деплой».
+- B5 - LOGIN-роль аналитика (Story 6.4): состав грантов не предложен, роль обещана D33 вместе с релизом.
+- B6 - копия артефактов бэкфилла в S3: `UNKNOWN`, проверить может только Mike.
+
+**До 2.6 (вт 22.09):** настоящие метрики дашборда в postgres-режиме (follow-up к Story 2.5, после #114 полоса просто скрыта); ротация analytics-токена PA-13.
+
+**Кандидаты в единицы (не запланированы, readiness §6):** передача `PROXIMA_GIT_SHA`/`PROXIMA_IMAGE_ID` через `environment:` compose - на сервере provenance ledger будет `NULL`; инкрементальный накат 007-018 поверх дампа боевой базы в репетиционном проекте; оставшиеся противоречивые тексты `/brief` для `blocked` и несовпадения дня; `proxima-psql-owner` в `infra/bootstrap/`, `docs/operations/releases/`, `CHANGELOG.md` - не созданы.
+
+**Заморожено (D35):** Story 4.4, Epic 5, «Источники v2» (эпик не создан, после первого SUCCEEDED утра).
+
+**Следующее действие:** очередь единиц трека исчерпана. После просмотра Mike - уборка стенда (выше); кандидаты §6 - только по решению Mike; пт 11.09 - проверить Story 6.1 в `main`; вт 15.09 - по слову «деплой» runbook с §0.
 
 ## Ночь 07-08.09.2026 - автономный прогон оркестратора (Claude Code, D31)
 
