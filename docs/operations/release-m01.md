@@ -231,7 +231,12 @@ sudo docker compose --profile jobs run --rm \
 ```
 `PROXIMA_RAW_DIR` внутри контейнера приходит из `infra/jobs.env` (раздел 1.1), URI роли - из `/run/secrets/proxima_collector_uri` (раздел 1.4). `run_day` берётся из манифеста CAS и будет `2026-08-31`; версии пишутся по `2026-08-30` включительно. Ожидается JSON-лог по шагам, строка `backfill committed` с `run_day`, `days`, `orders_inserted`, `sales_inserted` и последняя строка `{"run_id": "…", "tenant_id": "amirova-test", "kind": "backfill", "run_day": "2026-08-31", …}`; статус прогона - SUCCEEDED (проверка SQL в разделе 4). Тенант `amirova-test` в `tenants` есть (проверено 08.09).
 
-**Живой хвост с перекрытием.** Compose монтирует tenant-prefixed statistics-токен в `/run/secrets/amirova-test_wb_statistics_token`; этот же контейнерный путь передаёт runner.
+**Живой хвост с перекрытием.** Compose монтирует tenant-prefixed statistics-токен в `/run/secrets/amirova-test_wb_statistics_token`; этот же контейнерный путь передаёт runner. Живые вызовы WB разрешает флаг `WB_ALLOW_LIVE_NETWORK: "1"` из `environment:` сервиса `collector` в `infra/compose.yaml` (AD-4: транспорт fail-closed, тесты сети не видят; гейт `make live-network`). Перед хвостом убедиться, что релизный compose его несёт:
+
+```bash
+cd /srv/proxima-ai/repo && sudo docker compose --profile jobs config | grep -c 'WB_ALLOW_LIVE_NETWORK: "1"'
+```
+Ожидается `1`. Ноль - compose без флага (до фикса 08.09): первый же HTTP-вызов упадёт с `WB_NETWORK_FORBIDDEN`; остановиться и вернуться к разделу 0 (чекаут релизного тега).
 
 ```bash
 cd /srv/proxima-ai/repo
@@ -280,6 +285,8 @@ SELECT kind, status, started_at FROM collector_runs WHERE tenant_id='amirova-tes
 cd /srv/proxima-ai/repo && sudo docker compose --profile jobs config | grep -n '/srv/proxima-ai/raw\|_wb_statistics_token'
 ```
 Ожидаются обе строки; ноль строк - релизный compose не соответствует AD-6, остановиться и вернуться к разделу 2.
+
+`proxima-morning@` (как и `proxima-funnel-v3@`) получает `WB_ALLOW_LIVE_NETWORK=1` через тот же compose - сервис `collector`, проверка из раздела 3, - а не через `Environment=` юнита: в юниты флаг не добавлять, гейт `make live-network` это запрещает (AD-4).
 
 Установка юнитов (все файлы - из `infra/systemd/` релизного тега, проверены в CI `systemd-verify`):
 ```bash
@@ -412,3 +419,4 @@ SELECT last_full_day, stale FROM data_status_current WHERE tenant_id='amirova-te
 12. **§7 - `delete_run.py`.** Было `sudo -u \#1010 python3 …` (нет uid, нет `psycopg` в хостовом python 3.12). Стало: контейнер `control-plane` с `-v` janitor-URI и `-e JANITOR_DATABASE_URI_FILE`.
 13. **§5 - контракт монтирования.** `collector` получает tenant-prefixed WB-токены через compose `secrets:` и `${PROXIMA_RAW_DIR}` как bind-volume; runners передают контейнерные пути. Ручные `-v` из §3 убраны; в §5 осталась проверочная команда перед включением таймера.
 14. **Октябрь - бэкап.** Серверный `proxima-pg-backup.sh` отстал от репозиторного (sha256 `d29feb24…` против `fa591531…`), cron не задаёт `PROXIMA_RAW_DIR` - записано в пункт «установить `infra/backup/*`».
+15. **§3, §5 - живая сеть WB.** AD-4 делает транспорт fail-closed: `services/collector/src/wb/transport.ts` отвечает `WB_NETWORK_FORBIDDEN` без `WB_ALLOW_LIVE_NETWORK=1`, а `collect`/`funnel-v3` берут `networkTransport()` жёстко. Ни `infra/jobs.env`, ни `infra/compose.yaml`, ни runners, ни юниты, ни команда живого хвоста в §3 флаг не задавали - первый реальный `collect` на сервере падал бы на первом HTTP-вызове, и ничто это не ловило. Стало: `WB_ALLOW_LIVE_NETWORK: "1"` в `environment:` сервиса `collector` в `infra/compose.yaml` - только он ходит в WB; `jobs.env` не подходит: его читают все три job-сервиса, а `read_env_file()` в `tools/wb_async_report.py` отвергает ключи вне `SAFE_ENV_KEYS`, и `apply-migrations`/`FUNNEL_CSV_DOWNLOAD` упали бы на незнакомом ключе. В §3 добавлена проверка `compose config | grep -c` перед хвостом, в §5 - оговорка про юниты; гейт `tools/verify_live_network.py` (`make live-network`, входит в `make verify`) держит флаг только в compose - не в env-файлах, не в юнитах, не в тестах, и проверяет, что сам seam в `transport.ts` на месте.
