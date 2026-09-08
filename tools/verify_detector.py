@@ -117,7 +117,7 @@ def check_signal_shape(signal: dict, schema: dict) -> None:
         require(re.fullmatch(key_pattern, key) is not None, f"detection_data key {key!r} violates the contract pattern")
         require(set(entry) == {"value", "is_unknown"}, f"detection_data.{key} must be {{value, is_unknown}}")
         require(isinstance(entry["is_unknown"], bool), f"detection_data.{key}.is_unknown must be boolean")
-        require(entry["value"] is None or isinstance(entry["value"], (int, float, str, bool)), f"detection_data.{key}.value must be scalar")
+        require(entry["value"] is None or isinstance(entry["value"], (int, float, str, bool, list)), f"detection_data.{key}.value must be a supported JSON value")
         require((entry["value"] is None) == entry["is_unknown"], f"detection_data.{key}: is_unknown must match a null value")
 
 
@@ -129,6 +129,7 @@ def check_result(result: DetectionResult) -> None:
     require(sku.status == "ok" and sku.norm_orders == Decimal(10), "1001: the norm is the D21 median of 14 full days")
     require(sku.orders_deviation_pct == -50.0, f"1001: deviation must be -50.0, got {sku.orders_deviation_pct}")
     require(sku.money_at_risk == Decimal("500.00"), f"1001: money at risk must be 500.00, got {sku.money_at_risk}")
+    require(sku.triggered_by == ("orders", "revenue"), f"1001: both dropping metrics must trigger, got {sku.triggered_by}")
     subject = by_key[("subject", "Платье")]
     require(subject.norm_orders == Decimal(18) and subject.orders_deviation_pct == -33.3, "subject deviation is against the sum of its SKUs (AD-19)")
     # 2. Zero norm / short history: insufficient, no deviation, no NaN/Infinity.
@@ -146,6 +147,7 @@ def check_result(result: DetectionResult) -> None:
     for signal in signals:
         check_signal_shape(signal, schema)
         require(signal["detection_data"]["threshold_pct"] == {"value": None, "is_unknown": True}, "no threshold is applied in Story 4.1 (decision 6a; Stories 4.2/4.4)")
+        require(signal["detection_data"]["triggered_by"]["value"], "a signal must name the metric that triggered it (D32)")
         require(signal["detection_data"]["norm_window_days"]["value"] == 14, "the norm window is 14 days (D21)")
         require(any(ref.startswith("calc://scn001/") for ref in signal["source_refs"]), "source_refs must point at the calculation (AD-1)")
         require(any(ref.startswith("table://fact_nm_daily/") for ref in signal["source_refs"]), "source_refs must point at the fact versions (AD-1)")
@@ -153,6 +155,11 @@ def check_result(result: DetectionResult) -> None:
     require(len({s["snapshot_id"] for s in signals}) == 1, "all signals of one run share the input snapshot")
     again = run_detector()
     require(again.snapshot_id == result.snapshot_id and list(again.signals) == signals, "the detector must be deterministic on the same facts")
+    unknown = detect(TENANT, DAY, _rows(9001, 10, 5, "1000.00", "500.00"), {}, {}, [], CREATED_AT)
+    require(unknown.unknown_subject_nm_ids == (9001,), "a fact without a dictionary row must be reported as UNKNOWN (D32)")
+    unknown_signal = unknown.signals[0]
+    require(unknown_signal["detection_data"]["subject_name"] == {"value": None, "is_unknown": True}, "an unknown subject must be explicit in detection_data")
+    require("table://dim_nm_subject/nm/9001/is_unknown" in unknown_signal["source_refs"], "an unknown dictionary row must be explicit in source_refs")
     # 3. No signals when the brief is not ok.
     ok_norms = [MetricNorm("orders", Decimal("38.00"), 14, 14, "ok"), MetricNorm("revenue", Decimal("3800.00"), 14, 14, "ok")]
     ok = with_signals(build_day(DAY, ok_norms, MetricActual(37, Decimal("3700.00")), STATUS, [RUN]), signals)

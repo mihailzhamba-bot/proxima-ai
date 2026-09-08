@@ -203,6 +203,40 @@ def test_growth_is_evaluated_but_never_a_candidate() -> None:
     assert not any(s["detection_data"]["nm_id"]["value"] == 1003 for s in result.signals)
 
 
+def test_revenue_only_drop_is_a_candidate_and_records_its_trigger() -> None:
+    facts = rows(2101, 10, 10, "1000.00", "500.00")
+    result = run(facts, {2101: subject(2101, "Платье")})
+    sku = evaluations_by_key(result)[(LEVEL_SKU, "2101")]
+    assert sku.orders_deviation_pct == 0.0
+    assert sku.revenue_deviation_pct == -50.0
+    assert sku.triggered_by == ("revenue",)
+    assert result.signals[0]["detection_data"]["triggered_by"] == {"value": ["revenue"], "is_unknown": False}
+
+
+def test_orders_and_revenue_drop_record_both_triggers() -> None:
+    facts = rows(2102, 10, 5, "1000.00", "500.00")
+    result = run(facts, {2102: subject(2102, "Платье")})
+    assert evaluations_by_key(result)[(LEVEL_SKU, "2102")].triggered_by == ("orders", "revenue")
+    assert result.signals[0]["detection_data"]["triggered_by"] == {
+        "value": ["orders", "revenue"],
+        "is_unknown": False,
+    }
+
+
+def test_orders_and_revenue_growth_is_not_a_candidate() -> None:
+    facts = rows(2103, 10, 11, "1000.00", "1100.00")
+    result = run(facts, {2103: subject(2103, "Платье")})
+    assert evaluations_by_key(result)[(LEVEL_SKU, "2103")].triggered_by == ()
+    assert result.signals == ()
+
+
+def test_rub_assessment_preserves_a_negative_sign_when_only_orders_drop() -> None:
+    facts = rows(2104, 10, 5, "1000.00", "1100.00")
+    result = run(facts, {2104: subject(2104, "Платье")})
+    assert evaluations_by_key(result)[(LEVEL_SKU, "2104")].triggered_by == ("orders",)
+    assert result.signals[0]["rub_assessment"] == {"value_rub": "-100.00", "method": "revenue"}
+
+
 def test_subject_deviation_is_against_the_sum_of_its_skus() -> None:
     facts, subjects = scenario()
     result = run(facts, subjects)
@@ -366,7 +400,15 @@ def test_shapley_contributions_add_up_to_the_revenue_delta() -> None:
     assert loss.dominant() == "cvr"
 
 
-def test_a_fact_row_without_a_dictionary_row_is_refused() -> None:
+def test_a_fact_row_without_a_dictionary_row_is_an_unknown_sku_and_not_a_subject() -> None:
     facts = rows(5001, 10, 5, "1000.00", "500.00")
-    with pytest.raises(ValueError, match="dim_nm_subject_current has no row"):
-        evaluate_all(facts, {}, DAY)
+    result = run(facts, {})
+    assert [(evaluation.level, evaluation.key) for evaluation in result.evaluations] == [(LEVEL_SKU, "5001")]
+    assert result.unknown_subject_nm_ids == (5001,)
+    signal = result.signals[0]
+    data = signal["detection_data"]
+    assert data["subject_name"] == {"value": None, "is_unknown": True}
+    assert data["supplier_article"] == {"value": None, "is_unknown": True}
+    assert data["brand"] == {"value": None, "is_unknown": True}
+    assert "table://dim_nm_subject/nm/5001/is_unknown" in signal["source_refs"]
+    validator("signal").validate(signal)
