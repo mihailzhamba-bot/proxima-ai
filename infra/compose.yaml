@@ -37,7 +37,8 @@ services:
       PROXIMA_RAW_DIR: /srv/proxima-ai/raw
       # AD-4: the WB transport is fail-closed (services/collector/src/wb/transport.ts); only this
       # job container opts in - not jobs.env (SAFE_ENV_KEYS allowlist), not units, never tests.
-      # Fix 08.09.2026 (first live `collect` failed on WB_NETWORK_FORBIDDEN); gate: make live-network.
+      # Found 08.09.2026: nothing in the deploy contour set it, so the first live `collect` would have
+      # failed with WB_NETWORK_FORBIDDEN; gate: make live-network.
       WB_ALLOW_LIVE_NETWORK: "1"
     secrets:
       - proxima_collector_uri
