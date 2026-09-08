@@ -8,9 +8,9 @@
  * same product-day is a new observation and `stg_wb_funnel_latest` picks the
  * newest one. The dictionary columns follow COLUMN_MAP scn001.
  *
- * Window: the job asks for `[run_day-6, run_day-1]` - `run_day-6` is the only
- * start WB confirmed (API-FACTS, 30.08) and `run_day` is an incomplete day
- * that is never versioned (AD-7). Records after the window end are dropped;
+ * Window: the job asks for WB's confirmed `[today-6, today]`, where today is
+ * `run_day` in Moscow (API-FACTS, 30.08; AD-7). The incomplete run day is
+ * observed but never versioned. Records after the window end are dropped;
  * records before its start are still WB evidence and are kept.
  */
 import type { PoolClient } from 'pg';
@@ -37,7 +37,7 @@ export interface FunnelWindow {
   readonly runDay: string;
   /** First requested day, `run_day-6`. */
   readonly start: string;
-  /** Last requested day, `run_day-1`; nothing after it is ever observed. */
+  /** Last requested day, `run_day`; nothing after it is ever observed. */
   readonly end: string;
 }
 
@@ -78,7 +78,7 @@ export function shiftDay(day: string, offset: number): string {
 }
 
 export function funnelWindow(runDay: string): FunnelWindow {
-  return { runDay, start: shiftDay(runDay, -FUNNEL_WINDOW_START_OFFSET), end: shiftDay(runDay, -1) };
+  return { runDay, start: shiftDay(runDay, -FUNNEL_WINDOW_START_OFFSET), end: runDay };
 }
 
 export function windowDays(window: FunnelWindow): string[] {
@@ -129,8 +129,8 @@ function object(value: unknown): value is Record<string, unknown> {
 
 /**
  * Parses one response body. Fails closed with WB_SCHEMA_DRIFT on any shape
- * surprise; never invents a field. Records dated after `window.end` (the
- * incomplete run day or later) are dropped, everything else WB returned is
+ * surprise; never invents a field. Records dated after `window.end` are
+ * dropped; the incomplete run day and everything earlier WB returned are
  * kept as evidence.
  */
 export function parseFunnelV3(body: Buffer, evidenceSha256: string, window: FunnelWindow): FunnelBatch {
@@ -182,26 +182,23 @@ export function parseFunnelV3(body: Buffer, evidenceSha256: string, window: Funn
 }
 
 /**
- * A batch covers its request when every requested nmId has exactly one record
- * for every day of the window and nothing else claims a product-day twice or
- * belongs to an nmId that was not requested. Anything less is schema drift for
- * the batch: the run must not call the day collected (Story 3.1 AC).
+ * Validates identities in a successfully received batch and returns active
+ * nmIds for which WB supplied no record inside the requested window. Missing
+ * products are a known deleted/hidden-card condition and are log-and-skip;
+ * duplicates and unrequested products remain schema drift.
  */
-export function assertBatchCoverage(rows: readonly FunnelObservation[], nmIds: readonly number[], window: FunnelWindow): void {
+export function assertBatchCoverage(rows: readonly FunnelObservation[], nmIds: readonly number[], window: FunnelWindow): number[] {
   const requested = new Set(nmIds);
   const seen = new Set<string>();
+  const present = new Set<number>();
   for (const row of rows) {
     if (!requested.has(row.nmId)) throw drift(`response contains unrequested nmId ${row.nmId}`);
     const key = `${row.nmId}:${row.calendarDay}`;
     if (seen.has(key)) throw drift(`response repeats nmId ${row.nmId} on ${row.calendarDay}`);
     seen.add(key);
+    if (row.calendarDay >= window.start && row.calendarDay <= window.end) present.add(row.nmId);
   }
-  const days = windowDays(window);
-  for (const nmId of nmIds) {
-    for (const day of days) {
-      if (!seen.has(`${nmId}:${day}`)) throw drift(`incomplete coverage: nmId ${nmId} has no record for ${day}`);
-    }
-  }
+  return nmIds.filter((nmId) => !present.has(nmId));
 }
 
 type QueryClient = Pick<PoolClient, 'query'>;

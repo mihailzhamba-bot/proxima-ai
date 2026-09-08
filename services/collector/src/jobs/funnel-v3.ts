@@ -5,7 +5,7 @@
  *
  * Flow: open the run RUNNING (AD-3); active nmIds = distinct nmId of
  * `stg_wb_orders_latest` ordered on the last 30 full Moscow days; request the
- * window `[run_day-6, run_day-1]` in batches of at most 20 nmIds through the
+ * WB window `[run_day-6, run_day]` in batches of at most 20 nmIds through the
  * single WB client (every response lands in CAS + wb_raw_artifacts before it
  * is parsed, 429 waits on X-Ratelimit-Retry with at most 3 retries); each
  * received batch is parsed, checked for full coverage and committed on its own,
@@ -82,6 +82,7 @@ export interface FunnelBatchOutcome {
   readonly received: number;
   readonly inserted: number;
   readonly skipped: number;
+  readonly missingNmIds: readonly number[];
 }
 
 export interface FunnelV3Result {
@@ -244,6 +245,7 @@ export async function runFunnelV3(args: FunnelV3Args, deps: FunnelV3Deps): Promi
       const outcomes: FunnelBatchOutcome[] = [];
       const productDays: FunnelProductDay[] = [];
       const failures: { batch: number; nm_ids: number; code: string }[] = [];
+      const missingNmIds: number[] = [];
       let firstCause: unknown;
       for (const [index, nmIds] of batches.entries()) {
         const batch = index + 1;
@@ -256,7 +258,11 @@ export async function runFunnelV3(args: FunnelV3Args, deps: FunnelV3Deps): Promi
             remaining: record.responseHeaders['x-ratelimit-remaining'] ?? null,
           });
           const parsed = parseFunnelV3(record.body, sha256(record.body), window);
-          assertBatchCoverage(parsed.rows, nmIds, window);
+          const missing = assertBatchCoverage(parsed.rows, nmIds, window);
+          if (missing.length > 0) {
+            missingNmIds.push(...missing);
+            log('completeness', 'active nmIds absent from WB response; skipping hidden or deleted cards', { batch, missing_nm_ids: missing }, 'warn');
+          }
           const written = await withTenantSession(pool, tenantId, async (session) => {
             await session.query('BEGIN');
             try {
@@ -268,8 +274,13 @@ export async function runFunnelV3(args: FunnelV3Args, deps: FunnelV3Deps): Promi
               throw error;
             }
           });
-          for (const row of parsed.rows) productDays.push({ nmId: row.nmId, calendarDay: row.calendarDay });
-          outcomes.push({ batch, nmIds: nmIds.length, received: written.received, inserted: written.inserted, skipped: written.skipped });
+          // WB returns the incomplete run day as part of its confirmed
+          // seven-day window. Keep that observation, but AD-7 permits fact
+          // versions only for full days strictly before run_day.
+          for (const row of parsed.rows) {
+            if (row.calendarDay < runDay) productDays.push({ nmId: row.nmId, calendarDay: row.calendarDay });
+          }
+          outcomes.push({ batch, nmIds: nmIds.length, received: written.received, inserted: written.inserted, skipped: written.skipped, missingNmIds: missing });
           log('batch', 'observations committed', { batch, batches_total: batches.length, nm_ids: nmIds.length, received: written.received, inserted: written.inserted, skipped: written.skipped });
         } catch (error) {
           firstCause ??= error;
@@ -292,6 +303,9 @@ export async function runFunnelV3(args: FunnelV3Args, deps: FunnelV3Deps): Promi
       let facts: VersionFunnelDailyResult | undefined;
       await ledger.succeed(tenantId, runId, async (session) => {
         facts = await versionFunnelDaily(session, { tenantId, runId, productDays });
+        if (missingNmIds.length > 0) {
+          await session.query('UPDATE collector_runs SET notes = $2 WHERE run_id = $1', [runId, JSON.stringify({ missing_nm_ids: missingNmIds })]);
+        }
       });
       if (facts === undefined) throw new Error('funnel_v3: versions were not written inside the run transaction');
       const observations = outcomes.reduce(

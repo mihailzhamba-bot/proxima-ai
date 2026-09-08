@@ -29,7 +29,7 @@ run_collect() {
   statistics_token="${secrets_dir}/${tenant}_wb_statistics_token"
 
   if [[ "$dry_run" == true ]]; then
-    printf '%s\n' "docker compose --profile jobs run --rm collector collect --tenant ${tenant} --statistics-token-file ${statistics_token}"
+    printf '%s\n' "docker compose --profile jobs run --rm collector npm run collect -- --tenant ${tenant} --statistics-token-file ${statistics_token}"
     return
   fi
 
@@ -43,7 +43,7 @@ run_collect() {
   [[ -n "$image_id" ]] || fail "collector image is not available"
   image_id="$(docker image inspect -f '{{.Id}}' "$image_id")"
   PROXIMA_GIT_SHA="$git_sha" PROXIMA_IMAGE_ID="$image_id" \
-    docker compose --profile jobs run --rm collector collect --tenant "$tenant" \
+    docker compose --profile jobs run --rm collector npm run collect -- --tenant "$tenant" \
       --statistics-token-file "$statistics_token"
 }
 
