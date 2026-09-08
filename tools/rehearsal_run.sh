@@ -34,6 +34,9 @@ readonly PG_PORT_DEFAULT="5434"
 readonly WEBAPP_PORT_DEFAULT="3434"
 readonly POSTGRES_USER_VALUE="proxima"
 readonly CONTAINER_USER="1010:1010"
+# The webapp image runs as uid 1001 (services/webapp/Dockerfile), not 1010: its URI/password files
+# get that owner (D35 addendum, Mike 08.09) - the same rule provision-runtime-roles.sh re-asserts.
+readonly WEBAPP_USER="1001:1001"
 readonly RUNTIME_ROLES=(proxima_collector proxima_norm proxima_webapp proxima_janitor proxima_sandbox)
 
 # Runbook §3: the 31.08 pair, the only history copy before the WB window (D15).
@@ -168,15 +171,17 @@ sql_capture() {
 
 readonly SCHEMA_SQL="SELECT count(*) || '|' || max(version) FROM schema_migrations;"
 
-# Writes a secret file from stdin as 1010:1010 0600. The value never appears on a command line.
+# Writes a secret file from stdin as <owner> 0600 (default 1010:1010, the job container user).
+# The value never appears on a command line.
 write_secret() {
-  local path="$1"
+  local path="$1" owner="${2:-${CONTAINER_USER}}"
   if [[ "${DRY_RUN}" == true ]]; then
-    printf '+ write-secret %s  # value generated in memory, never printed\n' "$(shell_quote "${path}")"
+    printf '+ write-secret %s owner %s  # value generated in memory, never printed\n' \
+      "$(shell_quote "${path}")" "${owner}"
     return 0
   fi
   # shellcheck disable=SC2016
-  "${SUDO[@]}" sh -c 'umask 077 && cat > "$1" && chown "$2" "$1" && chmod 0600 "$1"' sh "${path}" "${CONTAINER_USER}"
+  "${SUDO[@]}" sh -c 'umask 077 && cat > "$1" && chown "$2" "$1" && chmod 0600 "$1"' sh "${path}" "${owner}"
 }
 
 # --- argument parsing -----------------------------------------------------------------------
@@ -257,18 +262,21 @@ do_init() {
   # Runtime roles: the same files infra/bootstrap/provision-runtime-roles.sh reads and writes
   # (<role>_password -> <role>_uri, host `postgres`, port 5432). Pre-creating them keeps the
   # provision run idempotent on these values and gives compose its secret files before `up`.
-  local role database password
+  # Owner: 1010:1010 for the job roles, 1001:1001 for proxima_webapp (webapp image uid).
+  local role database password owner
   for role in "${RUNTIME_ROLES[@]}"; do
     database="proxima"
+    owner="${CONTAINER_USER}"
     [[ "${role}" == "proxima_sandbox" ]] && database="proxima_test"
+    [[ "${role}" == "proxima_webapp" ]] && owner="${WEBAPP_USER}"
     if [[ "${DRY_RUN}" == true ]]; then
-      write_secret "${ROOT}/secrets/${role}_password"
-      write_secret "${ROOT}/secrets/${role}_uri"
+      write_secret "${ROOT}/secrets/${role}_password" "${owner}"
+      write_secret "${ROOT}/secrets/${role}_uri" "${owner}"
     else
       password="$(openssl rand -hex 20)"
-      printf '%s\n' "${password}" | write_secret "${ROOT}/secrets/${role}_password"
+      printf '%s\n' "${password}" | write_secret "${ROOT}/secrets/${role}_password" "${owner}"
       printf 'postgresql://%s:%s@postgres:5432/%s\n' "${role}" "${password}" "${database}" \
-        | write_secret "${ROOT}/secrets/${role}_uri"
+        | write_secret "${ROOT}/secrets/${role}_uri" "${owner}"
       password=""
     fi
   done
