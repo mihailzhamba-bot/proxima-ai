@@ -111,6 +111,10 @@ describe("fixtures-провайдер — форма данных стабиль
     const metrics = await createFixturesProvider().getMetrics();
     expect(metrics.length).toBe(5);
   });
+
+  it("метрики дашборда поддерживаются: шелл рисует полосу", () => {
+    expect(createFixturesProvider().supportsMetrics).toBe(true);
+  });
 });
 
 describe("postgres-провайдер — сводка по AD-9, метрики дашборда ещё нет", () => {
@@ -118,8 +122,11 @@ describe("postgres-провайдер — сводка по AD-9, метрики
     expect(() => createPostgresProvider({}, { createPool: stubPool })).toThrow(/WEBAPP_TENANT_ID/);
   });
 
-  it("метрики дашборда в postgres-режиме пока не реализованы и падают явно", async () => {
+  it("метрики дашборда в postgres-режиме пока не реализованы: флаг false, а вызов всё равно падает явно", async () => {
+    // Шелл по флагу не рисует полосу (иначе каждая страница - 500); флаг не
+    // делает getMetrics() тихим - вызов мимо флага обязан упасть.
     const provider = createPostgresProvider(postgresEnv(), { createPool: stubPool });
+    expect(provider.supportsMetrics).toBe(false);
     await expect(provider.getMetrics()).rejects.toThrow(POSTGRES_PROVIDER_NOT_IMPLEMENTED);
   });
 

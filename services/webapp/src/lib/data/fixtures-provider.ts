@@ -7,6 +7,7 @@ import { getMetrics } from "@/lib/fixtures/metrics";
 export function createFixturesProvider(): DataProvider {
   return {
     mode: "fixtures",
+    supportsMetrics: true,
     getBrief(variant: BriefVariant): Promise<BriefData> {
       return Promise.resolve(getBrief(variant));
     },
