@@ -94,7 +94,11 @@ export function numbersWarning(
   status: SummaryStatus,
   normProgress: BriefSummary["normProgress"],
   dataStatus: BriefSummary["dataStatus"],
+  briefDay?: BriefSummary["briefDay"],
 ): string {
+  if (status === "blocked") {
+    return "Данных за день нет";
+  }
   if (status === "insufficient") {
     return normProgress
       ? `Норма копится: ${normProgress.sampleDays}/${normProgress.windowDays} дней`
@@ -102,6 +106,9 @@ export function numbersWarning(
   }
   if (status === "no-brief" && dataStatus !== null && !dataStatus.stale) {
     return BRIEF_PENDING_TEXT;
+  }
+  if (status === "stale" && dataStatus !== null && !dataStatus.stale && briefDay && briefDay !== dataStatus.lastFullDay) {
+    return `Сводка за ${dayLabel(briefDay)}, данные уже за ${dayLabel(dataStatus.lastFullDay)}`;
   }
   return "Сбор не проходил больше суток";
 }
@@ -141,7 +148,7 @@ export function BriefSummaryBlock({ summary }: BriefSummaryBlockProps) {
           />
         </>
       ) : (
-        <WarningLine>{numbersWarning(summary.status, summary.normProgress, dataStatus)}</WarningLine>
+        <WarningLine>{numbersWarning(summary.status, summary.normProgress, dataStatus, summary.briefDay)}</WarningLine>
       )}
       {dataStatus !== null && !dataStatus.stale ? (
         <p className="text-xs text-muted-foreground">

@@ -14,10 +14,8 @@ import type {
 export type DataProvider = {
   readonly mode: DataMode;
   /**
-   * Умеет ли источник отдавать метрики дашборда (полоса шелла, R05). Fixtures - да;
-   * postgres - пока нет (Story 2.5 отдала только сводку /brief, метрики - отдельная
-   * единица). Шелл при `false` полосу не рисует, а `getMetrics()` всё равно обязан
-   * падать явно: случайный вызов не должен пройти молча.
+   * Умеет ли источник отдавать метрики дашборда (полоса шелла, R05).
+   * Оба штатных провайдера поддерживают этот контракт.
    */
   readonly supportsMetrics: boolean;
   getBrief(variant: BriefVariant): Promise<BriefData>;

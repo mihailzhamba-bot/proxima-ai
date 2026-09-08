@@ -201,4 +201,6 @@ export type Metric = {
   deltaPercent: number | null;
   deltaGoodWhen: "up" | "down" | null;
   points: readonly number[];
+  /** Маркер демонстрационного значения: только такие карточки получают FX-бейдж. */
+  fx: boolean;
 };

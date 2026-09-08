@@ -23,8 +23,9 @@ import { getBrief as getFixturesBrief } from "@/lib/fixtures/brief";
  * Значение URI никогда не попадает в лог или исключение: наружу - только
  * имя переменной или файла (политика секретов AGENTS.md).
  *
- * Ровно два SELECT под proxima_webapp_readonly (AD-9): data_status_current
- * и brief_current. Цифры показываются только при
+ * Каждый читатель делает не больше двух SELECT под proxima_webapp_readonly (AD-9):
+ * сводка читает data_status_current + brief_current, полоса метрик —
+ * data_status_current + fact_cabinet_daily_current. Цифры сводки показываются только при
  * `brief.status = 'ok' AND stale IS FALSE AND brief_day = last_full_day`;
  * иначе - предупреждение вместо цифр (AC Story 1.11). Аномалии дня
  * (`payload.signals[]`, Story 4.3) подчиняются тому же правилу и приходят
@@ -35,17 +36,6 @@ const TENANT_PATTERN = /^[a-z0-9][a-z0-9_-]{2,63}$/;
 
 const TENANT_ENV = "WEBAPP_TENANT_ID";
 const URI_FILE_ENV = "WEBAPP_DATA_DATABASE_URI_FILE";
-
-/**
- * Метрики экрана дашборда в postgres-режиме не реализованы; сводка /brief - да.
- * Шелл узнаёт об этом по `supportsMetrics: false` и полосу не рисует; сам
- * `getMetrics()` остаётся падающим - вызов мимо флага не должен пройти молча.
- */
-export const POSTGRES_PROVIDER_NOT_IMPLEMENTED = "NOT_IMPLEMENTED";
-
-const NOT_IMPLEMENTED =
-  `${POSTGRES_PROVIDER_NOT_IMPLEMENTED}: webapp: метрики дашборда в режиме postgres ещё не реализованы ` +
-  "(сводка /brief читает brief_current, метрики - отдельная единица).";
 
 export function validateTenantId(value: string | undefined): string {
   if (!value) {
@@ -111,6 +101,88 @@ type BriefRow = {
   status: string;
   payload: BriefV1;
 };
+
+type MetricFactRow = {
+  calendar_day: string;
+  orders_count: number | string;
+  revenue_rub: string;
+};
+
+const METRIC_LABELS = {
+  signals: "Сигналы",
+  revenue: "Выручка / день",
+  orders: "Заказы / день",
+  oos: "OOS-риски",
+  freshness: "Свежесть данных",
+} as const;
+
+function parseMoneyCents(value: string): bigint {
+  const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(value);
+  if (!match) {
+    throw new Error("webapp: revenue_rub из Postgres не соответствует numeric(14,2).");
+  }
+  const sign = match[1] === "-" ? -1n : 1n;
+  const fraction = (match[3] ?? "").padEnd(2, "0");
+  return sign * (BigInt(match[2]) * 100n + BigInt(fraction || "0"));
+}
+
+function roundRatio(numerator: bigint, denominator: bigint): bigint {
+  if (denominator === 0n) {
+    throw new Error("webapp: denominator must not be zero");
+  }
+  const sign = numerator < 0n !== denominator < 0n ? -1n : 1n;
+  const absNumerator = numerator < 0n ? -numerator : numerator;
+  const absDenominator = denominator < 0n ? -denominator : denominator;
+  return sign * ((absNumerator + absDenominator / 2n) / absDenominator);
+}
+
+function centsToRoundedRubles(cents: bigint): number {
+  return Number(roundRatio(cents, 100n));
+}
+
+/** Отклонение дня к среднему только по имеющимся строкам семи предыдущих дней. */
+function deltaPercent(current: bigint, previous: readonly bigint[]): number | null {
+  const sum = previous.reduce((total, value) => total + value, 0n);
+  if (previous.length === 0 || sum === 0n) {
+    return null;
+  }
+  // Считаем в десятых процента без Number до последнего шага:
+  // (current - sum/n) / (sum/n) * 100 = (current*n - sum) / sum * 100.
+  return Number(roundRatio((current * BigInt(previous.length) - sum) * 1_000n, sum)) / 10;
+}
+
+function isoDaysEndingAt(lastDay: string, count: number): string[] {
+  const end = new Date(`${lastDay}T00:00:00.000Z`);
+  if (Number.isNaN(end.getTime())) {
+    throw new Error("webapp: last_full_day из Postgres не является ISO-днём.");
+  }
+  return Array.from({ length: count }, (_, index) => {
+    const day = new Date(end);
+    day.setUTCDate(end.getUTCDate() - (count - 1 - index));
+    return day.toISOString().slice(0, 10);
+  });
+}
+
+function moscowMinuteOfDay(value: Date | string | null): number | null {
+  if (value === null) {
+    return null;
+  }
+  const moment = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(moment.getTime())) {
+    return null;
+  }
+  return ((moment.getUTCHours() + 3) % 24) * 60 + moment.getUTCMinutes();
+}
+
+function emptyMetrics(): readonly Metric[] {
+  return [
+    { id: "signals", label: METRIC_LABELS.signals, value: null, format: "count", status: null, deltaPercent: null, deltaGoodWhen: null, points: [], fx: false },
+    { id: "revenue-day", label: METRIC_LABELS.revenue, value: null, format: "rub-compact", status: null, deltaPercent: null, deltaGoodWhen: "up", points: [], fx: false },
+    { id: "orders-day", label: METRIC_LABELS.orders, value: null, format: "count", status: null, deltaPercent: null, deltaGoodWhen: "up", points: [], fx: false },
+    { id: "oos-risks", label: METRIC_LABELS.oos, value: null, format: "count", status: null, deltaPercent: null, deltaGoodWhen: null, points: [], fx: false },
+    { id: "freshness", label: METRIC_LABELS.freshness, value: null, format: "clock", status: null, deltaPercent: null, deltaGoodWhen: null, points: [], fx: false },
+  ];
+}
 
 function toIsoMoment(value: Date | string | null): string {
   if (value instanceof Date) {
@@ -185,7 +257,7 @@ export function createPostgresProvider(
 
   return {
     mode: "postgres",
-    supportsMetrics: false,
+    supportsMetrics: true,
 
     /**
      * Редакционная часть брифа. До первого SUCCEEDED brief работает режим
@@ -245,8 +317,67 @@ export function createPostgresProvider(
       };
     },
 
-    getMetrics(): Promise<readonly Metric[]> {
-      return Promise.reject(new Error(NOT_IMPLEMENTED));
+    /**
+     * Полоса метрик C3: ровно два SELECT под тем же GUC, что и сводка.
+     * `orders_count` — заказы на момент run_day−3 (D35); UI это не переопределяет.
+     * Дельта — день против среднего имеющихся строк [day−7, day−1]; пропуски
+     * исключаются из среднего, а при нуле строк дельта null. В 30-точечном
+     * календарном спарклайне те же пропуски становятся нулями.
+     * Деньги разбираются как целые копейки и округляются лишь на границе UI (AD-10).
+     * `signals` ждёт снятия лимита двух SELECT AD-9 и истории brief_daily;
+     * `oos-risks` не имеет источника остатков в текущей лестнице (D35).
+     */
+    async getMetrics(): Promise<readonly Metric[]> {
+      const status = await readStatus();
+      if (status === null || status.lastFullDay === "") {
+        return emptyMetrics();
+      }
+
+      const rows = await withClient(async (client) => {
+        const result = await client.query(
+          `SELECT calendar_day::text AS calendar_day, orders_count, revenue_rub::text AS revenue_rub
+           FROM fact_cabinet_daily_current
+           WHERE calendar_day BETWEEN $1::date - 29 AND $1::date
+           ORDER BY calendar_day ASC`,
+          [status.lastFullDay],
+        );
+        return result.rows as MetricFactRow[];
+      });
+      const byDay = new Map(rows.map((row) => [row.calendar_day, row]));
+      const days = isoDaysEndingAt(status.lastFullDay, 30);
+      const current = byDay.get(status.lastFullDay);
+      const previousRows = days.slice(-8, -1).flatMap((day) => {
+        const row = byDay.get(day);
+        return row === undefined ? [] : [row];
+      });
+      const orderPoints = days.map((day) => Number(byDay.get(day)?.orders_count ?? 0));
+      const revenuePoints = days.map((day) => {
+        const row = byDay.get(day);
+        return row === undefined ? 0 : centsToRoundedRubles(parseMoneyCents(row.revenue_rub));
+      });
+      const currentOrders = current === undefined ? null : BigInt(current.orders_count);
+      const currentRevenue = current === undefined ? null : parseMoneyCents(current.revenue_rub);
+
+      return [
+        { id: "signals", label: METRIC_LABELS.signals, value: null, format: "count", status: null, deltaPercent: null, deltaGoodWhen: null, points: [], fx: false },
+        {
+          id: "revenue-day", label: METRIC_LABELS.revenue,
+          value: currentRevenue === null ? null : centsToRoundedRubles(currentRevenue), format: "rub-compact", status: null,
+          deltaPercent: currentRevenue === null ? null : deltaPercent(currentRevenue, previousRows.map((row) => parseMoneyCents(row.revenue_rub))),
+          deltaGoodWhen: "up", points: revenuePoints, fx: false,
+        },
+        {
+          id: "orders-day", label: METRIC_LABELS.orders,
+          value: currentOrders === null ? null : Number(currentOrders), format: "count", status: null,
+          deltaPercent: currentOrders === null ? null : deltaPercent(currentOrders, previousRows.map((row) => BigInt(row.orders_count))),
+          deltaGoodWhen: "up", points: orderPoints, fx: false,
+        },
+        { id: "oos-risks", label: METRIC_LABELS.oos, value: null, format: "count", status: null, deltaPercent: null, deltaGoodWhen: null, points: [], fx: false },
+        {
+          id: "freshness", label: METRIC_LABELS.freshness, value: moscowMinuteOfDay(status.collectedAt), format: "clock",
+          status: status.stale ? "red" : "green", deltaPercent: null, deltaGoodWhen: null, points: [], fx: false,
+        },
+      ];
     },
   };
 }
