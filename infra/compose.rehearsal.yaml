@@ -1,0 +1,28 @@
+# Репетиция релиза 1.14 на VPS (D35, не деплой): одноразовый compose-проект рядом с боевым
+# `proxima-ai`. Накладывается на infra/compose.yaml, боевой файл не меняет:
+#   docker compose -p proxima-rehearsal -f infra/compose.yaml -f infra/compose.rehearsal.yaml \
+#     --env-file <root>/.env …
+# Изоляция: своё имя проекта (том `proxima-rehearsal_postgres-data`, контейнер
+# `proxima-rehearsal-postgres-1`), свой порт 127.0.0.1:5434 (боевой postgres слушает 5432 на
+# loopback и на bridge docker0; `!override` заменяет список портов целиком, обычный merge
+# только дописывает - бридж-привязки у репетиции нет),
+# своя сеть, свои каталоги секретов и raw через PROXIMA_SECRETS_DIR / PROXIMA_RAW_DIR из
+# `<root>/.env`. Живая сеть WB для collector - только по PROXIMA_REHEARSAL_LIVE=1 на один
+# запуск (`tools/rehearsal_run.sh tail --live`, 2 read-вызова по D35); по умолчанию
+# WB_ALLOW_LIVE_NETWORK=0 и transport.ts отказывает (AD-4).
+name: proxima-rehearsal
+
+services:
+  postgres:
+    # Одноразовый стенд не должен воскресать после перезагрузки VPS.
+    restart: "no"
+    ports: !override
+      - "127.0.0.1:${PROXIMA_REHEARSAL_PG_PORT:-5434}:5432"
+
+  collector:
+    environment:
+      WB_ALLOW_LIVE_NETWORK: ${PROXIMA_REHEARSAL_LIVE:-0}
+
+networks:
+  private:
+    name: proxima-rehearsal-private
