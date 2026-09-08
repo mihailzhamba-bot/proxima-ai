@@ -1,7 +1,7 @@
 .PHONY: agent-toolset apply-migrations architecture boundary brief business-signal codegen collect-wb-analytics contracts funnel funnel-csv install migrations pg-roundtrip probe-wb-api provenance secrets test test-db-refresh typecheck verify vps wb-async-report wb-client webapp-build webapp-lint
 
 
-verify: install codegen typecheck test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal wb-client brief wb-async-report funnel funnel-csv
+verify: install codegen typecheck webapp-lint test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal wb-client brief wb-async-report funnel funnel-csv
 
 install:
 	npm ci
