@@ -167,12 +167,26 @@ sudo install -m 0644 /srv/proxima-ai/repo/infra/systemd/proxima-morning@.timer /
 sudo install -m 0644 /srv/proxima-ai/repo/infra/systemd/proxima-restore-check@.service /etc/systemd/system/
 sudo install -m 0644 /srv/proxima-ai/repo/infra/systemd/proxima-restore-check@.timer /etc/systemd/system/
 sudo install -m 0644 /srv/proxima-ai/repo/infra/systemd/proxima-alert@.service /etc/systemd/system/
+sudo install -d -m 0755 /etc/systemd/system/proxima-funnel-v3@.service.d
+sudo install -m 0644 /srv/proxima-ai/repo/infra/systemd/proxima-funnel-v3@.service.d/10-analytics-read-write.conf \
+  /etc/systemd/system/proxima-funnel-v3@.service.d/10-analytics-read-write.conf
 sudo systemctl daemon-reload
 sudo systemctl enable --now proxima-morning@amirova-test.timer
 sudo systemctl enable --now proxima-restore-check@amirova-test.timer
 systemctl list-timers 'proxima*' --all --no-pager
 ```
 Ожидается три таймера: `proxima-morning@`, `proxima-restore-check@` и уже работавший `proxima-host-monitor`. Утренний срабатывает в 05:30 МСК и гоняет цепочку `collect → norm → brief` строго по порядку со стопом на первой ошибке; воронка в цепочку не входит — она отдельным юнитом после сводки (AD-6, CR от 03.09).
+
+Drop-in `10-analytics-read-write.conf` — временное исключение PA-13 для текущего
+read-write analytics-токена. После ротации на read-only снять исключение:
+
+```bash
+sudo rm /etc/systemd/system/proxima-funnel-v3@.service.d/10-analytics-read-write.conf
+sudo systemctl daemon-reload
+sudo systemctl restart proxima-funnel-v3@amirova-test.service
+```
+
+Сам `proxima-funnel-v3@.service` при установке и снятии исключения не менять.
 
 ## 6. Проверка алерта
 
@@ -196,6 +210,8 @@ grep -n "retry" /srv/proxima-ai/repo/tools/proxima_alert.sh
 ```bash
 sudo systemctl disable --now proxima-morning@amirova-test.timer
 sudo systemctl disable --now proxima-restore-check@amirova-test.timer
+sudo rm -f /etc/systemd/system/proxima-funnel-v3@.service.d/10-analytics-read-write.conf
+sudo systemctl daemon-reload
 ```
 
 Удалить прогоны релиза целиком, по одному:

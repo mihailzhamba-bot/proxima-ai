@@ -22,11 +22,15 @@ tenant="$1"
 shift
 dry_run=false
 allow_read_write=false
+if [[ "${PROXIMA_FUNNEL_V3_ALLOW_ANALYTICS_READ_WRITE:-}" == "1" ]]; then
+  allow_read_write=true
+fi
 for option in "$@"; do
   case "$option" in
     --dry-run) dry_run=true ;;
     # PA-13: the server analytics token is still read-write; the job refuses
-    # it unless this opt-in is passed explicitly (never by default).
+    # it unless this opt-in is passed explicitly or by the temporary systemd
+    # drop-in (never by the base unit).
     --allow-analytics-read-write) allow_read_write=true ;;
     *) usage ;;
   esac

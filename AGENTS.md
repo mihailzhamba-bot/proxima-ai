@@ -49,6 +49,7 @@
 
 ## Known pitfalls
 
+- До ротации analytics-токена по PA-13 `funnel_v3` принимает read-write токен только через временный systemd drop-in `proxima-funnel-v3@.service.d/10-analytics-read-write.conf`; при ротации drop-in снять, базовый юнит не менять (08.09.2026).
 - Переименование миграции без правки `INSERT INTO schema_migrations` ломает checksum - три коммита 29.08 (`fa57aa9`, `31cf85f`, `ad89513`).
 - Codex падает на голом `enabled = false` в `[mcp_servers.X]` `.codex/config.toml` (27.08, PA-39/PA-41/PMM-12); канарейка - `codex mcp list` в `scripts/agent/verify`.
 - `.openhands/hooks/verify-gate.sh` с `646ecb1` (31.08) `DATABASE_URI` не требует: `.env.task` подхватывается, если есть, гейт = только `make verify`. К разговорам, запущенным через `tools/orchestrator/` (`bad_dev_story.sh`, воркеры дирижёра), `.openhands/hooks.json` не применяется вовсе (`hook_config = null`) - красный `make verify` в песочнице ничего не остановит, гейт гоняется снаружи и в CI.

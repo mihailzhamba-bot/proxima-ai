@@ -29,6 +29,7 @@ PARSER = ROOT / "services" / "collector" / "src" / "wb" / "funnel-v3.ts"
 FACTS = ROOT / "services" / "collector" / "src" / "facts" / "funnel-daily.ts"
 JOB = ROOT / "services" / "collector" / "src" / "jobs" / "funnel-v3.ts"
 SERVICE = ROOT / "infra" / "systemd" / "proxima-funnel-v3@.service"
+SERVICE_DROP_IN = ROOT / "infra" / "systemd" / "proxima-funnel-v3@.service.d" / "10-analytics-read-write.conf"
 TIMER = ROOT / "infra" / "systemd" / "proxima-funnel-v3@.timer"
 RUNNER = ROOT / "tools" / "funnel_v3_run.sh"
 MORNING = ROOT / "tools" / "morning_run.sh"
@@ -122,8 +123,12 @@ def check_units() -> None:
     require("OnFailure=proxima-alert@%n.service" in service, "service needs its own OnFailure alert (AC, AD-6)")
     require("ExecStart=/usr/bin/env bash /srv/proxima-ai/repo/tools/funnel_v3_run.sh %i" in service, "service must run tools/funnel_v3_run.sh")
     require("Type=oneshot" in service and "ProtectHome=true" in service, "service is a one-shot like proxima-morning@ (AD-6)")
+    require("PROXIMA_FUNNEL_V3_ALLOW_ANALYTICS_READ_WRITE" not in service, "PA-13 exception must not enter the base unit")
+    drop_in = read(SERVICE_DROP_IN)
+    require("[Service]" in drop_in and "Environment=PROXIMA_FUNNEL_V3_ALLOW_ANALYTICS_READ_WRITE=1" in drop_in, "temporary PA-13 drop-in must opt the runner into the read-write token")
     runner = read(RUNNER)
     require("npm run funnel-v3 --" in runner and "_wb_analytics_token" in runner, "runner must start the funnel-v3 job with the tenant analytics token")
+    require('PROXIMA_FUNNEL_V3_ALLOW_ANALYTICS_READ_WRITE:-' in runner, "runner must consume the temporary PA-13 drop-in environment")
     require("funnel" not in read(MORNING).lower(), "funnel_v3 must not be a morning_run.sh step (CR to AD-6, decision 4a)")
 
 
