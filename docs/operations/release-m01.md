@@ -357,6 +357,28 @@ systemctl cat proxima-funnel-v3@amirova-test.service | grep -c ALLOW_ANALYTICS_R
 ```
 Ожидается `0`. `systemctl restart` здесь **не** делать: юнит `Type=oneshot`, `restart` неактивного oneshot - это запуск воронки, а не перечитывание конфигурации.
 
+### Бэкап как юнит (опционально, вместо cron)
+
+Этот шаг выполняет Mike или Claude только по слову «деплой», не во время ночного прогона. Юнит запускает скрипт прямо из чекаута `/srv/proxima-ai/repo` и тем самым закрывает дрейф серверной копии (sha256 `d29feb24…` против `fa591531…`), одновременно переводя запуск с cron на systemd:
+
+```bash
+cd /srv/proxima-ai/repo
+sudo install -m 0644 infra/systemd/proxima-pg-backup.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now proxima-pg-backup.timer
+sudo rm /etc/cron.d/proxima-pg-backup
+systemctl list-timers --all --no-pager | grep proxima-pg-backup
+```
+
+Ожидается `proxima-pg-backup.timer` со следующим запуском в 03:00 МСК. Cron нужно удалить или закомментировать: иначе в 03:00 одновременно стартуют два бэкапа. Юнит статически задаёт `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`; каталог создаётся в §1.3 и до релиза может отсутствовать — тогда скрипт ожидаемо завершится с понятной ошибкой `tar`, а `OnFailure` вызовет алерт.
+
+Откат:
+
+```bash
+sudo systemctl disable --now proxima-pg-backup.timer
+sudo systemctl daemon-reload
+```
+
 ## 6. Проверка алерта
 
 Сторож, о котором никто не узнал, сторожем не является.
@@ -521,7 +543,7 @@ sudo docker ps --format '{{.Names}}\t{{.Status}}' | grep proxima-ai
 - Удалить пустые базы `proxima_dev`.
 - Убрать `.env.task` из рабочей зоны.
 - Включить `make test-db-refresh` в регулярный цикл.
-- Установить `infra/backup/*` как юниты, а не запускать руками. Факт 08.09: серверный `/usr/local/bin/proxima-pg-backup.sh` (sha256 `d29feb24…`, 29.08) отстал от `infra/backup/proxima-pg-backup.sh` (`fa591531…`): репозиторная версия дополнительно архивирует `PROXIMA_RAW_DIR`, но под `set -u` требует эту переменную в окружении, а `/etc/cron.d/proxima-pg-backup` её не задаёт - при установке добавить в cron-файл строку `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`.
+- Перевести бэкап с cron на systemd по подразделу §5 «Бэкап как юнит (опционально, вместо cron)»; сервер менять только по слову «деплой».
 - ~~Перенести `proxima-psql-owner` (раздел 1.4) в `infra/bootstrap/` или заменить его штатным способом вызова `provision-runtime-roles.sh` на VPS.~~ Выполнено: `infra/bootstrap/proxima-psql-owner` (C6, D36).
 
 ## Сверка 08.09.2026
@@ -548,3 +570,4 @@ sudo docker ps --format '{{.Names}}\t{{.Status}}' | grep proxima-ai
 18. **Provenance прогонов (C1, D36).** `infra/compose.yaml` теперь объявляет `PROXIMA_GIT_SHA` и `PROXIMA_IMAGE_ID` с пустым default у всех трёх ledger-writing job-сервисов (`collector`, `control-plane`, `control-plane-admin`): значения, которые runners выставляют на хосте, доходят до контейнеров без обязательного `--env` в каждом вызове. Пустые значения нормализуются в SQL `NULL`, поэтому локальный ручной запуск без provenance не создаёт пустых строк в `collector_runs`.
 19. **Story 6.4 - роль аналитика (C2, D36).** После второго `provision-runtime-roles` Mike запускает `sudo bash infra/bootstrap/provision-analyst-role.sh`; скрипт создаёт прямую read-only LOGIN-роль и печатает только пути к секретам. Состав грантов, RLS-предупреждение и проверка выдачи записаны в `access-provisioning.md`.
 20. **Owner psql в репозитории (C6, D36).** Heredoc §1.4 заменён установкой `infra/bootstrap/proxima-psql-owner`; production-вызовы `provision-runtime-roles.sh --psql /usr/local/sbin/proxima-psql-owner` не изменились. Стендовая `<root>/bin/psql-owner` остаётся отдельной обёрткой `tools/rehearsal_run.sh init` для проекта `proxima-rehearsal`.
+21. **§5 - бэкап как systemd-юниты (C5, D36).** В репозиторий добавлены не-шаблонные `proxima-pg-backup.service`/`.timer` с запуском в 03:00 МСК, `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`, journald и `OnFailure`; подраздел установки явно заменяет cron только по слову «деплой».
