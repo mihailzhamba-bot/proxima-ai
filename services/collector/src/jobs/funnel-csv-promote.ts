@@ -22,19 +22,17 @@ const TENANT_ID = /^[a-z0-9][a-z0-9_-]{2,63}$/;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 /**
- * [ASSUMPTION until Story 3.0] Real metric column names must be confirmed from
- * a captured WB CSV. The correction is deliberately confined to this table.
- * `nmID` and `dt` are confirmed by tools/wb_async_report.py:complete_download.
+ * Confirmed by API-FACTS "async CSV depth" (Story 3.0 probe, 08.09.2026).
  */
 export const CSV_COLUMN_MAP = {
   nmId: 'nmID',
   calendarDay: 'dt',
-  openCard: 'open_card',
-  cart: 'cart',
-  orders: 'orders',
-  ordersSumRub: 'orders_sum_rub',
-  buyouts: 'buyouts',
-  buyoutsSumRub: 'buyouts_sum_rub',
+  openCard: 'openCardCount',
+  cart: 'addToCartCount',
+  orders: 'ordersCount',
+  ordersSumRub: 'ordersSumRub',
+  buyouts: 'buyoutsCount',
+  buyoutsSumRub: 'buyoutsSumRub',
 } as const;
 
 export interface FunnelCsvPromoteArgs { tenantId: string }
@@ -91,6 +89,9 @@ export function parseFunnelCsvRow(payload: unknown, context = 'CSV row'): Funnel
   const calendarDay = text(payload, CSV_COLUMN_MAP.calendarDay, context);
   try { shiftDay(calendarDay, 0); }
   catch { throw new Error(`FUNNEL_CSV_SCHEMA_DRIFT: ${context} dt is not a calendar date`); }
+  if (text(payload, 'currency', context) !== 'RUB') {
+    throw new Error(`FUNNEL_CSV_SCHEMA_DRIFT: ${context} currency is not RUB`);
+  }
   const openCard = count(payload, CSV_COLUMN_MAP.openCard, context);
   const cart = count(payload, CSV_COLUMN_MAP.cart, context);
   const orders = count(payload, CSV_COLUMN_MAP.orders, context);

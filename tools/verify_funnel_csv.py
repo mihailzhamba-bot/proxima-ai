@@ -19,7 +19,9 @@ TIMER = ROOT / "infra/systemd/proxima-funnel-csv@.timer"
 MAKEFILE = ROOT / "Makefile"
 GATE_LINE = "funnel_csv: promote + replay after delete"
 EXPECTED_COLUMNS = (
-    "nmID", "dt", "open_card", "cart", "orders", "orders_sum_rub", "buyouts", "buyouts_sum_rub"
+    "nmID", "dt", "openCardCount", "addToCartCount", "ordersCount", "ordersSumRub",
+    "buyoutsCount", "buyoutsSumRub", "cancelCount", "cancelSumRub",
+    "addToCartConversion", "cartToOrderConversion", "buyoutPercent", "addToWishlist", "currency",
 )
 
 
@@ -51,10 +53,17 @@ def check_fixture() -> list[dict[str, str]]:
 def check_job() -> None:
     job = read(JOB)
     for marker in (
-        "[ASSUMPTION until Story 3.0]",
+        'Confirmed by API-FACTS "async CSV depth" (Story 3.0 probe, 08.09.2026)',
         "export const CSV_COLUMN_MAP",
         "nmId: 'nmID'",
         "calendarDay: 'dt'",
+        "openCard: 'openCardCount'",
+        "cart: 'addToCartCount'",
+        "orders: 'ordersCount'",
+        "ordersSumRub: 'ordersSumRub'",
+        "buyouts: 'buyoutsCount'",
+        "buyoutsSumRub: 'buyoutsSumRub'",
+        "text(payload, 'currency', context) !== 'RUB'",
         "const RUN_KIND = 'funnel_csv_promote'",
         "const FUNNEL_SOURCE = 'csv'",
         "FROM wb_analytics_report_tasks t",
