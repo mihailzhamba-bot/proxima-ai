@@ -39,7 +39,7 @@ function deltaTone(metric: FixtureMetric): string {
   return direction === metric.deltaGoodWhen ? "text-status-green" : "text-status-red";
 }
 
-/** Карточка метрики: число mono + FX-бейдж + дельта к 7 дням + статичный спарклайн (R05). */
+/** Карточка метрики: число mono + опциональный FX + дельта к 7 дням + спарклайн (R05). */
 export function MetricCard({ metric }: { metric: FixtureMetric }) {
   const hasData = metric.value !== null;
 
@@ -64,12 +64,12 @@ export function MetricCard({ metric }: { metric: FixtureMetric }) {
               <span className="font-mono text-[30px] leading-none font-medium tabular-nums text-foreground">
                 {formatValue(metric)}
               </span>
-              <FxBadge />
+              {metric.fx && <FxBadge />}
             </span>
             {metric.deltaPercent !== null && (
               <span
                 className={`mt-2 font-mono text-xs tabular-nums ${deltaTone(metric)}`}
-                title="Сравнение с тем же днём прошлой недели"
+                title="Сравнение со средним за 7 предыдущих дней"
               >
                 {formatDelta(metric.deltaPercent)}
                 <span className="ml-1 font-sans text-muted-foreground">vs 7 дн</span>

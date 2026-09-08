@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MetricStrip } from "@/components/metrics/metric-strip";
 import { DATA_MODE_ENV, resetDataProvider } from "@/lib/data";
 import { createFixturesProvider } from "@/lib/data/fixtures-provider";
-import { createPostgresProvider, type DatabasePool } from "@/lib/data/postgres-provider";
 import type { DataProvider } from "@/lib/data/provider";
 import { getMetrics } from "@/lib/fixtures/metrics";
 
@@ -14,14 +13,6 @@ import { getMetrics } from "@/lib/fixtures/metrics";
  * компонент вызывается как функция (react-dom/server async-компоненты не рендерит),
  * результат - разметка без DOM, как в brief-anomalies.test.
  */
-
-const stubPool = (): DatabasePool => ({
-  on() {},
-  async connect() {
-    throw new Error("stub pool must not connect");
-  },
-  async end() {},
-});
 
 /** Провайдер без метрик, считающий вызовы getMetrics(): полоса не должна звать его вовсе. */
 function providerWithoutMetrics(calls: { getMetrics: number }): DataProvider {
@@ -60,16 +51,25 @@ describe("MetricStrip - источник без метрик", () => {
     expect(calls.getMetrics).toBe(0);
   });
 
-  it("настоящий postgres-провайдер: полосы нет и ошибки NOT_IMPLEMENTED нет", async () => {
-    const provider = createPostgresProvider({ WEBAPP_TENANT_ID: "amirova-test" }, { createPool: stubPool });
-    expect(await MetricStrip({ provider })).toBeNull();
-  });
-
-  it("режим postgres через getDataProvider(): шелл без полосы, без 500", async () => {
-    process.env[DATA_MODE_ENV] = "postgres";
-    process.env.WEBAPP_TENANT_ID = "amirova-test";
-    resetDataProvider();
-    expect(await MetricStrip()).toBeNull();
+  it("postgres: скрывает null-карточки и не показывает FX", async () => {
+    const provider: DataProvider = {
+      mode: "postgres",
+      supportsMetrics: true,
+      getBrief: () => Promise.reject(new Error("not used")),
+      getSummary: () => Promise.reject(new Error("not used")),
+      getMetrics: async () => getMetrics().map((metric) => ({
+        ...metric,
+        fx: false,
+        value: metric.id === "signals" || metric.id === "oos-risks" ? null : metric.value,
+      })),
+    };
+    const markup = await render(provider);
+    expect(markup).not.toContain('data-testid="metric-signals"');
+    expect(markup).not.toContain('data-testid="metric-oos-risks"');
+    expect(markup).toContain('data-testid="metric-orders-day"');
+    expect(markup).toContain('data-testid="metric-revenue-day"');
+    expect(markup).toContain('data-testid="metric-freshness"');
+    expect(markup).not.toContain(">FX<");
   });
 });
 
@@ -81,6 +81,7 @@ describe("MetricStrip - fixtures-провайдер", () => {
     for (const metric of getMetrics()) {
       expect(markup, metric.id).toContain(metric.label);
     }
+    expect(markup).toContain(">FX<");
   });
 
   it("без пропсов берёт провайдер по WEBAPP_DATA_MODE: разметка та же, что и с fixtures явно", async () => {
