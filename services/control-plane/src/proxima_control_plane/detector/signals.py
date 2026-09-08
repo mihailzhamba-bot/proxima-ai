@@ -203,6 +203,8 @@ def build_signal(
 ) -> dict:
     if evaluation.money_at_risk is None:
         raise ValueError("a signal needs money at risk")
+    # D32: знак оценки значим — рост выручки при падении заказов остаётся
+    # отрицательной суммой, а не обрезается до искусственных 0.00.
     return {
         "schema_version": SCHEMA_VERSION,
         "signal_id": signal_id(evaluation, evaluation_day),
@@ -211,7 +213,7 @@ def build_signal(
         "tenant_id": tenant_id,
         "created_at": created_at,
         "trust_marking": TRUST_MARKING,
-        "rub_assessment": {"value_rub": str(evaluation.money_at_risk), "method": RUB_METHOD},
+        "rub_assessment": {"value_rub": _money(evaluation.money_at_risk), "method": RUB_METHOD},
         "source_refs": source_refs(evaluation, subjects, funnel, snapshot),
         "detection_data": detection_data(evaluation, subjects, funnel, evaluation_day),
     }

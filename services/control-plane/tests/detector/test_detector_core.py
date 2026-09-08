@@ -230,6 +230,13 @@ def test_orders_and_revenue_growth_is_not_a_candidate() -> None:
     assert result.signals == ()
 
 
+def test_rub_assessment_preserves_a_negative_sign_when_only_orders_drop() -> None:
+    facts = rows(2104, 10, 5, "1000.00", "1100.00")
+    result = run(facts, {2104: subject(2104, "Платье")})
+    assert evaluations_by_key(result)[(LEVEL_SKU, "2104")].triggered_by == ("orders",)
+    assert result.signals[0]["rub_assessment"] == {"value_rub": "-100.00", "method": "revenue"}
+
+
 def test_subject_deviation_is_against_the_sum_of_its_skus() -> None:
     facts, subjects = scenario()
     result = run(facts, subjects)
