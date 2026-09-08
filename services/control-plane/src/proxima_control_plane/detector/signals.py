@@ -241,15 +241,36 @@ def build_signal(
     }
 
 
+def _deepest_drop(data: Mapping[str, dict]) -> Decimal:
+    """Самое глубокое из известных отклонений сигнала; у кандидата хотя бы одно есть.
+
+    Отклонения в payload - уже округлённые по D27 числа; сравниваются через их
+    точный текст в Decimal, а не как float.
+    """
+    values = [
+        Decimal(str(data[key]["value"]))
+        for key in ("orders_deviation_pct", "revenue_deviation_pct")
+        if not data[key]["is_unknown"]
+    ]
+    if not values:
+        raise ValueError("a signal without a known deviation cannot be ranked")
+    return min(values)
+
+
 def _rank_key(signal: dict) -> tuple:
     data = signal["detection_data"]
     level = data["level"]["value"]
     key = f"{data['nm_id']['value']:020d}" if level == LEVEL_SKU else data["subject_name"]["value"]
-    return (-Decimal(signal["rub_assessment"]["value_rub"]), level, key)
+    return (-Decimal(signal["rub_assessment"]["value_rub"]), _deepest_drop(data), level, key)
 
 
 def rank(signals: Sequence[dict]) -> list[dict]:
-    """По убыванию денег под риском; при равенстве - SKU раньше категории, затем ключ."""
+    """По убыванию `rub_assessment.value_rub` - большая потеря первой (CAP-7, Story 4.2).
+
+    При равных деньгах раньше стоит более глубокое падение (самое отрицательное
+    из отклонений по заказам и выручке), затем SKU раньше категории, затем
+    `nm_id` / имя предмета - порядок детерминирован и не зависит от порога.
+    """
     return sorted(signals, key=_rank_key)
 
 

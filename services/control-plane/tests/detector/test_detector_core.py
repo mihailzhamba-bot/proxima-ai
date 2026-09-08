@@ -32,7 +32,7 @@ from proxima_control_plane.detector.evaluate import (
 )
 from proxima_control_plane.detector.funnel import FUNNEL_MIN_DAYS
 from proxima_control_plane.detector.metrics import DailyMetrics, FunnelMetrics, SubjectRow, to_decimal
-from proxima_control_plane.detector.signals import DetectionResult, detect
+from proxima_control_plane.detector.signals import DetectionResult, detect, rank
 
 ROOT = Path(__file__).resolve().parents[4]
 DAY = date(2026, 8, 29)
@@ -265,6 +265,23 @@ def test_signals_are_ranked_by_money_at_risk_descending() -> None:
     result = run(facts, subjects)
     assert [s["rub_assessment"]["value_rub"] for s in result.signals] == ["600.00", "500.00", "100.00"]
     assert [s["detection_data"]["level"]["value"] for s in result.signals] == ["subject", "sku", "sku"]
+
+
+def test_ties_in_money_are_broken_by_the_deepest_drop_then_level_then_key() -> None:
+    # 5001 и 5002 теряют по 500.00: -50 % против -25 % -> 5001 раньше (Story 4.2);
+    # 5003 и 5004 теряют по 200.00 с одинаковыми -20 % -> SKU раньше своих предметов, затем nm_id.
+    facts = [
+        *rows(5002, 20, 15, "2000.00", "1500.00"),
+        *rows(5001, 10, 5, "1000.00", "500.00"),
+        *rows(5004, 10, 8, "1000.00", "800.00"),
+        *rows(5003, 10, 8, "1000.00", "800.00"),
+    ]
+    subjects = {5001: subject(5001, "А"), 5002: subject(5002, "Б"), 5003: subject(5003, "В"), 5004: subject(5004, "Г")}
+    result = run(facts, subjects)
+    order = [(s["detection_data"]["level"]["value"], s["detection_data"]["nm_id"]["value"] or s["detection_data"]["subject_name"]["value"]) for s in result.signals]
+    assert order == [("sku", 5001), ("subject", "А"), ("sku", 5002), ("subject", "Б"), ("sku", 5003), ("sku", 5004), ("subject", "В"), ("subject", "Г")]
+    assert [s["rub_assessment"]["value_rub"] for s in result.signals] == ["500.00"] * 4 + ["200.00"] * 4
+    assert rank(list(reversed(result.signals))) == list(result.signals)
 
 
 def test_source_refs_point_at_fact_versions_evidence_dictionary_and_calculation() -> None:
