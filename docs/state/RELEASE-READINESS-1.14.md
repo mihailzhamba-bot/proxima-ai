@@ -137,7 +137,7 @@
 2. **Provenance прогонов на сервере будет `NULL` - закрыт (C1, D36):** compose передаёт `PROXIMA_GIT_SHA`/`PROXIMA_IMAGE_ID` во все ledger-writing job-сервисы, а пустые значения нормализуются в SQL `NULL`.
 3. ~~Scope боевого statistics-токена~~ - **закрыт репетицией 13:11 UTC**: `wb_statistics_token` (13.08) прошёл `assertLeastPrivilegeToken(token, 'statistics')` (`collect.ts:132`; `business-signal/secrets.ts:59-81`) на живом хвосте (§4) - read-only, одна категория. Остаётся только analytics-токен read-write (PA-13) - ротация до 2.6, в 1.14 не используется.
 4. **Инкрементальный накат 007-018 поверх живой схемы 6 нигде не прогоняется.** Репетиция (свежий том), CI `apply-migrations-in-container` (`images.yml:103-110`, `up -d --wait postgres` на пустом томе) и `pg-roundtrip` (WT-30) стартуют с нуля. Боевая база несёт 13 таблиц с данными пилота (WT-04). Кандидат: в репетиционном проекте восстановить дамп `2026-09-08-proxima.sql.gz` (`restore_check.sh` уже умеет читать `/var/backups/proxima/`) и прогнать `apply-migrations` поверх него до 15.09.
-5. **`proxima-psql-owner`** (runbook §1.4) создаётся руками в день релиза, в `main` его нет - кандидат в `infra/bootstrap/` (runbook «Октябрь», строка 402).
+5. **`proxima-psql-owner`** - в main (C6, D36).
 6. **Журнал релиза и `CHANGELOG.md`** - заготовок нет (§3 п. 2); нужны до 15.09.
 7. **Story 6.4** - состав грантов LOGIN-роли аналитика (B5) и процедура выдачи; роль обещана D33 вместе с релизом 15.09.
 8. **Копия артефактов в S3** (B6) - за Mike.
