@@ -45,7 +45,7 @@ def test_backup_timer_runs_at_0300_moscow_and_is_persistent() -> None:
 
 def test_backup_service_contract() -> None:
     assert section_values(SERVICE, "Service", "ExecStart") == [
-        "/usr/local/bin/proxima-pg-backup.sh"
+        "/usr/bin/env bash /srv/proxima-ai/repo/infra/backup/proxima-pg-backup.sh"
     ]
     assert section_values(SERVICE, "Service", "Environment") == [
         "PROXIMA_RAW_DIR=/srv/proxima-ai/raw"

@@ -367,15 +367,14 @@ systemctl cat proxima-funnel-v3@amirova-test.service | grep -c ALLOW_ANALYTICS_R
 
 ### Бэкап как юнит (опционально, вместо cron)
 
-Этот шаг выполняет Mike или Claude только по слову «деплой», не во время ночного прогона. Серверная копия `/usr/local/bin/proxima-pg-backup.sh` (sha256 `d29feb24…`) отстаёт от репозиторной (`fa591531…`); установка ниже обновляет её и переводит запуск с cron на systemd:
+Этот шаг выполняет Mike или Claude только по слову «деплой», не во время ночного прогона. Юнит запускает скрипт прямо из чекаута `/srv/proxima-ai/repo` и тем самым закрывает дрейф серверной копии (sha256 `d29feb24…` против `fa591531…`), одновременно переводя запуск с cron на systemd:
 
 ```bash
 cd /srv/proxima-ai/repo
-sudo install -m 0755 infra/backup/proxima-pg-backup.sh /usr/local/bin/proxima-pg-backup.sh
 sudo install -m 0644 infra/systemd/proxima-pg-backup.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now proxima-pg-backup.timer
-sudo sed -i.bak '/proxima-pg-backup.sh/s/^/# disabled: replaced by proxima-pg-backup.timer: /' /etc/cron.d/proxima-pg-backup
+sudo rm /etc/cron.d/proxima-pg-backup
 systemctl list-timers --all --no-pager | grep proxima-pg-backup
 ```
 
@@ -385,7 +384,6 @@ systemctl list-timers --all --no-pager | grep proxima-pg-backup
 
 ```bash
 sudo systemctl disable --now proxima-pg-backup.timer
-sudo mv /etc/cron.d/proxima-pg-backup.bak /etc/cron.d/proxima-pg-backup
 sudo systemctl daemon-reload
 ```
 
