@@ -16,6 +16,7 @@ from datetime import date
 
 from proxima_control_plane.brief import loader as brief_loader
 from proxima_control_plane.detector.step import run_step, utc_now_iso
+from proxima_control_plane.detector.threshold import CONFIG_FILE_ENV, load_alert_threshold
 
 
 def _parse_day(value: str) -> date:
@@ -24,6 +25,8 @@ def _parse_day(value: str) -> date:
 
 def _cmd_evaluate(args: argparse.Namespace) -> int:
     tenant_id = brief_loader.validate_tenant(args.tenant)
+    # Тот же порог, что читает прогон `brief` (Story 4.2): сухой прогон сверяем с боевым.
+    threshold = load_alert_threshold(args.threshold_config)
     connection = brief_loader.connect(tenant_id)
     try:
         evaluation_day = args.date
@@ -33,13 +36,14 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
                 print("detector: no data_status row for tenant, nothing to evaluate", file=sys.stderr)
                 return 2
             evaluation_day = status.last_full_day
-        result = run_step(connection, tenant_id, evaluation_day, created_at=utc_now_iso())
+        result = run_step(connection, tenant_id, evaluation_day, created_at=utc_now_iso(), threshold=threshold)
     finally:
         connection.close()
     document = {
         "evaluation_day": result.evaluation_day.isoformat(),
         "snapshot_id": result.snapshot_id,
-        "counters": result.counters(),
+        "threshold": result.threshold.payload(),
+        "counters": {**result.counters(), "suppressed_by_threshold": result.suppressed_by_threshold},
         "signals": list(result.signals),
     }
     print(json.dumps(document, ensure_ascii=False, indent=2, allow_nan=False))
@@ -52,6 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate = sub.add_parser("evaluate", help="dry-run: print SCN-001 signals for one day without writing")
     evaluate.add_argument("--tenant", required=True)
     evaluate.add_argument("--date", type=_parse_day, default=None, help="evaluation day; default is last_full_day")
+    evaluate.add_argument(
+        "--threshold-config",
+        default=None,
+        help=f"TOML with the [threshold] table; default is ${CONFIG_FILE_ENV} or the packaged detector/threshold.toml",
+    )
     evaluate.set_defaults(handler=_cmd_evaluate)
     return parser
 

@@ -34,6 +34,7 @@ function briefPayload(overrides: Partial<BriefV1> = {}): BriefV1 {
     actual: { orders: 27, revenue: "41141.00" },
     norm: { orders: "34.50", revenue: "34595.00", window_days: 14, sample_days: 14 },
     deviation_pct: { orders: -21.7, revenue: 18.9 },
+    threshold: { value: null, source: null, date: null },
     signals: [],
     source_refs: ["table://fact_cabinet_daily/2026-08-29"],
     ...overrides,

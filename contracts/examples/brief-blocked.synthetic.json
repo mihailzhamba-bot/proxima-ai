@@ -9,6 +9,7 @@
   "actual": null,
   "norm": null,
   "deviation_pct": null,
+  "threshold": { "value": null, "source": null, "date": null },
   "signals": [],
   "source_refs": [
     "table://fact_cabinet_daily/2026-08-29",

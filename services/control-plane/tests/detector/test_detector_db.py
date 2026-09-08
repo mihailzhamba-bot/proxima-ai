@@ -156,6 +156,13 @@ def test_ok_brief_carries_ranked_schema_valid_signals_from_nm_facts(seeded: tupl
     assert [s["rub_assessment"]["value_rub"] for s in signals] == ["600.00", "500.00", "100.00"]
     assert [s["detection_data"]["level"]["value"] for s in signals] == ["subject", "sku", "sku"]
     assert [s["detection_data"]["orders_deviation_pct"]["value"] for s in signals] == [-33.3, -50.0, -12.5]
+    # Story 4.2: порог из конфигурации control-plane (detector/threshold.toml) - null до Story 4.4;
+    # тройка записана в payload и в каждом сигнале, ни один кандидат ниже нормы не отсечён.
+    assert brief["payload"]["threshold"] == {"value": None, "source": None, "date": None}
+    for signal in signals:
+        assert signal["detection_data"]["threshold_pct"] == {"value": None, "is_unknown": True}
+        assert signal["detection_data"]["threshold_source"] == {"value": None, "is_unknown": True}
+        assert signal["detection_data"]["threshold_date"] == {"value": None, "is_unknown": True}
     assert signals[1]["detection_data"]["nm_id"]["value"] == 1001
     assert signals[1]["detection_data"]["supplier_article"]["value"] == "ART-1001"
     assert signals[1]["detection_data"]["subject_name"]["value"] == "Платье"

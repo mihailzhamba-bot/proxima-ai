@@ -9,6 +9,7 @@
   "actual": { "orders": 21, "revenue": "31280.00" },
   "norm": { "orders": "58.50", "revenue": "83125.50", "window_days": 14, "sample_days": 14 },
   "deviation_pct": { "orders": -64.1, "revenue": -62.4 },
+  "threshold": { "value": null, "source": null, "date": null },
   "signals": [
     {
       "schema_version": 1,

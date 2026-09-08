@@ -18,6 +18,7 @@ from proxima_control_plane.brief.builder import (
     MetricNorm,
     deviation_pct,
 )
+from proxima_control_plane.detector.threshold import AlertThreshold
 
 DAY = date(2026, 8, 29)
 STATUS = DataStatus(date(2026, 8, 29), "2026-08-30T02:41:12+00:00", False)
@@ -125,6 +126,20 @@ def test_source_refs_point_at_fact_norm_and_status_versions() -> None:
     assert "norm_daily/2026-08-29/orders" in refs
     assert "norm_daily/2026-08-29/revenue" in refs
     assert "data_status_current/2026-08-29" in refs
+
+
+def test_threshold_triple_is_written_in_every_status_and_is_null_until_story_4_4() -> None:
+    # Решение 6а, Story 4.2: порог - конфигурация, не расчёт, поэтому пишется при любом статусе.
+    ok = day_from_rows(DAY, 27, Decimal("41141.00"), ok_norms(), STATUS, ["a1b2c3d4"])
+    insufficient = day_from_rows(DAY, 27, Decimal("41141.00"), insufficient_norms(), STATUS, [])
+    blocked = build_day(DAY, [], None, STATUS, [])
+    for day in (ok, insufficient, blocked):
+        assert day.payload["threshold"] == {"value": None, "source": None, "date": None}
+    applied = AlertThreshold(Decimal(-30), "DECISIONS.md D25 decision 6a", date(2026, 9, 2))
+    day = day_from_rows(DAY, 27, Decimal("41141.00"), ok_norms(), STATUS, ["a1b2c3d4"], threshold=applied)
+    assert day.payload["threshold"] == {"value": -30, "source": "DECISIONS.md D25 decision 6a", "date": "2026-09-02"}
+    assert day.payload["deviation_pct"] == {"orders": -21.7, "revenue": 18.9}  # порог цифры сводки не меняет
+    assert day.status == "ok"
 
 
 def test_stale_status_is_copied_into_the_payload_as_is() -> None:

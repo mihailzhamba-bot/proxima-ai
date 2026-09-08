@@ -11,6 +11,7 @@
     "actual",
     "norm",
     "deviation_pct",
+    "threshold",
     "signals",
     "source_refs"
   ],
@@ -139,12 +140,65 @@
       ],
       "description": "Null when the day has no usable norm: no version for evaluation_day (status blocked) or an incomplete window (status insufficient). Absence is written as null, never as a missing key - a reader must be able to tell 'not computed' from 'not looked at'. The trustworthiness of a non-null value is carried by brief_daily.status, not by the payload."
     },
+    "threshold": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "source",
+            "date"
+          ],
+          "properties": {
+            "value": {
+              "type": "null"
+            },
+            "source": {
+              "type": "null"
+            },
+            "date": {
+              "type": "null"
+            }
+          },
+          "description": "Threshold not applied (Story 4.2, until Story 4.4 sets a value): every candidate below the norm stays in signals[]."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "source",
+            "date"
+          ],
+          "properties": {
+            "value": {
+              "type": "number",
+              "exclusiveMaximum": 0,
+              "description": "alert_threshold_pct: one-sided drop threshold in percent of deviation_pct (PRD FR-34, decision 6a: -30 preliminary). A candidate stays in signals[] when at least one of its dropping metrics has deviation_pct at or below this value; growth never alerts. Negative by construction."
+            },
+            "source": {
+              "type": "string",
+              "minLength": 1,
+              "description": "threshold_source: where the value comes from, as written in DECISIONS.md (decision 6a: the retro run of 184 fixture days 01.03-31.08). A threshold without a source is not applied."
+            },
+            "date": {
+              "type": "string",
+              "format": "date",
+              "description": "threshold_date: the day the value was decided (the DECISIONS.md entry)."
+            }
+          },
+          "description": "Threshold applied (Story 4.4): value, source and date travel together."
+        }
+      ],
+      "description": "Alert threshold configuration as applied to this brief (decision 6a, D25; PRD FR-34; Story 4.2/4.4): alert_threshold_pct, threshold_source, threshold_date from the control-plane configuration (detector/threshold.toml). Written in every status - it is configuration, not a computed value - and mirrored into each signal's detection_data as threshold_pct, threshold_source, threshold_date. Absence of a threshold is written as nulls, never as a missing key."
+    },
     "signals": {
       "type": "array",
       "items": {
         "$ref": "signal.schema.json"
       },
-      "description": "Anomalies ranked by money (AD-10 signal v1); empty until M-04 (AD-9)."
+      "description": "Anomalies ranked by money at risk: rub_assessment.value_rub descending (CAP-7, Story 4.2); ties broken by the deepest deviation_pct first, then SKU before subject, then nm_id / subject_name. Only candidates below the norm (D32: orders or revenue) and, when threshold.value is set, at or beyond it; growth is reported as a number in deviation_pct / detection_data and never becomes a signal (PRD FR-34). Empty unless brief_daily.status = ok (PRD FR-7). Items are signal v1 (AD-10)."
     },
     "source_refs": {
       "type": "array",
