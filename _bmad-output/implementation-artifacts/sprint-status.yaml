@@ -31,7 +31,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 19:45
-last_updated: 09-07-2026 17:52
+last_updated: 09-08-2026 06:45
 project: PROXIMA AI
 project_key: NOKEY
 tracking_system: file-system
@@ -72,8 +72,8 @@ development_status:
   3-4-релиз-воронки-claude-октябрь-d23: backlog
   epic-3-retrospective: optional
 
-  epic-4: backlog
-  4-0-измерение-sku-и-категории-для-аномалий: backlog
+  epic-4: in-progress
+  4-0-измерение-sku-и-категории-для-аномалий: done
   4-1-детектор-нормы-на-реальных-фактах: backlog
   4-2-порог-тревоги-и-ранжирование-по-деньгам: backlog
   4-3-аномалии-на-brief-в-разрезе-sku-и-категории: backlog
