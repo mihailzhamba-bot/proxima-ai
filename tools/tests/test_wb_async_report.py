@@ -745,23 +745,27 @@ def test_unreadable_downloads_list_fails_closed_without_creating(tmp_path: Path)
 def test_reports_created_on_reads_utc_timestamps_into_the_moscow_day() -> None:
     collector = load_collector()
     body = json.loads(DOWNLOADS_LIST_FIXTURE.read_text(encoding="utf-8"))
-    assert collector.reports_created_on(body, date.fromisoformat("2026-08-30")) == 1
-    assert collector.reports_created_on(body, date.fromisoformat("2026-08-29")) == 1
-    assert collector.reports_created_on(body, date.fromisoformat("2026-08-13")) == 0
+    # Reports made by another consumer never consume Proxima's daily guard.
+    assert collector.reports_created_on(body, date.fromisoformat("2026-08-30"), "amirova-test") == 0
+    own = {"data": [{"id": "x", "name": "proxima-amirova-test-2026-08-03-2026-08-09", "createdAt": "2026-08-30 04:17:23"}]}
+    assert collector.reports_created_on(own, date.fromisoformat("2026-08-30"), "amirova-test") == 1
+    assert collector.reports_created_on(own, date.fromisoformat("2026-08-29"), "amirova-test") == 0
     # 21:30 UTC (D20 reads createdAt as UTC) is already the next Moscow day
-    late = {"data": [{"id": "x", "createdAt": "2026-08-29 21:30:00"}]}
-    assert collector.reports_created_on(late, date.fromisoformat("2026-08-30")) == 1
-    assert collector.reports_created_on(late, date.fromisoformat("2026-08-29")) == 0
-    explicit = {"data": [{"id": "x", "createdAt": "2026-08-30T00:30:00+03:00"}]}
-    assert collector.reports_created_on(explicit, date.fromisoformat("2026-08-30")) == 1
-    assert collector.reports_created_on(explicit, date.fromisoformat("2026-08-29")) == 0
-    assert collector.reports_created_on({"data": []}, date.fromisoformat("2026-08-30")) == 0
+    late = {"data": [{"id": "x", "name": "proxima-amirova-test-period", "createdAt": "2026-08-29 21:30:00"}]}
+    assert collector.reports_created_on(late, date.fromisoformat("2026-08-30"), "amirova-test") == 1
+    assert collector.reports_created_on(late, date.fromisoformat("2026-08-29"), "amirova-test") == 0
+    explicit = {"data": [{"id": "x", "name": "proxima-amirova-test-period", "createdAt": "2026-08-30T00:30:00+03:00"}]}
+    assert collector.reports_created_on(explicit, date.fromisoformat("2026-08-30"), "amirova-test") == 1
+    assert collector.reports_created_on(explicit, date.fromisoformat("2026-08-29"), "amirova-test") == 0
+    mixed = {"data": [own["data"][0], {"name": "detail_history_report", "createdAt": "2026-08-30 05:00:00"}]}
+    assert collector.reports_created_on(mixed, date.fromisoformat("2026-08-30"), "amirova-test") == 1
+    assert collector.reports_created_on({"data": []}, date.fromisoformat("2026-08-30"), "amirova-test") == 0
     with pytest.raises(collector.WbAsyncReportError, match="schema drift"):
-        collector.reports_created_on({"data": "x"}, date.fromisoformat("2026-08-30"))
+        collector.reports_created_on({"data": "x"}, date.fromisoformat("2026-08-30"), "amirova-test")
     with pytest.raises(collector.WbAsyncReportError, match="schema drift"):
-        collector.reports_created_on(["not", "an", "object"], date.fromisoformat("2026-08-30"))
+        collector.reports_created_on(["not", "an", "object"], date.fromisoformat("2026-08-30"), "amirova-test")
     with pytest.raises(collector.WbAsyncReportError, match="no readable createdAt"):
-        collector.reports_created_on({"data": [{"id": "x"}, {"id": "y", "createdAt": "yesterday"}]}, date.fromisoformat("2026-08-30"))
+        collector.reports_created_on({"data": [{"name": "proxima-amirova-test-period", "createdAt": "yesterday"}]}, date.fromisoformat("2026-08-30"), "amirova-test")
 
 
 def test_parse_period_accepts_explicit_closed_range_and_keeps_latest_closed_week() -> None:
