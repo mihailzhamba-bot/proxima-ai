@@ -427,7 +427,7 @@ SELECT last_full_day, stale FROM data_status_current WHERE tenant_id='amirova-te
 | sudo docker exec -i proxima-ai-postgres-1 sh -c 'psql -U "$(cat /run/secrets/postgres_user)" -d proxima -v ON_ERROR_STOP=1 -tA'
 ```
 
-Ход релиза фиксируется в `docs/operations/releases/2026-09-15-m01.md` (AC Story 1.14; каталога на 08.09 нет, создаётся вместе с журналом), релиз - в `CHANGELOG.md` в корне репозитория: тег, дата, что вошло, ссылка на этот runbook.
+Ход релиза фиксируется в `docs/operations/releases/2026-09-15-m01.md` (AC Story 1.14; каталога на 08.09 нет, создаётся вместе с журналом), релиз - в `CHANGELOG.md` в корне репозитория: тег, дата, что вошло, ссылка на этот runbook. Журнал релиза ведётся по шаблону `docs/operations/releases/TEMPLATE.md` (формат имени файла, кто пишет, список журналов - `docs/operations/releases/README.md`); изменения до релиза накапливаются в разделе `Unreleased` `CHANGELOG.md` в корне репозитория (Keep a Changelog 1.1).
 
 ## Репетиция на VPS (D35, не деплой)
 
