@@ -7,8 +7,8 @@ paradigm: 'pipes-and-filters over an immutable evidence ledger (evidence → obs
 scope: 'Лестница M-01..M-05: сбор дневного ряда WB, норма, утренняя сводка на /brief, воронка фоном; кабинет ИП Амировой (tenant amirova-test); один VPS'
 status: final
 created: '2026-08-30'
-updated: '2026-09-03'
-revision: 'v3.4 (CR к AD-6 применён, порог CAP-7 задан решением 6а)'
+updated: '2026-09-08'
+revision: 'v3.5 (AD-19: разрез nmId и предмета для аномалий, Story 4.0 - предложение к D32)'
 binds: [CAP-1, CAP-2, CAP-3, CAP-4, CAP-5, CAP-6, CAP-7, CAP-8]
 sources:
   - ../../../specs/spec-wb-morning-brief/SPEC.md
@@ -31,7 +31,7 @@ companions:
 | --- | --- | --- |
 | Evidence | сырые ответы WB как есть, CAS по sha256 | `services/collector/src/business-signal/{http,raw-store}.ts` (переиспользуется), реестр `wb_raw_artifacts` (новый) |
 | Observations | построчные наблюдения WB: одна строка = одно наблюдение ключа с его `lastChangeDate` | `stg_wb_orders_obs`, `stg_wb_sales_obs`, `stg_wb_funnel_obs` (новые); `stg_wb_nm_report_rows` (есть, CSV) |
-| Facts | версии агрегатов по прогону + view `_current` | `fact_cabinet_daily`, `fact_funnel_daily` (новые); `fact_order_counts` (есть, nmId из CSV) |
+| Facts | версии агрегатов по прогону + view `_current` | `fact_cabinet_daily`, `fact_funnel_daily`, `fact_nm_daily` + справочник `dim_nm_subject` (AD-19); `fact_order_counts` (007, legacy без писателя лестницы) |
 | Norm / Signals | норма и отклонения, чистые функции | `services/control-plane/src/proxima_control_plane/{norm,brief,detectors}` |
 | Brief | материализованная сводка на дату | `brief_daily` (новая) |
 | Presentation | `/brief` только читает view | `services/webapp/src/lib/data/postgres-provider.ts` |
@@ -164,11 +164,17 @@ flowchart LR
 - **Prevents:** единицы M-01..M-03, трогающие auth и verbatim-дерево
 - **Rule:** `services/webapp/src/{lib/auth*,app/api/auth,app/login}` и `services/control-plane/src/proxima/` не изменяются до октября; `services/collector/src/business-signal/*` - только чтение и переиспользование модулей (`http`, `raw-store`, `secrets`), pipeline и `raw-store.ts` не меняются. `db/`, `infra/`, `Makefile`, `services/webapp/src/lib/db/`, `tools/` открыты для единиц M-01.
 
+### AD-19 — Разрез nmId и предмета для аномалий: `fact_nm_daily` + `dim_nm_subject` в том же прогоне, что кабинетный ряд
+
+- **Binds:** CAP-1, CAP-7
+- **Prevents:** второй писатель в legacy `fact_order_counts` (007) с фиктивной `fact_attempt_runs`-линией; два определения «заказов» по nmId (строки Statistics и CSV `ordersCount`) в одной таблице; предмет как колонка каждой строки факта (переименование предмета WB переписывает историю или требует `UPDATE`); детектор и норма, читающие `payload` наблюдений под `proxima_job_norm`; отсутствие строки по SKU, неотличимое от нуля; сумма по nmId, тихо подменяющая кабинетный ряд; выручка по SKU, посчитанная второй раз в control-plane; строки, которые `delete_run.py` не видит
+- **Rule:** `fact_nm_daily(tenant_id, calendar_day, nm_id bigint CHECK (nm_id > 0), run_id → collector_runs ON DELETE CASCADE, orders_count, cancelled_count, sales_count, returns_count, revenue_rub numeric(14,2), forpay_rub numeric(14,2), evidence_sha256 char(64)[])`, PK `(tenant_id, calendar_day, nm_id, run_id)`, индексы `(run_id)`, `(tenant_id, calendar_day)`, `(tenant_id, nm_id, calendar_day)` - дневной ряд по nmId с теми же формулами, что у `fact_cabinet_daily` (`glossary.md`: заказы без `isCancel`, продажи `saleID` `S*`/`R*`, `finishedPrice`, `forPay`), сгруппированными по `payload.nmId` заказов и продаж; `nmId` отсутствует или ≤ 0 - `RangeError`, прогон FAILED (fail-closed, как `date`). Пишет тот же прогон `collect`/`backfill` внутри транзакции (3) сразу после `aggregateCabinetDaily`, из тех же строк `_latest` (один SELECT, вторая чистая функция `summarizeNmDaily` в `src/facts/nm-daily.ts`), тот же интервал `[floor, run_day-1]`; `collector_run_inputs` второй раз не пишется. На каждый версионируемый день × каждый nmId версии справочника этого прогона - ровно одна строка, нули включительно: нет строки ⇔ день не версионирован, ноль ⇔ наблюдений нет; у нулевой строки `evidence_sha256` = артефакты прогона, как у нулевого дня кабинета. `fact_nm_daily_current` - правило AD-3 по ключу `(tenant_id, calendar_day, nm_id)`. «Заказы кабинета» по-прежнему берутся только из `fact_cabinet_daily` (AD-2): равенство сумм - проверка, не второй источник. Справочник `dim_nm_subject(tenant_id, nm_id, run_id → collector_runs ON DELETE CASCADE, subject_name text NOT NULL, category_name text NOT NULL, brand text NOT NULL, supplier_article text NOT NULL, last_change_at timestamptz NOT NULL, evidence_sha256 char(64) NOT NULL)`, PK `(tenant_id, nm_id, run_id)`, индекс `(run_id)`: версия на прогон для каждого nmId из `stg_wb_orders_latest ∪ stg_wb_sales_latest` (значения из наблюдения с максимальным `last_change_at`; при равенстве заказ раньше продажи, затем максимальный `srid`/`sale_id`), пишется в той же транзакции до `fact_nm_daily`; `dim_nm_subject_current` - правило AD-3 по `(tenant_id, nm_id)`. Категория аномалии = `subject_name` = поле WB `subject` («предмет»; в v3-воронке то же поле называется `product.subjectName`) - атрибут SKU на момент последнего SUCCEEDED прогона, не атрибут дня: смена предмета у nmId = новая версия в следующем прогоне, `_current` переключается для всей истории SKU, прежние значения остаются в версиях (`JOIN … USING (tenant_id, nm_id, run_id)` даёт предмет, каким его видел конкретный прогон). `category_name` (WB `category`, верхний уровень), `brand`, `supplier_article` хранятся для `/brief` (Story 4.3: артикул) и справки, в грейн детектора не входят. Отсутствие ключа в payload - `WB_SCHEMA_DRIFT`, пустая строка - литеральное значение (видимая группа, не скрытая). `dim_product` (004) не переиспользуется: ручной паспорт с NOT NULL `cogs_rub`/`lead_time_days` и `effective_from` по решению человека. `fact_order_counts` (007) остаётся legacy без писателя лестницы: `attempt_id NOT NULL … ON DELETE RESTRICT` и `fact_attempt_runs.source_family CHECK (wb_analytics_task|file_artifact)` под AD-14 additive-only не ослабляются (`verify_migrations.py` пропускает только `ADD COLUMN`/`ADD CONSTRAINT`/`ENABLE ROW LEVEL SECURITY`), значит писатель лестницы был бы вынужден создавать `fact_attempt_runs` с ложным `source_family`, а `delete_run.py` - резать пять RESTRICT-таблиц 007-008 вместо одного CASCADE; вдобавок `order_count` там - CSV `ordersCount` (аналитика), второе определение «заказов» (AD-2). Ветка `pa41-full-w2-phase3` не принимается: её писатель живёт на `attempt_id`, её `010` - column-level GRANT, запрещённый AD-11. Views 008 и гранты 009 не трогаются. Миграция - целевой номер `018_nm_daily.sql` (по AD-14: обе таблицы, оба view, индексы, гранты, RLS и политики в одном файле; вторая мержащаяся ветка перенумеровывает). Quality-check `per_nm_sums_vs_cabinet`: в той же транзакции после обеих вставок один SQL по строкам этого `run_id` - `SUM` шести колонок `fact_nm_daily` по `calendar_day` против `fact_cabinet_daily` того же прогона (день без строк nm считается нулём, `COALESCE`); результат - одна JSON-строка лога прогона (AD-17: `step: "quality_check"`, `check: "per_nm_sums_vs_cabinet"`, `status: PASS|MISMATCH`, `days_checked`, `mismatches[]{calendar_day, column, cabinet, per_nm_sum}`), не блокирует и не меняет статус прогона; порог `UNKNOWN` до OQ-7 - любое ненулевое расхождение = `MISMATCH`. В БД результат не пишется (`quality_check_results` 007 привязана к `attempt_id`; run-keyed таблица - Deferred до второго check). SQL check - один экспорт `src/facts/nm-daily.ts`; гейт `make verify` `order-counts: per-nm sums vs cabinet` = unit-тест `node:test` на фикстурах (суммы `summarizeNmDaily` по nmId равны `summarizeCabinetDaily` по каждой из шести колонок - выполняется везде, без PG) + тот же SQL в `*.db.test.ts` по `_current`-view в harness AD-12 (там, где есть PG16; в CI `pg-roundtrip` = `SKIP`) вместе со строками обеих таблиц в RLS-матрице. Роли по шаблону AD-11: `proxima_job_collector` - `SELECT, INSERT` на обе таблицы и политика `FOR ALL`; `proxima_job_norm` - `SELECT` и `FOR SELECT` (адаптер детектора 4.1); `proxima_run_janitor` - `FOR ALL` (DELETE в bootstrap); `proxima_webapp_readonly` гранта не получает - webapp читает только `brief_current`/`data_status_current` (AD-9), аномалии доезжают через `brief_daily.payload.signals[]`. Views `WITH (security_invoker = true)`; `delete_run.py` не меняется - CASCADE от `collector_runs`. Контракт чтения для Story 4.1: `loader.py` под `proxima_job_norm` читает `fact_nm_daily_current` (ряды SKU: `orders_count`, `revenue_rub`), `dim_nm_subject_current` (предмет), `fact_funnel_daily_current.open_card` (U для разложения U×CVR×AOV) по `(tenant_id, nm_id, calendar_day)` и `fact_cabinet_daily_current`; соединения делает адаптер, третьего view в БД нет; ряд категории = сумма рядов nmId с одним `subject_name` по `_current` на момент прогона; `stg_*` детектор не читает; адаптер копирует `nm_id`, `supplier_article`, `subject_name` в `detection_data` сигнала - webapp получает их из payload, а не из фактов. Детектор выполняется шагом прогона `brief` (`collector_runs.kind` CHECK из 011 под additive-only заморожен - новых видов прогона нет; `signals[]` зависят от `brief.status`), `run_inputs` пишет `brief`; `source_refs` сигнала = `run_id` версии + `evidence_sha256[]` строк факта. Норма SKU (D21/D27: медиана 14 полных дней по nmId) в `norm_daily` не помещается (UNIQUE без `nm_id`); до отдельного решения считается в прогоне детектора и записывается в `detection_data` сигнала (Deferred). [ASSUMPTION] `subject`, `category`, `brand`, `supplierArticle` в каждой строке `orders`/`sales` заполнены и постоянны в пределах nmId - на фикстурах `tests/fixtures/wb-api/statistics/{orders,sales}/sample.json` (301/295 строк, 86 nmId) пустых нет и второго предмета у nmId нет; проверить на полных фикстурах 30.08 (13 325 / 10 611 строк) в единице 4.0 (`count(distinct subject)` по nmId, доля пустых) до кодирования справочника. [ASSUMPTION] `finishedPrice`/`forPay` приходят не более чем с двумя знаками (на обезличенной фикстуре так, но деньги там умножены на коэффициент, D26), поэтому сумма по nmId равна кабинетной копейка в копейку; проверить на полных фикстурах, иначе check по деньгам получает допуск, который Mike задаёт вместе с OQ-7. [ASSUMPTION] объём: ~200 nmId (API-FACTS: 201) × 183 дня бэкфилла ≈ 37 тыс. строк, ежедневно ≈ 800 - индексов достаточно; проверить `count(*)` и время `collect` в harness после бэкфилла.
+
 ## Consistency Conventions
 
 | Concern | Convention |
 | --- | --- |
-| Naming | таблицы `stg_wb_<dataset>_obs`, `fact_<grain>_daily`, view `<table>_latest` / `<table>_current`; `kind` с `_`, юниты `proxima-<job>@<tenant>` с `-`; схемы `contracts/<entity>.schema.json`; роли `proxima_job_*`, `proxima_webapp_*`, `proxima_run_*`; идентификаторы английские, документация русская |
+| Naming | таблицы `stg_wb_<dataset>_obs`, `fact_<grain>_daily`, справочники `dim_<entity>` (версии по `run_id`, как факты), view `<table>_latest` / `<table>_current`; `kind` с `_`, юниты `proxima-<job>@<tenant>` с `-`; схемы `contracts/<entity>.schema.json`; роли `proxima_job_*`, `proxima_webapp_*`, `proxima_run_*`; идентификаторы английские, документация русская |
 | Ключи и время | `tenant_id text` (`amirova-test`), `run_id uuid`, `calendar_day date` в Europe/Moscow по полю WB `date` через `mskDay()`; естественные ключи WB: `srid` (orders), `saleID` (sales), `nmId`; `last_change_at TIMESTAMPTZ` из `lastChangeDate`; деньги `numeric(14,2)`, в JSON - строка |
 | Записи | наблюдения append-only, `DO NOTHING` только при том же `canonical_sha256`; факты - версии по `run_id`, читаются через `_current`; `UPDATE` только `status`/`finished_at` в `collector_runs` |
 | Ошибки | job падает fail-closed с ненулевым exit; ROLLBACK транзакции (3) + autocommit `FAILED`; частичных данных не существует; `delete_run.py` для FAILED удаляет строку прогона и артефакты |
@@ -251,6 +257,8 @@ erDiagram
   collector_runs ||--o{ stg_wb_funnel_obs : observes
   collector_runs ||--o{ fact_cabinet_daily : versions
   collector_runs ||--o{ fact_funnel_daily : versions
+  collector_runs ||--o{ fact_nm_daily : versions
+  collector_runs ||--o{ dim_nm_subject : versions
   collector_runs ||--o{ norm_daily : writes
   collector_runs ||--o{ brief_daily : writes
   wb_raw_artifacts ||--o{ stg_wb_orders_obs : evidence
@@ -260,6 +268,9 @@ erDiagram
   stg_wb_nm_report_rows }o--|| stg_wb_funnel_obs : promote_csv
   stg_wb_orders_obs }o--|| fact_cabinet_daily : latest_aggregates
   stg_wb_sales_obs }o--|| fact_cabinet_daily : latest_aggregates
+  stg_wb_orders_obs }o--|| fact_nm_daily : latest_aggregates_by_nm
+  stg_wb_orders_obs }o--|| dim_nm_subject : latest_attributes
+  dim_nm_subject ||--o{ fact_nm_daily : subject_of
   stg_wb_funnel_obs }o--|| fact_funnel_daily : latest_aggregates
   fact_cabinet_daily ||--o{ norm_daily : median14
   norm_daily ||--o{ brief_daily : deviation
@@ -273,7 +284,7 @@ services/collector/
   Dockerfile                                    # multi-stage, контекст - корень, USER 1010
   src/wb/            # client.ts (реестр, бюджеты), recording-client.ts, artifact-sink.ts, run-ledger.ts, transport.ts, fixture-transport.ts, msk-day.ts, log.ts
   src/jobs/          # collect.ts, backfill.ts, funnel-v3.ts, funnel-csv-promote.ts
-  src/facts/         # cabinet-daily.ts (из *_latest → версии всех дней интервала), funnel-daily.ts
+  src/facts/         # cabinet-daily.ts (из *_latest → версии всех дней интервала), funnel-daily.ts, nm-daily.ts (AD-19: версии день × nmId + справочник, check per_nm_sums_vs_cabinet)
   src/business-signal/   # существующий; переиспользуются http.ts, raw-store.ts, secrets.ts
   tests/fixtures/wb-api/ # малые обезличенные фикстуры (AD-4)
 services/control-plane/
@@ -283,7 +294,7 @@ services/control-plane/
   src/proxima_control_plane/common/msk_day.py
   src/proxima_control_plane/detectors/scn001/   # из pmm-20, адаптер (M-04)
 contracts/            # cabinet-daily, norm, brief, signal, diagnosis, decision-record (.schema.json)
-db/migrations/        # целевые: 011_run_ledger, 012_stg_wb_orders_sales, 013_fact_cabinet_daily; E2: norm_daily, brief_daily; E3: funnel - вторая мержащаяся ветка перенумеровывает
+db/migrations/        # целевые: 011_run_ledger, 012_stg_wb_orders_sales, 013_fact_cabinet_daily; E2: norm_daily, brief_daily; E3: funnel; E4: 018_nm_daily (AD-19) - вторая мержащаяся ветка перенумеровывает
 infra/
   compose.yaml        # + services collector, control-plane (profiles: jobs), secrets:
   jobs.env            # POSTGRES_HOST=postgres … без секретов
@@ -300,21 +311,24 @@ tools/
 
 | Capability / Area | Lives in | Governed by |
 | --- | --- | --- |
-| CAP-1 ежедневный сбор | `collector/src/jobs/collect.ts`, `stg_wb_*_obs`, `fact_cabinet_daily` | AD-1, AD-2, AD-3, AD-4, AD-6, AD-7, AD-13 |
+| CAP-1 ежедневный сбор | `collector/src/jobs/collect.ts`, `stg_wb_*_obs`, `fact_cabinet_daily`, `fact_nm_daily` + `dim_nm_subject` (тот же прогон) | AD-1, AD-2, AD-3, AD-4, AD-6, AD-7, AD-13, AD-19 |
 | CAP-2 бэкфилл 26 недель | `collector/src/jobs/backfill.ts` | AD-2, AD-4, AD-6 |
 | CAP-3 статус данных | view `data_status_current`, webapp | AD-7, AD-9 |
 | CAP-4 норма D21 | `control-plane/norm/`, `norm_daily` | AD-8, AD-10, AD-11 |
 | CAP-5 сводка на /brief | `control-plane/brief/`, `brief_daily`, webapp `postgres-provider` | AD-9, AD-10, AD-16 |
 | CAP-6 воронка фоном | `jobs/funnel-v3.ts`, `jobs/funnel-csv-promote.ts`, `tools/wb_async_report.py`, `fact_funnel_daily` | AD-1, AD-3, AD-4, AD-5, AD-6 |
-| CAP-7 аномалии (M-04) | `detectors/scn001` + адаптер; `brief_daily.payload.signals` | AD-8, AD-10; порог - 30 % на падение, значение конфигурации с источником и датой (решение 6а, D25; FR-34, Story 4.4), перекалибровка после разметки ретро-тревог (Story 6.3) |
+| CAP-7 аномалии (M-04) | `detectors/scn001` + адаптер `loader.py` над `fact_nm_daily_current`, `dim_nm_subject_current`, `fact_funnel_daily_current`; `brief_daily.payload.signals` | AD-8, AD-10, AD-19; порог - 30 % на падение, значение конфигурации с источником и датой (решение 6а, D25; FR-34, Story 4.4), перекалибровка после разметки ретро-тревог (Story 6.3) |
 | CAP-8 план действий (M-05) | `diagnosis/` (mock LLM) → `signals[].diagnosis` | AD-10; провайдер LLM - Deferred |
 | Среды, роли, деплой | `infra/compose.yaml`, `infra/systemd/`, `infra/bootstrap/`, `Makefile`, Dockerfiles | AD-6, AD-11, AD-12, AD-15, AD-17 |
 
 ## Deferred
 
 - Порог тревоги и правило сигнал/шум для M-04 - после первых живых сводок, решение Mike.
-- Сверка кабинетного ряда (Statistics) с суммой nmId (CSV `ordersCount`) - quality-check в M-04.
-- SKU/категорийный грейн аномалий - на `fact_order_counts` + `fact_funnel_daily`; правила ранжирования - M-04.
+- Кросс-источниковая сверка `fact_nm_daily_current.orders_count` (Statistics) с `fact_funnel_daily_current.orders` (Analytics v3/CSV) по nmId и дню - quality-check M-04 после первых недель воронки; сверка внутри Statistics (сумма по nmId = кабинет) закрыта AD-19.
+- Правила ранжирования аномалий - Story 4.2; порог - Story 4.4 (решение 6а).
+- Носитель нормы SKU (медиана 14 дней по nmId): в `norm_daily` не помещается (UNIQUE без `nm_id`, additive-only); до отдельного решения считается в прогоне детектора и пишется в `detection_data` сигнала (AD-19) - решение единицы 4.1 или новая таблица `norm_nm_daily`.
+- Run-keyed таблица результатов quality-check - когда появится второй check (правило трёх); до этого результат `per_nm_sums_vs_cabinet` живёт в JSON-логе прогона (AD-19).
+- Расширение `collector_runs.kind`: CHECK из 011 под additive-only не расширяется (`DROP CONSTRAINT` запрещён, `ADD CONSTRAINT` только сужает); новые виды прогонов (Story 5.0 `decision`, теневой пересчёт Epic 6) требуют либо явного исключения в AD-14 для CHECK-списков, либо отдельной таблицы прогонов - решение до Story 5.0; AD-19 обходит это, размещая детектор шагом `brief`.
 - Реальный LLM-провайдер для `diagnosis` и его eval-гейт - M-05.
 - Второй tenant: строка + три файла токенов + инстанс таймера; онбординг-скрипт - когда появится кабинет.
 - Auth, Caddy/домен (`infra/webapp.compose.yaml`) - октябрь; при переходе на transaction-pooling правило `set_config` в webapp меняется на per-transaction.
