@@ -203,6 +203,33 @@ def test_growth_is_evaluated_but_never_a_candidate() -> None:
     assert not any(s["detection_data"]["nm_id"]["value"] == 1003 for s in result.signals)
 
 
+def test_revenue_only_drop_is_a_candidate_and_records_its_trigger() -> None:
+    facts = rows(2101, 10, 10, "1000.00", "500.00")
+    result = run(facts, {2101: subject(2101, "Платье")})
+    sku = evaluations_by_key(result)[(LEVEL_SKU, "2101")]
+    assert sku.orders_deviation_pct == 0.0
+    assert sku.revenue_deviation_pct == -50.0
+    assert sku.triggered_by == ("revenue",)
+    assert result.signals[0]["detection_data"]["triggered_by"] == {"value": ["revenue"], "is_unknown": False}
+
+
+def test_orders_and_revenue_drop_record_both_triggers() -> None:
+    facts = rows(2102, 10, 5, "1000.00", "500.00")
+    result = run(facts, {2102: subject(2102, "Платье")})
+    assert evaluations_by_key(result)[(LEVEL_SKU, "2102")].triggered_by == ("orders", "revenue")
+    assert result.signals[0]["detection_data"]["triggered_by"] == {
+        "value": ["orders", "revenue"],
+        "is_unknown": False,
+    }
+
+
+def test_orders_and_revenue_growth_is_not_a_candidate() -> None:
+    facts = rows(2103, 10, 11, "1000.00", "1100.00")
+    result = run(facts, {2103: subject(2103, "Платье")})
+    assert evaluations_by_key(result)[(LEVEL_SKU, "2103")].triggered_by == ()
+    assert result.signals == ()
+
+
 def test_subject_deviation_is_against_the_sum_of_its_skus() -> None:
     facts, subjects = scenario()
     result = run(facts, subjects)

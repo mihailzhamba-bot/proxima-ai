@@ -65,8 +65,20 @@ class Evaluation:
 
     @property
     def is_candidate(self) -> bool:
-        """Кандидат в `signals[]` - отклонение заказов ниже нормы; порог не применяется."""
-        return self.status == STATUS_OK and self.orders_deviation_pct is not None and self.orders_deviation_pct < 0
+        """Кандидат: ниже нормы заказы или выручка; порог не применяется (D32)."""
+        return self.status == STATUS_OK and bool(self.triggered_by)
+
+    @property
+    def triggered_by(self) -> tuple[str, ...]:
+        """Метрики, которые отклонились вниз, в стабильном порядке контракта."""
+        return tuple(
+            metric
+            for metric, deviation in (
+                ("orders", self.orders_deviation_pct),
+                ("revenue", self.revenue_deviation_pct),
+            )
+            if deviation is not None and deviation < 0
+        )
 
 
 def series_by_day(rows: Sequence[DailyMetrics]) -> dict[date, DayValues]:
@@ -139,14 +151,12 @@ def evaluate_series(
         return Evaluation(status=STATUS_INSUFFICIENT, reason=REASON_SHORT_WINDOW, norm_orders=None, norm_revenue=None, **base)
     norm_orders = median([orders for orders, _ in present])
     norm_revenue = median([revenue for _, revenue in present])
-    if norm_orders <= 0:
-        return Evaluation(status=STATUS_INSUFFICIENT, reason=REASON_ZERO_NORM, norm_orders=norm_orders, norm_revenue=norm_revenue, **base)
     if actual is None:
         return Evaluation(status=STATUS_INSUFFICIENT, reason=REASON_NO_DAY, norm_orders=norm_orders, norm_revenue=norm_revenue, **base)
-    base["orders_deviation_pct"] = deviation_pct(actual[0], norm_orders)
-    # Выручка справочна (D21): нулевая норма выручки при ненулевой норме заказов
-    # (заказы есть, продаж ещё нет) оставляет отклонение выручки неизвестным.
+    base["orders_deviation_pct"] = deviation_pct(actual[0], norm_orders) if norm_orders > 0 else None
     base["revenue_deviation_pct"] = deviation_pct(actual[1], norm_revenue) if norm_revenue > 0 else None
+    if base["orders_deviation_pct"] is None and base["revenue_deviation_pct"] is None:
+        return Evaluation(status=STATUS_INSUFFICIENT, reason=REASON_ZERO_NORM, norm_orders=norm_orders, norm_revenue=norm_revenue, **base)
     base["money_at_risk"] = quantize_money(norm_revenue - actual[1])
     return Evaluation(status=STATUS_OK, reason=None, norm_orders=norm_orders, norm_revenue=norm_revenue, **base)
 

@@ -148,7 +148,7 @@ def _funnel_data(funnel: FunnelStage | None) -> dict:
 def detection_data(evaluation: Evaluation, subjects: Mapping[int, SubjectRow], funnel: FunnelStage | None, evaluation_day: date) -> dict:
     if evaluation.status != STATUS_OK or evaluation.actual_orders is None or evaluation.actual_revenue is None:
         raise ValueError("detection_data is built for ok evaluations only")
-    if evaluation.norm_orders is None or evaluation.norm_revenue is None or evaluation.orders_deviation_pct is None:
+    if evaluation.norm_orders is None or evaluation.norm_revenue is None or not evaluation.triggered_by:
         raise ValueError("ok evaluation without a norm or a deviation")
     if evaluation.level == LEVEL_SKU:
         nm_id = evaluation.nm_ids[0]
@@ -173,9 +173,10 @@ def detection_data(evaluation: Evaluation, subjects: Mapping[int, SubjectRow], f
     data = {
         **identity,
         "evaluation_day": known(evaluation_day.isoformat()),
+        "triggered_by": known(list(evaluation.triggered_by)),
         "orders_actual": known(_int(evaluation.actual_orders)),
         "orders_norm_median": known(_money(evaluation.norm_orders)),
-        "orders_deviation_pct": known(evaluation.orders_deviation_pct),
+        "orders_deviation_pct": UNKNOWN if evaluation.orders_deviation_pct is None else known(evaluation.orders_deviation_pct),
         "revenue_actual": known(_money(evaluation.actual_revenue)),
         "revenue_norm_median": known(_money(evaluation.norm_revenue)),
         "revenue_deviation_pct": UNKNOWN if evaluation.revenue_deviation_pct is None else known(evaluation.revenue_deviation_pct),

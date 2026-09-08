@@ -40,7 +40,12 @@
         "additionalProperties": false,
         "required": ["value", "is_unknown"],
         "properties": {
-          "value": { "type": ["number", "string", "boolean", "null"] },
+          "value": {
+            "oneOf": [
+              { "type": ["number", "string", "boolean", "null"] },
+              { "type": "array", "items": { "enum": ["orders", "revenue"] }, "minItems": 1, "uniqueItems": true }
+            ]
+          },
           "is_unknown": { "type": "boolean" }
         },
         "allOf": [
