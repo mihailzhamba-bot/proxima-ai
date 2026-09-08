@@ -178,6 +178,14 @@ sudo bash /srv/proxima-ai/repo/infra/bootstrap/provision-runtime-roles.sh \
 ```
 Второй прогон. Ожидается без `WARNING`: `provision-runtime-roles: memberships granted for every ledger group role` и та же итоговая строка `ok (5 login roles, …)`. Это и есть проверка «provision идемпотентен» из AC 1.14: два прогона, второй ничего не ломает.
 
+Роль аналитика (Story 6.4) создаёт Mike после `provision-runtime-roles`:
+
+```bash
+sudo bash infra/bootstrap/provision-analyst-role.sh
+```
+
+Скрипт печатает только пути к root-only файлам пароля и URI. Значение URI Mike передаёт Владиславу вне чата; проверка выдачи описана в `docs/operations/access-provisioning.md`.
+
 ```bash
 cd /srv/proxima-ai/repo
 sudo docker compose up -d postgres
@@ -427,7 +435,7 @@ SELECT last_full_day, stale FROM data_status_current WHERE tenant_id='amirova-te
 | sudo docker exec -i proxima-ai-postgres-1 sh -c 'psql -U "$(cat /run/secrets/postgres_user)" -d proxima -v ON_ERROR_STOP=1 -tA'
 ```
 
-Ход релиза фиксируется в `docs/operations/releases/2026-09-15-m01.md` (AC Story 1.14; каталога на 08.09 нет, создаётся вместе с журналом), релиз - в `CHANGELOG.md` в корне репозитория: тег, дата, что вошло, ссылка на этот runbook.
+Ход релиза фиксируется в `docs/operations/releases/2026-09-15-m01.md` (AC Story 1.14; каталога на 08.09 нет, создаётся вместе с журналом), релиз - в `CHANGELOG.md` в корне репозитория: тег, дата, что вошло, ссылка на этот runbook. Журнал релиза ведётся по шаблону `docs/operations/releases/TEMPLATE.md` (формат имени файла, кто пишет, список журналов - `docs/operations/releases/README.md`); изменения до релиза накапливаются в разделе `Unreleased` `CHANGELOG.md` в корне репозитория (Keep a Changelog 1.1).
 
 ## Репетиция на VPS (D35, не деплой)
 
@@ -543,3 +551,5 @@ sudo docker ps --format '{{.Names}}\t{{.Status}}' | grep proxima-ai
 15. **§3, §5 - живая сеть WB.** AD-4 делает транспорт fail-closed: `services/collector/src/wb/transport.ts` отвечает `WB_NETWORK_FORBIDDEN` без `WB_ALLOW_LIVE_NETWORK=1`, а `collect`/`funnel-v3` берут `networkTransport()` жёстко. Ни `infra/jobs.env`, ни `infra/compose.yaml`, ни runners, ни юниты, ни команда живого хвоста в §3 флаг не задавали - первый реальный `collect` на сервере падал бы на первом HTTP-вызове, и ничто это не ловило. Стало: `WB_ALLOW_LIVE_NETWORK: "1"` в `environment:` сервиса `collector` в `infra/compose.yaml` - только он ходит в WB; `jobs.env` не подходит: его читают все три job-сервиса, а `read_env_file()` в `tools/wb_async_report.py` отвергает ключи вне `SAFE_ENV_KEYS`, и `apply-migrations`/`FUNNEL_CSV_DOWNLOAD` упали бы на незнакомом ключе. В §3 добавлена проверка `compose config | grep -c` перед хвостом, в §5 - оговорка про юниты; гейт `tools/verify_live_network.py` (`make live-network`, входит в `make verify`) держит флаг только в compose - не в env-файлах, не в юнитах, не в тестах, и проверяет, что сам seam в `transport.ts` на месте.
 16. **§1.2, §1.4, репетиция - владелец URI webapp.** На стенде репетиции витрина в `WEBAPP_DATA_MODE=postgres` отвечала «webapp: файл WEBAPP_DATA_DATABASE_URI_FILE не читается (путь из env)»: `services/webapp/Dockerfile` запускает процесс под uid/gid 1001 (`webapp`), а правило спайна (AD-6/AD-11/AD-15) и `provision-runtime-roles.sh` делали все `*_uri` `1010:1010 0600` - файл для контейнера нечитаем. Решение Mike 08.09 (addendum к D35): uid образа webapp остаётся 1001 (свой uid у публичного процесса - лучшая изоляция), а `proxima_webapp_password`/`proxima_webapp_uri` получают `1001:1001 0600`; все секреты заданий - по-прежнему `1010:1010`. Владельца ставят `provision-runtime-roles.sh` (на каждом прогоне) и `rehearsal_run.sh init`; overlay `infra/webapp.staging.compose.yaml` не менялся - compose биндит файл как есть. Гейт: `tools/tests/test_provision_runtime_roles.py` (uid образов против правила chown), memlog архитектуры дополнен, спайн не правился.
 17. **§4 - правило гейта W35 (08.09, ~13:40 UTC, решение Mike после репетиции D35).** Сумма W35 = 225 / 263 089 ₽ снята со снимка 30.08 05:59 UTC с неполным днём 30.08; после пары 31.08 и живого хвоста стенд дал 228 / 282 836.08 при сошедшемся до копейки W10 (649 / 700 860.50 - прежнее `700860.00` в §4 было округлением), и по построению иначе быть не могло. Стало: W10 - сумма недели `649|700860.50`; W35 - по дням: 24-26.08 равны паре 31.08 (`55|6|62146.87`, `40|7|29247.90`, `28|4|44956.00`), 27-30.08 равны счёту по `stg_wb_orders_latest` за московский день с `isCancel` не-true / true; `tools/rehearsal_run.sh check` реализует то же (на стенде 08.09 - все PASS). Ширина окна перезаписи - открытый вопрос Story 6.1/6.3 (`API-FACTS.md`), не условие релиза.
+18. **Provenance прогонов (C1, D36).** `infra/compose.yaml` теперь объявляет `PROXIMA_GIT_SHA` и `PROXIMA_IMAGE_ID` с пустым default у всех трёх ledger-writing job-сервисов (`collector`, `control-plane`, `control-plane-admin`): значения, которые runners выставляют на хосте, доходят до контейнеров без обязательного `--env` в каждом вызове. Пустые значения нормализуются в SQL `NULL`, поэтому локальный ручной запуск без provenance не создаёт пустых строк в `collector_runs`.
+19. **Story 6.4 - роль аналитика (C2, D36).** После второго `provision-runtime-roles` Mike запускает `sudo bash infra/bootstrap/provision-analyst-role.sh`; скрипт создаёт прямую read-only LOGIN-роль и печатает только пути к секретам. Состав грантов, RLS-предупреждение и проверка выдачи записаны в `access-provisioning.md`.
