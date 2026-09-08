@@ -23,6 +23,17 @@ def secret_names(body: str) -> set[str]:
     return set(re.findall(r"^      - ([a-zA-Z0-9_-]+)$", match.group("body"), re.MULTILINE))
 
 
+def assert_provenance_environment(body: str) -> None:
+    assert body.count("PROXIMA_GIT_SHA: ${PROXIMA_GIT_SHA:-}") == 1
+    assert body.count("PROXIMA_IMAGE_ID: ${PROXIMA_IMAGE_ID:-}") == 1
+
+
+def test_ledger_services_declare_host_provenance_with_empty_defaults() -> None:
+    assert_provenance_environment(service("collector"))
+    assert_provenance_environment(service("control-plane"))
+    assert_provenance_environment(service("control-plane-admin"))
+
+
 def test_collector_receives_only_runtime_secrets_and_raw_mount() -> None:
     collector = service("collector")
     assert secret_names(collector) == {
