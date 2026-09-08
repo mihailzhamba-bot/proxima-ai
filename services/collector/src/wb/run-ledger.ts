@@ -22,6 +22,10 @@ export class RunLedgerError extends Error {
   }
 }
 
+function nullableProvenance(value: string | undefined): string | null {
+  return value === '' || value === undefined ? null : value;
+}
+
 export class RunLedger {
   constructor(private readonly pool: Pool) {}
 
@@ -53,7 +57,7 @@ export class RunLedger {
     try {
       await client.query(
         'INSERT INTO collector_runs (run_id, tenant_id, kind, status, git_sha, image_id, notes) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-        [runId, input.tenantId, input.kind, 'RUNNING', input.gitSha ?? null, input.imageId ?? null, input.notes ?? null],
+        [runId, input.tenantId, input.kind, 'RUNNING', nullableProvenance(input.gitSha), nullableProvenance(input.imageId), input.notes ?? null],
       );
       logRunEvent('running', runId, input.tenantId);
       return runId;
