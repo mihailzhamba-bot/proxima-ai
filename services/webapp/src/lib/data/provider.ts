@@ -14,8 +14,12 @@ import type {
 export type DataProvider = {
   readonly mode: DataMode;
   getBrief(variant: BriefVariant): Promise<BriefData>;
-  /** Сводка «вчера против нормы» (AD-9); fixtures-провайдер отдаёт структурный образец. */
-  getSummary(): Promise<BriefSummary>;
+  /**
+   * Сводка «вчера против нормы» и аномалии дня (AD-9); fixtures-провайдер отдаёт
+   * структурный образец, `variant` выбирает его редакцию (quiet - аномалий нет),
+   * postgres-провайдер вариант не читает: у живой сводки одна редакция.
+   */
+  getSummary(variant?: BriefVariant): Promise<BriefSummary>;
   getMetrics(): Promise<readonly Metric[]>;
 };
 

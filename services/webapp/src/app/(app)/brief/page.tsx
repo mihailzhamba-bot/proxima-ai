@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AnomaliesBlock } from "@/components/brief/anomalies";
 import { BriefSummaryBlock } from "@/components/brief/brief-summary";
 import { BriefVerdict } from "@/components/brief/brief-verdict";
 import { Digest } from "@/components/brief/digest";
@@ -18,7 +19,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
   const params = await searchParams;
   const variant: BriefVariant = params.view === "quiet" ? "quiet" : "daily";
   const provider = getDataProvider();
-  const [baseBrief, summary] = await Promise.all([provider.getBrief(variant), provider.getSummary()]);
+  const [baseBrief, summary] = await Promise.all([provider.getBrief(variant), provider.getSummary(variant)]);
   // До первого успешного прогона сводки экран не пустой, а с пометкой. Признак
   // берётся из статуса сводки, чтобы brief_current не читался второй раз (AD-9).
   const brief =
@@ -49,6 +50,10 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
       </SectionErrorBoundary>
       <SectionErrorBoundary title="Вчера против нормы">
         <BriefSummaryBlock summary={summary} />
+      </SectionErrorBoundary>
+      <SectionErrorBoundary title="Аномалии">
+        {/* Story 4.3: signals[] брифа по SKU и категории; статус и цифры - те же, что у сводки (AD-9). */}
+        <AnomaliesBlock summary={summary} demo={provider.mode === "fixtures"} />
       </SectionErrorBoundary>
       {brief.signals.length > 0 && (
         <SectionErrorBoundary title="Критичные сигналы">

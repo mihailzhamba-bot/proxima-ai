@@ -10,6 +10,7 @@ import {
   type PostgresProviderOptions,
 } from "@/lib/data/postgres-provider";
 import { deviationGyr } from "@/components/brief/brief-summary";
+import { FIXTURE_BRIEF_SIGNALS } from "@/lib/fixtures/brief";
 
 /*
  * Story 2.5 (со статусом 1.11): postgres-провайдер через шов. Сеть в тестах
@@ -282,6 +283,99 @@ describe("provider: brief states (Story 2.5)", () => {
     });
     await provider.getSummary();
     expect(executed[0]).toContain("set_config('proxima.tenant_id', $1, false)");
+  });
+});
+
+describe("provider: signals states (Story 4.3)", () => {
+  /*
+   * Аномалии дня приходят из той же строки brief_current, что и сводка (AD-9: два
+   * SELECT на отрисовку), и подчиняются тому же правилу показа: список непуст
+   * только при `status = ok` и свежих данных; порядок строк = порядок `signals[]`.
+   */
+  const SIGNALS = [...FIXTURE_BRIEF_SIGNALS];
+
+  function rowsWith(payload: BriefV1, status = "ok", statusRow: Record<string, unknown> = FRESH_STATUS) {
+    return (text: string) =>
+      text.includes(BRIEF_SQL) ? [{ brief_day: payload.evaluation_day, status, payload }] : [{ ...statusRow }];
+  }
+
+  it("ok с сигналами: строки в порядке signals[] (деньги по убыванию, Story 4.2), без пересчёта", async () => {
+    const payload = briefPayload({ signals: SIGNALS });
+    const { provider, log } = makeProvider(rowsWith(payload));
+    const summary = await provider.getSummary();
+    expect(summary.status).toBe("ok");
+    expect(summary.anomalies.map((anomaly) => anomaly.id)).toEqual(SIGNALS.map((signal) => signal.signal_id));
+    expect(summary.anomalies.map((anomaly) => anomaly.moneyAtRisk)).toEqual(
+      SIGNALS.map((signal) => signal.rub_assessment?.value_rub ?? null),
+    );
+    const [subject, sku] = summary.anomalies;
+    expect(subject).toMatchObject({ level: "subject", subjectName: "Платье", skuCount: 2, nmId: null, scenarioCode: "SCN-001" });
+    expect(sku).toMatchObject({ level: "sku", nmId: 2002, supplierArticle: "fixture-art-2002", subjectName: "Платье" });
+    expect(sku?.orders).toEqual({ actual: 12, norm: "20.00", deviationPct: -40 });
+    expect(sku?.revenue).toEqual({ actual: "1200.00", norm: "2000.00", deviationPct: -40 });
+    expect(sku?.sourceRefs).toEqual(SIGNALS[1]?.source_refs);
+    // UNKNOWN категория (D32) доходит до экрана как null, а не как пустая строка или выдуманный предмет.
+    const unknown = summary.anomalies.find((anomaly) => anomaly.id === "fixture-signal-sku-2006-unknown-subject");
+    expect(unknown).toMatchObject({ level: "sku", nmId: 2006, subjectName: null, supplierArticle: null });
+    // Сводка не изменилась от присутствия сигналов, и SELECT по-прежнему два.
+    expect(summary.orders).toEqual({ actual: 27, norm: "34.50", deviationPct: -21.7 });
+    expect(log.queries.filter((text) => !text.includes("set_config"))).toHaveLength(2);
+  });
+
+  it("ok пусто: статус ok, аномалий нет - экран скажет «критичных нет»", async () => {
+    const payload = briefPayload({ signals: [] });
+    const { provider } = makeProvider(rowsWith(payload));
+    const summary = await provider.getSummary();
+    expect(summary.status).toBe("ok");
+    expect(summary.anomalies).toEqual([]);
+  });
+
+  it("insufficient: аномалий нет, прогресс нормы известен - «норма копится: 9/14 дней»", async () => {
+    const payload = briefPayload({
+      norm: { orders: "34.50", revenue: "34595.00", window_days: 14, sample_days: 9 },
+      deviation_pct: null,
+      signals: [],
+    });
+    const { provider } = makeProvider(rowsWith(payload, "insufficient"));
+    const summary = await provider.getSummary();
+    expect(summary.status).toBe("insufficient");
+    expect(summary.anomalies).toEqual([]);
+    expect(summary.normProgress).toEqual({ sampleDays: 9, windowDays: 14 });
+  });
+
+  it("blocked: нет версии за evaluation_day (Story 2.4) - аномалий нет, причина в статусе", async () => {
+    const payload = briefPayload({ actual: null, norm: null, deviation_pct: null, signals: [], reason: "no fact version for evaluation_day" });
+    const { provider } = makeProvider(rowsWith(payload, "blocked"));
+    const summary = await provider.getSummary();
+    expect(summary.status).toBe("blocked");
+    expect(summary.anomalies).toEqual([]);
+    expect(summary.normProgress).toBeNull();
+  });
+
+  it("ok, но stale: сигналы в payload есть, на экран не попадают (правило AD-9 общее с цифрами)", async () => {
+    const payload = briefPayload({ signals: SIGNALS });
+    const { provider } = makeProvider(rowsWith(payload, "ok", { ...FRESH_STATUS, stale: true }));
+    const summary = await provider.getSummary();
+    expect(summary.status).toBe("stale");
+    expect(summary.anomalies).toEqual([]);
+  });
+
+  it("сигналы не ok-статуса игнорируются даже если писатель их оставил (PRD FR-7, fail-closed)", async () => {
+    const payload = briefPayload({
+      norm: { orders: "34.50", revenue: "34595.00", window_days: 14, sample_days: 9 },
+      deviation_pct: null,
+      signals: SIGNALS,
+    });
+    const { provider } = makeProvider(rowsWith(payload, "insufficient"));
+    const summary = await provider.getSummary();
+    expect(summary.anomalies).toEqual([]);
+  });
+
+  it("режим «только статус» (no-brief): список пуст", async () => {
+    const { provider } = makeProvider((text) => (text.includes(STATUS_SQL) ? [{ ...FRESH_STATUS }] : []));
+    const summary = await provider.getSummary();
+    expect(summary.status).toBe("no-brief");
+    expect(summary.anomalies).toEqual([]);
   });
 });
 
