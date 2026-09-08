@@ -47,9 +47,10 @@ readonly RETRIEVED_AT="2026-08-31T15:53:41Z"
 readonly DATE_FROM="2026-08-27"
 
 # Runbook §4 reference sums: docs/state/API-FACTS.md, «Эталоны недельных сумм W10/W35»
-# (recorded 08.09.2026 from SPEC.md:33 / epics.md:29 of 30.08.2026). ISO weeks:
-# W10 = 2026-03-02..2026-03-08, W35 = 2026-08-24..2026-08-30.
-readonly W10_EXPECTED="W10|649|700860.00"
+# (recorded 08.09.2026 from SPEC.md:33 / epics.md:29 of 30.08.2026; W10 revenue with kopecks
+# from the 08.09 recompute of the 30.08 fixture, SPEC/epics keep the rounded «700 860»). ISO
+# weeks: W10 = 2026-03-02..2026-03-08, W35 = 2026-08-24..2026-08-30.
+readonly W10_EXPECTED="W10|649|700860.50"
 readonly W35_EXPECTED="W35|225|263089.00"
 
 DRY_RUN=false

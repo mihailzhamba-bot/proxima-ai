@@ -241,9 +241,13 @@ def test_check_embeds_the_api_facts_reference_sums() -> None:
     table = API_FACTS.read_text(encoding="utf-8")
     facts: dict[str, tuple[str, str]] = {}
     for week in ("W10", "W35"):
-        match = re.search(rf"^\| {week} \| [^|]+\| (\d+) \| ([\d ]+?) \|", table, re.MULTILINE)
+        # Revenue is written «700 860.50» (kopecks, since 08.09) or «263 089» (whole rubles).
+        match = re.search(rf"^\| {week} \| [^|]+\| (\d+) \| ([\d ]+?(?:\.\d{{2}})?) \|", table, re.MULTILINE)
         assert match is not None, f"{week} row missing in API-FACTS.md"
-        facts[week] = (match.group(1), match.group(2).replace(" ", "") + ".00")
+        revenue = match.group(2).replace(" ", "")
+        if "." not in revenue:
+            revenue += ".00"
+        facts[week] = (match.group(1), revenue)
 
     script = SCRIPT.read_text(encoding="utf-8")
     for week, (orders, revenue) in facts.items():
