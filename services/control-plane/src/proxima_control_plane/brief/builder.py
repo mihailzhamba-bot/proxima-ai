@@ -5,8 +5,10 @@
 деления; деньги - строки с двумя знаками (AD-10); двоичная плавающая точка в
 расчёте не появляется (`deviation_pct` - единственное число в payload, и это
 уже округлённый результат). Payload валиден по `contracts/brief.schema.json`
-(AD-9); `signals` пуст до M-04, а `source_refs` собирается из версий фактов,
-строк нормы и записей `data_status` - он никогда не пуст.
+(AD-9); `signals` здесь всегда пуст - их вкладывает шаг детектора через
+`assembler.with_signals` только в день `ok` (AD-19, Story 4.1), а `source_refs`
+собирается из версий фактов, строк нормы и записей `data_status` - он никогда
+не пуст.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from typing import Sequence
 from proxima_control_plane.norm.median import quantize_money
 
 SCHEMA_VERSION = 1
-SIGNALS_UNTIL_EPIC_4: list[dict] = []
+NO_SIGNALS: list[dict] = []  # заполняется шагом детектора (assembler.with_signals) только при `ok`
 DEVIATION_QUANTUM = Decimal("0.1")
 
 
@@ -118,7 +120,7 @@ def build_day_payload(
         "actual": actual_payload,
         "norm": norm_payload,
         "deviation_pct": deviation,
-        "signals": list(SIGNALS_UNTIL_EPIC_4),
+        "signals": list(NO_SIGNALS),
         "source_refs": list(source_refs),
     }
     return DayDeviation(brief_day=brief_day, status="ok", payload=payload)
@@ -135,7 +137,7 @@ def _envelope(brief_day: date, actual: MetricActual | None, data_status: DataSta
             "stale": data_status.stale,
         },
         "actual": None if actual is None else {"orders": actual.orders, "revenue": _money(actual.revenue)},
-        "signals": list(SIGNALS_UNTIL_EPIC_4),
+        "signals": list(NO_SIGNALS),
         "source_refs": list(source_refs),
     }
 

@@ -2,16 +2,21 @@
 
 День считается по строкам `norm_daily_current` за `brief_day`:
 - обе метрики со статусом `ok` и факт дня есть -> payload по контракту `brief`,
-  `deviation_pct` по D27, `signals = []` до M-04, `source_refs` из версий факта,
-  строк нормы и `data_status`;
+  `deviation_pct` по D27, `signals = []` до шага детектора, `source_refs` из
+  версий факта, строк нормы и `data_status`;
 - метрики есть, но `insufficient` -> `insufficient`;
 - строк нормы нет (или не обе метрики) -> `blocked`.
+
+Сигналы детектора (Story 4.1, AD-19) вкладываются отдельным шагом `with_signals`
+и только в день со статусом `ok`: при `insufficient`/`blocked` `signals[]` пуст
+(PRD FR-7), и это правило живёт здесь, а не в вызывающем коде.
 """
 
 from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from typing import Sequence
 
 from proxima_control_plane.brief.builder import (
     DataStatus,
@@ -52,6 +57,19 @@ def build_day(
     return build_day_payload(brief_day, actual, norms, data_status, source_refs)
 
 
+def with_signals(day: DayDeviation, signals: Sequence[dict]) -> DayDeviation:
+    """Сигналы детектора - только в день `ok`; иначе отказ, а не тихий пустой список.
+
+    Вызывающий код обязан проверить статус до запуска детектора: сигналы против
+    неполной или отсутствующей нормы не считаются (Story 4.1, PRD FR-7).
+    """
+    if day.status != "ok":
+        raise ValueError(f"signals are built only for an ok day, got status={day.status}")
+    payload = dict(day.payload)
+    payload["signals"] = [dict(signal) for signal in signals]
+    return DayDeviation(brief_day=day.brief_day, status=day.status, payload=payload)
+
+
 def _source_refs(brief_day: date, norms: list[MetricNorm], data_status: DataStatus, fact_run_ids: list[str]) -> list[str]:
     return [
         *(f"table://fact_cabinet_daily/{brief_day.isoformat()}/run/{run_id}" for run_id in sorted(fact_run_ids)),
@@ -78,4 +96,4 @@ def day_from_rows(
     )
 
 
-__all__ = ["build_day", "day_from_rows", "log_run_event"]
+__all__ = ["build_day", "day_from_rows", "log_run_event", "with_signals"]
