@@ -36,6 +36,7 @@ function buildMetrics(): readonly FixtureMetric[] {
       deltaPercent: -33.3,
       deltaGoodWhen: "down",
       points: SIGNAL_POINTS,
+      fx: true,
     },
     {
       id: "revenue-day",
@@ -46,6 +47,7 @@ function buildMetrics(): readonly FixtureMetric[] {
       deltaPercent: 8.4,
       deltaGoodWhen: "up",
       points: REVENUE_POINTS,
+      fx: true,
     },
     {
       id: "orders-day",
@@ -56,6 +58,7 @@ function buildMetrics(): readonly FixtureMetric[] {
       deltaPercent: 5.1,
       deltaGoodWhen: "up",
       points: ORDER_POINTS,
+      fx: true,
     },
     {
       id: "oos-risks",
@@ -66,6 +69,7 @@ function buildMetrics(): readonly FixtureMetric[] {
       deltaPercent: null,
       deltaGoodWhen: null,
       points: [],
+      fx: true,
     },
     {
       id: "freshness",
@@ -76,6 +80,7 @@ function buildMetrics(): readonly FixtureMetric[] {
       deltaPercent: null,
       deltaGoodWhen: null,
       points: [],
+      fx: true,
     },
   ];
 }

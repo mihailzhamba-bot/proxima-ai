@@ -102,6 +102,11 @@ afterEach(() => {
 
 const STATUS_SQL = "data_status_current";
 const BRIEF_SQL = "brief_current";
+const FACT_SQL = "fact_cabinet_daily_current";
+
+function isoDay(day: number): string {
+  return `2026-08-${String(day).padStart(2, "0")}`;
+}
 
 describe("provider: tenant validation (AD-9)", () => {
   const rows = () => [];
@@ -376,6 +381,99 @@ describe("provider: signals states (Story 4.3)", () => {
     const summary = await provider.getSummary();
     expect(summary.status).toBe("no-brief");
     expect(summary.anomalies).toEqual([]);
+  });
+});
+
+describe("provider: dashboard metrics (D36 C3)", () => {
+  it("полный ряд: значения последнего дня, дельта к 7 предыдущим и 30 точек по порядку", async () => {
+    const facts = Array.from({ length: 30 }, (_, index) => ({
+      calendar_day: isoDay(index + 1),
+      orders_count: index + 1,
+      revenue_rub: `${index + 1}.00`,
+    }));
+    const { provider, log } = makeProvider((text) => {
+      if (text.includes(STATUS_SQL)) {
+        return [{ last_full_day: "2026-08-30", collected_at: "2026-08-30T03:12:45.000Z", stale: false }];
+      }
+      return text.includes(FACT_SQL) ? facts : [];
+    });
+
+    const metrics = await provider.getMetrics();
+    expect(metrics.find((metric) => metric.id === "orders-day")).toMatchObject({
+      value: 30,
+      deltaPercent: 15.4,
+      deltaGoodWhen: "up",
+      points: Array.from({ length: 30 }, (_, index) => index + 1),
+      fx: false,
+    });
+    expect(metrics.find((metric) => metric.id === "revenue-day")).toMatchObject({
+      value: 30,
+      deltaPercent: 15.4,
+      points: Array.from({ length: 30 }, (_, index) => index + 1),
+      fx: false,
+    });
+    expect(metrics.find((metric) => metric.id === "freshness")).toMatchObject({ value: 6 * 60 + 12, status: "green" });
+    expect(log.queries.filter((text) => !text.includes("set_config"))).toHaveLength(2);
+    expect(log.queries.join(" ")).not.toContain("fact_nm_daily");
+  });
+
+  it("дыры календаря становятся нулями в спарклайне, но не входят в среднее дельты", async () => {
+    const { provider } = makeProvider((text) => {
+      if (text.includes(STATUS_SQL)) {
+        return [{ last_full_day: "2026-08-30", collected_at: "2026-08-30T03:12:00.000Z", stale: false }];
+      }
+      return text.includes(FACT_SQL)
+        ? [
+            { calendar_day: "2026-08-23", orders_count: 10, revenue_rub: "10.10" },
+            { calendar_day: "2026-08-27", orders_count: 20, revenue_rub: "20.20" },
+            { calendar_day: "2026-08-30", orders_count: 30, revenue_rub: "30.30" },
+          ]
+        : [];
+    });
+
+    const metrics = await provider.getMetrics();
+    const orders = metrics.find((metric) => metric.id === "orders-day");
+    const revenue = metrics.find((metric) => metric.id === "revenue-day");
+    expect(orders?.points).toHaveLength(30);
+    expect(orders?.points.slice(-8)).toEqual([10, 0, 0, 0, 20, 0, 0, 30]);
+    expect(orders?.deltaPercent).toBe(100); // 30 против среднего двух имеющихся строк: 15.
+    expect(revenue?.points.slice(-8)).toEqual([10, 0, 0, 0, 20, 0, 0, 30]);
+    expect(revenue?.deltaPercent).toBe(100);
+  });
+
+  it("копейки участвуют в дельте до округления значения для UI", async () => {
+    const { provider } = makeProvider((text) => {
+      if (text.includes(STATUS_SQL)) {
+        return [{ last_full_day: "2026-08-30", collected_at: "2026-08-30T03:12:00.000Z", stale: false }];
+      }
+      return text.includes(FACT_SQL)
+        ? [
+            { calendar_day: "2026-08-29", orders_count: 1, revenue_rub: "0.01" },
+            { calendar_day: "2026-08-30", orders_count: 1, revenue_rub: "0.02" },
+          ]
+        : [];
+    });
+    const revenue = (await provider.getMetrics()).find((metric) => metric.id === "revenue-day");
+    expect(revenue).toMatchObject({ value: 0, deltaPercent: 100 });
+  });
+
+  it("stale=true окрашивает freshness в red", async () => {
+    const { provider } = makeProvider((text) =>
+      text.includes(STATUS_SQL)
+        ? [{ last_full_day: "2026-08-30", collected_at: "2026-08-30T23:59:00.000Z", stale: true }]
+        : [],
+    );
+    const freshness = (await provider.getMetrics()).find((metric) => metric.id === "freshness");
+    expect(freshness).toMatchObject({ value: 2 * 60 + 59, status: "red", points: [], deltaPercent: null });
+  });
+
+  it("без data_status_current возвращает пять null-карточек и не читает факты", async () => {
+    const { provider, log } = makeProvider(() => []);
+    const metrics = await provider.getMetrics();
+    expect(metrics).toHaveLength(5);
+    expect(metrics.every((metric) => metric.value === null)).toBe(true);
+    expect(log.queries.filter((text) => !text.includes("set_config"))).toHaveLength(1);
+    expect(log.queries.join(" ")).not.toContain(FACT_SQL);
   });
 });
 
