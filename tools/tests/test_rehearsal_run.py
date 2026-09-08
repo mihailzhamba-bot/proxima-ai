@@ -243,30 +243,41 @@ def test_root_guards(root: str, message: str) -> None:
 
 
 def test_check_embeds_the_api_facts_reference_sums() -> None:
-    """The expected W10/W35 values in the script are the API-FACTS table, not a copy
-    that can drift silently."""
+    """The expected values in the script are the API-FACTS tables, not a copy that can
+    drift silently: W10 from «Эталоны недельных сумм» (week sum, kopecks since 08.09) and
+    the days 24-26.08 from «Что означают эталоны» (per-day rows of the 31.08 pair, rule of
+    08.09). W35 is never compared as a week sum any more."""
 
     table = API_FACTS.read_text(encoding="utf-8")
-    facts: dict[str, tuple[str, str]] = {}
-    for week in ("W10", "W35"):
-        # Revenue is written «700 860.50» (kopecks, since 08.09) or «263 089» (whole rubles).
-        match = re.search(rf"^\| {week} \| [^|]+\| (\d+) \| ([\d ]+?(?:\.\d{{2}})?) \|", table, re.MULTILINE)
-        assert match is not None, f"{week} row missing in API-FACTS.md"
-        revenue = match.group(2).replace(" ", "")
-        if "." not in revenue:
-            revenue += ".00"
-        facts[week] = (match.group(1), revenue)
+    match = re.search(r"^\| W10 \| [^|]+\| (\d+) \| ([\d ]+\.\d{2}) \|", table, re.MULTILINE)
+    assert match is not None, "W10 row missing in API-FACTS.md"
+    w10 = f'W10|{match.group(1)}|{match.group(2).replace(" ", "")}'
+
+    days: dict[str, str] = {}
+    for row in re.finditer(
+        r"^\| (2026-08-2[456]) \| (\d+) \| (\d+) \| ([\d ]+\.\d{2}) \|", table, re.MULTILINE
+    ):
+        day, orders, cancelled, revenue = row.groups()
+        days[day] = f'{day}|{orders}|{cancelled}|{revenue.replace(" ", "")}'
+    assert sorted(days) == ["2026-08-24", "2026-08-25", "2026-08-26"], days
 
     script = SCRIPT.read_text(encoding="utf-8")
-    for week, (orders, revenue) in facts.items():
-        assert f'{week}_EXPECTED="{week}|{orders}|{revenue}"' in script
+    assert f'W10_EXPECTED="{w10}"' in script
+    for constant in days.values():
+        assert f'"{constant}"' in script
+    assert "W35_EXPECTED" not in script
+    assert "263089" not in script
+    assert 'W35_LAST_DAY="2026-08-30"' in script
 
     result = run("check")
     assert result.returncode == 0, result.stderr
     # The SQL is shell-quoted in the dry-run echo, so match the pieces, not the literal.
-    for day in ("2026-03-02", "2026-03-08", "2026-08-24", "2026-08-30"):
+    for day in ("2026-03-02", "2026-03-08", "2026-08-24", "2026-08-26", "2026-08-27", "2026-08-30"):
         assert day in result.stdout
-    assert result.stdout.count("sum(orders_count), sum(revenue_rub) FROM fact_cabinet_daily_current") == 2
+    assert result.stdout.count("sum(orders_count), sum(revenue_rub) FROM fact_cabinet_daily_current") == 1
+    assert "orders_count, cancelled_count, revenue_rub FROM fact_cabinet_daily_current" in result.stdout
+    assert "FROM stg_wb_orders_latest" in result.stdout
+    assert "IS NOT TRUE" in result.stdout and "IS TRUE" in result.stdout
     for table_name in ("collector_runs", "data_status_current", "norm_daily_current", "brief_current"):
         assert table_name in result.stdout
 

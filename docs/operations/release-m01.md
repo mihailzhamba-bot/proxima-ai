@@ -256,19 +256,52 @@ sudo docker compose --profile jobs run --rm \
 
 ## 4. Проверка цифр
 
-Эталон недельных сумм - `docs/state/API-FACTS.md`, раздел «Эталоны недельных сумм W10/W35» (добавлен 08.09; до этого AC 1.14 ссылался на файл, в котором чисел не было). Недели - ISO (Story 6.1 Given): W10 = 02.03-08.03.2026, W35 = 24.08-30.08.2026.
+Эталоны - `docs/state/API-FACTS.md`, разделы «Эталоны недельных сумм W10/W35» и «Что означают эталоны» (правило Mike 08.09.2026, ~13:40 UTC, после репетиции D35). Недели - ISO (Story 6.1 Given): W10 = 02.03-08.03.2026, W35 = 24.08-30.08.2026. W10 сверяется суммой недели; W35 - **по дням**, потому что раздел 3 грузит пару 31.08 и переписывает дни с 27.08 живым хвостом: дни 24-26.08 должны равняться паре 31.08, дни 27-30.08 - последним наблюдениям самой базы. То же самое одной командой делает `bash tools/rehearsal_run.sh check` (раздел «Репетиция на VPS»); ниже - ручная форма для боевого контейнера.
 
+**W10 - сумма недели, копейка в копейку.**
 ```bash
 printf '%s\n' "SELECT set_config('proxima.tenant_id','amirova-test',false);
 SELECT 'W10', sum(orders_count), sum(revenue_rub) FROM fact_cabinet_daily_current
-  WHERE tenant_id='amirova-test' AND calendar_day BETWEEN '2026-03-02' AND '2026-03-08';
-SELECT 'W35', sum(orders_count), sum(revenue_rub) FROM fact_cabinet_daily_current
-  WHERE tenant_id='amirova-test' AND calendar_day BETWEEN '2026-08-24' AND '2026-08-30';" \
+  WHERE tenant_id='amirova-test' AND calendar_day BETWEEN '2026-03-02' AND '2026-03-08';" \
 | sudo docker exec -i proxima-ai-postgres-1 sh -c 'psql -U "$(cat /run/secrets/postgres_user)" -d proxima -v ON_ERROR_STOP=1 -tA'
 ```
-Ожидается `W10|649|700860.00` и `W35|225|263089.00` - значения из `API-FACTS.md` (первая строка `amirova-test` - эхо `set_config`).
+Ожидается `W10|649|700860.50` - пересчёт фикстуры 30.08 по формулам глоссария (`API-FACTS.md`; первая строка `amirova-test` - эхо `set_config`).
 
-Расхождение - **гейт не пройден**. Не «почти сходится»: цифры либо равны эталону, либо релиз останавливается. Одна оговорка записана в `API-FACTS.md` как `UNKNOWN`: эталон снят с фикстур 30.08 (снимок 05:59 UTC, день 30.08 в нём неполный), а раздел 3 грузит пару 31.08 и переписывает дни с 27.08 живым хвостом - если разошёлся только W35 при сошедшемся W10, сначала сверить дни 24-29.08 по отдельности, затем решение Mike (Story 6.1/6.4), а не откат по умолчанию.
+**Дни 24-26.08 - равны паре 31.08 точь-в-точь.** Три дня W35 до окна живого хвоста (`--date-from 2026-08-27`); их единственная версия - прогон `backfill` раздела 3, ожидаемые значения - пересчёт пары 31.08 (`jq`, 08.09; БД репетиции дала то же):
+```bash
+printf '%s\n' "SELECT set_config('proxima.tenant_id','amirova-test',false);
+SELECT calendar_day, orders_count, cancelled_count, revenue_rub FROM fact_cabinet_daily_current
+  WHERE tenant_id='amirova-test' AND calendar_day BETWEEN '2026-08-24' AND '2026-08-26' ORDER BY calendar_day;" \
+| sudo docker exec -i proxima-ai-postgres-1 sh -c 'psql -U "$(cat /run/secrets/postgres_user)" -d proxima -v ON_ERROR_STOP=1 -tA'
+```
+Ожидается ровно (после эха `amirova-test`):
+```
+2026-08-24|55|6|62146.87
+2026-08-25|40|7|29247.90
+2026-08-26|28|4|44956.00
+```
+
+**Дни 27-30.08 - равны последним наблюдениям.** Их переписал живой хвост, внешней константы для них нет (WB переключает `isCancel` неделями): факт дня должен равняться счёту строк `stg_wb_orders_latest` за московский день `date` (первые 10 символов бесзонного текста WB, AD-7) с `isCancel` не-true / true - так же считает сам агрегатор:
+```bash
+printf '%s\n' "SELECT set_config('proxima.tenant_id','amirova-test',false);
+WITH obs AS (
+  SELECT substr(payload->>'date', 1, 10)::date AS calendar_day,
+         count(*) FILTER (WHERE (payload->>'isCancel')::boolean IS NOT TRUE) AS orders_count,
+         count(*) FILTER (WHERE (payload->>'isCancel')::boolean IS TRUE) AS cancelled_count
+    FROM stg_wb_orders_latest
+   WHERE tenant_id='amirova-test' AND substr(payload->>'date', 1, 10) BETWEEN '2026-08-27' AND '2026-08-30'
+   GROUP BY 1)
+SELECT f.calendar_day, f.orders_count, f.cancelled_count, o.orders_count, o.cancelled_count,
+       (f.orders_count = o.orders_count AND f.cancelled_count = o.cancelled_count) AS same
+  FROM fact_cabinet_daily_current f
+  JOIN obs o ON o.calendar_day = f.calendar_day
+ WHERE f.tenant_id='amirova-test' AND f.calendar_day BETWEEN '2026-08-27' AND '2026-08-30'
+ ORDER BY f.calendar_day;" \
+| sudo docker exec -i proxima-ai-postgres-1 sh -c 'psql -U "$(cat /run/secrets/postgres_user)" -d proxima -v ON_ERROR_STOP=1 -tA'
+```
+Ожидается четыре строки (27, 28, 29, 30.08) и `t` в последней колонке у каждой. Сами числа в релизе будут не те, что на репетиции 08.09 (`33|5`, `25|18`, `21|8`, `26|6`), - сравнивается только равенство двух пар колонок; меньше четырёх строк - тоже расхождение.
+
+Расхождение - **гейт не пройден**. Не «почти сходится»: цифры либо равны эталону, либо релиз останавливается. Сумма W35 за неделю (225 / 263 089 ₽ снимка 30.08) больше не сверяется: она снята с неполного дня 30.08 и после пары 31.08 невоспроизводима по построению (`API-FACTS.md`, «Что означают эталоны»). Ширина окна перезаписи (какие поздние отмены доходят до факта) - открытый вопрос Story 6.1/6.3, не условие релиза.
 
 ```bash
 printf '%s\n' "SELECT set_config('proxima.tenant_id','amirova-test',false);
@@ -458,7 +491,7 @@ bash tools/rehearsal_run.sh tail --live --root "$ROOT"
 bash tools/rehearsal_run.sh steps --root "$ROOT"
 bash tools/rehearsal_run.sh check --root "$ROOT"
 ```
-`steps` - `proxima_control_plane.norm run` и `proxima_control_plane.brief run` (модули `tools/morning_run.sh`). `check` печатает ledger (`schema_migrations`, `collector_runs`, `data_status_current`, `norm_daily_current`, `brief_current`) и таблицу W10/W35 против `docs/state/API-FACTS.md` (`649 | 700860.00`, `225 | 263089.00`); расхождение - exit 1. Для W35 действует оговорка `UNKNOWN` из `API-FACTS.md` (эталон снят с неполного снимка 30.08): при сошедшемся W10 сверять дни 24-29.08 по отдельности, решение - Mike, не «починить цифру». `all --live --root "$ROOT"` = `up → backfill → tail → steps → check` одной командой; `init` и `down` всегда отдельно.
+`steps` - `proxima_control_plane.norm run` и `proxima_control_plane.brief run` (модули `tools/morning_run.sh`). `check` печатает ledger (`schema_migrations`, `collector_runs`, `data_status_current`, `norm_daily_current`, `brief_current`) и таблицу гейта §4: W10 против `docs/state/API-FACTS.md` (`649|700860.50`), дни 24-26.08 против пары 31.08 (`55|6|62146.87`, `40|7|29247.90`, `28|4|44956.00`) и дни 27-30.08 против счёта по `stg_wb_orders_latest` (правило Mike 08.09); любое расхождение - exit 1, решение - Mike, не «починить цифру». `all --live --root "$ROOT"` = `up → backfill → tail → steps → check` одной командой; `init` и `down` всегда отдельно.
 
 **Витрина на данных репетиции** (по желанию, после `steps`). Тот же проект с третьим `-f` - overlay `infra/webapp.staging.compose.yaml`; переменные уже в `<root>/.env`: `WEBAPP_DATA_MODE=postgres`, `WEBAPP_TENANT_ID=amirova-test`, `PROXIMA_WEBAPP_PORT=3434` (боевой `proxima-webapp-staging` на 3000 не трогается). URI приходит файлом `/run/secrets/proxima_webapp_uri` (env `WEBAPP_DATA_DATABASE_URI_FILE`, `services/webapp/src/lib/data/postgres-provider.ts:37`): роль `proxima_webapp`, член `proxima_webapp_readonly`, хост `postgres:5432` внутри сети репетиции - файл создан `init` владельцем `1001:1001` (uid образа webapp; с владельцем `1010:1010` контейнер отвечал «файл WEBAPP_DATA_DATABASE_URI_FILE не читается» - так это и нашлось 08.09), роль - provision в `up`, он же подтверждает владельца.
 ```bash
@@ -509,3 +542,4 @@ sudo docker ps --format '{{.Names}}\t{{.Status}}' | grep proxima-ai
 14. **Октябрь - бэкап.** Серверный `proxima-pg-backup.sh` отстал от репозиторного (sha256 `d29feb24…` против `fa591531…`), cron не задаёт `PROXIMA_RAW_DIR` - записано в пункт «установить `infra/backup/*`».
 15. **§3, §5 - живая сеть WB.** AD-4 делает транспорт fail-closed: `services/collector/src/wb/transport.ts` отвечает `WB_NETWORK_FORBIDDEN` без `WB_ALLOW_LIVE_NETWORK=1`, а `collect`/`funnel-v3` берут `networkTransport()` жёстко. Ни `infra/jobs.env`, ни `infra/compose.yaml`, ни runners, ни юниты, ни команда живого хвоста в §3 флаг не задавали - первый реальный `collect` на сервере падал бы на первом HTTP-вызове, и ничто это не ловило. Стало: `WB_ALLOW_LIVE_NETWORK: "1"` в `environment:` сервиса `collector` в `infra/compose.yaml` - только он ходит в WB; `jobs.env` не подходит: его читают все три job-сервиса, а `read_env_file()` в `tools/wb_async_report.py` отвергает ключи вне `SAFE_ENV_KEYS`, и `apply-migrations`/`FUNNEL_CSV_DOWNLOAD` упали бы на незнакомом ключе. В §3 добавлена проверка `compose config | grep -c` перед хвостом, в §5 - оговорка про юниты; гейт `tools/verify_live_network.py` (`make live-network`, входит в `make verify`) держит флаг только в compose - не в env-файлах, не в юнитах, не в тестах, и проверяет, что сам seam в `transport.ts` на месте.
 16. **§1.2, §1.4, репетиция - владелец URI webapp.** На стенде репетиции витрина в `WEBAPP_DATA_MODE=postgres` отвечала «webapp: файл WEBAPP_DATA_DATABASE_URI_FILE не читается (путь из env)»: `services/webapp/Dockerfile` запускает процесс под uid/gid 1001 (`webapp`), а правило спайна (AD-6/AD-11/AD-15) и `provision-runtime-roles.sh` делали все `*_uri` `1010:1010 0600` - файл для контейнера нечитаем. Решение Mike 08.09 (addendum к D35): uid образа webapp остаётся 1001 (свой uid у публичного процесса - лучшая изоляция), а `proxima_webapp_password`/`proxima_webapp_uri` получают `1001:1001 0600`; все секреты заданий - по-прежнему `1010:1010`. Владельца ставят `provision-runtime-roles.sh` (на каждом прогоне) и `rehearsal_run.sh init`; overlay `infra/webapp.staging.compose.yaml` не менялся - compose биндит файл как есть. Гейт: `tools/tests/test_provision_runtime_roles.py` (uid образов против правила chown), memlog архитектуры дополнен, спайн не правился.
+17. **§4 - правило гейта W35 (08.09, ~13:40 UTC, решение Mike после репетиции D35).** Сумма W35 = 225 / 263 089 ₽ снята со снимка 30.08 05:59 UTC с неполным днём 30.08; после пары 31.08 и живого хвоста стенд дал 228 / 282 836.08 при сошедшемся до копейки W10 (649 / 700 860.50 - прежнее `700860.00` в §4 было округлением), и по построению иначе быть не могло. Стало: W10 - сумма недели `649|700860.50`; W35 - по дням: 24-26.08 равны паре 31.08 (`55|6|62146.87`, `40|7|29247.90`, `28|4|44956.00`), 27-30.08 равны счёту по `stg_wb_orders_latest` за московский день с `isCancel` не-true / true; `tools/rehearsal_run.sh check` реализует то же (на стенде 08.09 - все PASS). Ширина окна перезаписи - открытый вопрос Story 6.1/6.3 (`API-FACTS.md`), не условие релиза.
