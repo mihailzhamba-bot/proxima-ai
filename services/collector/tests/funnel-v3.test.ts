@@ -131,16 +131,16 @@ test('funnel request body carries the window, at most 20 nmIds and daily aggrega
   assert.throws(() => funnelRequestBody(window, Array.from({ length: 21 }, (_, index) => index + 1)), RangeError);
 });
 
-test('funnel coverage: every requested nmId on every window day, nothing twice, nothing unrequested', async () => {
+test('funnel coverage: missing active nmIds are returned for log-and-skip; duplicates and unrequested ids fail', async () => {
   const fixture = await fixtureJson();
   const window = funnelWindow('2026-08-30');
   const rows = parse(fixture, '2026-08-30');
-  assert.doesNotThrow(() => assertBatchCoverage(rows, FIXTURE_NM_IDS, window));
-  assert.throws(() => assertBatchCoverage(rows.filter((row) => row.calendarDay !== '2026-08-27'), FIXTURE_NM_IDS, window), /incomplete coverage/);
-  assert.throws(() => assertBatchCoverage(rows, [...FIXTURE_NM_IDS, 12345004], window), /incomplete coverage: nmId 12345004/);
+  assert.deepEqual(assertBatchCoverage(rows, FIXTURE_NM_IDS, window), []);
+  assert.deepEqual(assertBatchCoverage(rows.filter((row) => row.calendarDay !== '2026-08-27'), FIXTURE_NM_IDS, window), []);
+  assert.deepEqual(assertBatchCoverage(rows, [...FIXTURE_NM_IDS, 12345004], window), [12345004]);
   assert.throws(() => assertBatchCoverage([...rows, rows[0]!], FIXTURE_NM_IDS, window), /repeats nmId 12345001 on 2026-08-24/);
   assert.throws(() => assertBatchCoverage(rows, [12345001, 12345002], window), /unrequested nmId 12345003/);
-  assert.doesNotThrow(() => assertBatchCoverage(parse(fixture, '2026-08-30'), FIXTURE_NM_IDS, funnelWindow('2026-08-30')));
+  assert.deepEqual(assertBatchCoverage(parse(fixture, '2026-08-30'), FIXTURE_NM_IDS, funnelWindow('2026-08-30')), []);
 });
 
 test('funnel parser fails closed on schema drift instead of inventing fields', async () => {

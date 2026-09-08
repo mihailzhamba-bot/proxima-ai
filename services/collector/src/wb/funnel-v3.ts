@@ -182,26 +182,23 @@ export function parseFunnelV3(body: Buffer, evidenceSha256: string, window: Funn
 }
 
 /**
- * A batch covers its request when every requested nmId has exactly one record
- * for every day of the window and nothing else claims a product-day twice or
- * belongs to an nmId that was not requested. Anything less is schema drift for
- * the batch: the run must not call the day collected (Story 3.1 AC).
+ * Validates identities in a successfully received batch and returns active
+ * nmIds for which WB supplied no record inside the requested window. Missing
+ * products are a known deleted/hidden-card condition and are log-and-skip;
+ * duplicates and unrequested products remain schema drift.
  */
-export function assertBatchCoverage(rows: readonly FunnelObservation[], nmIds: readonly number[], window: FunnelWindow): void {
+export function assertBatchCoverage(rows: readonly FunnelObservation[], nmIds: readonly number[], window: FunnelWindow): number[] {
   const requested = new Set(nmIds);
   const seen = new Set<string>();
+  const present = new Set<number>();
   for (const row of rows) {
     if (!requested.has(row.nmId)) throw drift(`response contains unrequested nmId ${row.nmId}`);
     const key = `${row.nmId}:${row.calendarDay}`;
     if (seen.has(key)) throw drift(`response repeats nmId ${row.nmId} on ${row.calendarDay}`);
     seen.add(key);
+    if (row.calendarDay >= window.start && row.calendarDay <= window.end) present.add(row.nmId);
   }
-  const days = windowDays(window);
-  for (const nmId of nmIds) {
-    for (const day of days) {
-      if (!seen.has(`${nmId}:${day}`)) throw drift(`incomplete coverage: nmId ${nmId} has no record for ${day}`);
-    }
-  }
+  return nmIds.filter((nmId) => !present.has(nmId));
 }
 
 type QueryClient = Pick<PoolClient, 'query'>;

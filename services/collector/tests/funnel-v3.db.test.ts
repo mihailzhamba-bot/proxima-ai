@@ -167,7 +167,7 @@ test('funnel_v3: 21 observations and 21 current rows, replay 0, changed payload 
     assert.equal((await h.run_(first.runId)).status, 'SUCCEEDED');
     assert.deepEqual(first.window, { runDay: RUN_DAY, start: '2026-08-25', end: '2026-08-30' });
     assert.equal(first.activeNmIds, 3, 'stale and run-day orders do not make an nmId active');
-    assert.deepEqual(first.batches, [{ batch: 1, nmIds: 3, received: FIXTURE_OBSERVATIONS, inserted: FIXTURE_OBSERVATIONS, skipped: 0 }]);
+    assert.deepEqual(first.batches, [{ batch: 1, nmIds: 3, received: FIXTURE_OBSERVATIONS, inserted: FIXTURE_OBSERVATIONS, skipped: 0, missingNmIds: [] }]);
     assert.deepEqual(first.facts, { versions: FIXTURE_OBSERVATIONS, inputRuns: 0 });
     const request = transport.recordedRequests()[0];
     assert.deepEqual(request?.body, { selectedPeriod: { start: '2026-08-25', end: '2026-08-31' }, nmIds: FIXTURE_NM_IDS, aggregationLevel: 'day' });
@@ -240,6 +240,30 @@ test('funnel_v3: 21 observations and 21 current rows, replay 0, changed payload 
     await h.db.query("SELECT set_config('proxima.tenant_id', $1, false)", ['funnel-other']);
     assert.equal(await h.count('fact_funnel_daily_current', 'true'), 0, 'another tenant sees nothing');
     await h.db.query("SELECT set_config('proxima.tenant_id', $1, false)", [tenantId]);
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('funnel_v3: an active nmId absent from WB is noted and skipped without blocking SUCCEEDED', { skip }, async () => {
+  const missingNmId = 12345004;
+  const h = await openHarness([...FIXTURE_NM_IDS, missingNmId]);
+  try {
+    const result = await h.run(new FixtureTransport().transport, RUN_DAY);
+    const run = await h.run_(result.runId);
+    assert.equal(run.status, 'SUCCEEDED');
+    assert.deepEqual(JSON.parse(run.notes ?? '{}'), { missing_nm_ids: [missingNmId] });
+    assert.deepEqual(result.batches, [{
+      batch: 1,
+      nmIds: 4,
+      received: FIXTURE_OBSERVATIONS,
+      inserted: FIXTURE_OBSERVATIONS,
+      skipped: 0,
+      missingNmIds: [missingNmId],
+    }]);
+    assert.equal(result.facts.versions, FIXTURE_OBSERVATIONS);
+    assert.equal(await h.count('fact_funnel_daily', 'run_id = $1', [result.runId]), FIXTURE_OBSERVATIONS);
+    assert.equal(await h.count('fact_funnel_daily', 'run_id = $1 AND nm_id = $2', [result.runId, missingNmId]), 0);
   } finally {
     await h.cleanup();
   }
