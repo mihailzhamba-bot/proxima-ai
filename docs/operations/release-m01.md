@@ -114,20 +114,12 @@ sudo stat -c '%A %u:%g %n' /srv/proxima-ai/raw
 
 ### 1.4. Роли базы (первый прогон - до миграций)
 
-`infra/bootstrap/provision-runtime-roles.sh` без аргументов не запускается: обязательны `--psql <исполняемый psql>` и `--secrets-dir` (строки 66-68 скрипта, usage в шапке). На хосте `psql` нет (`which psql` → пусто); по замыслу скрипта на VPS psql зовётся внутри контейнера postgres. Обёртка ниже - временная, в `main` её нет (проверено 08.09: в `/usr/local/sbin/` только `proxima-psql-readonly`); кандидат в `infra/bootstrap/` отдельной единицей. Пароль владельца читается внутри контейнера из `/run/secrets` и хост не покидает.
+`infra/bootstrap/provision-runtime-roles.sh` без аргументов не запускается: обязательны `--psql <исполняемый psql>` и `--secrets-dir` (строки 66-68 скрипта, usage в шапке). На хосте `psql` нет (`which psql` → пусто); по замыслу скрипта на VPS psql зовётся внутри контейнера postgres. Репозиторная обёртка `infra/bootstrap/proxima-psql-owner` добавлена в C6 по D36. Пароль владельца читается внутри контейнера из `/run/secrets` и хост не покидает.
 
 ```bash
-sudo tee /usr/local/sbin/proxima-psql-owner >/dev/null <<'EOF'
-#!/usr/bin/env bash
-# Релиз 1.14: psql владельца внутри контейнера postgres для provision-runtime-roles.sh (--psql).
-# Пароль берётся из /run/secrets внутри контейнера; в main этой обёртки нет (кандидат в infra/bootstrap/).
-set -euo pipefail
-exec docker exec -i proxima-ai-postgres-1 sh -c \
-  'PGPASSWORD="$(cat /run/secrets/postgres_password)" exec psql "$@"' sh "$@"
-EOF
-sudo chmod 0755 /usr/local/sbin/proxima-psql-owner
-printf 'SELECT 1;\n' | sudo /usr/local/sbin/proxima-psql-owner --host postgres --port 5432 \
-  --username "$(sudo cat /etc/proxima-ai/secrets/postgres_user)" --dbname proxima --no-psqlrc -tA
+sudo install -m 0755 -o root -g root infra/bootstrap/proxima-psql-owner /usr/local/sbin/proxima-psql-owner
+sudo /usr/local/sbin/proxima-psql-owner --host postgres --port 5432 \
+  --username "$(sudo cat /etc/proxima-ai/secrets/postgres_user)" --dbname proxima --no-psqlrc -tAc 'select 1'
 ```
 Ожидается `1`. Форма `docker exec -i … sh -c 'PGPASSWORD=… exec psql "$@"' sh <args>` проверена 08.09 с теми же флагами.
 
@@ -459,6 +451,8 @@ SELECT last_full_day, stale FROM data_status_current WHERE tenant_id='amirova-te
 
 Ход релиза фиксируется в `docs/operations/releases/2026-09-15-m01.md` (AC Story 1.14; каталога на 08.09 нет, создаётся вместе с журналом), релиз - в `CHANGELOG.md` в корне репозитория: тег, дата, что вошло, ссылка на этот runbook. Журнал релиза ведётся по шаблону `docs/operations/releases/TEMPLATE.md` (формат имени файла, кто пишет, список журналов - `docs/operations/releases/README.md`); изменения до релиза накапливаются в разделе `Unreleased` `CHANGELOG.md` в корне репозитория (Keep a Changelog 1.1).
 
+Следующий релиз - 2.6 (M-03), вт 22.09.2026: переключение витрины в postgres-режим, черновик runbook - `docs/operations/release-m03.md` (не исполнять до сверки с `main` перед 22.09).
+
 ## Репетиция на VPS (D35, не деплой)
 
 Зачем: код коллектора и control-plane из `main` ни разу не прогонялся end-to-end на артефактах 31.08, а боевой контур (схема 6, таймеров нет) до 15.09 не трогается. По D35 (Mike, 08.09) разделы 2-4 этого runbook прогоняются на этом же VPS в **одноразовом compose-проекте** `proxima-rehearsal`; единственное исключение - живой хвост: 2 read-вызова WB (`supplier/orders`, `supplier/sales`) на statistics-токене. Слово «деплой» для репетиции не требуется, но `tail` без явного `--live` не запускается. Инструменты: `infra/compose.rehearsal.yaml` (override к `infra/compose.yaml`) и `tools/rehearsal_run.sh`; оба в `main` после мержа ветки `feat/rehearsal-stack`, боевой `compose.yaml` не меняются.
@@ -550,7 +544,7 @@ sudo docker ps --format '{{.Names}}\t{{.Status}}' | grep proxima-ai
 - Убрать `.env.task` из рабочей зоны.
 - Включить `make test-db-refresh` в регулярный цикл.
 - Перевести бэкап с cron на systemd по подразделу §5 «Бэкап как юнит (опционально, вместо cron)»; сервер менять только по слову «деплой».
-- Перенести `proxima-psql-owner` (раздел 1.4) в `infra/bootstrap/` или заменить его штатным способом вызова `provision-runtime-roles.sh` на VPS.
+- ~~Перенести `proxima-psql-owner` (раздел 1.4) в `infra/bootstrap/` или заменить его штатным способом вызова `provision-runtime-roles.sh` на VPS.~~ Выполнено: `infra/bootstrap/proxima-psql-owner` (C6, D36).
 
 ## Сверка 08.09.2026
 
@@ -575,4 +569,5 @@ sudo docker ps --format '{{.Names}}\t{{.Status}}' | grep proxima-ai
 17. **§4 - правило гейта W35 (08.09, ~13:40 UTC, решение Mike после репетиции D35).** Сумма W35 = 225 / 263 089 ₽ снята со снимка 30.08 05:59 UTC с неполным днём 30.08; после пары 31.08 и живого хвоста стенд дал 228 / 282 836.08 при сошедшемся до копейки W10 (649 / 700 860.50 - прежнее `700860.00` в §4 было округлением), и по построению иначе быть не могло. Стало: W10 - сумма недели `649|700860.50`; W35 - по дням: 24-26.08 равны паре 31.08 (`55|6|62146.87`, `40|7|29247.90`, `28|4|44956.00`), 27-30.08 равны счёту по `stg_wb_orders_latest` за московский день с `isCancel` не-true / true; `tools/rehearsal_run.sh check` реализует то же (на стенде 08.09 - все PASS). Ширина окна перезаписи - открытый вопрос Story 6.1/6.3 (`API-FACTS.md`), не условие релиза.
 18. **Provenance прогонов (C1, D36).** `infra/compose.yaml` теперь объявляет `PROXIMA_GIT_SHA` и `PROXIMA_IMAGE_ID` с пустым default у всех трёх ledger-writing job-сервисов (`collector`, `control-plane`, `control-plane-admin`): значения, которые runners выставляют на хосте, доходят до контейнеров без обязательного `--env` в каждом вызове. Пустые значения нормализуются в SQL `NULL`, поэтому локальный ручной запуск без provenance не создаёт пустых строк в `collector_runs`.
 19. **Story 6.4 - роль аналитика (C2, D36).** После второго `provision-runtime-roles` Mike запускает `sudo bash infra/bootstrap/provision-analyst-role.sh`; скрипт создаёт прямую read-only LOGIN-роль и печатает только пути к секретам. Состав грантов, RLS-предупреждение и проверка выдачи записаны в `access-provisioning.md`.
-20. **§5 - бэкап как systemd-юниты (C5, D36).** В репозиторий добавлены не-шаблонные `proxima-pg-backup.service`/`.timer` с запуском в 03:00 МСК, `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`, journald и `OnFailure`; подраздел установки явно заменяет cron только по слову «деплой».
+20. **Owner psql в репозитории (C6, D36).** Heredoc §1.4 заменён установкой `infra/bootstrap/proxima-psql-owner`; production-вызовы `provision-runtime-roles.sh --psql /usr/local/sbin/proxima-psql-owner` не изменились. Стендовая `<root>/bin/psql-owner` остаётся отдельной обёрткой `tools/rehearsal_run.sh init` для проекта `proxima-rehearsal`.
+21. **§5 - бэкап как systemd-юниты (C5, D36).** В репозиторий добавлены не-шаблонные `proxima-pg-backup.service`/`.timer` с запуском в 03:00 МСК, `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`, journald и `OnFailure`; подраздел установки явно заменяет cron только по слову «деплой».
