@@ -365,6 +365,30 @@ systemctl cat proxima-funnel-v3@amirova-test.service | grep -c ALLOW_ANALYTICS_R
 ```
 Ожидается `0`. `systemctl restart` здесь **не** делать: юнит `Type=oneshot`, `restart` неактивного oneshot - это запуск воронки, а не перечитывание конфигурации.
 
+### Бэкап как юнит (опционально, вместо cron)
+
+Этот шаг выполняет Mike или Claude только по слову «деплой», не во время ночного прогона. Серверная копия `/usr/local/bin/proxima-pg-backup.sh` (sha256 `d29feb24…`) отстаёт от репозиторной (`fa591531…`); установка ниже обновляет её и переводит запуск с cron на systemd:
+
+```bash
+cd /srv/proxima-ai/repo
+sudo install -m 0755 infra/backup/proxima-pg-backup.sh /usr/local/bin/proxima-pg-backup.sh
+sudo install -m 0644 infra/systemd/proxima-pg-backup.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now proxima-pg-backup.timer
+sudo sed -i.bak '/proxima-pg-backup.sh/s/^/# disabled: replaced by proxima-pg-backup.timer: /' /etc/cron.d/proxima-pg-backup
+systemctl list-timers --all --no-pager | grep proxima-pg-backup
+```
+
+Ожидается `proxima-pg-backup.timer` со следующим запуском в 03:00 МСК. Cron нужно удалить или закомментировать: иначе в 03:00 одновременно стартуют два бэкапа. Юнит статически задаёт `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`; каталог создаётся в §1.3 и до релиза может отсутствовать — тогда скрипт ожидаемо завершится с понятной ошибкой `tar`, а `OnFailure` вызовет алерт.
+
+Откат:
+
+```bash
+sudo systemctl disable --now proxima-pg-backup.timer
+sudo mv /etc/cron.d/proxima-pg-backup.bak /etc/cron.d/proxima-pg-backup
+sudo systemctl daemon-reload
+```
+
 ## 6. Проверка алерта
 
 Сторож, о котором никто не узнал, сторожем не является.
@@ -527,7 +551,7 @@ sudo docker ps --format '{{.Names}}\t{{.Status}}' | grep proxima-ai
 - Удалить пустые базы `proxima_dev`.
 - Убрать `.env.task` из рабочей зоны.
 - Включить `make test-db-refresh` в регулярный цикл.
-- Установить `infra/backup/*` как юниты, а не запускать руками. Факт 08.09: серверный `/usr/local/bin/proxima-pg-backup.sh` (sha256 `d29feb24…`, 29.08) отстал от `infra/backup/proxima-pg-backup.sh` (`fa591531…`): репозиторная версия дополнительно архивирует `PROXIMA_RAW_DIR`, но под `set -u` требует эту переменную в окружении, а `/etc/cron.d/proxima-pg-backup` её не задаёт - при установке добавить в cron-файл строку `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`.
+- Перевести бэкап с cron на systemd по подразделу §5 «Бэкап как юнит (опционально, вместо cron)»; сервер менять только по слову «деплой».
 - Перенести `proxima-psql-owner` (раздел 1.4) в `infra/bootstrap/` или заменить его штатным способом вызова `provision-runtime-roles.sh` на VPS.
 
 ## Сверка 08.09.2026
@@ -553,3 +577,4 @@ sudo docker ps --format '{{.Names}}\t{{.Status}}' | grep proxima-ai
 17. **§4 - правило гейта W35 (08.09, ~13:40 UTC, решение Mike после репетиции D35).** Сумма W35 = 225 / 263 089 ₽ снята со снимка 30.08 05:59 UTC с неполным днём 30.08; после пары 31.08 и живого хвоста стенд дал 228 / 282 836.08 при сошедшемся до копейки W10 (649 / 700 860.50 - прежнее `700860.00` в §4 было округлением), и по построению иначе быть не могло. Стало: W10 - сумма недели `649|700860.50`; W35 - по дням: 24-26.08 равны паре 31.08 (`55|6|62146.87`, `40|7|29247.90`, `28|4|44956.00`), 27-30.08 равны счёту по `stg_wb_orders_latest` за московский день с `isCancel` не-true / true; `tools/rehearsal_run.sh check` реализует то же (на стенде 08.09 - все PASS). Ширина окна перезаписи - открытый вопрос Story 6.1/6.3 (`API-FACTS.md`), не условие релиза.
 18. **Provenance прогонов (C1, D36).** `infra/compose.yaml` теперь объявляет `PROXIMA_GIT_SHA` и `PROXIMA_IMAGE_ID` с пустым default у всех трёх ledger-writing job-сервисов (`collector`, `control-plane`, `control-plane-admin`): значения, которые runners выставляют на хосте, доходят до контейнеров без обязательного `--env` в каждом вызове. Пустые значения нормализуются в SQL `NULL`, поэтому локальный ручной запуск без provenance не создаёт пустых строк в `collector_runs`.
 19. **Story 6.4 - роль аналитика (C2, D36).** После второго `provision-runtime-roles` Mike запускает `sudo bash infra/bootstrap/provision-analyst-role.sh`; скрипт создаёт прямую read-only LOGIN-роль и печатает только пути к секретам. Состав грантов, RLS-предупреждение и проверка выдачи записаны в `access-provisioning.md`.
+20. **§5 - бэкап как systemd-юниты (C5, D36).** В репозиторий добавлены не-шаблонные `proxima-pg-backup.service`/`.timer` с запуском в 03:00 МСК, `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`, journald и `OnFailure`; подраздел установки явно заменяет cron только по слову «деплой».
