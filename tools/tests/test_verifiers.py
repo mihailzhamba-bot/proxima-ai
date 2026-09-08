@@ -522,3 +522,13 @@ def test_wb_async_report_gate_rejects_tenant_autocreate_and_lost_tests(tmp_path:
     unwired.write_text("verify: install test\n", encoding="utf-8")
     with pytest.raises(ValueError, match="wb-async-report"):
         gate.verify(makefile=unwired)
+
+
+def test_makefile_wires_codegen_diff_immediately_after_codegen() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    verify_line = next(line for line in makefile.splitlines() if line.startswith("verify:"))
+
+    assert "codegen codegen-diff" in verify_line
+    assert "codegen-diff: codegen" in makefile
+    assert "git diff --exit-code --stat -- services/collector/src/contracts services/webapp/src/lib/contracts" in makefile
+    assert "git ls-files --others --exclude-standard -- services/collector/src/contracts services/webapp/src/lib/contracts" in makefile
