@@ -3,7 +3,9 @@
 Один прогон = одна сводка на день (AD-9). Без `--date` днём сводки берётся
 `last_full_day` из `data_status_current` - последний полный день (AD-7); норма
 читается за тот же день из `norm_daily_current` (AD-8). Прогон, работа и
-`SUCCEEDED` идут по контракту реестра прогонов (AD-3).
+`SUCCEEDED` идут по контракту реестра прогонов (AD-3). Детектор SCN-001 -
+шаг этого же прогона (AD-19, Story 4.1): только для дня `ok` он читает версии
+по nmId и кладёт `signals[]` в payload, а прочитанные прогоны - в `run_inputs`.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from decimal import Decimal
 
 from proxima_control_plane.brief import assembler, loader, run_ledger, writer
 from proxima_control_plane.brief.log import log_run_event
+from proxima_control_plane.detector.step import run_step as run_detector_step, utc_now_iso
 
 
 def _parse_day(value: str) -> date:
@@ -42,11 +45,23 @@ def _cmd_run(args: argparse.Namespace) -> int:
         # норма законно равна нулю и отклонение не определено - попытка обязана
         # остаться в реестре как FAILED, а не исчезнуть вместе с трейсбеком (AD-3).
         run_id = run_ledger.open_run(connection, tenant_id, notes=f"brief_day={brief_day.isoformat()}")
+        signals_note = ""
         try:
             day = assembler.build_day(brief_day, norms, actual, data_status, fact_run_ids)
             if day.status == "ok" and not input_run_ids:
                 raise ValueError("brief payload without inputs: refusing to write a source-free summary")
             log_run_event("inputs-read", run_id, tenant_id)
+            if day.status == "ok":
+                # Детектор - шаг прогона сводки (AD-19): сигналы только при `ok`,
+                # при `insufficient`/`blocked` он даже не читает факты (PRD FR-7).
+                detection = run_detector_step(connection, tenant_id, brief_day, created_at=utc_now_iso())
+                day = assembler.with_signals(day, detection.signals)
+                input_run_ids = sorted(set(input_run_ids) | set(detection.input_run_ids))
+                counters = detection.counters()
+                signals_note = (
+                    f", signals {counters['signals']} (sku {counters['sku_total']}, insufficient {counters['sku_insufficient']})"
+                )
+                log_run_event("detector", run_id, tenant_id)
             run_ledger.succeed(
                 connection,
                 tenant_id,
@@ -68,7 +83,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             norm_orders = day.payload["norm"]["orders"]
             deviation = day.payload["deviation_pct"]["orders"]
             actual_note = f", orders {orders} vs norm {norm_orders} ({deviation}%)"
-        print(f"brief: brief_day={brief_day.isoformat()} status={day.status}{actual_note}")
+        print(f"brief: brief_day={brief_day.isoformat()} status={day.status}{actual_note}{signals_note}")
         return 0
     finally:
         connection.close()

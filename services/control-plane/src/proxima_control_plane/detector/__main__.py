@@ -1,0 +1,10 @@
+"""Точка входа: python -m proxima_control_plane.detector evaluate --tenant <tenant>."""
+
+from __future__ import annotations
+
+import sys
+
+from proxima_control_plane.detector.cli import main
+
+if __name__ == "__main__":
+    sys.exit(main())
