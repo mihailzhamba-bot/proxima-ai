@@ -11,6 +11,7 @@ import type {
   SummaryMetric,
   SummaryStatus,
 } from "@/lib/data/view-model";
+import { anomaliesFromSignals } from "@/lib/data/anomalies";
 import { getBrief as getFixturesBrief } from "@/lib/fixtures/brief";
 
 /*
@@ -25,7 +26,9 @@ import { getBrief as getFixturesBrief } from "@/lib/fixtures/brief";
  * Ровно два SELECT под proxima_webapp_readonly (AD-9): data_status_current
  * и brief_current. Цифры показываются только при
  * `brief.status = 'ok' AND stale IS FALSE AND brief_day = last_full_day`;
- * иначе - предупреждение вместо цифр (AC Story 1.11).
+ * иначе - предупреждение вместо цифр (AC Story 1.11). Аномалии дня
+ * (`payload.signals[]`, Story 4.3) подчиняются тому же правилу и приходят
+ * из той же строки brief_current - третьего SELECT нет.
  */
 
 const TENANT_PATTERN = /^[a-z0-9][a-z0-9_-]{2,63}$/;
@@ -191,7 +194,7 @@ export function createPostgresProvider(
       return getFixturesBrief(variant);
     },
 
-    /** Сводка «вчера против нормы» с правилом показа AD-9. */
+    /** Сводка «вчера против нормы» и аномалии дня с правилом показа AD-9. */
     async getSummary(): Promise<BriefSummary> {
       const [row, dataStatus] = await Promise.all([readBriefRow(), readStatus()]);
       if (row === null) {
@@ -202,6 +205,7 @@ export function createPostgresProvider(
           revenue: null,
           normProgress: null,
           dataStatus,
+          anomalies: [],
         };
       }
       const payload = row.payload;
@@ -216,7 +220,7 @@ export function createPostgresProvider(
       const showNumbers = row.status === "ok" && dataStatus?.stale === false && dayMatches;
       // Сводка формально ok, но верить цифрам нельзя (stale или день уже не последний
       // полный): на экране предупреждение, а не числа - тот же fail-closed, что и в AC 1.11.
-      const status: SummaryStatus = showNumbers ? "ok" : row.status === "ok" ? ("stale" as SummaryStatus) : (row.status as SummaryStatus);
+      const status: SummaryStatus = showNumbers ? "ok" : row.status === "ok" ? "stale" : (row.status as SummaryStatus);
       const metric = (actual: number | string | null, norm: string | null, deviationPct: number | null): SummaryMetric | null =>
         actual === null || !showNumbers ? null : { actual, norm, deviationPct };
       return {
@@ -229,6 +233,10 @@ export function createPostgresProvider(
         normProgress:
           payload.norm === null ? null : { sampleDays: payload.norm.sample_days, windowDays: payload.norm.window_days },
         dataStatus,
+        // Аномалии - те же цифры дня (Story 4.3): порядок payload сохраняется
+        // (Story 4.2 ранжирует по деньгам), а при подавленных цифрах список пуст -
+        // экран не покажет сигналы против сводки, которой нельзя верить.
+        anomalies: showNumbers ? anomaliesFromSignals(payload.signals ?? []) : [],
       };
     },
 
