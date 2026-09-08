@@ -26,6 +26,6 @@ RUN groupadd --system --gid 1010 proxima-jobs && useradd --system --uid 1010 --g
 COPY --from=builder --chown=1010:1010 /repo/node_modules ./node_modules
 COPY --from=builder --chown=1010:1010 /repo/services/collector ./services/collector
 USER 1010
-# AD-6 one-shot job container: the command arrives from
-# `docker compose run collector npm run stockout-signal -- …`.
+# AD-6 one-shot job container: there is deliberately no ENTRYPOINT or CMD;
+# runners invoke `docker compose run collector npm run <job> -- …`.
 WORKDIR /app/services/collector

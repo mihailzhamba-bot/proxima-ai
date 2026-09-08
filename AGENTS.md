@@ -49,6 +49,7 @@
 
 ## Known pitfalls
 
+- До ротации analytics-токена по PA-13 `funnel_v3` принимает read-write токен только через временный systemd drop-in `proxima-funnel-v3@.service.d/10-analytics-read-write.conf`; при ротации drop-in снять, базовый юнит не менять (08.09.2026).
 - Переименование миграции без правки `INSERT INTO schema_migrations` ломает checksum - три коммита 29.08 (`fa57aa9`, `31cf85f`, `ad89513`).
 - Codex падает на голом `enabled = false` в `[mcp_servers.X]` `.codex/config.toml` (27.08, PA-39/PA-41/PMM-12); канарейка - `codex mcp list` в `scripts/agent/verify`.
 - `.openhands/hooks/verify-gate.sh` с `646ecb1` (31.08) `DATABASE_URI` не требует: `.env.task` подхватывается, если есть, гейт = только `make verify`. К разговорам, запущенным через `tools/orchestrator/` (`bad_dev_story.sh`, воркеры дирижёра), `.openhands/hooks.json` не применяется вовсе (`hook_config = null`) - красный `make verify` в песочнице ничего не остановит, гейт гоняется снаружи и в CI.
@@ -145,6 +146,42 @@ make verify
 | Mermaid CLI | 11.16.0 (devDependency) | рендер архитектуры |
 
 Локального Docker нет - решение Mike 2026-08-16: dev-цикл БД идёт через SSH-туннель на staging VPS.
+
+### Версии зависимостей (закреплено)
+
+Источник истины - манифесты и lock-файлы: `package.json` + `package-lock.json` в корне (npm workspaces; у `services/collector` и `services/webapp` своих lock-файлов нет), `services/collector/package.json`, `services/webapp/package.json`, `services/control-plane/pyproject.toml` + `services/control-plane/uv.lock`. `.nvmrc` в репо нет - Node закреплён только через `engines`. Таблица ниже - навигационный снимок на 2026-09-08 (PA-33, перенесено из PR #3), не замена lock-файлам.
+
+| Компонент | Версия | Источник |
+|---|---|---|
+| Node.js | `>=22 <23` | `package.json` (root) → `engines.node` |
+| Python | `>=3.14,<3.15` | `services/control-plane/pyproject.toml` → `requires-python`; `uv.lock` → `==3.14.*` |
+| typescript | `5.8.3` | `services/collector/package.json`, `services/webapp/package.json` → `devDependencies` |
+| tsx | `4.20.3` | `services/collector/package.json` → `devDependencies` |
+| ajv | `8.20.0` | `services/collector/package.json` → `dependencies` |
+| ajv-formats | `3.0.1` | `services/collector/package.json` → `dependencies` |
+| csv-parse | `6.1.0` | `services/collector/package.json` → `dependencies` |
+| decimal.js | `10.6.0` | `services/collector/package.json` → `dependencies` |
+| pg | `8.16.3` | `services/collector/package.json`, `services/webapp/package.json` → `dependencies` |
+| next | `16.3.3` | `services/webapp/package.json` → `dependencies` |
+| react, react-dom | `19.2.8` | `services/webapp/package.json` → `dependencies` |
+| drizzle-orm | `0.45.2` | `services/webapp/package.json` → `dependencies` |
+| better-auth | `1.7.1` | `services/webapp/package.json` → `dependencies` (auth-зона заморожена до октября) |
+| tailwindcss, @tailwindcss/postcss | `4.3.3` | `services/webapp/package.json` → `devDependencies` |
+| vitest | `4.1.11` | `services/webapp/package.json` → `devDependencies` |
+| eslint | `9.39.5` | `services/webapp/package.json` → `devDependencies` |
+| @mermaid-js/mermaid-cli | `11.16.0` | `package.json` (root) → `devDependencies` |
+| json-schema-to-typescript | `^15.0.4` (lock: `15.0.4`) | `package.json` (root) → `devDependencies` |
+| hatchling | `1.27.0` | `services/control-plane/pyproject.toml` → `[build-system]` (в `uv.lock` не попадает) |
+| pydantic | `2.13.4` | `services/control-plane/pyproject.toml` → `dependencies` |
+| jsonschema | `4.25.1` | `services/control-plane/pyproject.toml` → `dependencies` |
+| psycopg[binary] | `3.3.4` | `services/control-plane/pyproject.toml` → `dependencies` и extra `test` |
+| httpx | `0.28.1` | `services/control-plane/pyproject.toml` → extra `test` |
+| pytest | `8.4.2` | `services/control-plane/pyproject.toml` → extra `test` |
+
+Правила:
+
+- Перед генерацией кода, корректность которого зависит от API или поведения библиотеки, агент сверяет фактическую версию в манифесте и lock-файле; таблица эту проверку не заменяет.
+- Версия меняется только через манифест и lock-файл (`npm install <pkg>@<ver>` / `uv lock`); правка одной этой таблицы обновлением не считается. Обновление зависимости включает синхронную правку таблицы в том же коммите.
 
 ## Dev-доступ к PostgreSQL (VPS через туннель)
 
