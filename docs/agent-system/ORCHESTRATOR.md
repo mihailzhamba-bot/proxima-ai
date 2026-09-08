@@ -39,6 +39,10 @@
 
 Дирижёр **не может**: деплоить на сервер и трогать `/srv/proxima-ai/repo`; менять `.github/workflows/*` (такие коммиты копятся в ветке, PR помечается `needs-mike`); делать force-push; писать в Jira; менять этот файл и `/usr/local/sbin/proxima-*`; запускать `[Claude]`-истории; трогать `/etc/proxima-ai/secrets/` кроме чтения своего PAT-файла через обёртку; вызывать живой WB API.
 
+## Защита `main` и автомерж (08.09.2026, D34)
+
+На `main` действует ruleset `main-protected` (GitHub Pro): PR обязателен, одно одобрение, review от владельцев путей `.github/CODEOWNERS`, зелёные `verify`/`systemd-verify`/`build-images`/`apply-migrations-in-container`, force-push и удаление запрещены. Автомерж Дирижёра и оркестратора (D31) работает только потому, что `mihailzhamba-bot` стоит в bypass-списке как Repository admin. Если у бота пропадает admin или bypass снят, `gh pr merge` начнёт падать с ошибкой protected branch - это не баг конвейера: очередь стоп, PR помечается `needs-mike`. Коллаборатор-человек (аналитик) в bypass не входит и мержить не может.
+
 ## Kill-критерии
 
 - 3 фикс-раунда по одной истории без закрытия дефектов → `blocked`, алерт, история из очереди снимается;
