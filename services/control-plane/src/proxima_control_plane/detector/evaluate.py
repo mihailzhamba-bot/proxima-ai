@@ -170,11 +170,6 @@ def evaluate_all(
     rows_by_nm: dict[int, list[DailyMetrics]] = {}
     for row in facts:
         rows_by_nm.setdefault(row.nm_id, []).append(row)
-    missing = sorted(nm_id for nm_id in rows_by_nm if nm_id not in subjects)
-    if missing:
-        # Словарь пишется тем же прогоном, что и ряд (AD-19): его отсутствие -
-        # несогласованность данных, а не повод придумать категорию.
-        raise ValueError(f"dim_nm_subject_current has no row for nm_id(s) {missing[:10]}: refusing to invent a subject")
     evaluations: list[Evaluation] = []
     series_by_nm: dict[int, dict[date, DayValues]] = {}
     for nm_id in sorted(rows_by_nm):
@@ -183,7 +178,10 @@ def evaluate_all(
         evaluations.append(evaluate_series(LEVEL_SKU, str(nm_id), (nm_id,), series, evaluation_day, rows_by_nm[nm_id]))
     members_by_subject: dict[str, list[int]] = {}
     for nm_id in sorted(series_by_nm):
-        members_by_subject.setdefault(subjects[nm_id].subject_name, []).append(nm_id)
+        # D32: SKU без текущей строки словаря оценивается сам, но не участвует
+        # в предметных агрегатах — его предмет неизвестен.
+        if nm_id in subjects:
+            members_by_subject.setdefault(subjects[nm_id].subject_name, []).append(nm_id)
     for subject_name in sorted(members_by_subject):
         members = members_by_subject[subject_name]
         series = sum_series([series_by_nm[nm_id] for nm_id in members])

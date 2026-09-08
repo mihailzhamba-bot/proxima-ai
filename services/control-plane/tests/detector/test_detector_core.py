@@ -400,7 +400,15 @@ def test_shapley_contributions_add_up_to_the_revenue_delta() -> None:
     assert loss.dominant() == "cvr"
 
 
-def test_a_fact_row_without_a_dictionary_row_is_refused() -> None:
+def test_a_fact_row_without_a_dictionary_row_is_an_unknown_sku_and_not_a_subject() -> None:
     facts = rows(5001, 10, 5, "1000.00", "500.00")
-    with pytest.raises(ValueError, match="dim_nm_subject_current has no row"):
-        evaluate_all(facts, {}, DAY)
+    result = run(facts, {})
+    assert [(evaluation.level, evaluation.key) for evaluation in result.evaluations] == [(LEVEL_SKU, "5001")]
+    assert result.unknown_subject_nm_ids == (5001,)
+    signal = result.signals[0]
+    data = signal["detection_data"]
+    assert data["subject_name"] == {"value": None, "is_unknown": True}
+    assert data["supplier_article"] == {"value": None, "is_unknown": True}
+    assert data["brand"] == {"value": None, "is_unknown": True}
+    assert "table://dim_nm_subject/nm/5001/is_unknown" in signal["source_refs"]
+    validator("signal").validate(signal)

@@ -155,6 +155,11 @@ def check_result(result: DetectionResult) -> None:
     require(len({s["snapshot_id"] for s in signals}) == 1, "all signals of one run share the input snapshot")
     again = run_detector()
     require(again.snapshot_id == result.snapshot_id and list(again.signals) == signals, "the detector must be deterministic on the same facts")
+    unknown = detect(TENANT, DAY, _rows(9001, 10, 5, "1000.00", "500.00"), {}, {}, [], CREATED_AT)
+    require(unknown.unknown_subject_nm_ids == (9001,), "a fact without a dictionary row must be reported as UNKNOWN (D32)")
+    unknown_signal = unknown.signals[0]
+    require(unknown_signal["detection_data"]["subject_name"] == {"value": None, "is_unknown": True}, "an unknown subject must be explicit in detection_data")
+    require("table://dim_nm_subject/nm/9001/is_unknown" in unknown_signal["source_refs"], "an unknown dictionary row must be explicit in source_refs")
     # 3. No signals when the brief is not ok.
     ok_norms = [MetricNorm("orders", Decimal("38.00"), 14, 14, "ok"), MetricNorm("revenue", Decimal("3800.00"), 14, 14, "ok")]
     ok = with_signals(build_day(DAY, ok_norms, MetricActual(37, Decimal("3700.00")), STATUS, [RUN]), signals)

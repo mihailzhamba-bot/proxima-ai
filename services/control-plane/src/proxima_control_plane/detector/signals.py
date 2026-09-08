@@ -48,6 +48,7 @@ class DetectionResult:
     evaluations: tuple[Evaluation, ...]
     signals: tuple[dict, ...]
     input_run_ids: tuple[str, ...]
+    unknown_subject_nm_ids: tuple[int, ...]
 
     def counters(self) -> dict[str, int]:
         by_level = {LEVEL_SKU: 0, LEVEL_SUBJECT: 0}
@@ -123,9 +124,12 @@ def source_refs(evaluation: Evaluation, subjects: Mapping[int, SubjectRow], funn
         refs.add(f"table://fact_nm_daily/nm/{row.nm_id}/run/{row.run_id}")
         refs.update(f"{ARTIFACT_PREFIX}{sha}" for sha in row.evidence_sha256)
     for nm_id in evaluation.nm_ids:
-        subject = subjects[nm_id]
-        refs.add(f"table://dim_nm_subject/nm/{nm_id}/run/{subject.run_id}")
-        refs.add(f"{ARTIFACT_PREFIX}{subject.evidence_sha256}")
+        subject = subjects.get(nm_id)
+        if subject is None:
+            refs.add(f"table://dim_nm_subject/nm/{nm_id}/is_unknown")
+        else:
+            refs.add(f"table://dim_nm_subject/nm/{nm_id}/run/{subject.run_id}")
+            refs.add(f"{ARTIFACT_PREFIX}{subject.evidence_sha256}")
     if funnel is not None:
         for row in funnel.rows:
             refs.add(f"table://fact_funnel_daily/nm/{row.nm_id}/run/{row.run_id}")
@@ -152,13 +156,13 @@ def detection_data(evaluation: Evaluation, subjects: Mapping[int, SubjectRow], f
         raise ValueError("ok evaluation without a norm or a deviation")
     if evaluation.level == LEVEL_SKU:
         nm_id = evaluation.nm_ids[0]
-        subject = subjects[nm_id]
+        subject = subjects.get(nm_id)
         identity = {
             "level": known(LEVEL_SKU),
             "nm_id": known(nm_id),
-            "supplier_article": known(subject.supplier_article),
-            "brand": known(subject.brand),
-            "subject_name": known(subject.subject_name),
+            "supplier_article": UNKNOWN if subject is None else known(subject.supplier_article),
+            "brand": UNKNOWN if subject is None else known(subject.brand),
+            "subject_name": UNKNOWN if subject is None else known(subject.subject_name),
             "sku_count": known(1),
         }
     else:
@@ -265,6 +269,7 @@ def detect(
         evaluations=tuple(evaluations),
         signals=tuple(rank(signals)),
         input_run_ids=tuple(sorted(input_run_ids)),
+        unknown_subject_nm_ids=tuple(sorted({row.nm_id for row in facts} - set(subjects))),
     )
 
 

@@ -241,3 +241,23 @@ def test_two_brief_runs_give_the_same_signals_and_snapshot(seeded: tuple[str, st
     assert stable(first) == stable(second)
     assert {s["snapshot_id"] for s in first} == {s["snapshot_id"] for s in second}
     assert len({s["snapshot_id"] for s in first}) == 1
+
+
+def test_missing_dictionary_row_keeps_brief_succeeded_and_logs_one_warning(
+    seeded: tuple[str, str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    with psycopg.connect(OWNER_DSN, autocommit=True) as owner:
+        owner.execute("SELECT set_config('proxima.tenant_id', %s, false)", (TENANT,))
+        owner.execute("DELETE FROM dim_nm_subject WHERE tenant_id = %s AND nm_id = 1001", (TENANT,))
+    _norm_and_brief()
+    output = capsys.readouterr().out.splitlines()
+    warnings = [json.loads(line) for line in output if '"level": "warn"' in line]
+    assert len(warnings) == 1
+    assert warnings[0]["nm_ids"] == [1001]
+    with psycopg.connect(NORM_DSN, autocommit=True) as connection:
+        connection.execute("SELECT set_config('proxima.tenant_id', %s, false)", (TENANT,))
+        brief = _briefs(connection)[-1]
+    assert brief["status"] == "ok"
+    signal = next(item for item in brief["payload"]["signals"] if item["detection_data"]["nm_id"]["value"] == 1001)
+    assert signal["detection_data"]["subject_name"] == {"value": None, "is_unknown": True}
+    assert "table://dim_nm_subject/nm/1001/is_unknown" in signal["source_refs"]
