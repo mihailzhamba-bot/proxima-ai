@@ -1,11 +1,23 @@
 import { CabinetSwitcher } from "@/components/shell/cabinet-switcher";
-import { getDataProvider } from "@/lib/data";
+import { getDataProvider, type DataProvider } from "@/lib/data";
 import { MetricCard } from "@/components/metrics/metric-card";
 import { SectionErrorBoundary } from "@/components/ui/section-error";
 
-/** Метрическая полоса шелла: здоровье кабинета за 5 секунд (R05). SSR, без клиента. */
-export async function MetricStrip() {
-  const metrics = await getDataProvider().getMetrics();
+type MetricStripProps = {
+  /** Тестовый шов: провайдер вместо getDataProvider() (шелл его не передаёт). */
+  provider?: DataProvider;
+};
+
+/**
+ * Метрическая полоса шелла: здоровье кабинета за 5 секунд (R05). SSR, без клиента.
+ * Источник без метрик (postgres-режим до отдельной единицы к Story 2.5) - полосы
+ * нет вовсе: ни заглушки, ни ошибки, иначе каждая страница шелла падала бы в 500.
+ */
+export async function MetricStrip({ provider = getDataProvider() }: MetricStripProps = {}) {
+  if (!provider.supportsMetrics) {
+    return null;
+  }
+  const metrics = await provider.getMetrics();
 
   return (
     <section aria-label="Показатели кабинета" className="px-4 pt-4 lg:px-6 lg:pt-6">

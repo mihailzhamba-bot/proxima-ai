@@ -77,7 +77,7 @@ export function AnomaliesBlock({ summary, demo = false }: AnomaliesBlockProps) {
   if (summary.status !== "ok") {
     return (
       <Block>
-        <WarningLine>{numbersWarning(summary.status, summary.normProgress)}</WarningLine>
+        <WarningLine>{numbersWarning(summary.status, summary.normProgress, summary.dataStatus)}</WarningLine>
       </Block>
     );
   }
