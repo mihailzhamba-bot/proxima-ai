@@ -513,20 +513,20 @@ So that детектор и сводка считали отклонения п�
 
 **Acceptance Criteria:**
 
-**Given** предложение AD от `bmad-architecture` (грейн `(tenant_id, calendar_day, nm_id)` для `fact_order_counts`; категория - `subjectName` из payload наблюдений заказов через справочник по nmId, не колонка в каждой строке); ветка `origin/mihailzhamba-bot/pa41-full-w2-phase3` принята через ревью (D14): писатель `fact_order_counts` перенумерован после текущих миграций, `run_id`, RLS по шаблону 009, гранты collector/norm/webapp/janitor; `fact_order_counts` - разрез заказов по nmId, не подмена кабинетного ряда (`story-1.6.md`); существующая таблица `fact_order_counts` из миграции 007 (воронка, AD-2) - AD решает: переиспользовать с новым писателем или завести новую таблицу; до принятого AD история не стартует
+**Given** предложение AD от `bmad-architecture` (грейн `(tenant_id, calendar_day, nm_id)` для `fact_order_counts`; категория - `subjectName` из payload наблюдений заказов через справочник по nmId, не колонка в каждой строке); ветка `origin/mihailzhamba-bot/pa41-full-w2-phase3` принята через ревью (D14): писатель `fact_order_counts` перенумерован после текущих миграций, `run_id`, RLS по шаблону 009, гранты collector/norm/janitor, без гранта webapp (AD-9, AD-19); `fact_nm_daily` - разрез заказов по nmId, не подмена кабинетного ряда (`story-1.6.md`); существующая таблица `fact_order_counts` из миграции 007 остаётся легаси; **AD-19 принят 08.09 (D32): новая таблица `fact_nm_daily` и словарь `dim_nm_subject` в миграции 018**
 **When** прогон `collect` выполняется в harness на фикстурах 30.08
-**Then** `fact_order_counts_current` содержит строку на (день, nmId) с категорией; сумма по nmId за день сравнивается с `fact_cabinet_daily_current.orders` как quality-check (порог расхождения `UNKNOWN` до OQ-7; расхождение пишется в лог `quality_check`, не блокирует прогон); `delete_run.py` удаляет строки транзитивно; `verify_migrations.py` проходит
+**Then** `fact_nm_daily_current` содержит строку на (день, nmId) с категорией; сумма по nmId за день сравнивается с `fact_cabinet_daily_current.orders` как quality-check (порог расхождения `UNKNOWN` до OQ-7; расхождение пишется в лог `quality_check`, не блокирует прогон); `delete_run.py` удаляет строки транзитивно; `verify_migrations.py` проходит
 **And** Mike выполняет одно действие: `make verify` - `order-counts: per-nm sums vs cabinet` зелёный
 
 ### Story 4.1: Детектор нормы на реальных фактах
 
 As a оператор,
-I want подключить детектор SCN-001 из ветки `pmm-20` к `fact_cabinet_daily_current`, `fact_order_counts_current` и `fact_funnel_daily_current` через адаптер `loader.py`, с выходом по `contracts/signal.schema.json`,
+I want подключить детектор SCN-001 из ветки `pmm-20` к `fact_cabinet_daily_current`, `fact_nm_daily_current` и `fact_funnel_daily_current` через адаптер `loader.py`, с выходом по `contracts/signal.schema.json`,
 So that аномалии считались на тех же фактах, что и норма, а не на staging CSV.
 
 **Acceptance Criteria:**
 
-**Given** ветка `origin/mihailzhamba-bot/pmm-20-scn-001-…` принята через ревью (D14), `loader.py` переписан на `fact_*_current`; норма SKU по D21 - медиана 14 полных дней по nmId, `insufficient` при < 14 дней; при норме 0 отклонение не вычисляется (статус `insufficient`, `NaN`/`Infinity` в payload не попадают); выход - `signal.schema.json` v1 с `scenario_code`, `rub_assessment` строкой с двумя знаками (AD-10), `source_refs` на факты и расчёт (AD-1)
+**Given** ветка `origin/mihailzhamba-bot/pmm-20-scn-001-…` списана по D14-ревью 08.09 (D32: REWRITE), детектор пишется заново по каркасу пакета `norm/` с переносом `decomposition.py`, `to_decimal`/`DailyMetrics`, `canonical_hash`; loader читает `fact_nm_daily_current`, `dim_nm_subject_current`, `fact_funnel_daily_current` под `proxima_job_norm` (AD-19); норма SKU по D21 - медиана 14 полных дней по nmId, `insufficient` при < 14 дней; при норме 0 отклонение не вычисляется (статус `insufficient`, `NaN`/`Infinity` в payload не попадают); выход - `signal.schema.json` v1 с `scenario_code`, `rub_assessment` строкой с двумя знаками (AD-10), `source_refs` на факты и расчёт (AD-1)
 **When** детектор выполняется в harness на фиксированных фактах (фикстуры + накопленное); этап воронки называется только при ≥ 8 недель воронки, иначе `stage = UNKNOWN`
 **Then** результат валиден по схеме; `run_inputs` записаны; окна 7/14/28 детектора живут внутри адаптера и не подменяют норму D21; отклонение по SKU - против нормы SKU, по категории - против суммы SKU категории; `signals[]` не строятся при `brief.status != ok` (PRD FR-7, `[NOTE FOR PM]` закрыт этим AC); деньги под риском - разница нормы и факта по выручке `finishedPrice` (revenue-based; переход к прибыли только для SKU с `cogs_status` из паспорта, PRD FR-9)
 **And** Mike выполняет одно действие: `make verify` - `detector: sku deviation, zero-norm insufficient, no signals when not ok` зелёный
