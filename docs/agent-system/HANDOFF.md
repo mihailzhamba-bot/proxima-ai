@@ -38,6 +38,16 @@ Sprint-status: 4.0-4.3 `done`, Epic 4 `in-progress`. Закрыты старые
 
 **Следующее:** 4.4 после разметки ретро-тревог Владислава (PMM-126); Epic 5 требует решений Mike (5.0 AD, 5.1 egress PMM-31); релизный трек - по D33 с Владиславом.
 
+### Трек сбора данных (08.09, после D35)
+
+**Диагноз.** В `main` построен весь конвейер (джобы `collect`/`backfill`/`funnel-v3`/`funnel-csv-promote`, ledger `collector_runs`, откат по `run_id`, роли/RLS, образы, compose, systemd-юниты, runbook `docs/operations/release-m01.md`; `norm` → `brief`; `/brief` на Postgres) - на сервере из него не работает ничего: схема 6 против 18 в коде, `collector_runs` нет, таймеров `proxima-*` нет (кроме `proxima-host-monitor`), чекаут `/srv/proxima-ai/repo` на `fd95fcb`, данные WB - 25.08 16:33 UTC. Ни одно утро через новый конвейер не проходило; цепочка не прогонялась на реальных артефактах 31.08 - только CI на фикстурах (`docs/state/RELEASE-READINESS-1.14.md` §5, `docs/state/INVENTORY.md:66`).
+
+**Баг live-network.** `WB_ALLOW_LIVE_NETWORK=1` (fail-closed по AD-4) не выставлен ни в `infra/jobs.env`, ни в `infra/compose.yaml`, ни в live-tail runbook §3 (`release-m01.md:239`), ни в `tools/morning_run.sh`; `collect.ts:223` → `networkTransport()` → `WB_NETWORK_FORBIDDEN` (`transport.ts:34-37`). Чинит U-A1 (`fix/live-network-env`, флаг + гейт `tools/verify_live_network.py`).
+
+**План (D35).** A - сегодняшние единицы: U-A1; U-A2 (`infra/compose.rehearsal.yaml` + `tools/rehearsal_run.sh`, compose-проект `proxima-rehearsal`, одноразовый postgres `127.0.0.1:5434`, боевая база и `/srv/proxima-ai` не трогаются); U-A3 (readiness v2 + `WORKS-TODAY.md` + исполнитель runbook по D7); U-A4 (статус Story 1.11). B - репетиция на VPS с живым хвостом: 2 read-вызова `statistics.orders`/`statistics.sales` (`flag=0`) на statistics-токене с сервера, выполняет оркестратор, ответы в CAS-артефакты репетиционного raw-каталога, значение токена не печатается, после - `docker compose -p proxima-rehearsal down -v`. C - релиз 1.14 вт 15.09 по runbook после Story 6.1 Владислава (в `main` до пт 11.09), только по слову «деплой». Story 4.4 и Epic 5 заморожены до трёх SUCCEEDED утр подряд; Источники v2 (остатки, финотчёт, реклама, цены) - отдельный эпик после первого утра, не создан.
+
+**Следующее действие:** смержить U-A1 и U-A2 по зелёному CI, прогнать репетицию на VPS (B), затем readiness v2 (U-A3).
+
 ## Ночь 07-08.09.2026 - автономный прогон оркестратора (Claude Code, D31)
 
 **Итог (17:54 UTC, окно до 03:09 UTC ещё открыто):** шесть единиц в `main`, очередь исчерпана, `blocked` - ни одной, деплоя и записей в Jira не было. Состояние прогона - `~/orca/proxima-ai-night/logs/night-2026-09-07/state.json`, промты и результаты моста - `~/orca/proxima-ai-night/logs/openhands-bridge/<run-id>/`.
