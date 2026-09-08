@@ -437,6 +437,8 @@ SELECT last_full_day, stale FROM data_status_current WHERE tenant_id='amirova-te
 
 Ход релиза фиксируется в `docs/operations/releases/2026-09-15-m01.md` (AC Story 1.14; каталога на 08.09 нет, создаётся вместе с журналом), релиз - в `CHANGELOG.md` в корне репозитория: тег, дата, что вошло, ссылка на этот runbook. Журнал релиза ведётся по шаблону `docs/operations/releases/TEMPLATE.md` (формат имени файла, кто пишет, список журналов - `docs/operations/releases/README.md`); изменения до релиза накапливаются в разделе `Unreleased` `CHANGELOG.md` в корне репозитория (Keep a Changelog 1.1).
 
+Следующий релиз - 2.6 (M-03), вт 22.09.2026: переключение витрины в postgres-режим, черновик runbook - `docs/operations/release-m03.md` (не исполнять до сверки с `main` перед 22.09).
+
 ## Репетиция на VPS (D35, не деплой)
 
 Зачем: код коллектора и control-plane из `main` ни разу не прогонялся end-to-end на артефактах 31.08, а боевой контур (схема 6, таймеров нет) до 15.09 не трогается. По D35 (Mike, 08.09) разделы 2-4 этого runbook прогоняются на этом же VPS в **одноразовом compose-проекте** `proxima-rehearsal`; единственное исключение - живой хвост: 2 read-вызова WB (`supplier/orders`, `supplier/sales`) на statistics-токене. Слово «деплой» для репетиции не требуется, но `tail` без явного `--live` не запускается. Инструменты: `infra/compose.rehearsal.yaml` (override к `infra/compose.yaml`) и `tools/rehearsal_run.sh`; оба в `main` после мержа ветки `feat/rehearsal-stack`, боевой `compose.yaml` не меняются.
