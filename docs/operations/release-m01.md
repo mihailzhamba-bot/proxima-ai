@@ -383,6 +383,88 @@ SELECT last_full_day, stale FROM data_status_current WHERE tenant_id='amirova-te
 
 Ход релиза фиксируется в `docs/operations/releases/2026-09-15-m01.md` (AC Story 1.14; каталога на 08.09 нет, создаётся вместе с журналом), релиз - в `CHANGELOG.md` в корне репозитория: тег, дата, что вошло, ссылка на этот runbook.
 
+## Репетиция на VPS (D35, не деплой)
+
+Зачем: код коллектора и control-plane из `main` ни разу не прогонялся end-to-end на артефактах 31.08, а боевой контур (схема 6, таймеров нет) до 15.09 не трогается. По D35 (Mike, 08.09) разделы 2-4 этого runbook прогоняются на этом же VPS в **одноразовом compose-проекте** `proxima-rehearsal`; единственное исключение - живой хвост: 2 read-вызова WB (`supplier/orders`, `supplier/sales`) на statistics-токене. Слово «деплой» для репетиции не требуется, но `tail` без явного `--live` не запускается. Инструменты: `infra/compose.rehearsal.yaml` (override к `infra/compose.yaml`) и `tools/rehearsal_run.sh`; оба в `main` после мержа ветки `feat/rehearsal-stack`, боевой `compose.yaml` не меняются.
+
+**Гарантии изоляции** (проверены `docker compose … config` на compose 2.40.3; `!override` для `ports` поддерживается с 2.24.4):
+
+| Что | Боевой контур | Репетиция |
+|---|---|---|
+| Проект / контейнер postgres | `proxima-ai` / `proxima-ai-postgres-1` | `proxima-rehearsal` / `proxima-rehearsal-postgres-1` |
+| Порты postgres | `127.0.0.1:5432` + bridge docker0 `:5432` | только `127.0.0.1:5434` (`ports: !override` - список заменён, а не дописан) |
+| Сеть | `proxima-ai-private` | `proxima-rehearsal-private` |
+| Том | `proxima-ai_postgres-data` | `proxima-rehearsal_postgres-data` (свежий, удаляется `down -v`) |
+| Секреты / raw | `/etc/proxima-ai/secrets`, `/srv/proxima-ai/raw` | `<root>/secrets`, `<root>/raw` (`1010:1010`, `0700`/`0600`) |
+| Образы | `proxima-ai-*` | `proxima-rehearsal-*` |
+| Перезапуск после ребута | `unless-stopped` | `restart: "no"` |
+| Сеть WB у collector | по умолчанию запрещена (AD-4) | `WB_ALLOW_LIVE_NETWORK=${PROXIMA_REHEARSAL_LIVE:-0}` - `1` только в `tail --live` на один запуск |
+
+`<root>` - `/home/proxima-admin/orca/rehearsal` (вне git-дерева: CAS требует raw-каталог вне репозитория; скрипт отказывает на `--root` внутри чекаута и внутри `/srv/proxima-ai*`, `/etc/proxima-ai*`). Из боевого контура читается один файл - statistics-токен, копируется `install` от root в `<root>/secrets/amirova-test_wb_statistics_token`; значение в shell не попадает. Analytics-токен - пустой placeholder (compose требует файл, воронка в репетиции не идёт). Боевая база не открывается ни одной командой: все SQL идут в `proxima-rehearsal-postgres-1`.
+
+Проверка, что боевой контур не изменился (до и после, вывод должен совпасть):
+```bash
+sudo docker ps --format '{{.Names}}\t{{.Status}}\t{{.Ports}}' | grep proxima-ai
+sudo docker compose ls
+```
+Ожидается `proxima-ai-postgres-1  Up … (healthy)  127.0.0.1:5432->5432/tcp` (аптайм не сбрасывается) и в `compose ls` - `proxima-ai running(1)` рядом с `proxima-rehearsal` на время репетиции.
+
+**Что отличается от релиза 15.09** (ожидания скрипта под это подстроены):
+
+- Свежий том: `infra/compose.yaml` монтирует `db/migrations` в `/docker-entrypoint-initdb.d`, и postgres применяет все миграции при первом старте. Команда раздела 2 `apply-migrations` всё равно выполняется (проверяет owner-секреты, allowlist `jobs.env`, checksum ledger) и отвечает `migrations: already current`; в бою будет список `007…018`. Скрипт затем проверяет `schema_migrations` = `18|18` (число и номер последнего файла в `db/migrations`).
+- `provision-runtime-roles.sh` оба прогона идут после миграций - `WARNING … memberships deferred` не появляется ни разу (в бою - в первом прогоне). `--psql` - обёртка `<root>/bin/psql-owner` (форма раздела 1.4, контейнер репетиции). Пароли ролей и URI-файлы (`postgresql://<роль>:<пароль>@postgres:5432/proxima`) создаёт `init`, provision их переиспользует - второй прогон ничего не меняет.
+- Строку тенанта `amirova-test` вставляет скрипт (в бою она есть, миграции её не создают).
+- `PROXIMA_GIT_SHA` передаётся в задания явно (`run -e`), чтобы в `collector_runs` был виден коммит репетиции.
+- Логи шагов - `<root>/logs/*.log` (provision печатает только имена файлов, задания - JSON-шаги; секретов там нет).
+
+**Команды.** Запускать под `proxima-admin` из чекаута с этими файлами (скрипт сам зовёт `sudo -n`; под `sudo bash …` сломается `$HOME` для артефактов - тогда `--artifacts-dir /home/proxima-admin/signal-inputs/fixtures/wb-api/statistics`). Перед каждым шагом можно посмотреть команды: тот же вызов с `--dry-run` (ничего не создаёт и не запускает).
+
+```bash
+cd ~/orca/night-wt/rehearsal   # или /srv/proxima-ai/repo после мержа и checkout релизного тега
+ROOT=/home/proxima-admin/orca/rehearsal
+bash tools/rehearsal_run.sh init --root "$ROOT" --statistics-token-src /etc/proxima-ai/secrets/wb_statistics_token
+```
+`init` делает `<root>/{secrets,raw,bin,logs,.env}`; `ls -la <root>/secrets` в конце показывает 14 файлов `1010:1010 0600` (`postgres_user`, `postgres_password`, по `<роль>_password` и `<роль>_uri` для пяти ролей, два токена). Имя токена-источника - как на сервере на 08.09 (`wb_statistics_token`); после раздела 1.2 файл называется `amirova-test_wb_statistics_token`. Повторный `init` на существующем `<root>/.env` отказывает.
+
+```bash
+bash tools/rehearsal_run.sh up --root "$ROOT"
+```
+Сборка трёх образов (сеть: `npm ci`, `uv sync`), `up -d --wait postgres`, `apply-migrations` (`already current`), `schema_migrations: 18|18`, два прогона provision с итоговой строкой `ok (5 login roles, database proxima_test, URI files under <root>/secrets; no secret value printed)` и без `WARNING`.
+
+```bash
+bash tools/rehearsal_run.sh backfill --root "$ROOT"
+```
+`sha256sum` пары 31.08 (ожидаются `d2f1dc95…` sales и `0c0318ff…` orders, иначе стоп), при отсутствии `node_modules/.bin/tsx` - `npm ci` из раздела 3, два `cas_import.ts` от root в `<root>/raw` (в JSON-ответе `content_sha256` сверяется с ожидаемым), `chown -R 1010:1010`, вставка тенанта, затем `collector npm run backfill -- --tenant amirova-test --source artifact:…`. Ожидается `backfill committed` с `run_day: 2026-08-31`.
+
+```bash
+bash tools/rehearsal_run.sh tail --live --root "$ROOT"
+```
+**Единственный шаг с живым WB** - 2 read-вызова, исключение D35. `PROXIMA_REHEARSAL_LIVE=1` ставится только на этот `docker compose run`; `collect --tenant amirova-test --date-from 2026-08-27 --statistics-token-file /run/secrets/amirova-test_wb_statistics_token`. Ожидается `"date_from": "2026-08-27", "source": "flag"`, затем `aggregate` и последняя строка с `kind: collect`. Без `--live` скрипт отказывает. Если токен не read-only или даёт больше одной категории - `TOKEN_SCOPE_INVALID` (`services/collector/src/business-signal/secrets.ts:59`): это и есть находка репетиции, а не повод править код.
+
+```bash
+bash tools/rehearsal_run.sh steps --root "$ROOT"
+bash tools/rehearsal_run.sh check --root "$ROOT"
+```
+`steps` - `proxima_control_plane.norm run` и `proxima_control_plane.brief run` (модули `tools/morning_run.sh`). `check` печатает ledger (`schema_migrations`, `collector_runs`, `data_status_current`, `norm_daily_current`, `brief_current`) и таблицу W10/W35 против `docs/state/API-FACTS.md` (`649 | 700860.00`, `225 | 263089.00`); расхождение - exit 1. Для W35 действует оговорка `UNKNOWN` из `API-FACTS.md` (эталон снят с неполного снимка 30.08): при сошедшемся W10 сверять дни 24-29.08 по отдельности, решение - Mike, не «починить цифру». `all --live --root "$ROOT"` = `up → backfill → tail → steps → check` одной командой; `init` и `down` всегда отдельно.
+
+**Витрина на данных репетиции** (по желанию, после `steps`). Тот же проект с третьим `-f` - overlay `infra/webapp.staging.compose.yaml`; переменные уже в `<root>/.env`: `WEBAPP_DATA_MODE=postgres`, `WEBAPP_TENANT_ID=amirova-test`, `PROXIMA_WEBAPP_PORT=3001` (боевой `proxima-webapp-staging` на 3000 не трогается). URI приходит файлом `/run/secrets/proxima_webapp_uri` (env `WEBAPP_DATA_DATABASE_URI_FILE`, `services/webapp/src/lib/data/postgres-provider.ts:37`): роль `proxima_webapp`, член `proxima_webapp_readonly`, хост `postgres:5432` внутри сети репетиции - файл создан `init`, роль - provision в `up`.
+```bash
+sudo docker compose --env-file "$ROOT/.env" -p proxima-rehearsal \
+  -f infra/compose.yaml -f infra/compose.rehearsal.yaml -f infra/webapp.staging.compose.yaml \
+  up -d --build webapp
+ssh -N -L 3001:127.0.0.1:3001 proxima   # с машины Mike; затем http://127.0.0.1:3001/brief
+```
+Хостовый порт `5434` нужен только для клиента с хоста (psql на хосте нет): URI `postgresql://proxima_webapp:<пароль из <root>/secrets/proxima_webapp_password>@127.0.0.1:5434/proxima` - пароль читать `sudo -n cat`, в файл `0600` своего пользователя, не в чат и не в лог.
+
+**Откат / уборка.** Репетиция ничего не меняет в боевом контуре, откатывать нечего; убрать стенд:
+```bash
+bash tools/rehearsal_run.sh down --root "$ROOT"      # down -v --remove-orphans (webapp тоже), том удалён
+sudo rm -rf "$ROOT"                                    # секреты, raw, логи - скрипт это не делает сам
+sudo docker image rm $(sudo docker image ls -q 'proxima-rehearsal-*')
+sudo docker ps --format '{{.Names}}\t{{.Status}}' | grep proxima-ai
+```
+Последняя команда - та же проверка, что в начале: `proxima-ai-postgres-1` с прежним аптаймом. Два WB-вызова отмене не подлежат (read-only, на стороне WB ничего не записано). Результат репетиции (сошлись ли W10/W35, статусы прогонов, что упало) записывается в `docs/state/RELEASE-READINESS-1.14.md` и `docs/agent-system/HANDOFF.md`; найденные расхождения - единицы в очередь, не правки на сервере.
+
 ## Октябрь - не условие релиза
 
 Ниже то, что накопилось на сервере и мешает порядку, но релиз M-01 не задерживает. Делать после гейта 30.09.
