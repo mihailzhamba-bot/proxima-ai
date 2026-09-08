@@ -1,0 +1,13 @@
+[Unit]
+Description=Back up PROXIMA AI PostgreSQL and raw artifacts
+Wants=network-online.target
+After=network-online.target docker.service
+OnFailure=proxima-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+Environment=PROXIMA_RAW_DIR=/srv/proxima-ai/raw
+ExecStart=/usr/local/bin/proxima-pg-backup.sh
+StandardOutput=journal
+ProtectHome=true
