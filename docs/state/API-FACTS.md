@@ -172,6 +172,24 @@ nmIDs - топ-3 по числу строк в фикстуре `supplier-sales`
 | 13:11:50 | GET analytics `nm-report/downloads` | - | 200; задача `SUCCESS` через ~65 с | 0.51 s | 568 | `analytics/nm-report-downloads/20260902T131150Z__list_after_create.json` |
 | 13:11:51 | GET analytics `nm-report/downloads/file/{id}` | - | 200, `application/zip` | 0.59 s | 12 203 | `analytics/nm-report-downloads/20260902T131151Z__download_stock_history.bin` |
 
+## async CSV глубина (проба Story 3.0, 08.09.2026)
+
+Выполнено оркестратором с VPS по исключению из решения 7а (D32), analytics-токен read-write (`wb_analytics_token`), ответы и заголовки сохранены в `~/signal-inputs/fixtures/wb-api/analytics/nm-report-downloads/20260908T06*__probe30_*`. Запросов всего 6: список до создания, create с телом без `id` (400), create, два status, file; отчётов создано 1 (квота D20: 1 из 20 в сутки).
+
+| Факт | Значение | Источник |
+|---|---|---|
+| `POST nm-report/downloads` без клиентского `id` | **400** `{"title":"Invalid request body","detail":"invalid: id (field required)"}` - `id` (UUID клиента) обязателен, как в `tools/wb_async_report.py` `build_request` | `20260908T061830Z__probe30_create.json` |
+| Максимальный `startDate` для `DETAIL_HISTORY_REPORT` | **6 месяцев принято**: `startDate: 2026-03-08`, `endDate: 2026-09-07`, `aggregationLevel: day`, `nmIDs: []` → 200 `{"data":"Началось формирование файла/отчета"}`; спека «до года» глубже не проверялась | `20260908T062012Z__probe30_create2.request.json`, `…__probe30_create2.json` |
+| Время готовности | `SUCCESS` через **≈95 с** после создания (создан 06:20:12, первый status 06:21:48 уже SUCCESS) | `…__probe30_status1.json` |
+| Размер | ZIP **289 118 байт**, один CSV `<id>.csv`, **32 172 строки** данных, **184 дня** (2026-03-08..2026-09-07), **328 nmId** | `…__probe30_file.bin` |
+| Колонки CSV (`DETAIL_HISTORY_REPORT`, day) | `nmID, dt, openCardCount, addToCartCount, ordersCount, ordersSumRub, buyoutsCount, buyoutsSumRub, cancelCount, cancelSumRub, addToCartConversion, cartToOrderConversion, buyoutPercent, addToWishlist, currency` - длинный формат (строка на nmId × день), в отличие от широкого `STOCK_HISTORY_DAILY_CSV` (02.09) | заголовок CSV в `…__probe30_file.bin` |
+| Поле `name` в списке | равно `userReportName` запроса (`proxima-probe30-2026-03-08-2026-09-07`); отчёты внешнего потребителя называются `detail_history_report` → guard Story 3.2 по префиксу `proxima-<tenant>-` возможен | `…__probe30_status1.json` |
+| Часовой пояс `createdAt` | **UTC**: `createdAt: 2026-09-08 06:20:12` при create в 06:20:13Z; чтение D20 (UTC → день МСК) подтверждено | `…__probe30_status1.json` + журнал `logs/day-2026-09-08/probe-3.0.log` |
+| Лимиты | `x-ratelimit-limit: 3`, `remaining: 2` на всех вызовах (3/мин, как 30.08 и 02.09) | заголовки `.headers` |
+| Внешний потребитель | в списке до создания 2 отчёта `detail_history_report` за 2026-09-03..08 (создан 2026-09-08 00:50:38 UTC) и 09-02..07 - продолжает ежедневно (D20, OQ-10) | `20260908T061829Z__probe30_list_before.json` |
+
+Следствия: Story 3.3 - `CSV_COLUMN_MAP` переводится на реальные имена (`openCardCount → open_card`, `addToCartCount → cart`, `ordersCount → orders`, `ordersSumRub → orders_sum_rub`, `buyoutsCount → buyouts`, `buyoutsSumRub → buyouts_sum_rub`; `cancelCount`/`cancelSumRub`/конверсии/`addToWishlist`/`currency` - в payload); Story 3.2 - guard по префиксу и трактовка `createdAt` как UTC подтверждены; бэкфилл воронки на 6 месяцев одним отчётом реалистичен (CAP-6). Не проверено: глубина больше 6 месяцев; `STOCK_HISTORY_DAILY_CSV` глубина `currentPeriod`.
+
 ### Дневная история остатков - подтверждено (второй заход, 3 вызова по отдельному ок Mike)
 
 - Тип отчёта `STOCK_HISTORY_DAILY_CSV` создаётся на токене «Аналитика» **без подписки «Джем»**; обязательные `params`: `currentPeriod {start, end}`, `stockType` (пусто = все), `skipDeletedNm`. Формирование заняло меньше 65 секунд; лимит создания и списка - 3/мин по заголовкам; квота 1 из 20 в сутки (D20: внешний потребитель тратит ещё 1).
