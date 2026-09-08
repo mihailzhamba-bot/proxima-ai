@@ -9,12 +9,7 @@ import { DEFAULT_FIXTURE_ROOT } from '../src/wb/fixture-transport.js';
 const FIXTURE = join(DEFAULT_FIXTURE_ROOT, 'analytics/nm_report_downloads/funnel_csv_promote.json');
 
 test('funnel_csv parser maps the Story 3.0 columns for 3 nmIds x 7 days', async () => {
-  const legacyFixture = JSON.parse(await readFile(FIXTURE, 'utf8')) as Record<string, string>[];
-  const payload = legacyFixture.map((row) => ({
-    nmID: row.nmID, dt: row.dt, openCardCount: row.open_card, addToCartCount: row.cart,
-    ordersCount: row.orders, ordersSumRub: row.orders_sum_rub,
-    buyoutsCount: row.buyouts, buyoutsSumRub: row.buyouts_sum_rub, currency: 'RUB',
-  }));
+  const payload = JSON.parse(await readFile(FIXTURE, 'utf8')) as unknown[];
   const parsed = payload.map((row, index) => parseFunnelCsvRow(row, `fixture row ${index + 1}`));
   assert.equal(parsed.length, 21);
   assert.deepEqual([...new Set(parsed.map((row) => row.nmId))], [12345001, 12345002, 12345003]);
@@ -24,7 +19,7 @@ test('funnel_csv parser maps the Story 3.0 columns for 3 nmIds x 7 days', async 
   assert.deepEqual(parsed[0], {
     nmId: 12345001,
     calendarDay: '2026-08-24',
-    canonicalSha256: '00fe55121759fc5768deb11d2ac68ca2ece77eb467fd060d5f70ec65b8fa487c',
+    canonicalSha256: 'fd6007d6c08f4216deeacb5be76caa80fbbe78c6cd1cc1cf30064a3bd6e143bf',
     openCard: 101,
     cart: 31,
     orders: 11,
