@@ -25,13 +25,12 @@
 
 ```bash
 export PUPPETEER_SKIP_DOWNLOAD=1      # иначе npm ci тянет Chromium
-npm ci
-uv sync --python 3.14 --project services/control-plane --extra test --locked
+make install                         # также активирует .githooks/pre-commit в этом репозитории
 cp infra/local.env.example .env       # значения секретов не заполняются локально
 make verify
 ```
 
-`make verify` - единый гейт проекта, 15 шагов: установка, кодогенерация типов из контрактов, проверка типов, тесты (collector, веб-морда, Python), контракты, миграции, обкатка миграций на одноразовом PostgreSQL, происхождение импортированного кода, рендер архитектурных карт, границы runtime, скан секретов, контракт VPS, сигнал остатков, клиент WB. Задача считается сделанной только при зелёном гейте.
+`make verify` - единый гейт проекта: установка, кодогенерация типов из контрактов, проверка отсутствия diff после кодогенерации, проверка типов, lint веб-морды, тесты (collector, веб-морда, Python), контракты, миграции, обкатка миграций на одноразовом PostgreSQL, происхождение импортированного кода, рендер архитектурных карт, границы runtime, скан секретов, контракт VPS, сигнал остатков, клиент WB. Задача считается сделанной только при зелёном гейте.
 
 Полезные подмножества: `npm --workspace @proxima/collector test`, `npm --workspace @proxima/webapp test`, `uv run --python 3.14 --project services/control-plane --extra test pytest services/control-plane/tests tools/tests`.
 
@@ -40,9 +39,9 @@ make verify
 ## 4. Ловушки первого дня
 
 - Без локального PostgreSQL 16 шаг `pg-roundtrip` печатает `SKIP` и **выходит с кодом ноль**: гейт зелёный, а миграции не проверены.
-- `lint` намеренно не входит в `make verify`; веб-морду проверяют отдельно: `npm --workspace @proxima/webapp run lint`.
+- Lint веб-морды входит в `make verify`; отдельно его можно запустить командой `npm --workspace @proxima/webapp run lint`.
 - `next build` переписывает отслеживаемый `services/webapp/next-env.d.ts` - после сборки вернуть файл.
-- Хук перед коммитом не активен, пока не выполнено `git config core.hooksPath .githooks`.
+- `make install` идемпотентно активирует локальный хук перед коммитом через `core.hooksPath=.githooks`.
 - При длинном пути к проекту: `TMPDIR=/tmp make verify`.
 - Файл с именем `.env*` в Git роняет гейт: `tools/secret_scan.py` отклоняет такое имя
   до чтения содержимого, поэтому образец окружения лежит как `infra/local.env.example`.

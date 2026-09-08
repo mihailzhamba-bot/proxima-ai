@@ -37,9 +37,9 @@
 - `PUPPETEER_SKIP_DOWNLOAD=1` перед `npm ci` / `make verify`, иначе качается Chromium.
 - Python только `uv run --python 3.14 --project services/control-plane --extra test pytest services/control-plane/tests tools/tests`; `uv run pytest` из корня падает (`Failed to spawn: pytest`).
 - Один vitest-файл: `npm --workspace @proxima/webapp exec -- vitest run src/tests/<file>`; `npx vitest … --root services/webapp` из корня даёт `vitest: command not found`.
-- `npm test`, `npm run typecheck`, `scripts/agent/verify` проверяют только collector; webapp - `npm --workspace @proxima/webapp test | run typecheck | run lint` (в `make verify` входят test и typecheck, lint - нет).
+- `npm test`, `npm run typecheck`, `scripts/agent/verify` проверяют только collector; webapp - `npm --workspace @proxima/webapp test | run typecheck | run lint` (в `make verify` входят все три проверки).
 - `next build` переписывает tracked `services/webapp/next-env.d.ts` - после сборки `git checkout -- services/webapp/next-env.d.ts`.
-- `.githooks/pre-commit` не активен, пока не выполнено `git config core.hooksPath .githooks`.
+- `.githooks/pre-commit` активируется локально командой `make install` (`core.hooksPath=.githooks`).
 
 ## Conventions that differ from defaults
 

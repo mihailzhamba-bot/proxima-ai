@@ -1,11 +1,14 @@
-.PHONY: agent-toolset apply-migrations architecture boundary brief business-signal codegen codegen-diff collect-wb-analytics contracts funnel funnel-csv install migrations pg-roundtrip probe-wb-api provenance secrets test test-db-refresh typecheck verify vps wb-async-report wb-client webapp-build webapp-lint
+.PHONY: agent-toolset apply-migrations architecture boundary brief business-signal codegen codegen-diff collect-wb-analytics contracts funnel funnel-csv hooks install migrations pg-roundtrip probe-wb-api provenance secrets test test-db-refresh typecheck verify vps wb-async-report wb-client webapp-build webapp-lint
 
 
 verify: install codegen codegen-diff typecheck webapp-lint test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal wb-client brief wb-async-report funnel funnel-csv
 
-install:
+install: hooks
 	npm ci
 	uv sync --python 3.14 --project services/control-plane --extra test --locked
+
+hooks:
+	@if git rev-parse --git-dir >/dev/null 2>&1; then git config --local core.hooksPath .githooks; echo "hooks: core.hooksPath=.githooks"; else echo "hooks: SKIP (not a git repository)"; fi
 
 codegen:
 	npm run codegen:contracts
