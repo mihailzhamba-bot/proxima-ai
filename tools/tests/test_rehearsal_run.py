@@ -183,9 +183,17 @@ def test_init_prepares_private_dirs_secrets_and_env_without_values() -> None:
         "postgres_password",
         "proxima_collector_uri",
         "proxima_norm_uri",
-        "proxima_webapp_uri",
+        "proxima_janitor_uri",
+        "proxima_sandbox_uri",
     ):
-        assert f"write-secret {TEST_ROOT}/secrets/{name}" in text
+        assert f"write-secret {TEST_ROOT}/secrets/{name} owner 1010:1010" in text
+    # The webapp image runs as uid 1001 (services/webapp/Dockerfile), so its two files get that
+    # owner - a 1010:1010 file is unreadable for the container (rehearsal finding, 08.09).
+    for name in ("proxima_webapp_password", "proxima_webapp_uri"):
+        assert f"write-secret {TEST_ROOT}/secrets/{name} owner 1001:1001" in text
+    assert "owner 1001:1001" not in "\n".join(
+        line for line in text.splitlines() if "proxima_webapp_" not in line
+    )
     assert f"install -m 0600 -o 1010 -g 1010 {TOKEN_SRC} {TEST_ROOT}/secrets/amirova-test_wb_statistics_token" in text
     assert f"install -m 0600 -o 1010 -g 1010 /dev/null {TEST_ROOT}/secrets/amirova-test_wb_analytics_token" in text
     assert f"docker exec -i {PROJECT}-postgres-1" in text

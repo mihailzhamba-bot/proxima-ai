@@ -17,6 +17,9 @@
 # URI files (Conventions table of the architecture spine):
 #   <secrets-dir>/{proxima_collector,proxima_norm,proxima_webapp,
 #                  proxima_janitor,proxima_sandbox}_uri
+# Ownership (root only): job secrets 1010:1010 0600 (AD-6/AD-11/AD-15, uid of
+# the collector/control-plane images); proxima_webapp_{password,uri} 1001:1001
+# 0600 - the uid of services/webapp/Dockerfile (D35 addendum, Mike 08.09.2026).
 #
 # NOLOGIN group roles come from migration 011 (Story 1.3). Until it exists the
 # LOGIN users are created WITHOUT membership and a warning is printed; a later
@@ -41,7 +44,7 @@ TEST_DATABASE="proxima_test"
 ADMIN_USER="postgres"
 
 usage() {
-  sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 }
 
@@ -272,18 +275,31 @@ write_uri proxima_webapp "${DATABASE}" "${WEBAPP_PASSWORD}"
 write_uri proxima_janitor "${DATABASE}" "${JANITOR_PASSWORD}"
 write_uri proxima_sandbox "${TEST_DATABASE}" "${SANDBOX_PASSWORD}"
 
-# AD-11: the secrets dir is owned by 1010:1010 (the container user) on the
+# AD-11: the secrets dir is owned by 1010:1010 (the job container user) on the
 # VPS. Only root can chown, so a non-root caller (the local harness) keeps the
 # files owned by the invoking user and must arrange ownership out of band.
+#
+# Exception (D35 addendum, Mike 08.09.2026, found on the rehearsal stand): the
+# webapp image runs as uid/gid 1001, not 1010 (services/webapp/Dockerfile:
+# `useradd --system --uid 1001 ... webapp`, kept on purpose - the public
+# process gets its own uid). A 1010:1010 0600 file is unreadable for it and
+# WEBAPP_DATA_MODE=postgres fails with "файл WEBAPP_DATA_DATABASE_URI_FILE не
+# читается", so proxima_webapp_password / proxima_webapp_uri are owned by
+# 1001:1001. Every job secret (collector, norm, janitor, sandbox) stays
+# 1010:1010. Ownership is re-asserted on every run: a re-run repairs a wrong
+# owner instead of keeping it.
 SECRETS_OWNER="1010:1010"
+WEBAPP_SECRETS_OWNER="1001:1001"
 if [[ "$(id -u)" -eq 0 ]]; then
   chown "${SECRETS_OWNER}" "${SECRETS_DIR}"
   chown "${SECRETS_OWNER}" "${SECRETS_DIR}"/proxima_collector_* \
-    "${SECRETS_DIR}"/proxima_norm_* "${SECRETS_DIR}"/proxima_webapp_* \
+    "${SECRETS_DIR}"/proxima_norm_* \
     "${SECRETS_DIR}"/proxima_janitor_* "${SECRETS_DIR}"/proxima_sandbox_*
-  echo "provision-runtime-roles: secrets owned by ${SECRETS_OWNER}"
+  chown "${WEBAPP_SECRETS_OWNER}" "${SECRETS_DIR}"/proxima_webapp_password \
+    "${SECRETS_DIR}"/proxima_webapp_uri
+  echo "provision-runtime-roles: secrets owned by ${SECRETS_OWNER}; proxima_webapp_password, proxima_webapp_uri owned by ${WEBAPP_SECRETS_OWNER} (webapp image uid)"
 else
-  echo "provision-runtime-roles: WARNING not running as root, secret files left owned by $(id -un); run as root (or chown ${SECRETS_OWNER}) on the VPS" >&2
+  echo "provision-runtime-roles: WARNING not running as root, secret files left owned by $(id -un); run as root (or chown ${SECRETS_OWNER}, proxima_webapp_* ${WEBAPP_SECRETS_OWNER}) on the VPS" >&2
 fi
 
 if [[ -n "${MISSING_REPORT}" ]]; then
