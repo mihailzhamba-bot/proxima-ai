@@ -16,7 +16,7 @@ from datetime import date
 from decimal import Decimal
 
 from proxima_control_plane.brief import assembler, loader, run_ledger, writer
-from proxima_control_plane.brief.log import log_run_event
+from proxima_control_plane.brief.log import log_run_event, log_unknown_subjects
 from proxima_control_plane.detector.step import run_step as run_detector_step, utc_now_iso
 
 
@@ -55,6 +55,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 # Детектор - шаг прогона сводки (AD-19): сигналы только при `ok`,
                 # при `insufficient`/`blocked` он даже не читает факты (PRD FR-7).
                 detection = run_detector_step(connection, tenant_id, brief_day, created_at=utc_now_iso())
+                if detection.unknown_subject_nm_ids:
+                    log_unknown_subjects(run_id, tenant_id, detection.unknown_subject_nm_ids)
                 day = assembler.with_signals(day, detection.signals)
                 input_run_ids = sorted(set(input_run_ids) | set(detection.input_run_ids))
                 counters = detection.counters()
