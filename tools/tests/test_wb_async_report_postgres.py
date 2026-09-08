@@ -230,7 +230,10 @@ def test_real_postgres_collect_closes_the_run_and_guards_daily_creation(tmp_path
         tenant_id = new_tenant(connection)
         repository.bind_tenant(tenant_id)
 
-        # 30.08.2026 (Moscow): the fixture list holds a report created that day (UTC 04:17) -> guard
+        # Add a Proxima-owned report to the fixture's external-consumer reports -> guard.
+        fixture_body = json.loads(fixture_list)
+        fixture_body["data"].append({"name": f"proxima-{tenant_id}-period", "createdAt": "2026-08-30 04:17:23"})
+        fixture_list = json.dumps(fixture_body).encode()
         guarded_at = datetime.fromisoformat("2026-08-30T06:30:00+03:00")
         runner, guarded = run_collect(repository, tenant_id, guarded_at, tmp_path / "spool-1")
         assert guarded.lifecycle_status == "RESERVED"

@@ -48,6 +48,7 @@ REQUIRED_METHODS = {
     "AsyncReportCollector": ("collect", "_collect", "_reports_created_today"),
 }
 REQUIRED_MARKERS = (
+    ('own_prefix = f"proxima-{tenant_id}-"', "the daily guard must count only this tenant's Proxima reports"),
     ('RUN_KIND = "funnel_csv_download"', "the ledger kind must be funnel_csv_download (AD-5)"),
     ("TENANT_GUC = \"proxima.tenant_id\"", "the session GUC must be proxima.tenant_id (AD-13)"),
     ("SELECT set_config(%s, %s, false)", "the GUC must be set with set_config(…, false) on the session (AD-3)"),
