@@ -14,6 +14,7 @@ import psycopg
 
 from proxima_control_plane.detector import loader
 from proxima_control_plane.detector.signals import DetectionResult, detect
+from proxima_control_plane.detector.threshold import NOT_APPLIED, AlertThreshold
 
 
 def utc_now_iso() -> str:
@@ -21,12 +22,19 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def run_step(connection: psycopg.Connection, tenant_id: str, evaluation_day: date, created_at: str) -> DetectionResult:
+def run_step(
+    connection: psycopg.Connection,
+    tenant_id: str,
+    evaluation_day: date,
+    created_at: str,
+    threshold: AlertThreshold = NOT_APPLIED,
+) -> DetectionResult:
+    """Порог приходит от прогона `brief` - тот же, что записан в `payload.threshold` (Story 4.2)."""
     facts = loader.read_nm_facts(connection, tenant_id, evaluation_day)
     subjects = loader.read_subjects(connection, tenant_id)
     history = loader.read_funnel_history_days(connection, tenant_id, evaluation_day)
     funnel_rows = loader.read_funnel_window(connection, tenant_id, loader.funnel_eligible(history), evaluation_day)
-    return detect(tenant_id, evaluation_day, facts, subjects, history, funnel_rows, created_at)
+    return detect(tenant_id, evaluation_day, facts, subjects, history, funnel_rows, created_at, threshold=threshold)
 
 
 __all__ = ["run_step", "utc_now_iso"]

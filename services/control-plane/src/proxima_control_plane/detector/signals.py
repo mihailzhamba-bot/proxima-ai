@@ -1,13 +1,17 @@
 """Сигналы по `contracts/signal.schema.json` v1 из оценок детектора (AD-1, AD-10, AD-19).
 
-Один сигнал на кандидата (SKU или категория с заказами ниже нормы), без порога:
-порог - значение конфигурации Story 4.4, до него `null` = не применяется (решение
-6а, Story 4.2). `rub_assessment.value_rub` - деньги под риском строкой с двумя
+Один сигнал на кандидата (SKU или категория с заказами или выручкой ниже нормы,
+D32). Порог - значение конфигурации control-plane (`detector/threshold.py`,
+решение 6а, Story 4.2): пока он `null`, в `signals[]` попадает каждый кандидат;
+когда Story 4.4 задаст значение, остаются кандидаты, у которых хотя бы одна
+упавшая метрика отклонилась на порог или глубже, - правило порядка при этом не
+меняется. `rub_assessment.value_rub` - деньги под риском строкой с двумя
 знаками, `method = revenue` (переход к прибыли - только для SKU с `cogs_status`,
 PRD FR-9, вне этой истории). `source_refs` - версии фактов (`run_id`), их
 доказательства (`evidence_sha256`), словарь и расчёт по снимку входа. `detection_data`
 несёт ряд SKU/категории: `nm_id`, `supplier_article`, `subject_name` webapp берёт
-отсюда, а не из фактов (AD-19). `signals[]` упорядочены по деньгам под риском.
+отсюда, а не из фактов (AD-19), и тройку порога, с которой считался сигнал.
+`signals[]` упорядочены по деньгам под риском (CAP-7).
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ from proxima_control_plane.detector.evaluate import (
 )
 from proxima_control_plane.detector.funnel import FunnelStage, funnel_stage
 from proxima_control_plane.detector.metrics import DailyMetrics, FunnelMetrics, SubjectRow
+from proxima_control_plane.detector.threshold import NOT_APPLIED, AlertThreshold
 from proxima_control_plane.norm.median import WINDOW_DAYS, quantize_money
 
 SCHEMA_VERSION = 1
@@ -49,6 +54,9 @@ class DetectionResult:
     signals: tuple[dict, ...]
     input_run_ids: tuple[str, ...]
     unknown_subject_nm_ids: tuple[int, ...]
+    threshold: AlertThreshold = NOT_APPLIED
+    # Кандидаты ниже нормы, не прошедшие порог (Story 4.2); ноль, пока порог не применяется.
+    suppressed_by_threshold: int = 0
 
     def counters(self) -> dict[str, int]:
         by_level = {LEVEL_SKU: 0, LEVEL_SUBJECT: 0}
@@ -102,8 +110,9 @@ def snapshot_id(
     subjects: Mapping[int, SubjectRow],
     funnel_history_days: Mapping[int, int],
     funnel_rows: Sequence[FunnelMetrics],
+    threshold: AlertThreshold = NOT_APPLIED,
 ) -> str:
-    """Хэш входа детектора: те же факты - тот же снимок, любое изменение - другой."""
+    """Хэш входа детектора: те же факты и тот же порог - тот же снимок, любое изменение - другой."""
     return canonical_hash(
         {
             "scenario_code": SCENARIO_CODE,
@@ -114,6 +123,7 @@ def snapshot_id(
             "subjects": [subjects[nm_id] for nm_id in sorted(subjects)],
             "funnel_history_days": {str(nm_id): funnel_history_days[nm_id] for nm_id in sorted(funnel_history_days)},
             "funnel": sorted(funnel_rows, key=lambda row: (row.nm_id, row.calendar_day)),
+            "threshold": threshold.payload(),
         }
     )
 
@@ -149,7 +159,13 @@ def _funnel_data(funnel: FunnelStage | None) -> dict:
     return data
 
 
-def detection_data(evaluation: Evaluation, subjects: Mapping[int, SubjectRow], funnel: FunnelStage | None, evaluation_day: date) -> dict:
+def detection_data(
+    evaluation: Evaluation,
+    subjects: Mapping[int, SubjectRow],
+    funnel: FunnelStage | None,
+    evaluation_day: date,
+    threshold: AlertThreshold = NOT_APPLIED,
+) -> dict:
     if evaluation.status != STATUS_OK or evaluation.actual_orders is None or evaluation.actual_revenue is None:
         raise ValueError("detection_data is built for ok evaluations only")
     if evaluation.norm_orders is None or evaluation.norm_revenue is None or not evaluation.triggered_by:
@@ -189,7 +205,8 @@ def detection_data(evaluation: Evaluation, subjects: Mapping[int, SubjectRow], f
         "norm_status": known(evaluation.status),
         "norm_rule": known("D21 median of 14 full days before evaluation_day"),
         "history_days_28d": known(evaluation.history_days),
-        "threshold_pct": UNKNOWN,
+        # Тройка порога, с которой считался сигнал (Story 4.2): UNKNOWN, пока порог null.
+        **threshold.detection_data(),
         **{f"orders_mean_{window}d": _two_decimals(evaluation.means.get(window)) for window in ADAPTER_WINDOWS},
         **_funnel_data(funnel),
     }
@@ -204,6 +221,7 @@ def build_signal(
     evaluation_day: date,
     created_at: str,
     snapshot: str,
+    threshold: AlertThreshold = NOT_APPLIED,
 ) -> dict:
     if evaluation.money_at_risk is None:
         raise ValueError("a signal needs money at risk")
@@ -219,7 +237,7 @@ def build_signal(
         "trust_marking": TRUST_MARKING,
         "rub_assessment": {"value_rub": _money(evaluation.money_at_risk), "method": RUB_METHOD},
         "source_refs": source_refs(evaluation, subjects, funnel, snapshot),
-        "detection_data": detection_data(evaluation, subjects, funnel, evaluation_day),
+        "detection_data": detection_data(evaluation, subjects, funnel, evaluation_day, threshold),
     }
 
 
@@ -243,23 +261,33 @@ def detect(
     funnel_history_days: Mapping[int, int],
     funnel_rows: Sequence[FunnelMetrics],
     created_at: str,
+    threshold: AlertThreshold = NOT_APPLIED,
 ) -> DetectionResult:
-    """Чистый прогон детектора на уже прочитанных версиях (тестируемо без БД)."""
-    snapshot = snapshot_id(tenant_id, evaluation_day, facts, subjects, funnel_history_days, funnel_rows)
+    """Чистый прогон детектора на уже прочитанных версиях (тестируемо без БД).
+
+    `threshold` - конфигурация control-plane (Story 4.2): `NOT_APPLIED` пропускает
+    каждого кандидата ниже нормы; заданный порог оставляет тех, у кого хотя бы одна
+    упавшая метрика отклонилась на порог или глубже. Рост кандидатом не бывает.
+    """
+    snapshot = snapshot_id(tenant_id, evaluation_day, facts, subjects, funnel_history_days, funnel_rows, threshold)
     evaluations = evaluate_all(facts, subjects, evaluation_day)
     funnel_by_nm: dict[int, list[FunnelMetrics]] = {}
     for row in funnel_rows:
         funnel_by_nm.setdefault(row.nm_id, []).append(row)
     signals: list[dict] = []
+    suppressed = 0
     for evaluation in evaluations:
         if not evaluation.is_candidate:
+            continue
+        if not threshold.admits((evaluation.orders_deviation_pct, evaluation.revenue_deviation_pct)):
+            suppressed += 1
             continue
         funnel: FunnelStage | None = None
         if evaluation.level == LEVEL_SKU:
             # Этап воронки - только у SKU; у категории он остаётся UNKNOWN.
             nm_id = evaluation.nm_ids[0]
             funnel = funnel_stage(funnel_history_days.get(nm_id, 0), funnel_by_nm.get(nm_id, []), evaluation_day)
-        signals.append(build_signal(evaluation, subjects, funnel, tenant_id, evaluation_day, created_at, snapshot))
+        signals.append(build_signal(evaluation, subjects, funnel, tenant_id, evaluation_day, created_at, snapshot, threshold))
     input_run_ids = {row.run_id for row in facts}
     input_run_ids.update(subject.run_id for subject in subjects.values())
     input_run_ids.update(row.run_id for row in funnel_rows)
@@ -270,6 +298,8 @@ def detect(
         signals=tuple(rank(signals)),
         input_run_ids=tuple(sorted(input_run_ids)),
         unknown_subject_nm_ids=tuple(sorted({row.nm_id for row in facts} - set(subjects))),
+        threshold=threshold,
+        suppressed_by_threshold=suppressed,
     )
 
 

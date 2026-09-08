@@ -8,7 +8,9 @@
 (AD-9); `signals` здесь всегда пуст - их вкладывает шаг детектора через
 `assembler.with_signals` только в день `ok` (AD-19, Story 4.1), а `source_refs`
 собирается из версий фактов, строк нормы и записей `data_status` - он никогда
-не пуст.
+не пуст. Тройка порога `threshold {value, source, date}` (решение 6а, Story 4.2)
+пишется в payload любого статуса: это конфигурация, с которой строилась сводка,
+а не вычисленное значение; до Story 4.4 все три - `null`.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Sequence
 
+from proxima_control_plane.detector.threshold import NOT_APPLIED, AlertThreshold
 from proxima_control_plane.norm.median import quantize_money
 
 SCHEMA_VERSION = 1
@@ -106,6 +109,7 @@ def build_day_payload(
     norms: Sequence[MetricNorm],
     data_status: DataStatus,
     source_refs: Sequence[str],
+    threshold: AlertThreshold = NOT_APPLIED,
 ) -> DayDeviation:
     """Payload дня со статусом `ok`; вход уже собран из версий _current (AD-9)."""
     actual_payload, norm_payload, deviation = _metric_payloads(actual, norms)
@@ -120,13 +124,20 @@ def build_day_payload(
         "actual": actual_payload,
         "norm": norm_payload,
         "deviation_pct": deviation,
+        "threshold": threshold.payload(),
         "signals": list(NO_SIGNALS),
         "source_refs": list(source_refs),
     }
     return DayDeviation(brief_day=brief_day, status="ok", payload=payload)
 
 
-def _envelope(brief_day: date, actual: MetricActual | None, data_status: DataStatus, source_refs: Sequence[str]) -> dict:
+def _envelope(
+    brief_day: date,
+    actual: MetricActual | None,
+    data_status: DataStatus,
+    source_refs: Sequence[str],
+    threshold: AlertThreshold,
+) -> dict:
     """Общая для всех трёх статусов часть payload: она известна всегда."""
     return {
         "schema_version": SCHEMA_VERSION,
@@ -137,6 +148,7 @@ def _envelope(brief_day: date, actual: MetricActual | None, data_status: DataSta
             "stale": data_status.stale,
         },
         "actual": None if actual is None else {"orders": actual.orders, "revenue": _money(actual.revenue)},
+        "threshold": threshold.payload(),
         "signals": list(NO_SIGNALS),
         "source_refs": list(source_refs),
     }
@@ -148,6 +160,7 @@ def insufficient_day(
     norms: Sequence[MetricNorm],
     data_status: DataStatus,
     source_refs: Sequence[str],
+    threshold: AlertThreshold = NOT_APPLIED,
 ) -> DayDeviation:
     """Норма есть, но окно неполное: пропуск виден, отклонение не называется (AD-9).
 
@@ -163,7 +176,7 @@ def insufficient_day(
             raise ValueError(f"insufficient_day requires insufficient norms, got {norm.metric}={norm.status}")
     if orders_norm.sample_days != revenue_norm.sample_days:
         raise ValueError("norm metrics disagree on sample_days; refusing to hide the disagreement")
-    payload = _envelope(brief_day, actual, data_status, source_refs)
+    payload = _envelope(brief_day, actual, data_status, source_refs, threshold)
     payload["norm"] = {
         "orders": _money(orders_norm.value),
         "revenue": _money(revenue_norm.value),
@@ -180,6 +193,7 @@ def blocked_day(
     data_status: DataStatus,
     source_refs: Sequence[str],
     reason: str = "norm version missing for evaluation_day",
+    threshold: AlertThreshold = NOT_APPLIED,
 ) -> DayDeviation:
     """Версий нормы за день нет: сводка заблокирована, а не обнулена (AD-9).
 
@@ -187,7 +201,7 @@ def blocked_day(
     записывается как `null`, потому что пропущенный ключ и явное «нет» читаются
     по-разному, а причина называется словами.
     """
-    payload = _envelope(brief_day, actual, data_status, source_refs)
+    payload = _envelope(brief_day, actual, data_status, source_refs, threshold)
     payload["norm"] = None
     payload["deviation_pct"] = None
     payload["reason"] = reason
