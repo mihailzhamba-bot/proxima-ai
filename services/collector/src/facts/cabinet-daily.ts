@@ -8,6 +8,9 @@ export interface CabinetDailyInput {
   readonly runId: string;
   readonly floor: string;
   readonly runDay: string;
+  /** Rows of `loadLatestObservations` when the run shares one SELECT between
+   * the cabinet and the nmId writers (AD-19); loaded here when absent. */
+  readonly observations?: readonly CabinetObservationRow[];
 }
 
 export interface CabinetDailyFact {
@@ -33,7 +36,42 @@ export interface CabinetObservationRow {
   readonly payload: Readonly<Record<string, unknown>>;
 }
 
+/** One `_latest` row with its natural key and WB lastChangeDate instant - what
+ * the dictionary of AD-19 needs on top of the cabinet formulas. */
+export interface LatestObservationRow extends CabinetObservationRow {
+  /** `srid` of an order, `saleID` of a sale. */
+  readonly key: string;
+  /** `last_change_at` as an ISO-8601 UTC instant (`...Z`). */
+  readonly lastChangeAt: string;
+}
+
 type QueryClient = Pick<PoolClient, 'query'>;
+
+const LAST_CHANGE_AT_SQL = `to_char(last_change_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS') || 'Z'`;
+
+/**
+ * The single input of the daily aggregators (AD-2): every latest observation
+ * of the tenant from both `_latest` views, regardless of run status. Called
+ * inside the run transaction after the observations of the run are inserted.
+ */
+export async function loadLatestObservations(client: QueryClient, tenantId: string): Promise<LatestObservationRow[]> {
+  const result = await client.query<LatestObservationRow>(
+    `SELECT 'order' AS kind, srid AS key, ${LAST_CHANGE_AT_SQL} AS "lastChangeAt", run_id AS "runId", content_sha256 AS "contentSha256", payload FROM stg_wb_orders_latest WHERE tenant_id = $1
+     UNION ALL
+     SELECT 'sale' AS kind, sale_id AS key, ${LAST_CHANGE_AT_SQL} AS "lastChangeAt", run_id AS "runId", content_sha256 AS "contentSha256", payload FROM stg_wb_sales_latest WHERE tenant_id = $1`,
+    [tenantId],
+  );
+  return result.rows;
+}
+
+/** Content hashes of the run's own WB responses: the evidence of a zero day (AD-2). */
+export async function loadRunEvidence(client: QueryClient, tenantId: string, runId: string): Promise<string[]> {
+  const result = await client.query<{ contentSha256: string }>(
+    'SELECT DISTINCT content_sha256 AS "contentSha256" FROM wb_raw_artifacts WHERE tenant_id = $1 AND run_id = $2 ORDER BY content_sha256',
+    [tenantId, runId],
+  );
+  return result.rows.map((row) => row.contentSha256);
+}
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const SHA = /^[0-9a-f]{64}$/;
@@ -96,17 +134,9 @@ export function summarizeCabinetDaily(
 }
 
 export async function aggregateCabinetDaily(client: QueryClient, input: CabinetDailyInput): Promise<AggregateCabinetDailyResult> {
-  const observations = await client.query<CabinetObservationRow>(
-    `SELECT 'order' AS kind, run_id AS "runId", content_sha256 AS "contentSha256", payload FROM stg_wb_orders_latest WHERE tenant_id = $1
-     UNION ALL
-     SELECT 'sale' AS kind, run_id AS "runId", content_sha256 AS "contentSha256", payload FROM stg_wb_sales_latest WHERE tenant_id = $1`,
-    [input.tenantId],
-  );
-  const artifacts = await client.query<{ contentSha256: string }>(
-    'SELECT DISTINCT content_sha256 AS "contentSha256" FROM wb_raw_artifacts WHERE tenant_id = $1 AND run_id = $2 ORDER BY content_sha256',
-    [input.tenantId, input.runId],
-  );
-  const facts = summarizeCabinetDaily(observations.rows, input.floor, input.runDay, artifacts.rows.map((row) => row.contentSha256));
+  const observations = input.observations ?? await loadLatestObservations(client, input.tenantId);
+  const evidence = await loadRunEvidence(client, input.tenantId, input.runId);
+  const facts = summarizeCabinetDaily(observations, input.floor, input.runDay, evidence);
   if (facts.length > 0) {
     await client.query(
       `INSERT INTO fact_cabinet_daily (tenant_id, calendar_day, run_id, orders_count, cancelled_count, sales_count, returns_count, revenue_rub, forpay_rub, evidence_sha256)
@@ -115,7 +145,7 @@ export async function aggregateCabinetDaily(client: QueryClient, input: CabinetD
       [input.tenantId, input.runId, JSON.stringify(facts.map((fact) => ({ calendar_day: fact.calendarDay, orders_count: fact.ordersCount, cancelled_count: fact.cancelledCount, sales_count: fact.salesCount, returns_count: fact.returnsCount, revenue_rub: fact.revenueRub, forpay_rub: fact.forpayRub, evidence_sha256: fact.evidenceSha256 })))],
     );
   }
-  const inputRuns = [...new Set(observations.rows.filter((row) => mskDay(String(row.payload.date)) >= input.floor && mskDay(String(row.payload.date)) < input.runDay && row.runId !== input.runId).map((row) => row.runId))];
+  const inputRuns = [...new Set(observations.filter((row) => mskDay(String(row.payload.date)) >= input.floor && mskDay(String(row.payload.date)) < input.runDay && row.runId !== input.runId).map((row) => row.runId))];
   if (inputRuns.length > 0) {
     await client.query(
       'INSERT INTO collector_run_inputs (tenant_id, run_id, input_run_id) SELECT $1, $2, unnest($3::uuid[]) ON CONFLICT (tenant_id, run_id, input_run_id) DO NOTHING',
