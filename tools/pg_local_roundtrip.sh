@@ -315,4 +315,29 @@ if [[ "${NM_DAILY_PASSED}" -lt 3 ]]; then
 fi
 echo "order-counts: db ${NM_DAILY_PASSED} tests (rows per day x nmId, sums vs cabinet, replay, delete_run, rls)"
 
+# Story 4.1 (AD-19): the detector as a step of the brief run - ranked, schema-valid
+# signals on fact_nm_daily/dim_nm_subject through the norm LOGIN role, none when
+# the brief is not ok, the read runs in run_inputs, deterministic snapshot. Python,
+# self-skips without the DSNs; a silent skip must not pass for green here.
+DETECTOR_LOG="${WORK}/detector-db-tests.log"
+echo "pg-roundtrip: detector db-tests (PROXIMA_TEST_DSN_NORM)"
+if ! (cd "${REPO_ROOT}" && uv run --python 3.14 --project services/control-plane --extra test \
+      pytest services/control-plane/tests/detector/test_detector_db.py -q) >"${DETECTOR_LOG}" 2>&1; then
+  echo "pg-roundtrip: FAIL (detector db-tests)" >&2
+  cat "${DETECTOR_LOG}" >&2
+  exit 1
+fi
+if grep -q "skipped" "${DETECTOR_LOG}"; then
+  echo "pg-roundtrip: FAIL (detector db-tests skipped while a DSN was available)" >&2
+  cat "${DETECTOR_LOG}" >&2
+  exit 1
+fi
+DETECTOR_PASSED="$(sed -n 's/^\([0-9][0-9]*\) passed.*$/\1/p' "${DETECTOR_LOG}" | tail -1)"
+if [[ "${DETECTOR_PASSED:-0}" -lt 5 ]]; then
+  echo "pg-roundtrip: FAIL (detector db-tests reported ${DETECTOR_PASSED:-0} passed, expected at least 5)" >&2
+  cat "${DETECTOR_LOG}" >&2
+  exit 1
+fi
+echo "detector: db signals on nm facts, none when brief not ok (${DETECTOR_PASSED} tests)"
+
 echo "pg-roundtrip: PASS"
