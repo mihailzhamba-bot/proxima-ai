@@ -46,12 +46,24 @@ readonly RETRIEVED_AT="2026-08-31T15:53:41Z"
 # Runbook §3 / AC Story 1.13 (CP-1): overlap tail from 27.08.
 readonly DATE_FROM="2026-08-27"
 
-# Runbook §4 reference sums: docs/state/API-FACTS.md, «Эталоны недельных сумм W10/W35»
-# (recorded 08.09.2026 from SPEC.md:33 / epics.md:29 of 30.08.2026; W10 revenue with kopecks
-# from the 08.09 recompute of the 30.08 fixture, SPEC/epics keep the rounded «700 860»). ISO
-# weeks: W10 = 2026-03-02..2026-03-08, W35 = 2026-08-24..2026-08-30.
+# Runbook §4 references: docs/state/API-FACTS.md, «Эталоны недельных сумм W10/W35» and «Что
+# означают эталоны» (rule of Mike, 08.09.2026 ~13:40 UTC). W10 (ISO 2026-03-02..2026-03-08)
+# is the 30.08 fixture recomputed with the glossary formulas (kopecks from the 08.09 recompute;
+# SPEC/epics keep the rounded «700 860») and is compared as a week sum. W35
+# (2026-08-24..2026-08-30) is never compared as a week: days 24-26.08 lie before the live tail
+# (DATE_FROM) and must equal the loaded 31.08 pair day by day
+# (calendar_day|orders_count|cancelled_count|revenue_rub - jq over the pair, 08.09; the stand's
+# fact_cabinet_daily_current gave the same); days DATE_FROM..W35_LAST_DAY are rewritten by the
+# tail and must equal the latest observations of the stand itself (stg_wb_orders_latest grouped
+# by the Moscow day of payload.date, isCancel not-true / true) - an internal-consistency check
+# without an external constant. Any mismatch = gate not passed.
 readonly W10_EXPECTED="W10|649|700860.50"
-readonly W35_EXPECTED="W35|225|263089.00"
+readonly -a W35_DAYS_EXPECTED=(
+  "2026-08-24|55|6|62146.87"
+  "2026-08-25|40|7|29247.90"
+  "2026-08-26|28|4|44956.00"
+)
+readonly W35_LAST_DAY="2026-08-30"
 
 DRY_RUN=false
 LIVE=false
@@ -451,11 +463,36 @@ do_steps() {
 
 # --- check: runbook §4 numbers and ledger state ---------------------------------------------
 
-readonly SUMS_SQL="SELECT set_config('proxima.tenant_id','${TENANT}',false);
+readonly W10_SQL="SELECT set_config('proxima.tenant_id','${TENANT}',false);
 SELECT 'W10', sum(orders_count), sum(revenue_rub) FROM fact_cabinet_daily_current
-  WHERE tenant_id='${TENANT}' AND calendar_day BETWEEN '2026-03-02' AND '2026-03-08';
-SELECT 'W35', sum(orders_count), sum(revenue_rub) FROM fact_cabinet_daily_current
-  WHERE tenant_id='${TENANT}' AND calendar_day BETWEEN '2026-08-24' AND '2026-08-30';"
+  WHERE tenant_id='${TENANT}' AND calendar_day BETWEEN '2026-03-02' AND '2026-03-08';"
+
+# Days before the live tail: one row per day, compared with W35_DAYS_EXPECTED (the 31.08 pair).
+readonly W35_PAIR_SQL="SELECT set_config('proxima.tenant_id','${TENANT}',false);
+SELECT calendar_day, orders_count, cancelled_count, revenue_rub FROM fact_cabinet_daily_current
+  WHERE tenant_id='${TENANT}' AND calendar_day BETWEEN '2026-08-24' AND '2026-08-26' ORDER BY calendar_day;"
+
+# Days rewritten by the tail: facts against the latest observations. Moscow day = the first 10
+# characters of the zoneless WB date (services/collector/src/wb/msk-day.ts, AD-7);
+# orders_count counts rows with isCancel != true, cancelled_count rows with isCancel = true
+# (services/collector/src/facts/cabinet-daily.ts). 'missing' marks a side without a row.
+readonly W35_TAIL_SQL="SELECT set_config('proxima.tenant_id','${TENANT}',false);
+WITH days AS (
+  SELECT generate_series(DATE '${DATE_FROM}', DATE '${W35_LAST_DAY}', INTERVAL '1 day')::date AS calendar_day),
+obs AS (
+  SELECT substr(payload->>'date', 1, 10)::date AS calendar_day,
+         count(*) FILTER (WHERE (payload->>'isCancel')::boolean IS NOT TRUE) AS orders_count,
+         count(*) FILTER (WHERE (payload->>'isCancel')::boolean IS TRUE) AS cancelled_count
+    FROM stg_wb_orders_latest
+   WHERE tenant_id='${TENANT}' AND substr(payload->>'date', 1, 10) BETWEEN '${DATE_FROM}' AND '${W35_LAST_DAY}'
+   GROUP BY 1)
+SELECT d.calendar_day,
+       coalesce(f.orders_count::text, 'missing'), coalesce(f.cancelled_count::text, 'missing'),
+       coalesce(o.orders_count::text, 'missing'), coalesce(o.cancelled_count::text, 'missing')
+  FROM days d
+  LEFT JOIN fact_cabinet_daily_current f ON f.tenant_id='${TENANT}' AND f.calendar_day = d.calendar_day
+  LEFT JOIN obs o ON o.calendar_day = d.calendar_day
+ ORDER BY d.calendar_day;"
 
 readonly STATE_SQL="SET proxima.tenant_id = '${TENANT}';
 SELECT count(*) AS migrations, max(version) AS max_version FROM schema_migrations;
@@ -466,34 +503,64 @@ SELECT count(*) AS norm_rows, max(evaluation_day) AS last_evaluation_day, count(
   FROM norm_daily_current WHERE tenant_id='${TENANT}';
 SELECT brief_day, status, run_id FROM brief_current WHERE tenant_id='${TENANT}';"
 
+# One verdict line of the §4 table; returns 1 on mismatch. An empty or 'missing' actual is a
+# FAIL even when both sides read the same (no row on either side is not agreement).
+check_row() {
+  local scope="$1" actual="$2" expected="$3" source="$4"
+  local verdict=PASS
+  [[ -n "${actual}" && "${actual}" == "${expected}" && "${actual}" != *missing* ]] || verdict=FAIL
+  printf '%-12s %-24s %-24s %s\n' "${scope}" "${actual:-<none>}" "${expected}" "${verdict} (${source})"
+  [[ "${verdict}" == PASS ]]
+}
+
+# The days DATE_FROM..W35_LAST_DAY, one per line (bash side of the generate_series above, so a
+# query that returns nothing fails every day instead of passing an empty table).
+tail_days() {
+  local day="${DATE_FROM}"
+  while [[ "${day}" < "${W35_LAST_DAY}" || "${day}" == "${W35_LAST_DAY}" ]]; do
+    printf '%s\n' "${day}"
+    day="$(date -u -d "${day} + 1 day" +%F)"
+  done
+}
+
 do_check() {
   require_initialized
   note "check: ledger, data status, norm, brief for ${TENANT}"
   run_sql "${STATE_SQL}" -q
-  note "check: W10/W35 sums vs docs/state/API-FACTS.md (expected ${W10_EXPECTED} and ${W35_EXPECTED})"
+  note "check: runbook §4 - W10 exact (${W10_EXPECTED#W10|}); days 2026-08-24..2026-08-26 = the 31.08 pair; days ${DATE_FROM}..${W35_LAST_DAY} = stg_wb_orders_latest (docs/state/API-FACTS.md, «Что означают эталоны»)"
   if [[ "${DRY_RUN}" == true ]]; then
-    run_sql "${SUMS_SQL}" -tA
+    run_sql "${W10_SQL}" -tA
+    run_sql "${W35_PAIR_SQL}" -tA
+    run_sql "${W35_TAIL_SQL}" -tA
     return 0
   fi
 
-  local sums w10 w35 status=0
-  sums="$(sql_capture "${SUMS_SQL}")"
-  w10="$(printf '%s\n' "${sums}" | grep '^W10|' || true)"
-  w35="$(printf '%s\n' "${sums}" | grep '^W35|' || true)"
-  printf '%-6s %-22s %-22s %s\n' week actual expected verdict
-  if [[ "${w10}" == "${W10_EXPECTED}" ]]; then
-    printf '%-6s %-22s %-22s %s\n' W10 "${w10#W10|}" "${W10_EXPECTED#W10|}" PASS
-  else
-    printf '%-6s %-22s %-22s %s\n' W10 "${w10#W10|}" "${W10_EXPECTED#W10|}" FAIL
-    status=1
-  fi
-  if [[ "${w35}" == "${W35_EXPECTED}" ]]; then
-    printf '%-6s %-22s %-22s %s\n' W35 "${w35#W35|}" "${W35_EXPECTED#W35|}" PASS
-  else
-    printf '%-6s %-22s %-22s %s\n' W35 "${w35#W35|}" "${W35_EXPECTED#W35|}" "FAIL (API-FACTS UNKNOWN: reference from the incomplete 30.08 snapshot; compare days 24-29.08 one by one before judging)"
-    status=1
-  fi
-  [[ "${status}" -eq 0 ]] || fail "check: reference sums differ (runbook §4: gate not passed)"
+  local status=0
+  printf '%-12s %-24s %-24s %s\n' scope actual expected verdict
+
+  local w10
+  w10="$(sql_capture "${W10_SQL}" | grep '^W10|' || true)"
+  check_row W10 "${w10#W10|}" "${W10_EXPECTED#W10|}" "API-FACTS, fixture recompute" || status=1
+
+  local pair_rows expected day actual
+  pair_rows="$(sql_capture "${W35_PAIR_SQL}" | grep '^2026-' || true)"
+  for expected in "${W35_DAYS_EXPECTED[@]}"; do
+    day="${expected%%|*}"
+    actual="$(printf '%s\n' "${pair_rows}" | grep "^${day}|" || true)"
+    check_row "${day}" "${actual#"${day}|"}" "${expected#*|}" "31.08 pair: orders|cancelled|revenue" || status=1
+  done
+
+  local tail_rows row fact_side obs_side
+  tail_rows="$(sql_capture "${W35_TAIL_SQL}" | grep '^2026-' || true)"
+  while IFS= read -r day; do
+    row="$(printf '%s\n' "${tail_rows}" | grep "^${day}|" || true)"
+    row="${row#"${day}|"}"
+    fact_side="$(printf '%s' "${row}" | cut -d'|' -f1,2)"
+    obs_side="$(printf '%s' "${row}" | cut -d'|' -f3,4)"
+    check_row "${day}" "${fact_side}" "${obs_side:-<none>}" "fact vs stg_wb_orders_latest: orders|cancelled" || status=1
+  done < <(tail_days)
+
+  [[ "${status}" -eq 0 ]] || fail "check: runbook §4 numbers differ (gate not passed)"
   note "check: done"
 }
 
