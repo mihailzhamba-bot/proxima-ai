@@ -284,4 +284,35 @@ if [[ "${FUNNEL_PASSED}" -lt 2 ]]; then
 fi
 echo "funnel_v3: db ${FUNNEL_PASSED} tests (21 obs, replay 0, versions, coverage, rls)"
 
+# Story 4.0 (AD-19): the collect run on the fixtures versions fact_nm_daily and
+# dim_nm_subject - one row per (day, nmId) with a category, per-nm sums equal
+# to the cabinet day, replay, transitive delete_run, RLS matrix - through the
+# collector/norm/webapp/janitor LOGIN roles. The glob above already ran the
+# file; this step refuses a silent skip.
+echo "pg-roundtrip: nm-daily db-tests (PROXIMA_TEST_DSN_COLLECTOR, _NORM, _WEBAPP, _JANITOR)"
+NM_DAILY_LOG="${WORK}/nm-daily-db-tests.log"
+if ! (cd "${REPO_ROOT}" && \
+      npm --workspace @proxima/collector exec -- tsx --test --test-concurrency=1 tests/nm-daily.db.test.ts) >"${NM_DAILY_LOG}" 2>&1; then
+  echo "pg-roundtrip: FAIL (nm-daily db-tests)" >&2
+  cat "${NM_DAILY_LOG}" >&2
+  exit 1
+fi
+if grep -q "^# fail [1-9]" "${NM_DAILY_LOG}" || grep -q "^not ok" "${NM_DAILY_LOG}"; then
+  echo "pg-roundtrip: FAIL (nm-daily db-tests reported failures)" >&2
+  cat "${NM_DAILY_LOG}" >&2
+  exit 1
+fi
+if grep -qE "^# skipped [1-9]" "${NM_DAILY_LOG}"; then
+  echo "pg-roundtrip: FAIL (nm-daily db-tests skipped while the DSNs were available)" >&2
+  cat "${NM_DAILY_LOG}" >&2
+  exit 1
+fi
+NM_DAILY_PASSED="$(sed -n 's/^# pass \([0-9][0-9]*\)$/\1/p' "${NM_DAILY_LOG}" | awk '{s+=$1} END {printf "%d", s}')"
+if [[ "${NM_DAILY_PASSED}" -lt 3 ]]; then
+  echo "pg-roundtrip: FAIL (nm-daily db-tests reported ${NM_DAILY_PASSED:-0} passed, expected at least 3)" >&2
+  cat "${NM_DAILY_LOG}" >&2
+  exit 1
+fi
+echo "order-counts: db ${NM_DAILY_PASSED} tests (rows per day x nmId, sums vs cabinet, replay, delete_run, rls)"
+
 echo "pg-roundtrip: PASS"

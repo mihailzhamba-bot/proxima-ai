@@ -5,7 +5,8 @@ import { Pool, type PoolClient } from 'pg';
 
 import { BusinessSignalRawStore } from '../business-signal/raw-store.js';
 import { assertLeastPrivilegeToken, readPrivateSecret } from '../business-signal/secrets.js';
-import { aggregateCabinetDaily, type AggregateCabinetDailyResult } from '../facts/cabinet-daily.js';
+import { aggregateCabinetDaily, loadLatestObservations, type AggregateCabinetDailyResult } from '../facts/cabinet-daily.js';
+import { writeNmDaily, type WriteNmDailyResult } from '../facts/nm-daily.js';
 import { sha256 } from '../intake/manifest.js';
 import { readImportedCasArtifact, type ImportedCasManifest } from '../wb/cas-artifact.js';
 import { type Clock, parseJsonArray, WbClient, WbClientError } from '../wb/client.js';
@@ -40,6 +41,7 @@ export interface BackfillResult {
   readonly orders: InsertObservationsResult;
   readonly sales: InsertObservationsResult;
   readonly aggregate: AggregateCabinetDailyResult;
+  readonly nmDaily: WriteNmDailyResult;
 }
 
 export function parseBackfillArgs(argv: readonly string[]): BackfillArgs {
@@ -128,7 +130,7 @@ async function insertImportedArtifact(pool: Pool, tenantId: string, runId: strin
 }
 
 async function writeRun(ledger: RunLedger, tenantId: string, runId: string, orders: readonly ObservationSet[], sales: readonly ObservationSet[], floor: string, runDay: string) {
-  let result: { orders: InsertObservationsResult; sales: InsertObservationsResult; aggregate: AggregateCabinetDailyResult } | undefined;
+  let result: { orders: InsertObservationsResult; sales: InsertObservationsResult; aggregate: AggregateCabinetDailyResult; nmDaily: WriteNmDailyResult } | undefined;
   await ledger.succeed(tenantId, runId, async (client: PoolClient) => {
     const orderParts: InsertObservationsResult[] = [];
     const saleParts: InsertObservationsResult[] = [];
@@ -137,8 +139,11 @@ async function writeRun(ledger: RunLedger, tenantId: string, runId: string, orde
     const sum = (parts: readonly InsertObservationsResult[]): InsertObservationsResult => parts.reduce((total, part) => ({ received: total.received + part.received, inserted: total.inserted + part.inserted, skipped: total.skipped + part.skipped }), { received: 0, inserted: 0, skipped: 0 });
     const orderResult = sum(orderParts);
     const saleResult = sum(saleParts);
-    const aggregate = await aggregateCabinetDaily(client, { tenantId, runId, floor, runDay });
-    result = { orders: orderResult, sales: saleResult, aggregate };
+    // One SELECT of the _latest views feeds both writers (AD-19).
+    const observations = await loadLatestObservations(client, tenantId);
+    const aggregate = await aggregateCabinetDaily(client, { tenantId, runId, floor, runDay, observations });
+    const nmDaily = await writeNmDaily(client, { tenantId, runId, floor, runDay, observations });
+    result = { orders: orderResult, sales: saleResult, aggregate, nmDaily };
   });
   if (!result) throw new Error('backfill transaction did not produce a result');
   return result;
@@ -167,7 +172,7 @@ export async function runBackfill(args: BackfillArgs, deps: BackfillDeps = {}): 
   try {
     runId = await ledger.open({ tenantId: args.tenantId, kind: 'backfill', gitSha: env.PROXIMA_GIT_SHA, imageId: env.PROXIMA_IMAGE_ID });
     deps.onRunOpened?.(runId);
-    const log = (step: string, msg: string, extra: Record<string, unknown> = {}, level: 'info' | 'error' = 'info') => logRunStep({ level, run_id: runId, tenant_id: args.tenantId, kind: 'backfill', step, msg, ...extra });
+    const log = (step: string, msg: string, extra: Record<string, unknown> = {}, level: 'info' | 'warn' | 'error' = 'info') => logRunStep({ level, run_id: runId, tenant_id: args.tenantId, kind: 'backfill', step, msg, ...extra });
     try {
       let orders: ObservationSet[];
       let sales: ObservationSet[];
@@ -210,7 +215,10 @@ export async function runBackfill(args: BackfillArgs, deps: BackfillDeps = {}): 
         runDay = mskToday(new Date(deps.clock?.now() ?? Date.now()));
       }
       const written = await writeRun(ledger, args.tenantId, runId, orders, sales, floor, runDay);
-      log('complete', 'backfill committed', { run_day: runDay, floor, orders_inserted: written.orders.inserted, sales_inserted: written.sales.inserted, days: written.aggregate.days });
+      log('complete', 'backfill committed', { run_day: runDay, floor, orders_inserted: written.orders.inserted, sales_inserted: written.sales.inserted, days: written.aggregate.days, nm_subjects: written.nmDaily.subjects, nm_rows: written.nmDaily.rows });
+      // AD-19: the check per_nm_sums_vs_cabinet is one AD-17 line and never blocks the run.
+      const passed = written.nmDaily.check.status === 'PASS';
+      log('quality_check', passed ? 'per-nm sums equal the cabinet day' : 'per-nm sums differ from the cabinet day (threshold UNKNOWN until OQ-7)', { ...written.nmDaily.check }, passed ? 'info' : 'warn');
       return { runId, tenantId: args.tenantId, runDay, ...written };
     } catch (error) {
       log('failed', 'backfill failed; marking FAILED', { code: errorCode(error) }, 'error');
@@ -222,7 +230,7 @@ export async function runBackfill(args: BackfillArgs, deps: BackfillDeps = {}): 
 
 async function main(): Promise<void> {
   const result = await runBackfill(parseBackfillArgs(process.argv.slice(2)));
-  process.stdout.write(`${JSON.stringify({ run_id: result.runId, tenant_id: result.tenantId, kind: 'backfill', run_day: result.runDay, orders: result.orders, sales: result.sales, aggregate: result.aggregate })}\n`);
+  process.stdout.write(`${JSON.stringify({ run_id: result.runId, tenant_id: result.tenantId, kind: 'backfill', run_day: result.runDay, orders: result.orders, sales: result.sales, aggregate: result.aggregate, nm_daily: result.nmDaily })}\n`);
 }
 
 if (process.argv[1] && /[\\/]backfill\.(?:ts|js)$/.test(process.argv[1])) {
