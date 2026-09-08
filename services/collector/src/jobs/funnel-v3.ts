@@ -5,7 +5,7 @@
  *
  * Flow: open the run RUNNING (AD-3); active nmIds = distinct nmId of
  * `stg_wb_orders_latest` ordered on the last 30 full Moscow days; request the
- * window `[run_day-6, run_day-1]` in batches of at most 20 nmIds through the
+ * WB window `[run_day-6, run_day]` in batches of at most 20 nmIds through the
  * single WB client (every response lands in CAS + wb_raw_artifacts before it
  * is parsed, 429 waits on X-Ratelimit-Retry with at most 3 retries); each
  * received batch is parsed, checked for full coverage and committed on its own,
@@ -268,7 +268,12 @@ export async function runFunnelV3(args: FunnelV3Args, deps: FunnelV3Deps): Promi
               throw error;
             }
           });
-          for (const row of parsed.rows) productDays.push({ nmId: row.nmId, calendarDay: row.calendarDay });
+          // WB returns the incomplete run day as part of its confirmed
+          // seven-day window. Keep that observation, but AD-7 permits fact
+          // versions only for full days strictly before run_day.
+          for (const row of parsed.rows) {
+            if (row.calendarDay < runDay) productDays.push({ nmId: row.nmId, calendarDay: row.calendarDay });
+          }
           outcomes.push({ batch, nmIds: nmIds.length, received: written.received, inserted: written.inserted, skipped: written.skipped });
           log('batch', 'observations committed', { batch, batches_total: batches.length, nm_ids: nmIds.length, received: written.received, inserted: written.inserted, skipped: written.skipped });
         } catch (error) {

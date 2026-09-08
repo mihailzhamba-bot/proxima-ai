@@ -61,11 +61,11 @@ test('funnel args: tenant and analytics token file are required; run-day and rea
   assert.throws(() => parseFunnelV3Args(['--tenant', '--analytics-token-file']), /requires a value/);
 });
 
-test('funnel window is [run_day-6, run_day-1]: six full Moscow days, never the run day', () => {
-  assert.deepEqual(funnelWindow('2026-08-31'), { runDay: '2026-08-31', start: '2026-08-25', end: '2026-08-30' });
-  assert.deepEqual(funnelWindow('2026-09-03'), { runDay: '2026-09-03', start: '2026-08-28', end: '2026-09-02' });
-  assert.deepEqual(funnelWindow('2028-03-02'), { runDay: '2028-03-02', start: '2028-02-25', end: '2028-03-01' });
-  assert.deepEqual(windowDays(funnelWindow('2026-08-31')), ['2026-08-25', '2026-08-26', '2026-08-27', '2026-08-28', '2026-08-29', '2026-08-30']);
+test('funnel window is WB [today-6, today], where today is run_day in Moscow', () => {
+  assert.deepEqual(funnelWindow('2026-08-31'), { runDay: '2026-08-31', start: '2026-08-25', end: '2026-08-31' });
+  assert.deepEqual(funnelWindow('2026-09-03'), { runDay: '2026-09-03', start: '2026-08-28', end: '2026-09-03' });
+  assert.deepEqual(funnelWindow('2028-03-02'), { runDay: '2028-03-02', start: '2028-02-25', end: '2028-03-02' });
+  assert.deepEqual(windowDays(funnelWindow('2026-08-31')), ['2026-08-25', '2026-08-26', '2026-08-27', '2026-08-28', '2026-08-29', '2026-08-30', '2026-08-31']);
   assert.throws(() => funnelWindow('2026-02-30'), RangeError);
   assert.throws(() => funnelWindow('2026-8-31'), RangeError);
 });
@@ -92,12 +92,12 @@ test('funnel fixture parses 3 nmIds x 7 days into 21 traceable observations with
   assert.throws(() => parseFunnelV3(body, 'not-a-sha', funnelWindow('2026-08-31')), RangeError);
 });
 
-test('funnel parser: run_day and later are never observed, earlier days WB returned are kept as evidence', async () => {
+test('funnel parser: run_day is observed, later days are dropped, earlier days WB returned are kept as evidence', async () => {
   const fixture = await fixtureJson();
   const closed = parse(fixture, '2026-08-30');
-  assert.equal(closed.length, 18);
-  assert.ok(closed.every((row) => row.calendarDay < '2026-08-30'));
-  assert.equal(parse(fixture, '2026-08-24').length, 0, 'a window entirely before the fixture observes nothing');
+  assert.equal(closed.length, 21);
+  assert.ok(closed.every((row) => row.calendarDay <= '2026-08-30'));
+  assert.equal(parse(fixture, '2026-08-24').length, 3, 'the run day is retained as an observation');
   assert.equal(parse(fixture, '2026-09-10').length, 21, 'days before the window start are still WB evidence');
 });
 
@@ -126,15 +126,15 @@ test('funnel batching is sorted, unique and never exceeds 20 nmIds per request',
 
 test('funnel request body carries the window, at most 20 nmIds and daily aggregation', () => {
   const window = funnelWindow('2026-08-31');
-  assert.deepEqual(funnelRequestBody(window, [3, 1]), { selectedPeriod: { start: '2026-08-25', end: '2026-08-30' }, nmIds: [3, 1], aggregationLevel: 'day' });
+  assert.deepEqual(funnelRequestBody(window, [3, 1]), { selectedPeriod: { start: '2026-08-25', end: '2026-08-31' }, nmIds: [3, 1], aggregationLevel: 'day' });
   assert.throws(() => funnelRequestBody(window, []), RangeError);
   assert.throws(() => funnelRequestBody(window, Array.from({ length: 21 }, (_, index) => index + 1)), RangeError);
 });
 
 test('funnel coverage: every requested nmId on every window day, nothing twice, nothing unrequested', async () => {
   const fixture = await fixtureJson();
-  const window = funnelWindow('2026-08-31');
-  const rows = parse(fixture, '2026-08-31');
+  const window = funnelWindow('2026-08-30');
+  const rows = parse(fixture, '2026-08-30');
   assert.doesNotThrow(() => assertBatchCoverage(rows, FIXTURE_NM_IDS, window));
   assert.throws(() => assertBatchCoverage(rows.filter((row) => row.calendarDay !== '2026-08-27'), FIXTURE_NM_IDS, window), /incomplete coverage/);
   assert.throws(() => assertBatchCoverage(rows, [...FIXTURE_NM_IDS, 12345004], window), /incomplete coverage: nmId 12345004/);

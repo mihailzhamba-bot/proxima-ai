@@ -20,7 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -94,11 +94,11 @@ def check_migration() -> None:
 
 def check_job() -> None:
     parser = read(PARSER)
-    require("FUNNEL_WINDOW_START_OFFSET = 6" in parser and "end: shiftDay(runDay, -1)" in parser, "window must be [run_day-6, run_day-1] (AC, API-FACTS)")
+    require("FUNNEL_WINDOW_START_OFFSET = 6" in parser and "end: runDay" in parser, "window must be WB [run_day-6, run_day] (Mike 08.09, API-FACTS)")
     require("maxPerPage ?? 20" in parser and "FUNNEL_BATCH_SIZE" in parser, "batches must be capped at 20 nmIds (AD-4)")
     require("ACTIVE_NM_ID_DAYS = 30" in parser, "active nmIds come from the last 30 days (AC)")
     require("ON CONFLICT (tenant_id, nm_id, calendar_day, source, canonical_sha256) DO NOTHING" in parser, "replay of the same canonical payload is a no-op (AD-5)")
-    require("if (day > window.end) return;" in parser, "records on or after run_day are never observed (AD-7)")
+    require("if (day > window.end) return;" in parser, "records after run_day are never observed")
     facts = read(FACTS)
     require("JOIN stg_wb_funnel_latest l" in facts and "INSERT INTO fact_funnel_daily" in facts, "versions are built from stg_wb_funnel_latest (AD-5)")
     require("INSERT INTO collector_run_inputs" in facts, "versions record their input runs (AD-3)")
@@ -160,22 +160,21 @@ def replay_fixture() -> tuple[int, int, bool, int]:
     latest = max((key for key in store if key[0] == changed[0]["product"]["nmId"] and key[1] == record["date"]), key=lambda key: store[key]["openCount"])
     require(store[latest]["openCount"] == record["openCount"], "the newest observation must carry the changed payload")
 
-    # `= run_day` is never versioned: on 2026-08-30 the window ends on 08-29.
+    # `= run_day` is observed but never versioned (AD-7).
     run_day = date.fromisoformat(payload[0]["history"][-1]["date"])
-    window_end = run_day - timedelta(days=1)
-    in_window = sum(1 for product in payload for entry in product["history"] if date.fromisoformat(entry["date"]) <= window_end)
-    require(in_window == FIXTURE_NM_IDS * (FIXTURE_DAYS - 1), "the run day must fall outside the window")
-    return observations, replay, versions, in_window
+    versionable = sum(1 for product in payload for entry in product["history"] if date.fromisoformat(entry["date"]) < run_day)
+    require(versionable == FIXTURE_NM_IDS * (FIXTURE_DAYS - 1), "the run day must not be versionable")
+    return observations, replay, versions, versionable
 
 
 def main() -> None:
     check_migration()
     check_job()
     check_units()
-    observations, replay, versions, in_window = replay_fixture()
+    observations, replay, versions, versionable = replay_fixture()
     require(replay == 0, f"replay must add nothing, added {replay}")
     require(versions, "changed payload must become a new version")
-    require(in_window == 18, "run day exclusion drifted")
+    require(versionable == 18, "run day version exclusion drifted")
     print(f"funnel_v3: {observations} obs, replay {replay}, changed payload versions")
 
 
