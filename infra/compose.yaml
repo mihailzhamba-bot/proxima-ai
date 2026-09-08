@@ -33,6 +33,10 @@ services:
       dockerfile: services/collector/Dockerfile
     profiles: ["jobs"]
     environment:
+      # AD-6 / D36 C1: runners set provenance on the host; declare it in compose once so every
+      # ledger-writing invocation receives it without duplicating `--env` in each runner.
+      PROXIMA_GIT_SHA: ${PROXIMA_GIT_SHA:-}
+      PROXIMA_IMAGE_ID: ${PROXIMA_IMAGE_ID:-}
       COLLECTOR_DATABASE_URI_FILE: /run/secrets/proxima_collector_uri
       PROXIMA_RAW_DIR: /srv/proxima-ai/raw
       # AD-4: the WB transport is fail-closed (services/collector/src/wb/transport.ts); only this
@@ -60,6 +64,10 @@ services:
       dockerfile: services/control-plane/Dockerfile
     profiles: ["jobs"]
     environment:
+      # AD-6 / D36 C1: runners set provenance on the host; declare it in compose once so every
+      # ledger-writing invocation receives it without duplicating `--env` in each runner.
+      PROXIMA_GIT_SHA: ${PROXIMA_GIT_SHA:-}
+      PROXIMA_IMAGE_ID: ${PROXIMA_IMAGE_ID:-}
       NORM_DATABASE_URI_FILE: /run/secrets/proxima_norm_uri
     secrets:
       - proxima_norm_uri
@@ -81,6 +89,10 @@ services:
       dockerfile: services/control-plane/Dockerfile
     profiles: ["jobs"]
     environment:
+      # AD-6 / D36 C1: this service writes funnel_csv_download runs; compose carries host
+      # provenance for all invocations even when a runner does not add explicit `--env` flags.
+      PROXIMA_GIT_SHA: ${PROXIMA_GIT_SHA:-}
+      PROXIMA_IMAGE_ID: ${PROXIMA_IMAGE_ID:-}
       POSTGRES_USER_FILE: /run/secrets/postgres_user
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       PROXIMA_RAW_DIR: /srv/proxima-ai/raw
