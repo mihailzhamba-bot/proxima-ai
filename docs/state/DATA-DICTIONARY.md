@@ -1,17 +1,16 @@
 # Словарь данных
 
-Составлен 03.09.2026 по миграциям `db/migrations/001`-`011` в `main` и по плану миграций `012`-`017` из `ARCHITECTURE-SPINE.md` (AD-14); 08.09.2026 добавлена реальная миграция `018` (AD-19, Story 4.0). Назначение: одно место, где видно, какая таблица зачем нужна, кто в неё пишет, кто читает и чем она удаляется. До этого сведения жили прозой внутри правил спайна и в AC историй.
+Составлен 03.09.2026; 08.09.2026 добавлена миграция `018` (AD-19, Story 4.0). Обновлено 09.09.2026 по `main` `1497863`: миграции `012`-`017` описаны по файлам `db/migrations/` - план спайна AD-14 исполнен, отдельный раздел «Планируемые таблицы лестницы» снят. Назначение: одно место, где видно, какая таблица зачем нужна, кто в неё пишет, кто читает и чем она удаляется. До этого сведения жили прозой внутри правил спайна и в AC историй.
 
 ## Три состояния схемы одновременно - читать внимательно
 
 | Где | Версия | Что это значит |
 |---|---|---|
-| Боевая база на VPS | `schema_migrations` = 6 | Применены только `001`-`006`. RLS выключен, политик ноль, ролей спайна нет. Проверено 03.09 |
-| Репозиторий `main` | `011` | Есть `007`-`011`, включая реестр прогонов и роли `proxima_job_*` |
-| Рабочее дерево `sunfish` | `010` | Отстаёт от `main` на 22 коммита: `011`, контракты `norm`/`brief`/`cabinet-daily` локально не видны |
-| План спайна | `016` | `012`-`016` пишутся историями 1.4, 1.6, 2.3, 2.4, 3.1 |
+| Боевая база на VPS | `schema_migrations` = 6 | Применены только `001`-`006`. RLS выключен, политик ноль, ролей спайна нет. Проверено 08.09 13:09 UTC (`RELEASE-READINESS-1.14.md` §5); накат `007`-`018` - §2 runbook 1.14, после слова «деплой» (D35) |
+| Репозиторий `main` | `018` | Все миграции `001`-`018`, включая лестницу `012`-`017` |
+| Стенд репетиции `proxima-rehearsal` | `18` | Одноразовый стенд репетиции (D35, `infra/compose.rehearsal.yaml`, postgres `127.0.0.1:5434`); не часть контура |
 
-Практическое следствие: SQL, работающий на боевой базе, может не работать на локальном PostgreSQL после `make verify`, и наоборот. Первый релиз M-01 применяет `007`-`011` на боевой (порядок - AC Story 1.13).
+Практическое следствие: SQL, работающий на боевой базе (схема 6), может не работать на локальном PostgreSQL после `make verify` (схема 18), и наоборот. Первый релиз M-01 применяет `007`-`018` на боевую и ждёт `18\|18` (§2 runbook `docs/operations/release-m01.md`).
 
 ## Правила, общие для всех таблиц лестницы
 
@@ -21,7 +20,7 @@
 - Календарный день - по полю WB `date` в Europe/Moscow через единственный helper; `CURRENT_DATE` в `db/` запрещён (AD-7).
 - Миграции additive-only, с self-checksum; ветка, мержащаяся второй, перенумеровывает свои файлы (AD-14).
 
-## Существующие таблицы (миграции 001-011, 018)
+## Существующие таблицы (миграции 001-018)
 
 | Таблица | Миграция | Назначение | Ключ | Пишет | Читает |
 |---|---|---|---|---|---|
@@ -49,27 +48,26 @@
 | `collector_runs` | 011 | **Реестр прогонов**: вид (`collect`, `backfill`, `funnel_v3`, `funnel_csv_*`, `norm`, `brief`), статус, `git_sha`, `image_id` | `run_id` | все job-ы | единственный источник статуса прогона (AD-3, AD-17) |
 | `collector_run_inputs` | 011 | Связь «прогон использовал прогон» - основа транзитивного отката | `(tenant_id, run_id, input_run_id)` | job-ы | `delete_run.py` |
 | `wb_raw_artifacts` | 011 | Артефакт ответа WB: эндпоинт, статус, заголовки, хэш, локатор, попытка | `artifact_id` | `recording-client` | бэкфилл, SourceRef, сверка |
+| `stg_wb_orders_obs` | 012 (Story 1.4) | Наблюдения заказов: строка = одно наблюдение `srid` на его WB `lastChangeDate`; append-only - повтор того же ключа с тем же `canonical_sha256` это no-op, другой payload - `WB_SCHEMA_DRIFT`; колонки `run_id`, `content_sha256`, `canonical_sha256`, `payload jsonb`, `observed_at` | `(tenant_id, srid, last_change_at)` | `collect`, `backfill` - `proxima_job_collector` (SELECT, INSERT); RLS вкл., политики collector и janitor `FOR ALL` | агрегатор дня - только через `stg_wb_orders_latest`
+| `stg_wb_sales_obs` | 012 | То же по продажам: `sale_id` вместо `srid` | `(tenant_id, sale_id, last_change_at)` | те же, что у `stg_wb_orders_obs` | агрегатор дня через `stg_wb_sales_latest`
+| `stg_wb_orders_latest`, `stg_wb_sales_latest` | 012 | Последнее наблюдение по ключу: `DISTINCT ON` с `ORDER BY last_change_at DESC`; намеренно игнорируют статус прогона - наблюдение доказательство, как бы прогон ни кончился | view (`security_invoker`) | - | агрегатор дня (единственный вход агрегатора, Story 1.6), сверки
+| `fact_cabinet_daily` | 013 (Story 1.6) | Дневной ряд кабинета: `orders_count`, `cancelled_count`, `sales_count`, `returns_count` (целые ≥ 0), `revenue_rub`, `forpay_rub` (`numeric(14,2)`), `evidence_sha256[]` | `(tenant_id, calendar_day, run_id)` | агрегатор из `_latest` - `proxima_job_collector` (SELECT, INSERT, UPDATE); RLS вкл., collector и janitor `FOR ALL`, norm и webapp `FOR SELECT` | `norm`, `brief`, webapp - `proxima_job_norm` и `proxima_webapp_readonly` (SELECT)
+| `fact_cabinet_daily_current` | 013 | Версия дня из последнего успешного прогона: правило AD-3, `finished_at DESC`, затем `run_id DESC` | view (`security_invoker`) | - | норма, сводка, теневой пересчёт (Story 6.1), метрики webapp
+| `data_status_current` | 013 | Свежесть данных кабинета: `last_full_day` (max день в `_current`), `collected_at` (последний SUCCEEDED `collect`/`backfill`), `stale` (сбор старше 24 ч или день старше вчерашнего по МСК; нет данных - `stale`); строки отдаёт только при установленном GUC `proxima.tenant_id` | view (`security_invoker`) | - | экран `/brief`, алерты, метрики webapp
+| `norm_daily` + `_current` | 014 (Story 2.3) | Норма кабинета на день по метрике `orders` или `revenue`: `window_days` = 14, `sample_days` 0-14, `value numeric(14,2)`, `status ok\|insufficient` (CHECK: `ok` ⇔ `sample_days` = 14), `source_sha256[]`; `_current` - AD-3 по `(tenant_id, evaluation_day, metric)` | `(tenant_id, evaluation_day, metric, run_id)` | `norm` - `proxima_job_norm` (SELECT, INSERT, UPDATE); RLS вкл., norm `FOR ALL`, webapp `FOR SELECT`, janitor `FOR ALL` | сводка, детекторы; webapp - `proxima_webapp_readonly` (SELECT)
+| `brief_daily` + `brief_current` | 015 (Story 2.4, 4.1, 4.2) | Материализованная сводка дня по контракту `brief`; с Story 4.1 `payload.signals[]` заполняет шаг детектора SCN-001 того же прогона (AD-19): сигналы по SKU и предмету из `fact_nm_daily_current`/`dim_nm_subject_current`, только при `status = ok`, отдельного носителя у сигналов нет. С Story 4.2 `signals[]` отсортированы по `rub_assessment.value_rub` по убыванию (при равенстве - глубже падение, затем SKU раньше предмета, затем `nm_id`), рост числом в `deviation_pct`/`detection_data` и никогда не сигнал; `payload.threshold {value, source, date}` - порог из конфигурации control-plane (`services/control-plane/src/proxima_control_plane/detector/threshold.toml`, переопределение `PROXIMA_THRESHOLD_CONFIG_FILE`), пишется при любом статусе и дублируется в `detection_data` каждого сигнала (`threshold_pct`, `threshold_source`, `threshold_date`); до Story 4.4 все три `null` = порог не применяется, после - кандидаты с падением на порог или глубже | `(tenant_id, brief_day, run_id)`; `_current` - одна строка на кабинет (последний SUCCEEDED прогон) | `brief` (+ шаг детектора) - `proxima_job_norm` (SELECT, INSERT, UPDATE); webapp - `proxima_webapp_readonly` (SELECT); RLS вкл., norm `FOR ALL`, webapp `FOR SELECT`, janitor `FOR ALL` | экран `/brief`
 | `dim_nm_subject` + `_current` | 018 (AD-19, Story 4.0) | Справочник nmId по данным WB: предмет (`subject_name` - категория аномалии), `category_name`, бренд, артикул, `last_change_at` и хэш выигравшего наблюдения; версия на прогон для каждого nmId из `stg_wb_orders_latest ∪ stg_wb_sales_latest` (максимальный `last_change_at`, при равенстве заказ раньше продажи, затем больший ключ); `_current` - последний SUCCEEDED прогон по `(tenant_id, nm_id)` | `(tenant_id, nm_id, run_id)` | `collect`, `backfill` (та же транзакция, что кабинетный ряд, до `fact_nm_daily`) | адаптер детектора 4.1 (`proxima_job_norm`); webapp гранта не имеет (AD-9) |
 | `fact_nm_daily` + `_current` | 018 (AD-19, Story 4.0) | Дневной ряд по nmId: те же шесть колонок и формулы, что у `fact_cabinet_daily`, по `payload.nmId`; строка на каждый версионируемый день `[floor, run_day-1]` × каждый nmId справочника прогона, нули включительно (нет строки ⇔ день не версионирован, ноль ⇔ наблюдений нет; у нулевой строки `evidence_sha256` = артефакты прогона); сумма по nmId = кабинетный ряд - check `per_nm_sums_vs_cabinet` (одна JSON-строка лога `quality_check`, PASS/MISMATCH, порог `UNKNOWN` до OQ-7, прогон не блокирует); `_current` - последний SUCCEEDED прогон по `(tenant_id, calendar_day, nm_id)` | `(tenant_id, calendar_day, nm_id, run_id)` | `collect`, `backfill` (сразу после `aggregateCabinetDaily`, из тех же строк `_latest`) | детектор 4.1 (`proxima_job_norm`); webapp гранта не имеет (AD-9); удаляется `delete_run.py` каскадом от `collector_runs` |
 
 Три view из 008 (`public_order_counts_operational`, `_inventory`, `_financial`) - публикация домена заказов с `security_invoker`.
 
-## Планируемые таблицы лестницы (миграции 012-017)
+## Планируемые таблицы (октябрь, заморожено по D35)
 
-| Таблица или view | Миграция | Назначение | Ключ | Пишет | Читает | Носитель |
-|---|---|---|---|---|---|---|
-| `stg_wb_orders_obs` | 012 | Наблюдения заказов с их `lastChangeDate` | `(tenant_id, srid, last_change_at)` | `collect`, `backfill` | агрегатор дня | Story 1.4 |
-| `stg_wb_sales_obs` | 012 | Наблюдения продаж | `(tenant_id, sale_id, last_change_at)` | `collect`, `backfill` | агрегатор дня | Story 1.4 |
-| `stg_wb_*_obs_latest` | 012 | Последнее наблюдение по ключу | view | - | агрегатор, сверка | Story 1.4 |
-| `fact_cabinet_daily` | 013 | Дневной ряд кабинета: заказы, отмены, продажи, возвраты, выручка, доказательства | `(tenant_id, calendar_day, run_id)` | агрегатор | норма, сводка | Story 1.6 |
-| `fact_cabinet_daily_current` | 013 | Версия дня из последнего успешного прогона | view | - | норма, сводка, теневой пересчёт | Story 1.6 |
-| `data_status_current` | 013 | Последний полный день, время сбора, признак несвежести | view | - | экран `/brief`, алерты | Story 1.6 |
-| `stg_wb_funnel_obs` | 017 | Наблюдения воронки по товару и дню, источник `v3` или `csv`; CSV: `nmID` → `nm_id`, `dt` → `calendar_day`, `openCardCount` → `open_card`, `addToCartCount` → `cart`, `ordersCount` → `orders`, `ordersSumRub` → `orders_sum_rub`, `buyoutsCount` → `buyouts`, `buyoutsSumRub` → `buyouts_sum_rub`; остальные колонки сохранены в `payload` | `(tenant_id, nm_id, calendar_day, source, canonical_sha256)` | `funnel_v3`, промоушен CSV | факты воронки | Story 3.1 |
-| `fact_funnel_daily` + `_current` | 017 | Дневная воронка; `_current` предпочитает `csv` над `v3` | по товару и дню | промоушен | M-04, диагноз | Story 3.1, 3.3 |
-| `norm_daily` + `_current` | 014 (норма) | Норма кабинета: окно, число дней выборки, значение, статус | `(tenant_id, evaluation_day, metric, run_id)` | `norm` | сводка, детекторы | Story 2.3 |
-| `brief_daily` + `brief_current` | 015 | Материализованная сводка дня по контракту `brief`; с Story 4.1 `payload.signals[]` заполняет шаг детектора SCN-001 того же прогона (AD-19): сигналы по SKU и предмету из `fact_nm_daily_current`/`dim_nm_subject_current`, только при `status = ok`, отдельного носителя у сигналов нет. С Story 4.2 `signals[]` отсортированы по `rub_assessment.value_rub` по убыванию (при равенстве - глубже падение, затем SKU раньше предмета, затем `nm_id`), рост числом в `deviation_pct`/`detection_data` и никогда не сигнал; `payload.threshold {value, source, date}` - порог из конфигурации control-plane (`services/control-plane/src/proxima_control_plane/detector/threshold.toml`, переопределение `PROXIMA_THRESHOLD_CONFIG_FILE`), пишется при любом статусе и дублируется в `detection_data` каждого сигнала (`threshold_pct`, `threshold_source`, `threshold_date`); до Story 4.4 все три `null` = порог не применяется, после - кандидаты с падением на порог или глубже | по дню и прогону; `_current` - одна строка на кабинет | `brief` (+ шаг детектора) | экран `/brief` | Story 2.4, 4.1, 4.2 |
-| роли и гранты | 016 | Донастройка ролей под новые таблицы | - | - | - | хвост Epic 2 |
-| `decision_records` | после AD (Story 5.0) | Записи решений человека и исходов сверки | по решению | webapp (первая запись из UI) | сводка, метрики SM-4, SM-9 | Story 5.3 |
+Из лестницы `012`-`018` планируемой осталась одна таблица; октябрьский трек (Story 4.4, Epic 5) заморожен по D35 до трёх утр SUCCEEDED подряд на сервере.
+
+| Таблица | Миграция | Назначение | Ключ | Пишет | Читает |
+|---|---|---|---|---|---|
+| `decision_records` | после AD (Story 5.0) | Записи решений человека и исходов сверки (Story 5.3) | по решению | webapp (первая запись из UI) | сводка, метрики SM-4, SM-9 |
 
 ## Роли и права
 
@@ -80,6 +78,8 @@
 | `proxima_collector`, `proxima_norm`, `proxima_webapp`, `proxima_janitor`, `proxima_sandbox` | со входом | членство в группах выше; песочница видит только тестовую базу | `infra/bootstrap/provision-runtime-roles.sh` |
 | `proxima_diagnostics` | со входом, только чтение | единственная действующая read-only роль на боевой; пароль под root, обёртка требует `sudo` | `infra/bootstrap/provision-postgres-diagnostics.sh` |
 | роль аналитика | со входом, только чтение | чтение наблюдений, фактов, нормы, сводки и реестра артефактов для независимого пересчёта | ещё не заведена, Story 6.4 |
+
+Миграция 016 (`delete_run_support`, Story 1.7) донастраивает роли под отката: `GRANT SELECT` джанитора на `collector_runs`, `collector_run_inputs` и `wb_raw_artifacts` (чтение реестра для транзитивного замыкания; сам `DELETE`-грант вне миграций, в bootstrap), а также RLS и политику janitor `FOR ALL` на до-лестничной `business_signal_runs` (004) - её роль-владелец RLS обходит, политика управляет только джанитором.
 
 Проверка доступа: `permission denied` означает отсутствие гранта; ноль строк на непустой таблице означает, что не установлен `proxima.tenant_id`; проверяется через `SELECT current_setting('proxima.tenant_id', true)`.
 
