@@ -25,12 +25,13 @@ function timeLabel(isoMoment: string): string {
 }
 
 /** Норма приходит строкой AD-10: «34.50» -> «34,5», без лишних нулей. */
-function normLabel(value: string): string {
+export function normLabel(value: string): string {
   const parsed = Number(value);
   return parsed.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 }
 
-function deviationLabel(deviationPct: number): string {
+/** Отклонение уже округлено control-plane (D27): «−21,7 %», знак typographic. */
+export function deviationLabel(deviationPct: number): string {
   const sign = deviationPct > 0 ? "+" : deviationPct < 0 ? "−" : "";
   return `${sign}${Math.abs(deviationPct).toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
 }
@@ -67,7 +68,8 @@ function MetricLine({
   );
 }
 
-function WarningLine({ children }: { children: React.ReactNode }) {
+/** Строка-предупреждение вместо цифр (AC 1.11); общая для сводки и блока аномалий. */
+export function WarningLine({ children }: { children: React.ReactNode }) {
   return (
     <p role="note" className="rounded-sm bg-muted/60 px-2 py-1 text-sm text-muted-foreground">
       {children}
@@ -76,7 +78,7 @@ function WarningLine({ children }: { children: React.ReactNode }) {
 }
 
 /** Текст-предупреждение вместо цифр; по AC 1.11 stale и пустой view звучат одинаково. */
-function numbersWarning(status: SummaryStatus, normProgress: BriefSummary["normProgress"]): string {
+export function numbersWarning(status: SummaryStatus, normProgress: BriefSummary["normProgress"]): string {
   if (status === "insufficient") {
     return normProgress
       ? `Норма копится: ${normProgress.sampleDays}/${normProgress.windowDays} дней`

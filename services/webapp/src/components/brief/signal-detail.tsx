@@ -10,7 +10,8 @@ const RISK_HINTS: Record<BriefSignal["riskLevel"], string> = {
   R3: "необратимо или затрагивает весь кабинет",
 };
 
-function MetaCell({ label, children }: { label: string; children: React.ReactNode }) {
+/** Ячейка метаданных карточки: micro-label uppercase + значение (общая для карточек брифа). */
+export function MetaCell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
       <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</dt>
@@ -19,7 +20,8 @@ function MetaCell({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+/** Раздел карточки с micro-label заголовком (общий для карточек брифа). */
+export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-1.5">
       <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title}</h3>
