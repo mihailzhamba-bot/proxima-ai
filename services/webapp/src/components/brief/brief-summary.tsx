@@ -77,12 +77,31 @@ export function WarningLine({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Текст-предупреждение вместо цифр; по AC 1.11 stale и пустой view звучат одинаково. */
-export function numbersWarning(status: SummaryStatus, normProgress: BriefSummary["normProgress"]): string {
+/**
+ * Сводки ещё нет при свежем сборе (no-brief с живым `data_status_current`,
+ * режим «только статус» Story 1.11). Полную фразу «ждём первый утренний прогон»
+ * несёт дайджест (/brief, page.tsx) - здесь короткая форма, чтобы одно
+ * предложение не стояло на странице дважды.
+ */
+export const BRIEF_PENDING_TEXT = "Сводка ещё не считается";
+
+/**
+ * Текст-предупреждение вместо цифр; по AC 1.11 stale и пустой view звучат одинаково.
+ * Исключение - сводки нет, а сбор свежий: «сбор не проходил» рядом со строкой
+ * «Данные до …» противоречил бы сам себе, поэтому - «сводка ещё не считается».
+ */
+export function numbersWarning(
+  status: SummaryStatus,
+  normProgress: BriefSummary["normProgress"],
+  dataStatus: BriefSummary["dataStatus"],
+): string {
   if (status === "insufficient") {
     return normProgress
       ? `Норма копится: ${normProgress.sampleDays}/${normProgress.windowDays} дней`
       : "Норма копится: окно неполное";
+  }
+  if (status === "no-brief" && dataStatus !== null && !dataStatus.stale) {
+    return BRIEF_PENDING_TEXT;
   }
   return "Сбор не проходил больше суток";
 }
@@ -122,7 +141,7 @@ export function BriefSummaryBlock({ summary }: BriefSummaryBlockProps) {
           />
         </>
       ) : (
-        <WarningLine>{numbersWarning(summary.status, summary.normProgress)}</WarningLine>
+        <WarningLine>{numbersWarning(summary.status, summary.normProgress, dataStatus)}</WarningLine>
       )}
       {dataStatus !== null && !dataStatus.stale ? (
         <p className="text-xs text-muted-foreground">

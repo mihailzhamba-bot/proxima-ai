@@ -36,7 +36,11 @@ const TENANT_PATTERN = /^[a-z0-9][a-z0-9_-]{2,63}$/;
 const TENANT_ENV = "WEBAPP_TENANT_ID";
 const URI_FILE_ENV = "WEBAPP_DATA_DATABASE_URI_FILE";
 
-/** Метрики экрана дашборда в postgres-режиме не реализованы; сводка /brief - да. */
+/**
+ * Метрики экрана дашборда в postgres-режиме не реализованы; сводка /brief - да.
+ * Шелл узнаёт об этом по `supportsMetrics: false` и полосу не рисует; сам
+ * `getMetrics()` остаётся падающим - вызов мимо флага не должен пройти молча.
+ */
 export const POSTGRES_PROVIDER_NOT_IMPLEMENTED = "NOT_IMPLEMENTED";
 
 const NOT_IMPLEMENTED =
@@ -181,6 +185,7 @@ export function createPostgresProvider(
 
   return {
     mode: "postgres",
+    supportsMetrics: false,
 
     /**
      * Редакционная часть брифа. До первого SUCCEEDED brief работает режим
