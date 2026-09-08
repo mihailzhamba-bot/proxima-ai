@@ -165,7 +165,7 @@ test('funnel_v3: 21 observations and 21 current rows, replay 0, changed payload 
     const transport = new FixtureTransport();
     const first = await h.run(transport.transport);
     assert.equal((await h.run_(first.runId)).status, 'SUCCEEDED');
-    assert.deepEqual(first.window, { runDay: RUN_DAY, start: '2026-08-25', end: '2026-08-30' });
+    assert.deepEqual(first.window, { runDay: RUN_DAY, start: '2026-08-25', end: RUN_DAY });
     assert.equal(first.activeNmIds, 3, 'stale and run-day orders do not make an nmId active');
     assert.deepEqual(first.batches, [{ batch: 1, nmIds: 3, received: FIXTURE_OBSERVATIONS, inserted: FIXTURE_OBSERVATIONS, skipped: 0, missingNmIds: [] }]);
     assert.deepEqual(first.facts, { versions: FIXTURE_OBSERVATIONS, inputRuns: 0 });
@@ -300,9 +300,10 @@ test('funnel_v3: a failed batch keeps the received batches committed, no version
     const recovered = await h.run(scripted(okScript(zeroHistory(nmIds.slice(0, 20), days)), okScript(zeroHistory(nmIds.slice(20), days))).transport, RUN_DAY, clock);
     assert.equal((await h.run_(recovered.runId)).status, 'SUCCEEDED');
     assert.deepEqual(recovered.observations, { received: 21 * days.length, inserted: days.length, skipped: 20 * days.length });
-    assert.deepEqual(recovered.facts, { versions: 21 * days.length, inputRuns: 1 });
+    // run_day is observed but never versioned: versions exist for the six days before it.
+    assert.deepEqual(recovered.facts, { versions: 21 * (days.length - 1), inputRuns: 1 });
     assert.equal(await h.count('collector_run_inputs', 'run_id = $1 AND input_run_id = $2', [recovered.runId, runId]), 1, 'the failed run is evidence the recovered versions depend on');
-    assert.equal(await h.count('fact_funnel_daily_current', 'run_id = $1', [recovered.runId]), 21 * days.length);
+    assert.equal(await h.count('fact_funnel_daily_current', 'run_id = $1', [recovered.runId]), 21 * (days.length - 1));
   } finally {
     await h.cleanup();
   }
