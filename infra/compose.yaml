@@ -34,13 +34,17 @@ services:
     profiles: ["jobs"]
     environment:
       COLLECTOR_DATABASE_URI_FILE: /run/secrets/proxima_collector_uri
+      PROXIMA_RAW_DIR: /srv/proxima-ai/raw
     secrets:
       - proxima_collector_uri
+      - amirova-test_wb_statistics_token
+      - amirova-test_wb_analytics_token
     env_file:
       - jobs.env
     volumes:
       # Host-side edits to jobs.env apply on the next `compose run` without a rebuild.
       - ../infra/jobs.env:/app/infra/jobs.env:ro
+      - ${PROXIMA_RAW_DIR:?set PROXIMA_RAW_DIR}:/srv/proxima-ai/raw
     networks:
       - private
     restart: "no"
@@ -62,10 +66,8 @@ services:
       - private
     restart: "no"
 
-  # Owner-секреты живут только здесь (AD-15): apply-migrations. FUNNEL_CSV_DOWNLOAD:
-  # аналитикс-токен не монтируется - по Conventions путь к <tenant>_wb_analytics_token
-  # подставляет morning_run.sh как CLI-флаг (--analytics-token-file), монтаж в compose
-  # - TODO Story 3.2 (октябрь), вместе с целью funnel_csv_download.
+  # Owner-секреты живут только здесь (AD-15): apply-migrations.
+  # Analytics-токен и raw-каталог нужны этому же образу для FUNNEL_CSV_DOWNLOAD.
   # TODO (Story 1.12/AD-11): proxima_janitor_uri → JANITOR_DATABASE_URI_FILE - смонтировать
   # при заведении janitor-сервиса; имя секрета по Conventions.
   control-plane-admin:
@@ -76,13 +78,17 @@ services:
     environment:
       POSTGRES_USER_FILE: /run/secrets/postgres_user
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      PROXIMA_RAW_DIR: /srv/proxima-ai/raw
+      WB_ANALYTICS_TOKEN_FILE: /run/secrets/amirova-test_wb_analytics_token
     secrets:
       - postgres_user
       - postgres_password
+      - amirova-test_wb_analytics_token
     env_file:
       - jobs.env
     volumes:
       - ../infra/jobs.env:/app/infra/jobs.env:ro
+      - ${PROXIMA_RAW_DIR:?set PROXIMA_RAW_DIR}:/srv/proxima-ai/raw
     networks:
       - private
     restart: "no"
@@ -103,3 +109,7 @@ secrets:
     file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/proxima_collector_uri
   proxima_norm_uri:
     file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/proxima_norm_uri
+  amirova-test_wb_statistics_token:
+    file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/amirova-test_wb_statistics_token
+  amirova-test_wb_analytics_token:
+    file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/amirova-test_wb_analytics_token
