@@ -49,7 +49,7 @@ printf 'SELECT version, name FROM schema_migrations ORDER BY version;\n' | sudo 
 
 ### 1.1. `.env` и `jobs.env`
 
-`/srv/proxima-ai/repo/.env` (14.08.2026, `0600 proxima-admin`) держит 12 переменных старого контура и не содержит ни `PROXIMA_SECRETS_DIR`, которого требует `infra/compose.yaml` (`${PROXIMA_SECRETS_DIR:?…}`), ни `WEBAPP_DATA_MODE`/`WEBAPP_TENANT_ID` (overlay `infra/webapp.staging.compose.yaml`), ни `COMPOSE_FILE`. `infra/jobs.env` (`EnvironmentFile` юнитов и `env_file` контейнеров) по собственному комментарию ждёт `PROXIMA_SECRETS_DIR` и `PROXIMA_RAW_DIR` «на VPS при релизе». Значения - из `infra/local.env.example`; секретов здесь нет, только пути.
+`/srv/proxima-ai/repo/.env` (14.08.2026, `0600 proxima-admin`) держит 12 переменных старого контура и не содержит ни `PROXIMA_SECRETS_DIR`, которого требует `infra/compose.yaml` (`${PROXIMA_SECRETS_DIR:?…}`), ни `WEBAPP_DATA_MODE`/`WEBAPP_TENANT_ID` (overlay `infra/webapp.staging.compose.yaml`), ни `COMPOSE_FILE`. Tracked `infra/jobs.env` уже содержит контейнерные пути к raw-каталогу, spool и analytics-токену. Значения хостовых переменных - из `infra/local.env.example`; секретов здесь нет, только пути.
 
 ```bash
 sudo grep -o '^[A-Za-z_]*=' /srv/proxima-ai/repo/.env | sort | tr '\n' ' '; echo
@@ -65,13 +65,9 @@ PROXIMA_SECRETS_DIR=/etc/proxima-ai/secrets
 WEBAPP_DATA_MODE=fixtures
 WEBAPP_TENANT_ID=amirova-test
 EOF
-sudo tee -a /srv/proxima-ai/repo/infra/jobs.env >/dev/null <<'EOF'
-PROXIMA_SECRETS_DIR=/etc/proxima-ai/secrets
-PROXIMA_RAW_DIR=/srv/proxima-ai/raw
-EOF
 sudo grep -n '^PROXIMA_\|^COMPOSE_FILE\|^WEBAPP_' /srv/proxima-ai/repo/.env /srv/proxima-ai/repo/infra/jobs.env
 ```
-Ожидается в `.env`: `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`, `PROXIMA_SPOOL_DIR=…` (старая), `COMPOSE_FILE=infra/compose.yaml`, `PROXIMA_SECRETS_DIR=/etc/proxima-ai/secrets`, `WEBAPP_DATA_MODE=fixtures`, `WEBAPP_TENANT_ID=amirova-test`; в `jobs.env`: `PROXIMA_SPOOL_DIR=/work/wb-async-spool` (была) и две новые строки. Копия старого `.env` лежит рядом с дампами - к ней возвращается раздел 7.
+Ожидается в `.env`: `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`, `PROXIMA_SPOOL_DIR=…` (старая), `COMPOSE_FILE=infra/compose.yaml`, `PROXIMA_SECRETS_DIR=/etc/proxima-ai/secrets`, `WEBAPP_DATA_MODE=fixtures`, `WEBAPP_TENANT_ID=amirova-test`; tracked `infra/jobs.env` уже задаёт контейнерные `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`, `PROXIMA_SPOOL_DIR=/srv/proxima-ai/raw/wb-async-spool` и `WB_ANALYTICS_TOKEN_FILE=/run/secrets/amirova-test_wb_analytics_token`; его на сервере не дописывать. Копия старого `.env` лежит рядом с дампами - к ней возвращается раздел 7.
 
 Что важно знать про эти строки:
 
@@ -225,24 +221,21 @@ sudo find /srv/proxima-ai/raw -maxdepth 2 -printf '%M %u:%g %p\n'
 ```
 Каждый вызов печатает одну JSON-строку `{"content_sha256": "…", "object_locator": "artifact://business-signal/sha256/…", "retrieved_at": "2026-08-31T15:53:41.000Z"}` - `content_sha256` должен совпасть со сверенным выше. `find` показывает `objects/`, `imports/`, `tmp/` с `drwx------ 1010:1010` и файлы `-rw------- 1010:1010`. Инструмент отказывает, если каталог не `0700` или лежит внутри git-дерева (`cas-artifact.ts`: `CAS root must stay outside Git`).
 
-**Бэкфилл из артефактов.** Задание в контейнере, форма вызова - `npm run <job> -- …` (Dockerfile коллектора без ENTRYPOINT, PR #90). Флаг `-v` обязателен: `infra/compose.yaml` монтирует в `collector` только `jobs.env` и `proxima_collector_uri`, каталога `PROXIMA_RAW_DIR` в нём нет (на 08.09; CI-шаг «collector service never receives owner secrets» подтверждает: `collector mounts: proxima_collector_uri`). Если к дню релиза compose монтирует каталог сам - `-v` убрать, дубль точки монтирования docker отвергает.
+**Бэкфилл из артефактов.** Задание в контейнере, форма вызова - `npm run <job> -- …` (Dockerfile коллектора без ENTRYPOINT, PR #90). Compose сам монтирует `${PROXIMA_RAW_DIR}` в контейнерный `/srv/proxima-ai/raw`, поэтому ручной `-v` не нужен.
 
 ```bash
 cd /srv/proxima-ai/repo
 sudo docker compose --profile jobs run --rm \
-  -v /srv/proxima-ai/raw:/srv/proxima-ai/raw \
   collector npm run backfill -- --tenant amirova-test \
   --source artifact:d2f1dc9581ad1f1ab67d1f7ac874b1fa93109915a06d3b09505d960e0b65ec96,0c0318ff835d59e263a32cd1f565d8f899e28173e4eacc942c414756214daa40
 ```
 `PROXIMA_RAW_DIR` внутри контейнера приходит из `infra/jobs.env` (раздел 1.1), URI роли - из `/run/secrets/proxima_collector_uri` (раздел 1.4). `run_day` берётся из манифеста CAS и будет `2026-08-31`; версии пишутся по `2026-08-30` включительно. Ожидается JSON-лог по шагам, строка `backfill committed` с `run_day`, `days`, `orders_inserted`, `sales_inserted` и последняя строка `{"run_id": "…", "tenant_id": "amirova-test", "kind": "backfill", "run_day": "2026-08-31", …}`; статус прогона - SUCCEEDED (проверка SQL в разделе 4). Тенант `amirova-test` в `tenants` есть (проверено 08.09).
 
-**Живой хвост с перекрытием.** Токен тоже монтируется вручную - по той же причине, что и каталог: в compose его нет (`tools/morning_run.sh` передаёт хостовый путь `/etc/proxima-ai/secrets/<tenant>_wb_statistics_token`, которого внутри контейнера не существует - см. раздел 5).
+**Живой хвост с перекрытием.** Compose монтирует tenant-prefixed statistics-токен в `/run/secrets/amirova-test_wb_statistics_token`; этот же контейнерный путь передаёт runner.
 
 ```bash
 cd /srv/proxima-ai/repo
 sudo docker compose --profile jobs run --rm \
-  -v /srv/proxima-ai/raw:/srv/proxima-ai/raw \
-  -v /etc/proxima-ai/secrets/amirova-test_wb_statistics_token:/run/secrets/amirova-test_wb_statistics_token:ro \
   collector npm run collect -- --tenant amirova-test --date-from 2026-08-27 \
   --statistics-token-file /run/secrets/amirova-test_wb_statistics_token
 ```
@@ -282,11 +275,11 @@ SELECT kind, status, started_at FROM collector_runs WHERE tenant_id='amirova-tes
 
 Только после SUCCEEDED бэкфилла и сошедшихся цифр.
 
-**Блокер, известный на 08.09 (код, не runbook).** `tools/morning_run.sh` зовёт `collect` в контейнере с хостовым путём токена (`/etc/proxima-ai/secrets/<tenant>_wb_statistics_token`) и полагается на `PROXIMA_RAW_DIR` из `jobs.env`, но `infra/compose.yaml` не монтирует в `collector` ни этот файл, ни каталог: утренний `collect` упадёт на чтении токена, а без монтирования каталога сырые ответы остались бы в контейнере и исчезали с `--rm`. В разделе 3 это обойдено флагами `-v` вручную; для таймера так нельзя - нужна единица кода (compose `secrets:`/`volumes:` или `-v` в `morning_run.sh`) до 15.09. Проверка, что она в релизном теге:
+Перед включением проверить, что релизный compose монтирует raw-каталог и tenant-prefixed statistics-токен:
 ```bash
 cd /srv/proxima-ai/repo && sudo docker compose --profile jobs config | grep -n '/srv/proxima-ai/raw\|_wb_statistics_token'
 ```
-На `f45243e` (08.09) - ноль строк. Пока ноль - `proxima-morning@` **не включать**; `proxima-restore-check@` от этого не зависит (`tools/restore_check.sh` работает только с контейнером postgres через compose и `.env` из раздела 1.1).
+Ожидаются обе строки; ноль строк - релизный compose не соответствует AD-6, остановиться и вернуться к разделу 2.
 
 Установка юнитов (все файлы - из `infra/systemd/` релизного тега, проверены в CI `systemd-verify`):
 ```bash
@@ -302,7 +295,7 @@ sudo install -m 0644 /srv/proxima-ai/repo/infra/systemd/proxima-funnel-v3@.servi
   /etc/systemd/system/proxima-funnel-v3@.service.d/10-analytics-read-write.conf
 sudo systemctl daemon-reload
 sudo systemctl enable --now proxima-restore-check@amirova-test.timer
-sudo systemctl enable --now proxima-morning@amirova-test.timer   # только после закрытия блокера выше
+sudo systemctl enable --now proxima-morning@amirova-test.timer
 systemctl list-timers 'proxima*' --all --no-pager
 ```
 Ожидается: `proxima-restore-check@amirova-test.timer` (Пн 06:00 МСК), `proxima-morning@amirova-test.timer` (05:30 МСК, если включён) и уже работавший `proxima-host-monitor.timer`. Утренний гоняет цепочку `collect → norm → brief` строго по порядку со стопом на первой ошибке (AD-6, CR от 03.09); `TimeoutStartSec=55min` несёт крайний срок 06:30 (PA-65).
@@ -417,5 +410,5 @@ SELECT last_full_day, stale FROM data_status_current WHERE tenant_id='amirova-te
 10. **§1 - owner-секреты.** `postgres_user`/`postgres_password` на сервере `-rw-r----- root:proxima-monitor`; контракт compose/CI - `1010:1010 0600`, `read_secret(private_only)` отказывает `0640`. Добавлен `chown`/`chmod`.
 11. **Compose без `-f` из `/srv/proxima-ai/repo`.** Так его зовут `morning_run.sh`, `restore_check.sh`, `funnel_v3_run.sh` и юниты; на сервере из этого каталога - `no configuration file provided: not found`. Решение без кода - `COMPOSE_FILE=infra/compose.yaml` в `.env` (проверено на копии `infra/` в scratch-каталоге: `config --services` → 4 сервиса).
 12. **§7 - `delete_run.py`.** Было `sudo -u \#1010 python3 …` (нет uid, нет `psycopg` в хостовом python 3.12). Стало: контейнер `control-plane` с `-v` janitor-URI и `-e JANITOR_DATABASE_URI_FILE`.
-13. **§5 - блокер кода.** `collector` в `infra/compose.yaml` не получает ни `PROXIMA_RAW_DIR`, ни файл токена; `morning_run.sh` передаёт хостовый путь токена. Для §3 обойдено флагами `-v`; для таймера `proxima-morning@` нужна единица кода до 15.09 - записано в §5 как условие включения с командой проверки.
+13. **§5 - контракт монтирования.** `collector` получает tenant-prefixed WB-токены через compose `secrets:` и `${PROXIMA_RAW_DIR}` как bind-volume; runners передают контейнерные пути. Ручные `-v` из §3 убраны; в §5 осталась проверочная команда перед включением таймера.
 14. **Октябрь - бэкап.** Серверный `proxima-pg-backup.sh` отстал от репозиторного (sha256 `d29feb24…` против `fa591531…`), cron не задаёт `PROXIMA_RAW_DIR` - записано в пункт «установить `infra/backup/*`».

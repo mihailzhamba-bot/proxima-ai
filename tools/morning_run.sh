@@ -24,9 +24,10 @@ fi
 [[ "$tenant" =~ ^[a-z0-9][a-z0-9_-]{2,63}$ ]] || fail "invalid tenant id"
 
 run_collect() {
-  local git_sha image_id statistics_token secrets_dir
+  local git_sha image_id statistics_token host_statistics_token secrets_dir
   secrets_dir="${PROXIMA_SECRETS_DIR:-/etc/proxima-ai/secrets}"
-  statistics_token="${secrets_dir}/${tenant}_wb_statistics_token"
+  host_statistics_token="${secrets_dir}/${tenant}_wb_statistics_token"
+  statistics_token="/run/secrets/${tenant}_wb_statistics_token"
 
   if [[ "$dry_run" == true ]]; then
     printf '%s\n' "docker compose --profile jobs run --rm collector npm run collect -- --tenant ${tenant} --statistics-token-file ${statistics_token}"
@@ -36,7 +37,7 @@ run_collect() {
   [[ -n "${PROXIMA_SECRETS_DIR:-}" ]] || fail "PROXIMA_SECRETS_DIR is required (see infra/jobs.env)"
   [[ -n "${PROXIMA_RAW_DIR:-}" ]] || fail "PROXIMA_RAW_DIR is required (see infra/jobs.env)"
   [[ -d "$REPOSITORY_DIR" ]] || fail "repository is missing: $REPOSITORY_DIR"
-  [[ -r "$statistics_token" ]] || fail "tenant statistics token file is missing or unreadable"
+  [[ -r "$host_statistics_token" ]] || fail "tenant statistics token file is missing or unreadable"
   cd "$REPOSITORY_DIR"
   git_sha="$(git rev-parse HEAD)"
   image_id="$(docker compose --profile jobs images -q collector | head -n 1)"
