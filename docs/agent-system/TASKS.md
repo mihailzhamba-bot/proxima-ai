@@ -4,7 +4,7 @@
 
 ## Дневной прогон 08.09.2026 - выполнен (D32)
 
-Epic 4 стартовал: AD-19 (#87), Stories 4.0 (#95), 4.1 (#100 + #102), 4.2 (#104), 4.3 (#106) в `main`; follow-ups 3.1/3.2/3.3 (#90, #97), проба 3.0 (#91), runbook 1.14 (#99), compose-fix блокера релиза (#103), чек-лист готовности (#93), таблица версий (#92), Jira-журнал (#94). Отчёт, инциденты и что держит релизы - `HANDOFF.md`, раздел «День 08.09.2026». Следующее (D35, ~10:30 UTC): трек запуска сбора на сервере - раздел «Active main task» ниже; 4.4 (разметка Владислава, PMM-126) и Epic 5 заморожены до трёх SUCCEEDED утр; релизы 1.14/2.6 - по D33 (#89, параллельная сессия) с Владиславом и словом «деплой».
+Epic 4 стартовал: AD-19 (#87), Stories 4.0 (#95), 4.1 (#100 + #102), 4.2 (#104), 4.3 (#106) в `main`; follow-ups 3.1/3.2/3.3 (#90, #97), проба 3.0 (#91), runbook 1.14 (#99), compose-fix блокера релиза (#103), чек-лист готовности (#93), таблица версий (#92), Jira-журнал (#94). Отчёт, инциденты и что держит релизы - `HANDOFF.md`, раздел «День 08.09.2026». Трек сбора данных (D35, с ~10:30 UTC): девять PR #108-#116 в `main`, репетиция цепочки 1.14 на VPS - 4× SUCCEEDED - раздел «Active main task» ниже; 4.4 (разметка Владислава, PMM-126) и Epic 5 заморожены до трёх SUCCEEDED утр; релизы 1.14/2.6 - по D33 (#89, параллельная сессия) с Владиславом и словом «деплой».
 
 ## Ночной прогон 07-08.09.2026 - выполнен (D31)
 
@@ -34,19 +34,21 @@ BLOCKED: 3.1 держит ротация токена (OQ-10) и PA-64; 1.14 и 
 
 ## Active main task
 
-### Запуск сбора данных на сервере: подготовка релиза 1.14 (D35) - active (2026-09-08)
+### Запуск сбора данных на сервере: подготовка релиза 1.14 (D35) - active (2026-09-08), единицы дня выполнены
 
-Решение Mike 08.09 (~10:30 UTC, `DECISIONS.md` D35): конвейер сбора построен в `main`, но на сервере не запускался ни разу (схема 6 против 18, `collector_runs` нет, таймеров нет, данные WB - 25.08); плюс баг релизного пути - `WB_ALLOW_LIVE_NETWORK=1` не выставлен нигде в контуре деплоя. Октябрь заморожен, все исполнители - на трек запуска. Единицы:
+Решение Mike 08.09 (~10:30 UTC, `DECISIONS.md` D35, + «Дополнения по репетиции» ~13:40 UTC): конвейер сбора построен в `main`, но на сервере не запускался ни разу (схема 6 против 18, `collector_runs` нет, таймеров нет, данные WB - 25.08); плюс баг релизного пути - `WB_ALLOW_LIVE_NETWORK=1` не выставлен нигде в контуре деплоя. Октябрь заморожен, все исполнители - на трек запуска. Единицы (все в `main` 08.09):
 
-- U-A1 `fix/live-network-env` - `WB_ALLOW_LIVE_NETWORK=1` в контуре деплоя (`infra/jobs.env`, `infra/compose.yaml`, runbook §3, `tools/morning_run.sh`) + гейт `tools/verify_live_network.py`.
-- U-A2 - репетиция: `infra/compose.rehearsal.yaml` + `tools/rehearsal_run.sh`, отдельный compose-проект `proxima-rehearsal`, одноразовый postgres на `127.0.0.1:5434`; боевая база и `/srv/proxima-ai` не затрагиваются.
-- U-A3 - readiness v2 (`docs/state/RELEASE-READINESS-1.14.md`) + `docs/state/WORKS-TODAY.md` + исполнитель runbook по D7.
-- U-A4 - проверка статуса Story 1.11.
-- Репетиция на VPS с живым хвостом: 2 read-вызова `statistics.orders`/`statistics.sales` (`flag=0`) на statistics-токене, выполняет оркестратор, ответы в CAS-артефакты репетиционного raw-каталога, стек сносится `docker compose -p proxima-rehearsal down -v`; затем отчёт в `HANDOFF.md`.
+- U-A1 - **done**, PR #110 `fix/live-network-env`: `WB_ALLOW_LIVE_NETWORK=1` у сервиса `collector` в `infra/compose.yaml` + гейт `tools/verify_live_network.py` (`make live-network`) + runbook §3/§5.
+- U-A2 - **done**, PR #111 `feat/rehearsal-stack`: `infra/compose.rehearsal.yaml` + `tools/rehearsal_run.sh`, compose-проект `proxima-rehearsal`, postgres `127.0.0.1:5434`, runbook «Репетиция на VPS (D35, не деплой)»; боевая база и `/srv/proxima-ai` не тронуты.
+- U-A3 - **done**, PR #113 `docs/readiness-1.14-v2`: `docs/state/RELEASE-READINESS-1.14.md` v2 (блокеры B1-B10) + блок конвейера в `docs/state/WORKS-TODAY.md` + исполнитель runbook по D7.
+- U-A4 - **done**, PR #109 `chore/story-1.11-done`: Story 1.11 `done`, объём отгружен в 2.5 (CP-5).
+- Репетиция на VPS с живым хвостом - **проведена** 13:10:14-13:11:55 UTC на `main` `1c5e256`: `backfill`/`collect`/`norm`/`brief` SUCCEEDED, ровно 2 read-вызова на боевом statistics-токене (прошёл `assertLeastPrivilegeToken`), W10 649 | 700 860.50 сошёлся с пересчётом фикстуры, W35 по дням 8/8 PASS; факты - PR #112 (`API-FACTS.md`), правило гейта §4 + определение заказов + дополнение D35 - PR #116; отчёт - `HANDOFF.md`, «Трек сбора данных (08.09, после D35)». Стенд `proxima-rehearsal` (`~/orca/rehearsal`, webapp `:3434`) работает, пока Mike не посмотрит `/brief`; уборка - `bash tools/rehearsal_run.sh down --root ~/orca/rehearsal && sudo rm -rf ~/orca/rehearsal` (`rm -rf` - с подтверждения Mike), остановить при уборке и превью на фикстурах `127.0.0.1:3100`.
+- Находки репетиции - **done**: PR #114 (`MetricStrip` скрыт при `supportsMetrics=false`, postgres-режим давал 500; текст «Сводка ещё не считается», пока первой сводки нет), PR #115 (секрет webapp `1001:1001` в provision, `init` репетиции, runbook §1.2/§1.4, memlog). D35 - PR #108.
 
-Заморожено до трёх SUCCEEDED утр подряд на сервере (D35): Story 4.4, Epic 5.
-Бэклог: Источники v2 (остатки, финотчёт, реклама, цены) - после первого утра, эпик не создан.
-Релиз 1.14 - вт 15.09 по D33 (#89) после Story 6.1 Владислава (в `main` до пт 11.09); waiver D26 не пишется; только по слову «деплой».
+Осталось до релиза 1.14 (вт 15.09, D33): B1 Story 6.1 Владислава в `main` до пт 11.09 (CP-12, waiver D26 не пишется); B2 слово «деплой» от Mike + runbook §1 на сервере (токены под AD-13, `.env`, raw-каталог) - Mike или Claude по слову «деплой»; B5 LOGIN-роль аналитика (Story 6.4, состав грантов не предложен); B6 копия артефактов в S3 - `UNKNOWN`, за Mike.
+До 2.6 (вт 22.09): настоящие метрики дашборда в postgres-режиме (follow-up к Story 2.5); ротация analytics-токена PA-13.
+Кандидаты в единицы (не запланированы, readiness §6): `PROXIMA_GIT_SHA`/`PROXIMA_IMAGE_ID` через `environment:` compose (provenance ledger на сервере будет `NULL`); инкрементальный накат 007-018 на дамп боевой базы в репетиционном проекте; противоречивые тексты `/brief` для `blocked` и несовпадения дня; `proxima-psql-owner` в `infra/bootstrap/`, `docs/operations/releases/`, `CHANGELOG.md` - не созданы.
+Заморожено до трёх SUCCEEDED утр подряд на сервере (D35): Story 4.4, Epic 5; «Источники v2» (остатки, финотчёт, реклама, цены) - после первого утра, эпик не создан.
 
 ### BMAD + BAD с делегированием реализации в OpenHands — implementation done (2026-09-01)
 
