@@ -16,7 +16,7 @@ import type { BriefAnomaly, BriefSummary } from "@/lib/data/view-model";
  */
 
 export const NO_ANOMALIES_TEXT = "Критичных нет";
-export const BLOCKED_TEXT = "Аномалии: данных за день нет";
+export const BLOCKED_TEXT = "Данных за день нет";
 
 function Heading() {
   return <h2 className="font-mono text-xs uppercase tracking-wide text-muted-foreground">Аномалии</h2>;
@@ -72,12 +72,18 @@ export function AnomaliesBlock({ summary, demo = false }: AnomaliesBlockProps) {
   }
   if (summary.status === "blocked") {
     // Блок скрыт, причина показана (AC Story 4.3).
-    return <WarningLine>{BLOCKED_TEXT}</WarningLine>;
+    return (
+      <WarningLine>
+        {numbersWarning(summary.status, summary.normProgress, summary.dataStatus, summary.briefDay)}
+      </WarningLine>
+    );
   }
   if (summary.status !== "ok") {
     return (
       <Block>
-        <WarningLine>{numbersWarning(summary.status, summary.normProgress, summary.dataStatus)}</WarningLine>
+        <WarningLine>
+          {numbersWarning(summary.status, summary.normProgress, summary.dataStatus, summary.briefDay)}
+        </WarningLine>
       </Block>
     );
   }

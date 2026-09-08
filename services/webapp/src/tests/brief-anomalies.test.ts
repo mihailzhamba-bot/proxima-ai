@@ -227,6 +227,19 @@ describe("AnomaliesBlock - состояния блока на /brief", () => {
     expect(rowIds(markup)).toEqual([]);
   });
 
+  it("stale при свежем сборе и несовпадении дней: показывает дни сводки и данных", () => {
+    const markup = render(
+      summaryWith({
+        status: "stale",
+        briefDay: "2026-09-06",
+        dataStatus: { lastFullDay: "2026-09-07", collectedAt: "2026-09-08T00:10:00.000Z", stale: false },
+        anomalies: [],
+      }),
+    );
+    expect(markup).toContain("Сводка за 06.09, данные уже за 07.09");
+    expect(rowIds(markup)).toEqual([]);
+  });
+
   it("stale: предупреждение сводки вместо строк; no-brief: блока нет", () => {
     expect(render(summaryWith({ status: "stale", anomalies: [] }))).toContain("Сбор не проходил больше суток");
     expect(render(summaryWith({ status: "no-brief", anomalies: [] }))).toBe("");

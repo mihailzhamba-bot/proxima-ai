@@ -26,6 +26,20 @@ function render(summary: BriefSummary): string {
 }
 
 describe("numbersWarning - текст вместо цифр", () => {
+  it("blocked: данных за день нет независимо от статуса сбора", () => {
+    expect(numbersWarning("blocked", null, FRESH, "2026-09-07")).toBe("Данных за день нет");
+    expect(numbersWarning("blocked", null, null, "2026-09-07")).toBe("Данных за день нет");
+  });
+
+  it("stale при свежем сборе и несовпадении дней: называет обе даты", () => {
+    expect(numbersWarning("stale", null, FRESH, "2026-09-06")).toBe("Сводка за 06.09, данные уже за 07.09");
+  });
+
+  it("stale при stale или пустом статусе данных: сбор не проходил больше суток", () => {
+    expect(numbersWarning("stale", null, STALE, "2026-09-06")).toBe(STALE_TEXT);
+    expect(numbersWarning("stale", null, null, "2026-09-06")).toBe(STALE_TEXT);
+  });
+
   it("сводки нет, сбор свежий: «сводка ещё не считается», а не «сбор не проходил»", () => {
     expect(numbersWarning("no-brief", null, FRESH)).toBe(BRIEF_PENDING_TEXT);
   });
@@ -33,7 +47,6 @@ describe("numbersWarning - текст вместо цифр", () => {
   it("сводки нет и сбора нет (пустой view) или он stale: по-прежнему «сбор не проходил» (AC 1.11)", () => {
     expect(numbersWarning("no-brief", null, null)).toBe(STALE_TEXT);
     expect(numbersWarning("no-brief", null, STALE)).toBe(STALE_TEXT);
-    expect(numbersWarning("stale", null, STALE)).toBe(STALE_TEXT);
   });
 
   it("insufficient: прогресс нормы независимо от статуса данных", () => {
