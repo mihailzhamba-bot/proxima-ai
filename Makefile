@@ -1,4 +1,4 @@
-.PHONY: agent-toolset apply-migrations architecture boundary brief business-signal codegen codegen-diff collect-wb-analytics contracts detector funnel funnel-csv hooks install live-network migrations nm-daily pg-roundtrip probe-wb-api provenance secrets signals-ranking test test-db-refresh threshold typecheck verify vps wb-async-report wb-client webapp-build webapp-lint
+.PHONY: agent-toolset apply-migrations architecture boundary brief business-signal ci-parity codegen codegen-diff collect-wb-analytics contracts detector funnel funnel-csv hooks install live-network migrations nm-daily pg-roundtrip probe-wb-api provenance secrets signals-ranking test test-db-refresh threshold typecheck verify vps wb-async-report wb-client webapp-build webapp-lint
 
 
 verify: install codegen codegen-diff typecheck webapp-lint test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal wb-client brief wb-async-report funnel funnel-csv nm-daily detector signals-ranking threshold live-network
@@ -42,6 +42,9 @@ migrations:
 
 pg-roundtrip:
 	bash tools/pg_local_roundtrip.sh
+
+ci-parity:
+	bash tools/ci_parity.sh
 
 test-db-refresh:
 	bash tools/test_db_refresh.sh
