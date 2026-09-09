@@ -20,7 +20,7 @@
 ### Changed
 
 - Гигиена M-01 в гейте: `webapp-lint` и `codegen-diff` в `make verify`, pre-commit hooks через `make install` (#85)
-- **Порог тревоги: значение не задано (все три поля `null`), см. `detector/threshold.toml`** - порог читается из конфигурации control-plane (Story 4.2, #104); значение, источник и дата - Story 4.4, которая позже дописывает историю значений сюда
+- **Порог тревоги: значение не задано (все три поля `null`), см. `detector/threshold.toml`** - обвязка конфигурации, фильтрации, payload, подписи `/brief` и verify-гейта готова (Stories 4.2/4.4, #104); значение, источник и дата ждут отдельного решения Mike после ретро-разметки
 - Ретрай отправки алерта (`--retry 3 --retry-delay 5`, ретрайит сам curl) и крайний срок 06:30 в `TimeoutStartSec` утреннего юнита (PA-65) (#80)
 - WB-токены и raw-артефакты монтируются в контейнер `collector` через compose `secrets:`/`volumes:`, runners переведены на контейнерные пути (#103)
 - Живой WB разрешён только сервису `collector`: `WB_ALLOW_LIVE_NETWORK=1` в `environment:` `infra/compose.yaml` (AD-4) + гейт `make live-network` (`tools/verify_live_network.py` в `make verify`) (#110)

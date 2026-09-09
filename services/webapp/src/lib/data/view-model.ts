@@ -174,6 +174,8 @@ export type BriefSummary = {
    * сбор не проходил никогда; тогда цифр на экране не бывает.
    */
   dataStatus: DataStatusInfo | null;
+  /** Конфигурация порога из `payload.threshold`; доступна независимо от статуса и списка сигналов. */
+  threshold: BriefV1["threshold"];
   /**
    * Аномалии дня из `payload.signals[]` в порядке payload (деньги под риском по
    * убыванию, Story 4.2). Пусто и когда аномалий нет, и когда цифры не показываются
