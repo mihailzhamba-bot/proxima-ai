@@ -228,6 +228,71 @@ Ledger `git_sha` / `image_id`: у всех четырёх прогонов `git_
 
 **Открытый вопрос для Story 6.1/6.3 - определение `orders_count` («заказы на момент `run_day − 3`»).** Факт дня T - заказы, какими их видел прогон утра T+3: окно перезаписи AD-2 (`dateFrom = run_day − 3`, версионируются только дни `[floor, run_day − 1]`) замораживает день, а отмены, проставленные WB позже, в факт не попадают, пока день не переписан явным `--date-from` глубже. Числа стенда 08.09: 28.08 - 7 → 18 отмен между 31.08 и 08.09; дни 24-26.08 в фактах 55/40/28 «ok», тогда как последние наблюдения `stg_wb_orders_latest` уже дают 55/39/23 «ok» (55/8, 39/10, 23/10 ok/cancel). Определение записано в глоссарий («Заказы»); ширина окна - три дня или больше, и что тогда считать эталоном недели - вопрос Владиславу в Story 6.1/6.3 с этими числами; кода не меняет (решение Mike 08.09, ~13:40 UTC).
 
+## Репетиция наката миграций 007-018 поверх боевого дампа (09.09.2026, M1/D37)
+
+Закрывает `docs/state/RELEASE-READINESS-1.14.md` §6 п. 4: до 09.09 миграции 007-018 нигде не накатывались поверх живой схемы 6 с данными - репетиция D35, CI `apply-migrations-in-container` (`images.yml`) и `pg-roundtrip` стартуют с пустого тома. Стенд одноразовый и отдельный: compose-проект `proxima-migtest` (postgres `127.0.0.1:5435`, своя сеть `proxima-migtest-private`, свой том и свой каталог секретов, корень `~/orca/migtest`); override `compose.migtest.yaml` снимает монтирование `db/migrations` в `docker-entrypoint-initdb.d` (`volumes: !override`) - иначе initdb поднял бы сразу схему 18 и проверять было бы нечего. Боевой `proxima-ai-postgres-1` не трогался. Все числа ниже сняты read-only (`docker exec … psql -tA`, только SELECT) 09.09.2026 10:15-10:25 UTC; сверка - против стенда `proxima-rehearsal` (D35), собранного с нуля.
+
+**Порядок.** (1) поднять пустой postgres; (2) восстановить ночной дамп `/var/backups/proxima/2026-09-09-proxima.sql.gz` (64 565 байт gz, 620 297 байт SQL, снят 03:00 UTC); (3) `docker compose --profile jobs run --rm control-plane-admin make apply-migrations ENV_FILE=infra/jobs.env` - exit 0, 007…018 одним проходом; (4) `infra/bootstrap/provision-runtime-roles.sh` дважды; (5) сверка структуры со стендом из нуля.
+
+Что копия действительно боевая, видно по самому ledger: у миграций 1-6 в `schema_migrations` стоят боевые `applied_at` - `2026-08-13 09:06:35.795692+00` … `2026-08-14 17:53:26.058255+00`; они пережили restore. Миграции 7-18 легли `2026-09-09 10:15:17.228679+00` → `10:15:17.518809+00`, то есть весь накат - один проход в 0.29 с. Для сравнения: на стенде из нуля все 18 строк датированы `2026-09-08 13:11:23`.
+
+### До и после
+
+| Что | База из дампа (схема 6) | После 007-018 | Как получено |
+|---|---|---|---|
+| `schema_migrations` | 6 строк, max 6 | **18 строк, max 18** | `SELECT count(*), max(version)` |
+| объекты в `public` | 13 таблиц, 0 вьюх | **48** = 35 таблиц + 13 вьюх | `information_schema.tables` |
+| политики RLS | 0 | **58** на 24 таблицах | `pg_policies`; сумма `CREATE POLICY` в 007-018 - те же 58 |
+| роли `proxima*` | 2 (`proxima`, `proxima_diagnostics`) | **10** после миграций, **15** после `provision-runtime-roles` | `pg_roles`; 8 NOLOGIN-групп создают 009 и 011, 5 LOGIN-ролей - скрипт provision |
+
+Состав 13 таблиц дампа = ровно то, что создают 001-006: `artifact_manifests`, `business_signal_raw_artifacts`, `business_signal_runs`, `dim_product`, `dim_warehouse_map`, `intake_attempts`, `raw_wb_analytics_responses`, `schema_migrations`, `source_artifacts`, `stg_wb_nm_report_rows`, `tenants`, `wb_analytics_quota_events`, `wb_analytics_report_tasks`. Ни вьюх, ни политик, ни ролей в 001-006 нет - отсюда нули в левой колонке.
+
+### Данные пилота: ни одна строка не изменилась
+
+| Таблица | Строк до | Строк после |
+|---|---|---|
+| `stg_wb_nm_report_rows` | 1220 | 1220 |
+| `dim_warehouse_map` | 60 | 60 |
+| `business_signal_raw_artifacts` | 27 | 27 |
+| `business_signal_runs` | 11 | 11 |
+| `dim_product` | 9 | 9 |
+| `raw_wb_analytics_responses` | 7 | 7 |
+| `tenants` | 2 | 2 |
+
+Новые таблицы лестницы созданы и пусты: `collector_runs`, `stg_wb_orders_obs`, `fact_cabinet_daily`, `norm_daily`, `brief_daily`, `fact_nm_daily`, `fact_funnel_daily` - все 0 строк. `provision-runtime-roles.sh` прошёл дважды с exit 0; второй проход отличается только пятью `NOTICE: role … has already been granted membership` - по числу членств, которые скрипт выдаёт (`proxima_collector → proxima_job_collector`, `proxima_collector → proxima_source_publisher`, `proxima_norm → proxima_job_norm`, `proxima_webapp → proxima_webapp_readonly`, `proxima_janitor → proxima_run_janitor`; все пять на стенде есть).
+
+### Обновлённая схема структурно совпадает со схемой из нуля
+
+Сравнение инвентарей `proxima-migtest` (дамп + 007-018) и `proxima-rehearsal` (initdb 001-018), схема `public`:
+
+| Инвентарь | migtest | rehearsal | Расхождений |
+|---|---|---|---|
+| колонки (`information_schema.columns`: тип, длина, nullable, default) | 429 | 429 | **0** |
+| индексы (`pg_indexes`, полный `indexdef`) | 86 | 86 | **0** |
+| политики (`pg_policies`: cmd, `qual`, `with_check`, роли) | 58 | 58 | **0** |
+| таблицы + вьюхи | 48 | 48 | **0** |
+| гранты на таблицы (`information_schema.role_table_grants`) | 505 | 457 | **48**, все - лишние в migtest |
+
+Порядок наката 6 → 18 даёт ту же схему, что и сборка с нуля: ни одной колонки, ни одного индекса, ни одной политики в разнице. Единственное расхождение - гранты, и оно объясняется целиком одной строкой боевой базы (ниже).
+
+### Находка 1: обычный дамп базы несёт GRANT'ы, но не роли
+
+Первый restore упал: `ERROR: role "proxima_diagnostics" does not exist`. `pg_dump` одной базы (не `pg_dumpall`) выгружает `GRANT … TO proxima_diagnostics`, но сами роли живут в кластере и в дамп не попадают. Лечится созданием роли-заглушки `NOLOGIN` до restore; со второго раза восстановление прошло без единой ошибки. Для релиза 15.09 накат идёт по живой базе, где роли на месте, так что прямого пути это не касается - но касается **отката §7 и `restore_check.sh`**: восстановление боевого дампа в чистый кластер требует, чтобы все роли-грантополучатели существовали заранее.
+
+### Находка 2: `proxima_diagnostics` бесшумно получает SELECT на новые таблицы
+
+Все 48 «лишних» грантов в обновлённой копии - `SELECT` роли `proxima_diagnostics`, ровно по одному на каждый из 48 объектов `public`; в обратную сторону (только в rehearsal) - ноль строк. Причина видна в `pg_default_acl` боевой копии: две записи `proxima_diagnostics=r/proxima` (объекты `r` - таблицы и `S` - последовательности, схема `public`), то есть на боевой базе когда-то выполнили `ALTER DEFAULT PRIVILEGES FOR ROLE proxima GRANT SELECT ON TABLES/SEQUENCES TO proxima_diagnostics`. На стенде из нуля `pg_default_acl` пуст. Из 48 объектов 13 получили грант вместе с дампом, а 35 - все таблицы и вьюхи, созданные 007-018, - автоматически в момент создания.
+
+Что это даёт на практике, проверено на стенде: `proxima_diagnostics` - `NOLOGIN`, `NOBYPASSRLS`, и **ни одна из 58 политик её не называет**. Под `SET LOCAL ROLE proxima_diagnostics` она читает `tenants` (2 строки - на этой таблице RLS не включён) и получает **0 строк** из `stg_wb_nm_report_rows`, `raw_wb_analytics_responses`, `business_signal_runs`. То есть право есть, данных нет: расширение видимости ожидаемое и безвредное, отдельной правки не требует. Заметить его стоит в двух местах - при аудите грантов после релиза (сверка «схема как из нуля» покажет ровно эти 48 строк) и в Story 6.4, если роль аналитика когда-нибудь захотят строить поверх `proxima_diagnostics`.
+
+Побочно из того же инвентаря: `proxima_sandbox` - единственная не-владельческая роль с `rolbypassrls = true` (роль песочницы Story 1.8; `provision-runtime-roles.sh` отзывает у неё `CONNECT` к `postgres`/`template0`/`template1` и выдаёт только к `proxima_test`). На обоих стендах одинаково, к накату отношения не имеет.
+
+### Открытые вопросы репетиции
+
+- Идемпотентность `provision-runtime-roles.sh` подтверждена прогоном оркестратора (два раза exit 0); при перепроверке фактов скрипт повторно не запускался - это запись, а не чтение. Косвенно её держат пять членств выше.
+- Точный текст строки `migrations: 007_…, …, 018_nm_daily.sql` и сообщение первого упавшего restore - из вывода оркестратора; `~/orca/migtest/logs/` пуст, файла лога не осталось. Косвенное подтверждение наката одним проходом - разброс `applied_at` у 007-018 в 0.29 с.
+- `pg_default_acl` самой боевой базы напрямую не читался (`proxima-ai-postgres-1` не трогался) - находка 2 доказана на её восстановленной копии.
+
 ## Формат бэкапа (31.08.2026, факт)
 
 `/var/backups/proxima/YYYY-MM-DD-{proxima,proxima_dev}.sql.gz` - локально **plain gzip, без age**; age-ключи (`backup_age_key.txt` 0600 root, `backup_age_recipient` 0644) используются скриптом только для S3-копии. `proxima-pg-backup.sh` снят в `infra/backup/` (sha256 `d29feb24…`). Для `proxima-restore-check@` локальный дамп: `gunzip | psql` без age; AD-17 уточнён.
