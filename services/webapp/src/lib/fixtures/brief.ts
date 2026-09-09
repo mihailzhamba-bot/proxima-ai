@@ -369,6 +369,7 @@ export function getSummary(variant: BriefVariant = "daily"): BriefSummary {
       collectedAt: "2026-08-30T02:41:12.000Z",
       stale: false,
     },
+    threshold: { value: null, source: null, date: null },
     anomalies: variant === "quiet" ? [] : anomaliesFromSignals(FIXTURE_BRIEF_SIGNALS),
   };
 }

@@ -210,6 +210,21 @@ describe("AnomaliesBlock - состояния блока на /brief", () => {
     const markup = render(summaryWith({ status: "ok", anomalies: [] }));
     expect(markup).toContain(NO_ANOMALIES_TEXT);
     expect(rowIds(markup)).toEqual([]);
+    expect(markup).toContain("Порог тревоги не применяется");
+  });
+
+  it("подпись порога читает значение, источник и дату из payload view-model", () => {
+    const markup = render(
+      summaryWith({
+        status: "ok",
+        anomalies: [],
+        threshold: { value: -30, source: "ретро-разметка Владислава", date: "2026-09-09" },
+      }),
+    );
+    expect(markup).toContain("Порог тревоги");
+    expect(markup).toContain("-30 %");
+    expect(markup).toContain("источник ретро-разметка Владислава");
+    expect(markup).toContain("дата <time dateTime=\"2026-09-09\">2026-09-09</time>");
   });
 
   it("insufficient: «норма копится: N/14 дней», строк нет", () => {

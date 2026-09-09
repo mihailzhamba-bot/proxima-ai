@@ -18,6 +18,24 @@ import type { BriefAnomaly, BriefSummary } from "@/lib/data/view-model";
 export const NO_ANOMALIES_TEXT = "Критичных нет";
 export const BLOCKED_TEXT = "Данных за день нет";
 
+function thresholdValue(value: number): string {
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 10 }).format(value);
+}
+
+export function ThresholdCaption({ threshold }: { threshold: BriefSummary["threshold"] }) {
+  return threshold.value === null ? (
+    <p className="text-xs text-muted-foreground">Порог тревоги не применяется</p>
+  ) : (
+    <p className="text-xs text-muted-foreground">
+      Порог тревоги <span className="font-mono tabular-nums">{thresholdValue(threshold.value)} %</span>
+      {" · источник "}
+      {threshold.source}
+      {" · дата "}
+      <time dateTime={threshold.date}>{threshold.date}</time>
+    </p>
+  );
+}
+
 function Heading() {
   return <h2 className="font-mono text-xs uppercase tracking-wide text-muted-foreground">Аномалии</h2>;
 }
@@ -84,6 +102,7 @@ export function AnomaliesBlock({ summary, demo = false }: AnomaliesBlockProps) {
         <WarningLine>
           {numbersWarning(summary.status, summary.normProgress, summary.dataStatus, summary.briefDay)}
         </WarningLine>
+        <ThresholdCaption threshold={summary.threshold} />
       </Block>
     );
   }
@@ -91,6 +110,7 @@ export function AnomaliesBlock({ summary, demo = false }: AnomaliesBlockProps) {
     return (
       <Block>
         <p className="text-sm">{NO_ANOMALIES_TEXT}</p>
+        <ThresholdCaption threshold={summary.threshold} />
       </Block>
     );
   }
@@ -113,6 +133,7 @@ export function AnomaliesBlock({ summary, demo = false }: AnomaliesBlockProps) {
         emptyText="по категориям аномалий нет"
         demo={demo}
       />
+      <ThresholdCaption threshold={summary.threshold} />
     </Block>
   );
 }
