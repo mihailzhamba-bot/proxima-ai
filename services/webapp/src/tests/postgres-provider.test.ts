@@ -211,7 +211,8 @@ describe("provider: brief states (Story 2.5)", () => {
   }
 
   it("ok: значения, норма и отклонение проходят через шов без пересчёта", async () => {
-    const payload = briefPayload();
+    const threshold = { value: -30, source: "ретро-разметка Владислава", date: "2026-09-09" } as const;
+    const payload = briefPayload({ threshold });
     const { provider, log } = makeProvider(rowsWith(payload));
     const summary = await provider.getSummary();
     expect(summary.status).toBe("ok");
@@ -219,6 +220,7 @@ describe("provider: brief states (Story 2.5)", () => {
     expect(summary.orders).toEqual({ actual: 27, norm: "34.50", deviationPct: -21.7 });
     expect(summary.revenue).toEqual({ actual: "41141.00", norm: "34595.00", deviationPct: 18.9 });
     expect(summary.normProgress).toEqual({ sampleDays: 14, windowDays: 14 });
+    expect(summary.threshold).toEqual(threshold);
     expect(log.queries.join(" ")).toContain(BRIEF_SQL);
   });
 
