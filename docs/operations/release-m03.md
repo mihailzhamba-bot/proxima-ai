@@ -27,14 +27,14 @@ SELECT last_full_day, stale FROM data_status_current WHERE tenant_id='amirova-te
 
 **2. Story 6.1 (эталоны) и CP-13 (теневой пересчёт шага 7).** AC Story 2.6: теневой пересчёт сводки - отклонение и статусы - выполнен на синтетике, эталон лежит в `verification/golden/`. На 08.09 каталога `verification/` в репозитории нет, `tools/verify_shadow.py` нет, `docs/state/SHADOW-RECONCILIATION.md` пуст, блокер B1 в `docs/state/RELEASE-READINESS-1.14.md` открыт (срок Владислава - пт 11.09 по D33/D35). Статус на 22.09 - `UNKNOWN`. Правило AC 2.6 жёсткое: **релиз не выпускается, пока расхождение теневого пересчёта или сверки с кабинетом не закрыто**; снять блокировку может только Mike записью в `DECISIONS.md` (D26).
 
-**3. Ротация analytics-токена (PA-13) - обязательна до 2.6.** D32/D35: боевой analytics-токен пока read-write, и его ежедневно использует неизвестный потребитель вне VPS (OQ-10). После ротации на read-only снимается временный drop-in, поставленный в §5 runbook 1.14:
+**3. Ротация analytics-токена (PA-13) - обязательна до 2.6, и воронка без неё не включается.** D32/D35: боевой analytics-токен пока read-write, и его ежедневно использует неизвестный потребитель вне VPS (OQ-10); решение 7а (D25) требует ротации на read-only с отзывом старого токена. Пока ротации нет, прогон воронки откажет: `assertLeastPrivilegeToken` (`services/collector/src/business-signal/secrets.ts`) требует read-only токен, если явно не разрешено обратное. Исключение - временный drop-in `10-analytics-read-write.conf` (§3a, §5 runbook 1.14); без ротации он **обязателен**, и снять его до ротации нельзя. После ротации на read-only drop-in снимается:
 
 ```bash
 sudo rm -f /etc/systemd/system/proxima-funnel-v3@.service.d/10-analytics-read-write.conf
 sudo systemctl daemon-reload
 systemctl cat proxima-funnel-v3@amirova-test.service | grep -c ALLOW_ANALYTICS_READ_WRITE
 ```
-Ожидается `0`. `systemctl restart` здесь не делать: юнит `Type=oneshot`, `restart` неактивного oneshot запускает воронку. Ротация выполнена / не выполнена на 22.09 - `UNKNOWN`.
+Ожидается `0`. `systemctl restart` здесь не делать: юнит `Type=oneshot`, `restart` неактивного oneshot запускает воронку. Ротация выполнена / не выполнена на 22.09 - `UNKNOWN`; от ответа зависит, каким пунктом §3a начинать (А или Б).
 
 **4. Секрет `proxima_webapp_uri` читается контейнером витрины.** Образ webapp работает под uid 1001 (`services/webapp/Dockerfile`), а не 1010, как задания; `provision-runtime-roles.sh` ставит владельца на каждом прогоне (решение Mike 08.09, addendum к D35; блокер B9):
 
@@ -65,7 +65,6 @@ ls /srv/proxima-ai/repo/db/migrations/ | tail -1
 
 **Чего этот черновик не покрывает** (входит в релиз 2.6, но пишется отдельно):
 
-- **Шаг воронки.** `proxima-funnel-v3@.{service,timer}` устанавливаются в §5 runbook 1.14 **без** `enable`; включение едет тегом 2.6 (D33; Stories 3.1/3.4). Команда включения, первый ручной прогон `funnel_v3` и проверка `fact_funnel_daily_current` - в этом файле не написаны.
 - **Сверка с кабинетом WB.** Процедура и допуски - `docs/state/CABINET-RECONCILIATION.md` (эталонный экран и фильтр - `UNKNOWN`, заполняются первой строкой); ведёт Владислав, приёмка Mike. AC 2.6: сверяется день, закрытый ≥ 3 суток назад; допуск `[ASSUMPTION]` ±1 заказ и ±0.5 % выручки; расхождение больше допуска = гейт не пройден.
 - **Сверка нормы с расчётом из артефакта «Ряд продаж Амировой»** (AC 2.6) и гейт теневого пересчёта (Story 6.1/6.2).
 - **Миграции, provision, пересборка образов** - формы §2 runbook 1.14, не дублируются.
@@ -212,6 +211,81 @@ ssh -o ExitOnForwardFailure=yes -N -L 13000:127.0.0.1:3000 proxima   # зате�
 
 **Приёмка Mike:** открыть `/brief`, увидеть вчерашние заказы и выручку против нормы и сверить их с кабинетом WB по процедуре `docs/state/CABINET-RECONCILIATION.md`. Расхождение больше допуска - гейт не пройден (§0, «Чего этот черновик не покрывает»).
 
+## 3a. Шаг воронки
+
+> **ЧЕРНОВИК, как и весь файл.** Раздел написан 09.09.2026 против `main` `08c94cc` (тот же baseline, что у остального файла; после него в `main` успели доехать только доки ночи 08-09.09), до релиза 1.14; все `UNKNOWN` остаются `UNKNOWN` - даты (включая дату ротации PA-13), тег, номера и счётчики прогонов. Перед 22.09 перепроверить `infra/systemd/proxima-funnel-v3@.{service,timer}`, `proxima-funnel-csv@.{service,timer}`, `tools/funnel_v3_run.sh`, `tools/funnel_csv_run.sh` и `db/migrations/017_funnel.sql` по чек-листу в конце файла.
+
+**Что это и почему отдельно.** Ежедневная воронка v3 (Story 3.1) - забор истории воронки за последние 7 дней по активным nmId с версионированием в `stg_wb_funnel_obs` → `fact_funnel_daily`/`fact_funnel_daily_current` (миграция `017_funnel.sql`). Юнит `proxima-funnel-v3@.{service,timer}` стоит в утренней цепочке **рядом**, но не внутри неё (решение 4а, D25; CR к AD-6): провал воронки не отменяет сводку, и наоборот - `funnel_v3_run.sh` намеренно не шаг `morning_run.sh`. По D33 воронка едет тем же тегом 2.6, поэтому шаг воронки - часть этого релиза. Юниты и drop-in устанавливаются в §5 runbook 1.14 (воронка - без `enable`, CSV - даже без установки); здесь только включение и первая проверка.
+
+**Порядок исполнения: строго после §1-§3.** Утренняя цепочка (`proxima-morning@amirova-test.timer`, 05:30 МСК) должна уже отработать, сводка за вчера - в `brief_current` (§2), витрина - на Postgres (§3): «данные (§2) - витрина (§3)» - порядок всего релиза, воронка идёт после него, хотя источник у неё другой. Таймер воронки стреляет в 06:15 МСК - до крайнего срока утра (06:30, `TimeoutStartSec=55min` юнита `proxima-morning@`), поэтому в первый день после включения ручной прогон ниже выполняется после утренней цепочки, а автоматические 06:15 начинаются со следующего утра; позже оба пути живут одновременно, не пересекаясь: воронка не шаг цепочки и её падение цепочку не останавливает.
+
+**Юниты и их расписание** (параметр экземпляра - тенант, у нас `amirova-test`; оба юнита несут `OnFailure=proxima-alert@%n.service`):
+
+| Юнит | Что запускает | Расписание (`OnCalendar`) |
+|---|---|---|
+| `proxima-funnel-v3@amirova-test.{service,timer}` | `tools/funnel_v3_run.sh amirova-test` - `docker compose --profile jobs run --rm collector npm run funnel-v3 -- --tenant amirova-test --analytics-token-file /run/secrets/amirova-test_wb_analytics_token` (`infra/systemd/proxima-funnel-v3@.service`) | ежедневно 06:15 МСК (`proxima-funnel-v3@.timer:5`, `Persistent=true`) |
+| `proxima-funnel-csv@amirova-test.{service,timer}` | `tools/funnel_csv_run.sh amirova-test` - фаза 1 `control-plane-admin python tools/wb_async_report.py --env-file infra/jobs.env --tenant-id amirova-test --period latest-closed-week`, затем фаза 2 `collector npm run funnel-csv-promote -- --tenant amirova-test` (`infra/systemd/proxima-funnel-csv@.service`) | понедельник 06:30 МСК (`proxima-funnel-csv@.timer:5`, `Persistent=true`) |
+
+**Предусловие одного пункта** - §0 п. 3 (ротация PA-13). Дальше два пути:
+
+**Путь А - ротация не выполнена (на 09.09 - фактическое состояние; временный drop-in обязателен).** Drop-in `10-analytics-read-write.conf` уже установлен в §5 runbook 1.14 вместе с юнитом (без `enable`); проверить, что он на месте и юнит его видит:
+
+```bash
+sudo ls /etc/systemd/system/proxima-funnel-v3@.service.d/10-analytics-read-write.conf
+systemctl cat proxima-funnel-v3@amirova-test.service | grep -c ALLOW_ANALYTICS_READ_WRITE
+```
+Ожидается: файл есть; счётчик `1` (строка `Environment=PROXIMA_FUNNEL_V3_ALLOW_ANALYTICS_READ_WRITE=1` из drop-in). Ноль - drop-in потерян: повторить установку формы §5 runbook 1.14 (`install -d` каталога + `install -m 0644` файла + `daemon-reload`); **базовый юнит `proxima-funnel-v3@.service` не менять** - гейт `tools/verify_funnel.py` проверяет, что переменной в нём нет. Смысл: `tools/funnel_v3_run.sh` читает `PROXIMA_FUNNEL_V3_ALLOW_ANALYTICS_READ_WRITE=1` и добавляет `--allow-analytics-read-write`, без которого джоб отклонит read-write токен (`TOKEN_SCOPE_INVALID`); исключение живёт только в drop-in и снимается при ротации PA-13 - форма снятия в §0 п. 3.
+
+**Путь Б - ротация выполнена.** Форма снятия drop-in - §0 п. 3 (`rm`, `daemon-reload`, `grep -c` → `0`, без `restart`). Дальше оба пути сходятся здесь.
+
+**Включение таймеров** (форма §5 runbook 1.14; по образцу `proxima-morning@`):
+
+```bash
+sudo systemctl enable --now proxima-funnel-v3@amirova-test.timer
+sudo systemctl enable --now proxima-funnel-csv@amirova-test.timer
+systemctl list-timers 'proxima-funnel*' --all --no-pager
+```
+Ожидается: обе строки таймеров `active`/`waiting`; `NEXT` `proxima-funnel-v3@amirova-test.timer` - завтра 06:15 МСК, `NEXT` `proxima-funnel-csv@amirova-test.timer` - ближайший понедельник 06:30 МСК (юниты уже установлены §5 runbook 1.14; если тег 2.6 обновил файлы юнитов - сначала повторить установку из них формой §5 runbook 1.14, затем `enable`).
+
+**Первый ручной прогон `funnel_v3` - сразу после включения, не дожидаясь 06:15** (форма - сам runner; он сам проставляет provenance и зовёт compose):
+
+```bash
+cd /srv/proxima-ai/repo
+sudo -E env PATH="$PATH" bash tools/funnel_v3_run.sh amirova-test
+```
+Ожидается в выводе: JSON-лог по шагам `window` (строка `funnel window selected` с `run_day`, `start = run_day − 6`, `end = run_day`, `active_nm_ids`, `batches`), затем `batch` - `observations committed` по каждому пакету (пакеты ≤ 20 nmId), `ratelimit` - `WB rate limit headers as measured`, последняя строка `facts` - `versions committed with SUCCEEDED` с числом `versions` и счётчиками `received/inserted/skipped`. В `collector_runs` появляется строка `kind = funnel_v3`:
+
+```bash
+printf '%s\n' "SELECT set_config('proxima.tenant_id','amirova-test',false);
+SELECT kind, status, finished_at FROM collector_runs
+  WHERE tenant_id='amirova-test' ORDER BY finished_at DESC LIMIT 4;" \
+| sudo docker exec -i proxima-ai-postgres-1 sh -c 'psql -U "$(cat /run/secrets/postgres_user)" -d proxima -v ON_ERROR_STOP=1 -tA'
+```
+Ожидается: среди последних строк - `funnel_v3|SUCCEEDED|<сейчас>` рядом со вчерашними утренними `collect`/`norm`/`brief`. Ошибка `TOKEN_SCOPE_INVALID` - drop-in не виден юниту (путь А выше). `funnel_v3|FAILED` с `coverage: incomplete` - часть пакетов не получена: полученные пакеты уже закоммичены (каждый коммитится сам, Story 3.1 AC), разбираться пакет, на котором упало, - строка `batch failed` в логе прогона. Повтор прогона тот же день - идемпотентен: тот же `canonical_sha256` не добавляет наблюдений (`skipped` вместо `inserted`), изменённый payload за тот же день - новое наблюдение и новая версия.
+
+**Проверка данных** - `_current` за вчера (RLS: тот же `set_config`, что в §2; вчера - по Москве, форма `017_funnel.sql`):
+
+```bash
+printf '%s\n' "SELECT set_config('proxima.tenant_id','amirova-test',false);
+SELECT count(*) AS nm_ids, count(DISTINCT nm_id) AS distinct_nm_ids, count(DISTINCT calendar_day) AS days
+  FROM fact_funnel_daily_current
+  WHERE tenant_id='amirova-test' AND calendar_day = (now() AT TIME ZONE 'Europe/Moscow')::date - 1;" \
+| sudo docker exec -i proxima-ai-postgres-1 sh -c 'psql -U "$(cat /run/secrets/postgres_user)" -d proxima -v ON_ERROR_STOP=1 -tA'
+```
+Ожидается: `days = 1` - версия за вчера; `distinct_nm_ids` = число активных nmId за 30 дней (`stg_wb_orders_latest`) - конкретное число на бой `UNKNOWN`, за день релиза его фиксирует журнал; строка за день одна - `_current` отдаёт последнюю версию по SUCCEEDED-прогону (правило `_current`, `017_funnel.sql`). Пусто - вернуться к ручному прогону: `_current` показывает только версии SUCCEEDED-прогонов; версии за сам `run_day` не создаётся (AD-7).
+
+**Недельный CSV-путь - что делает и почему его включение можно отложить.** Таймер `proxima-funnel-csv@amirova-test.timer` (пн 06:30 МСК) гоняет две фазы: фаза 1 - `tools/wb_async_report.py` от `control-plane-admin` создаёт async-отчёт WB `latest-closed-week` (прогон `funnel_csv_download` в ledger, файл в spool `/srv/proxima-ai/raw/wb-async-spool`); фаза 2 - `collector npm run funnel-csv-promote` промотит строки CSV в те же наблюдения (`source = csv`) и факты, что и v3; в `fact_funnel_daily_current` `csv` предпочитается `v3` за тот же день (`017_funnel.sql`). Включение (и первая фаза) - read-вызовы на analytics-токене; при активном OQ-10 лишняя нагрузка на компрометированный токен не нужна. Отложить можно без ущерба релизу: SM-7 считает N недель от **первого успешного `funnel_v3`** (решение 3а, D25), а не от CSV; детектор читает воронку из `fact_funnel_daily_current` и в M-04 не отличает источников - к 27.10 месячный запас дневной воронки набирается ежедневным v3-путём. Решение - одно слово: не нужен этот путь в сентябре, `disable --now` таймера `proxima-funnel-csv@amirova-test.timer` (D23 - CSV не собирается, FR9) - и путь остаётся установленным, но выключенным; включение позже - тот же `enable --now`, что выше. Ручной прогон обеих фаз при необходимости - `bash tools/funnel_csv_run.sh amirova-test` (сначала `--dry-run`, он печатает обе фазы без вызовов).
+
+**Откат** - выключить таймеры и удалить прогоны воронки; витрина §5 этого файла не затрагивается (у воронки нет витринного потребителя до Epic 4):
+
+```bash
+sudo systemctl disable --now proxima-funnel-v3@amirova-test.timer
+sudo systemctl disable --now proxima-funnel-csv@amirova-test.timer
+```
+Прогон воронки удаляется целиком по `run_id` (AD-3) формой §5 этого файла: сначала `--dry-run`, который печатает счётчики транзитивного замыкания. Замыкание считать с обеих сторон: `delete_run.py` чистит и входы, и зависимые прогоны, поэтому если после воронки уже ночные `brief` записали её версии в `collector_run_inputs` как свои входы, удаление прогона воронки унесёт и эти `brief` (сводка посчитается заново следующим утром); если `brief` ещё не читал воронку, замыкание - только сам прогон воронки. Повторять без `--dry-run` только после сверки напечатанного списка `run_id`. Источники наблюдений (`stg_wb_funnel_obs`) и версии (`fact_funnel_daily`) уходят вместе с прогоном (`ON DELETE CASCADE`, `017_funnel.sql`); ничего вручную в таблицах не чистить. Drop-in при откате не трогать: его судьбу решает только ротация PA-13 (§0 п. 3). Юниты, таймеры и миграцию 017 не удалять и не откатывать - additive-only (AD-14).
+
+**Mike выполняет одно действие:** `make verify` - `funnel_v3: 21 obs, replay 0, changed payload versions` зелёный (тот же гейт, что в AC Story 3.1: `tools/verify_funnel.py` уже входит в `verify` цепочку `Makefile`).
+
 ## 4. Наблюдение семь утр
 
 Окно наблюдения - **23-29.09.2026** по D33 (семь утр после релиза 22.09). AC Story 2.6 называет 24-30.09 (окно после деплоя 23.09) - расхождение зависит от того, какую дату деплоя утвердит Mike; какое окно считать зачётным на 22.09 - `UNKNOWN`, вопрос в конце файла. Зачёт - по `collector_runs`, а не по доставке алерта (CAP-5).
@@ -299,7 +373,7 @@ sudo git -C /srv/proxima-ai/repo log --oneline -1
 | 1 | Релизный тег 2.6 и его форма; baseline-тег отката (тег 1.14) | Mike / исполнитель 1.14, §0 п. 11, §5 |
 | 2 | Несёт ли тег 2.6 новые миграции сверх 018 | состояние `main` перед 22.09, §0 п. 9 |
 | 3 | Статус Story 6.1 (`verification/golden/`) и CP-13 на 22.09 | Владислав, B1 в `RELEASE-READINESS-1.14.md`, §0 п. 2 |
-| 4 | Выполнена ли ротация analytics-токена PA-13 на read-only | Mike, §0 п. 3 |
+| 4 | Выполнена ли ротация analytics-токена PA-13 на read-only и когда (от неё - путь А/Б §3a) | Mike, §0 п. 3, §3a |
 | 5 | Вариант решения по порту 3000 (вывести ручной контейнер или задать `PROXIMA_WEBAPP_PORT`) | Mike, §1 |
 | 6 | Зачётное окно семи утр: 23-29.09 (D33) или 24-30.09 (AC Story 2.6) | Mike, §4 |
 | 7 | Чем реализуется пометка «предварительно» до 14 суток (решение 5б1) | код витрины / Epic 5, §4 |
@@ -307,6 +381,8 @@ sudo git -C /srv/proxima-ai/repo log --oneline -1
 | 9 | Нужен ли отдельный документ готовности к 2.6 | Mike, §6 |
 | 10 | Фактические цифры дня релиза (заказы, выручка, норма, отклонение) | день релиза, журнал `2026-09-22-m03.md` |
 | 11 | Версии образов и sha чекаута на 22.09 | день релиза, журнал |
+| 12 | Число активных nmId и счётчики первого прогона `funnel_v3` (пакеты, наблюдения, версии) на бой | день релиза, журнал `2026-09-22-m03.md`, §3a |
+| 13 | Решение по CSV-пути на сентябрь: держать `proxima-funnel-csv@amirova-test.timer` включённым или `disable --now` до октября (D23/FR9) | Mike, §3a |
 
 ## Открытые вопросы
 
@@ -315,7 +391,8 @@ sudo git -C /srv/proxima-ai/repo log --oneline -1
 3. **Окно семи утр в D33 и в AC Story 2.6 не совпадает** (23-29.09 против 24-30.09) - зависит от даты деплоя; закрывается вместе с датой.
 4. **`/brief` остаётся гибридным экраном.** Дайджест, вердикт и «Критичные сигналы» - фикстуры с пометкой «FX», настоящие приходят с Epic 5, который заморожен по D35 до трёх утр SUCCEEDED. Считать ли релиз 2.6 принятым с фикстурной редакционной частью - вопрос Mike (по AC Story 2.6 - да: приёмка сформулирована как «открывает `/brief` и сверяет вчерашние заказы и выручку с кабинетом»).
 5. **Пункт 1 §6 `RELEASE-READINESS-1.14.md`** (противоречивая пара текстов при «статус есть, сводки нет») закрыт текстами PR #124 - проверить на боевом экране в первое же утро после переключения, отдельного гейта на это нет.
-6. **Шаг воронки едет тем же тегом** (D33), но в этом черновике не описан - нужна отдельная единица до 22.09.
+6. **Решение по CSV-пути на сентябрь.** `proxima-funnel-csv@amirova-test.timer` включается тем же шагом, что и v3 (§3a), но по D23/FR9 в сентябре CSV не собирается; §3a предлагает `disable --now` сразу после включения - подтвердить или опровергнуть одним словом до 22.09.
+7. **Первый ручной прогон воронки - read-вызовы WB на analytics-токене до ротации PA-13.** Путь А §3a выполняет прогон на ещё read-write токене через временный drop-in: это тот же класс исключения, что §3 runbook 1.14 (живой хвост на statistics-токене в день релиза), но токен другой. Нужен ли отдельный go Mike на этот прогон - уточнить в день релиза.
 
 ## Сверить с `main` перед 22.09
 
@@ -325,6 +402,10 @@ sudo git -C /srv/proxima-ai/repo log --oneline -1
 - `services/webapp/src/lib/data/postgres-provider.ts` - что читает провайдер и какие карточки полосы метрик заполняются;
 - `services/webapp/src/components/brief/brief-summary.tsx` - тексты предупреждений §3 (правились в #124);
 - `tools/morning_run.sh` - состав и порядок шагов утренней цепочки;
+- `infra/systemd/proxima-funnel-v3@.{service,timer}` и `proxima-funnel-csv@.{service,timer}` - расписания (`OnCalendar`), `ExecStart`, `OnFailure` и drop-in `10-analytics-read-write.conf`;
+- `tools/funnel_v3_run.sh` / `tools/funnel_csv_run.sh` - форма вызова, переменные (`PROXIMA_SECRETS_DIR`, `PROXIMA_RAW_DIR`, `PROXIMA_FUNNEL_V3_ALLOW_ANALYTICS_READ_WRITE`), флаги;
+- `db/migrations/017_funnel.sql` - правило `fact_funnel_daily_current` (SUCCEEDED + предпочтение `csv`) и каскады для отката;
+- `services/collector/src/jobs/funnel-v3.ts` - шаги лога первого прогона (`window`, `batch`, `facts`) и семантика пакетов;
 - `docs/operations/release-m01.md` - формы доступа, §5 (юниты, drop-in PA-13), §7 (откат);
 - `docs/operations/releases/2026-09-15-m01.md` - что фактически произошло 15.09 и какие отклонения записаны;
 - `docs/state/RELEASE-READINESS-1.14.md` - статусы B1, B5, B6 на день релиза;
