@@ -282,6 +282,7 @@ export function createPostgresProvider(
           revenue: null,
           normProgress: null,
           dataStatus,
+          threshold: { value: null, source: null, date: null },
           anomalies: [],
         };
       }
@@ -310,6 +311,9 @@ export function createPostgresProvider(
         normProgress:
           payload.norm === null ? null : { sampleDays: payload.norm.sample_days, windowDays: payload.norm.window_days },
         dataStatus,
+        // Порог — конфигурация, а не вычисленная цифра дня: показываем его даже
+        // при insufficient/blocked/stale, прямо из того же payload (без SELECT).
+        threshold: payload.threshold,
         // Аномалии - те же цифры дня (Story 4.3): порядок payload сохраняется
         // (Story 4.2 ранжирует по деньгам), а при подавленных цифрах список пуст -
         // экран не покажет сигналы против сводки, которой нельзя верить.

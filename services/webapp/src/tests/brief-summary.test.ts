@@ -18,7 +18,16 @@ const STALE = { ...FRESH, stale: true };
 
 /** Ровно то, что отдаёт postgres-провайдер, пока строки в brief_current нет (режим «только статус»). */
 function noBrief(dataStatus: BriefSummary["dataStatus"]): BriefSummary {
-  return { status: "no-brief", briefDay: null, orders: null, revenue: null, normProgress: null, dataStatus, anomalies: [] };
+  return {
+    status: "no-brief",
+    briefDay: null,
+    orders: null,
+    revenue: null,
+    normProgress: null,
+    dataStatus,
+    threshold: { value: null, source: null, date: null },
+    anomalies: [],
+  };
 }
 
 function render(summary: BriefSummary): string {
