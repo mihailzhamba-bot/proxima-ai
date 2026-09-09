@@ -24,6 +24,10 @@
 
 `scripts/agent/verify` runs the fast subset (structural + typecheck + TS tests + pytest). Where a layer does not exist, it is marked N/A — do not invent checks.
 
+## Local CI parity (D37)
+
+`make ci-parity` is a manual Docker-backed gate for periods when GitHub Actions is unavailable and before a release. It creates an isolated PostgreSQL 16 compose project, validates migration ledger `18|18`, provisions runtime roles twice, runs the real-database subsets from `pg_local_roundtrip.sh`, reapplies migrations through `control-plane-admin`, and verifies systemd units when `systemd-analyze` exists. It is deliberately outside `make verify`, cleans up its volume and temporary secrets by default, and does **not** build images; image builds remain a CI/release check. Use `tools/ci_parity.sh --dry-run`, `--only db|migrations|systemd`, `--port N`, or `--keep` for inspection and focused runs.
+
 ## Per-task-type rubrics
 
 ### Docs / agent-system change
