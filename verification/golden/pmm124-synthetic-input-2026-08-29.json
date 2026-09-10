@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "evaluation_day": "2026-08-29",
+  "window_days": 14,
+  "days": [
+    {
+      "date": "2026-08-15",
+      "orders": 28,
+      "revenue": "34582.00"
+    },
+    {
+      "date": "2026-08-16",
+      "orders": 29,
+      "revenue": "34584.00"
+    },
+    {
+      "date": "2026-08-17",
+      "orders": 30,
+      "revenue": "34586.00"
+    },
+    {
+      "date": "2026-08-18",
+      "orders": 31,
+      "revenue": "34588.00"
+    },
+    {
+      "date": "2026-08-19",
+      "orders": 32,
+      "revenue": "34590.00"
+    },
+    {
+      "date": "2026-08-20",
+      "orders": 33,
+      "revenue": "34592.00"
+    },
+    {
+      "date": "2026-08-21",
+      "orders": 34,
+      "revenue": "34594.00"
+    },
+    {
+      "date": "2026-08-22",
+      "orders": 35,
+      "revenue": "34596.00"
+    },
+    {
+      "date": "2026-08-23",
+      "orders": 36,
+      "revenue": "34598.00"
+    },
+    {
+      "date": "2026-08-24",
+      "orders": 37,
+      "revenue": "34600.00"
+    },
+    {
+      "date": "2026-08-25",
+      "orders": 38,
+      "revenue": "34602.00"
+    },
+    {
+      "date": "2026-08-26",
+      "orders": 39,
+      "revenue": "34604.00"
+    },
+    {
+      "date": "2026-08-27",
+      "orders": 40,
+      "revenue": "34606.00"
+    },
+    {
+      "date": "2026-08-28",
+      "orders": 41,
+      "revenue": "34608.00"
+    }
+  ],
+  "actual": {
+    "orders": 27,
+    "revenue": "41141.00"
+  }
+}

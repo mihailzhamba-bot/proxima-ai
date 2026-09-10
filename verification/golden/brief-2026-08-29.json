@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "calculation_id": "brief-2026-08-29",
+  "formula_version": "brief-deviation-v1",
+  "computed_by": "vladislav",
+  "computed_at": "2026-09-10T12:38:11Z",
+  "method": "deviation_pct=(actual-norm)/norm*100; Decimal; round once after division to 0.1 percentage point",
+  "source": {
+    "kind": "synthetic",
+    "sha256": "a22de4ec34bc69ab98965f657e65ccd6dd1af5a0e555adb1d060d30dbe41d6ca",
+    "path": "verification/golden/pmm124-synthetic-input-2026-08-29.json"
+  },
+  "tenant_id": "amirova-test",
+  "expected": {
+    "actual": {
+      "orders": 27,
+      "revenue": "41141.00"
+    },
+    "norm": {
+      "orders": "34.50",
+      "revenue": "34595.00",
+      "window_days": 14,
+      "sample_days": 14
+    },
+    "deviation_pct": {
+      "orders": "-21.7",
+      "revenue": "18.9"
+    },
+    "status": "ok"
+  },
+  "tolerance": {
+    "orders": "0.01",
+    "revenue": "0.01",
+    "deviation_pct": "0.05"
+  }
+}
