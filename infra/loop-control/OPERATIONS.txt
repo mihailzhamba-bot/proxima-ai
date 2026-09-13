@@ -120,7 +120,8 @@ tests/config/контрактов в worker-кандидате запрещен�
 tracked coverage, symlink, выход за checkout и неожиданные файлы отклоняются.
 
 Producer использует только доверенные /opt/offline/npm и /opt/offline/uv, копирует их
-в writable /tmp и явно запрещает сеть/download Python. Python 3.14 заранее установлен
+в writable /tmp и явно запрещает сеть/download Python. CI=true включает существующий puppeteer.ci.json для Chromium внутри изоляции Docker;
+NEXT_TELEMETRY_DISABLED=1 запрещает telemetry сборки. Python 3.14 заранее установлен
 в verification image. HOME - scratch; USER/LOGNAME берутся из фактического UID.
 Prepare устанавливает locked dependencies, затем package-файлы становятся read-only.
 Отдельно доступны writable build outputs, .vite-temp/.vite caches и build-only overlay

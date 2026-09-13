@@ -61,7 +61,7 @@ def source_manifest(root,sha,env,require_readonly=True,stage="verify"):
 
 def produce(root,sha,stage,require_readonly=True,env=None):
     if not re.fullmatch(r"[0-9a-f]{40}",sha) or stage not in {"prepare","verify","build"}:raise ValueError("invalid verification request")
-    env={**os.environ,**(env or {}),"PUPPETEER_SKIP_DOWNLOAD":"1","PROXIMA_VERIFY_READONLY":"1","PYTHONDONTWRITEBYTECODE":"1","GIT_OPTIONAL_LOCKS":"0","GIT_CONFIG_GLOBAL":"/dev/null","GIT_CONFIG_SYSTEM":"/dev/null","UV_NO_SYNC":"1","NPM_CONFIG_AUDIT":"false","NPM_CONFIG_FUND":"false","NPM_CONFIG_LOGS_DIR":"/tmp/npm-logs"}
+    env={**os.environ,**(env or {}),"CI":"true","NEXT_TELEMETRY_DISABLED":"1","PUPPETEER_SKIP_DOWNLOAD":"1","PROXIMA_VERIFY_READONLY":"1","PYTHONDONTWRITEBYTECODE":"1","GIT_OPTIONAL_LOCKS":"0","GIT_CONFIG_GLOBAL":"/dev/null","GIT_CONFIG_SYSTEM":"/dev/null","UV_NO_SYNC":"1","NPM_CONFIG_AUDIT":"false","NPM_CONFIG_FUND":"false","NPM_CONFIG_LOGS_DIR":"/tmp/npm-logs"}
     receipt={"sha":sha,"stage":stage,"status":"fail","checks":{},"logs":{},"manifest_sha256":None}
     try:
         env=prepare_environment(env)

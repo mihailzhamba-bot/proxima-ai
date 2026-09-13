@@ -21,7 +21,7 @@ def project(tmp_path,monkeypatch):
     subprocess.run(["git","-C",str(root),"-c","user.name=Fixture","-c","user.email=fixture@example.invalid","commit","-qm","fixture"],check=True)
     sha=subprocess.check_output(["git","-C",str(root),"rev-parse","HEAD"],text=True).strip()
     binaries=tmp_path/"bin";binaries.mkdir()
-    code="#!/usr/bin/env python3\nimport os,sys\nfrom pathlib import Path\nif os.environ.get('MUTATE')=='1':Path('source.txt').write_text('changed')\nprint(os.environ.get('PG_MARKER','pg-roundtrip: PASS'))\nprint('Bearer fixture-sensitive-value',file=sys.stderr)\nsys.exit(int(os.environ.get('EXIT_CODE','0')))\n"
+    code="#!/usr/bin/env python3\nimport os,sys\nfrom pathlib import Path\nassert os.environ.get('CI')=='true'\nassert os.environ.get('NEXT_TELEMETRY_DISABLED')=='1'\nif os.environ.get('MUTATE')=='1':Path('source.txt').write_text('changed')\nprint(os.environ.get('PG_MARKER','pg-roundtrip: PASS'))\nprint('Bearer fixture-sensitive-value',file=sys.stderr)\nsys.exit(int(os.environ.get('EXIT_CODE','0')))\n"
     for name in ["make","npm"]:
         path=binaries/name;path.write_text(code);path.chmod(0o755)
     env={"PATH":str(binaries)+os.pathsep+os.environ["PATH"]}
@@ -29,7 +29,7 @@ def project(tmp_path,monkeypatch):
 
 @pytest.mark.parametrize("stage",["verify","build"])
 def test_real_producer_success_has_exact_sha_receipt(project,stage):
-    root,sha,env=project;r=produce(root,sha,stage,False,env)
+    root,sha,env=project;r=produce(root,sha,stage,False,{**env,"CI":"false","NEXT_TELEMETRY_DISABLED":"0"})
     assert r["checks"]=={stage:{"sha":sha,"status":"pass","skipped":0}}
     assert "fixture-sensitive-value" not in json.dumps(r)
 
