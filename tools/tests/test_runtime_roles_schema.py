@@ -19,7 +19,7 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
                 "'proxima_migration_owner', 'proxima_source_publisher',"
                 "'proxima_release_publisher', 'proxima_data_health_read',"
                 "'proxima_job_collector', 'proxima_job_norm',"
-                "'proxima_webapp_readonly', 'proxima_run_janitor')"
+                "'proxima_webapp_readonly', 'proxima_run_janitor', 'proxima_loop_writer', 'proxima_auth_writer')"
             ).fetchall()
         }
         assert roles == {
@@ -31,6 +31,7 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
             "proxima_job_norm",
             "proxima_webapp_readonly",
             "proxima_run_janitor",
+            "proxima_loop_writer", "proxima_auth_writer",
         }
         for role in roles:
             row = connection.execute(
@@ -43,6 +44,19 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
                 "SELECT has_table_privilege(%s, %s, %s) AS ok", (role, table, privilege)
             ).fetchone()
             return bool(row["ok"])
+
+        # LOOP: model/auth cannot write decisions; queue cannot change identity/membership.
+        for table in ("decision_records", "loop_tasks", "task_events", "task_observations"):
+            assert can("proxima_loop_writer", "SELECT", table)
+            assert can("proxima_loop_writer", "INSERT", table)
+            assert not can("proxima_loop_writer", "UPDATE", table)
+            assert not can("proxima_loop_writer", "DELETE", table)
+            assert not can("proxima_auth_writer", "SELECT", table)
+        assert not can("proxima_loop_writer", "INSERT", "cabinet_memberships")
+        assert not can("proxima_loop_writer", "UPDATE", "cabinet_memberships")
+        assert can("proxima_auth_writer", "DELETE", 'webapp_auth."session"')
+        assert not can("proxima_loop_writer", "SELECT", 'webapp_auth."account"')
+        assert not can("proxima_webapp_readonly", "INSERT", "decision_records")
 
         # source publisher: writes facts family, reads evidence, never pointers/schema ledger
         assert can("proxima_source_publisher", "INSERT", "fact_order_counts")
@@ -147,6 +161,7 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
 def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
     dsn = os.environ["PROXIMA_TEST_POSTGRES_DSN"]
     expected_tables = {
+        "workflow_runs", "cabinet_memberships", "decision_records", "loop_tasks", "task_events", "task_observations",
         "fact_attempt_runs",
         "stg_quarantine_rows",
         "fact_order_counts",
@@ -183,7 +198,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         policy_count = connection.execute(
             "SELECT count(*) AS n FROM pg_policies WHERE schemaname = 'public'"
         ).fetchone()["n"]
-        assert policy_count == 58
+        assert policy_count == 68
         janitor_tables = {
             row["tablename"]
             for row in connection.execute(
