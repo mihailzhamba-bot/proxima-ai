@@ -340,4 +340,16 @@ if [[ "${DETECTOR_PASSED:-0}" -lt 5 ]]; then
 fi
 echo "detector: db signals on nm facts, none when brief not ok (${DETECTOR_PASSED} tests)"
 
+# LOOP: run real DB tests in the webapp too; this must not silently skip.
+LOOP_LOG="${WORK}/loop-db-tests.log"
+if ! (cd "${REPO_ROOT}" && npm --workspace @proxima/webapp exec -- vitest run src/tests/loop.db.test.ts) >"${LOOP_LOG}" 2>&1; then
+  python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text())' "${LOOP_LOG}"
+  exit 1
+fi
+if grep -q 'skipped' "${LOOP_LOG}"; then
+  printf '%s\n' 'pg-roundtrip: FAIL (LOOP tests skipped)'
+  exit 1
+fi
+printf '%s\n' 'loop: transactions, membership, retries, RLS, cancellation, observation'
+
 echo "pg-roundtrip: PASS"

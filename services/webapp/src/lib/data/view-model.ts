@@ -16,6 +16,7 @@
 import type { GyrStatus } from "@/lib/gyr";
 import type { BriefV1 } from "@/lib/contracts/brief";
 import type { SignalV1 } from "@/lib/contracts/signal";
+import type { PilotDiagnosis } from "@/lib/loop/diagnosis";
 
 /** Откуда UI берёт данные. Переключается конфигом, не правкой компонентов. */
 export type DataMode = "fixtures" | "postgres";
@@ -134,6 +135,8 @@ export type AnomalyMetric = "orders" | "revenue";
  * null - экран не достраивает значения. Деньги остаются строкой AD-10.
  */
 export type BriefAnomaly = {
+  snapshotId?: string;
+  diagnosis?: PilotDiagnosis;
   /** `signal_id` - ключ строки. */
   id: string;
   scenarioCode: SignalV1["scenario_code"];
