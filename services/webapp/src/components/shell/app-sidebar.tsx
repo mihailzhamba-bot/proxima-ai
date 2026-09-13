@@ -16,7 +16,7 @@ const NAV_SECTIONS: readonly { title: string; items: readonly NavItem[] }[] = [
     title: "Ежедневное",
     items: [
       { href: "/brief", label: "Бриф", icon: Newspaper },
-      { href: "/inbox", label: "Inbox", icon: Bell },
+      { href: "/inbox", label: "Задачи", icon: Bell },
     ],
   },
   {

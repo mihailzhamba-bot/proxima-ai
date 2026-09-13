@@ -1,0 +1,59 @@
+name: loop-control
+# Build on Harper, pull digest-pinned artifacts here. No build stanza on control.
+services:
+  paperclip:
+    image: ${LOOP_PAPERCLIP_IMAGE:?digest-pinned image required}
+    restart: unless-stopped
+    init: true
+    mem_limit: 2g
+    cpus: 1.5
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      PAPERCLIP_HOME: /var/lib/paperclip
+      PORT: "3100"
+      HOST: "0.0.0.0"
+    env_file: /etc/loop/paperclip.env
+    volumes: [paperclip:/var/lib/paperclip]
+    networks: [control]
+    ports: ["127.0.0.1:3100:3100"]
+  hermes:
+    image: ${LOOP_HERMES_IMAGE:?digest-pinned image required}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    mem_limit: 2g
+    cpus: 1
+    pids_limit: 128
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=256m"]
+    environment:
+      HERMES_HOME: /var/lib/loop/hermes
+      API_SERVER_HOST: "0.0.0.0"
+      API_SERVER_PORT: "8642"
+    env_file: /etc/loop/director.env
+    volumes: ["hermes:/var/lib/loop/hermes", "/etc/loop/hermes.yaml:/var/lib/loop/hermes/config.yaml:ro", "/etc/loop/secrets/bridge_director:/run/secrets/bridge_director:ro"]
+    networks: [control]
+  bridge:
+    image: ${LOOP_BRIDGE_IMAGE:?digest-pinned image required}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+    volumes: ["bridge:/var/lib/loop/bridge", "/etc/loop/bridge.json:/etc/loop/bridge.json:ro", "/etc/loop/secrets:/run/secrets:ro"]
+    networks: [control]
+    ports: ["127.0.0.1:18770:18770"]
+    command: ["python3", "/opt/loop/bridge.py", "--config", "/etc/loop/bridge.json"]
+networks:
+  control: {}
+volumes:
+  paperclip: {}
+  hermes: {}
+  bridge: {}

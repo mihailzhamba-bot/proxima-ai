@@ -1,0 +1,31 @@
+{
+  "paperclip": {
+    "repository": "https://github.com/paperclipai/paperclip.git",
+    "commit": "65ec059bde30d98c92165b24a30a540800dd1f6f",
+    "node": "24.11.0",
+    "pnpm": "9.15.4"
+  },
+  "hermes": {
+    "repository": "https://github.com/NousResearch/hermes-agent.git",
+    "commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
+    "python": "3.12"
+  },
+  "bridge": {
+    "source": "tools/loop/bridge.py",
+    "python": "3.12"
+  },
+  "images": {
+    "paperclip": null,
+    "hermes": null,
+    "bridge": null,
+    "verification": null
+  },
+  "mode": "pr_only",
+  "live_ready": false,
+  "blocked_on": [
+    "new_control_vps_ip",
+    "dedicated_director_credentials",
+    "built_image_digests",
+    "runtime_acceptance"
+  ]
+}

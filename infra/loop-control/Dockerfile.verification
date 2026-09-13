@@ -1,0 +1,3 @@
+ARG VERIFICATION_BASE
+FROM ${VERIFICATION_BASE}
+COPY tools/loop/verify_candidate.py /opt/loop/verify_candidate.py

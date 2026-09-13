@@ -1,0 +1,81 @@
+LOOP pilot package - 2026-09-13, PREPARED, LIVE UNAVAILABLE
+
+Topology
+New dedicated LOOP-control VPS: Paperclip, separate Hermes Director and persistent
+Bridge only. IP and fresh Director/model credentials are not supplied. Simone is
+excluded. Never copy an existing Hermes home, memory, OAuth or tokens. Claudette
+keeps the existing OpenHands service and a dedicated source checkout. Harper runs
+all builds and verification. Stop at ready PR. No merge/deploy command is present.
+
+Provision after Mike creates/approves the VPS
+1. On Harper run prepare_upstream.py with exact host identity; build each upstream
+   using its pinned source Dockerfile, never an unpinned latest image. Extend the
+   established runner with Dockerfile.verification. Record resulting registry image
+   digests in versions.lock.json and the deployment environment. No build on control.
+2. On the new VPS install Docker, firewall SSH/admin ingress to approved sources,
+   provision unique service users and root-owned /etc/loop configs. Use new volumes.
+   Set /etc/loop/director.env from newly issued model credentials. API_SERVER_KEY and
+   HERMES_HOME belong to this Director only. Configure Hermes allowed toolsets to
+   read/research and the narrow Bridge tool; terminal/process/cron are disabled.
+   Verify the actual tool inventory before the first run. The model gets only the
+   Bridge director credential, never Board, runner, OpenHands or GitHub credentials.
+3. In Paperclip create exactly one Director using the official hermes_gateway adapter
+   (paperclip-director.example.json). Resolve the gateway key from its secret store;
+   example contains no secret value. dangerouslyAllowInsecureRemoteHttp is scoped
+   only to bridge:18770 in this same-host Docker network; cross-host URLs require HTTPS. Its baseUrl points at Bridge /hermes. Disable
+   all other Director timers/cron. Configure routines only in Paperclip. The 900-second
+   routine is an operator-adjustable startup interval, not a measured SLA.
+4. Store Bridge secrets mode0600 with ownership for UID10001. Give operator, gateway,
+   director and runner distinct credentials. Fill actual private endpoints; do not
+   expose plaintext HTTP across hosts. Install runner.py on Harper, worker_dispatch.py
+   on Claudette, root-owned templates outside worker workspaces. templates start empty;
+   populate only reviewed base SHA/prompt_file/allowed_paths. Install the independent
+   reviewer executable outside candidate workspaces. Its report is accepted only for
+   the exact SHA and zero blockers. No worker-supplied PASS satisfies this gate.
+5. Pull digest-pinned images and start compose only after deploy approval. Validate
+   BetterAuth with separate DB login roles inheriting proxima_auth_writer and
+   proxima_loop_writer. SQL bootstrap is migration019. No auth tables existed on the
+   live/rehearsal DB at the read-only inspection 2026-09-13; existing model table names
+   user/session/account/verification are preserved. Registration gives no membership.
+
+DB environment and membership
+WEBAPP_DATA_MODE=postgres and WEBAPP_TENANT_ID select the pilot cabinet. Set
+WEBAPP_DATA_DATABASE_URI_FILE for readonly data, WEBAPP_LOOP_DATABASE_URI_FILE for
+queue, WEBAPP_AUTH_DATABASE_URI_FILE for BetterAuth, plus BETTER_AUTH_SECRET and
+BETTER_AUTH_URL. Postgres mode always validates real server sessions. Operator first
+creates personal accounts, then one workflow_runs command='provision' and explicitly
+inserts cabinet_memberships (owner Mike, named employees). Do not seed owner on signup.
+Queue writes never touch WB. Completion requires assignee evidence. The owner observes
+later; only same-SKU orders/revenue targets are currently comparable. Category targets
+remain unknown, and reaching a goal is not a causal claim.
+
+Operation and recovery
+Use tools/loop/loopctl.py for status, wake, pause, resume, stop, events and recover-pr.
+Wake goes to Paperclip; Bridge is not a scheduler. Runner is invoked for a queued
+approved job via runner.py --config <trusted file> --job <job ID> on Harper. Director
+sees the Bridge run_id and generation in its trusted wake input. Unknown dispatch is
+never repeated, even after the upstream 24h idempotency expiry. Check remote run lists
+and adopt a confirmed external ID with operator credentials. A dispatching job cannot
+be claimed a second time; inspect deterministic OpenHands conversation and its saved
+bundle. An uncertain PR is recovered by its fixed branch plus verified SHA only.
+
+Cancellation fences locally before network. Paperclip cancel is Board-only and does
+not imply Hermes stop. Bridge explicitly stops Hermes and pauses OpenHands, then
+reads their actual states. No confirmation means CANCELLING, not stopped. A delayed
+Hermes child of a cancelled parent cannot obtain a lease. SSE is a status snapshot,
+not replay; Paperclip event cursor is durable. Heavy verification never runs here.
+
+Backup and rollback
+Before deployment retain mode0600 encrypted backups of DB, Bridge SQLite online
+backup (sqlite backup API), separate Hermes state and Paperclip storage. Do not copy
+live SQLite with cp. Stop new dispatch before rollback, stop active attempts, retain
+unknown intents. Restore previous pinned images with compatible persistent schema;
+never delete decisions or clear uncertain runs to unblock the queue. Test restore on
+an isolated volume, validate SQLite integrity and expected row counts before use.
+
+Acceptance still required
+New VPS IP, dedicated credentials, image digests, configured no-terminal tool inventory,
+HTTPS/private ingress, personal membership, real Paperclip/Hermes/OpenHands roundtrip,
+Harper build/review/publish, cancel/restart and backup restore on this VPS. Repository
+unit/DB/browser checks cannot establish live readiness. Daily operation acceptance is
+separate from this PR. Production and merge remain Mike's decision.

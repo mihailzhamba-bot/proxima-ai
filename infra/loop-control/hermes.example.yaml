@@ -1,0 +1,13 @@
+# Fresh isolated profile only. Supply a separately issued model in director.env.
+platform_toolsets:
+  api_server: [loop]
+agent:
+  disabled_toolsets: [terminal, cronjob, code_execution, delegation, browser]
+mcp_servers:
+  loop:
+    command: python3
+    args: [/opt/loop/director_tool.py]
+    env:
+      LOOP_BRIDGE_URL: http://bridge:18770
+      LOOP_DIRECTOR_TOKEN_FILE: /run/secrets/bridge_director
+# No enabled Telegram poller or cron. Paperclip owns all Director scheduling.

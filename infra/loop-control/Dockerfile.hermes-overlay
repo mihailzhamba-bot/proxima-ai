@@ -1,0 +1,4 @@
+ARG HERMES_BASE
+FROM ${HERMES_BASE}
+COPY tools/loop/director_tool.py tools/loop/bridge.py /opt/loop/
+CMD ["hermes", "gateway", "run", "--no-supervise", "--external-supervisor"]

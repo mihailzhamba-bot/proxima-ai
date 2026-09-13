@@ -1,0 +1,151 @@
+"""Failure tests hit the same persistent intent, cancellation and publication paths as HTTP."""
+from __future__ import annotations
+import json
+import threading
+import pytest
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from tools.loop.bridge import Bridge, BridgeError, JsonHTTP, server
+
+class Remote:
+    def __init__(self): self.calls=[]; self.status="running"; self.fail_create=False; self.fail_stop=False
+    def call(self,method,path,payload=None,headers=None):
+        self.calls.append((method,path,payload,headers))
+        if method=="POST" and path.endswith("/stop"):
+            if self.fail_stop: raise BridgeError(502,"offline")
+            self.status="stopped";return {}
+        if path.endswith("/pause"):return {"success":True}
+        if "/api/conversations/" in path:return {"execution_status":"paused"}
+        if method=="POST":
+            if self.fail_create: raise BridgeError(502,"response lost")
+            return {"run_id":"remote-1","status":"running"}
+        if "/events?" in path:return [{"seq":1,"type":"event"}]
+        return {"run_id":"remote-1","status":self.status}
+
+def setup(tmp_path,publisher=None):
+    h,p,o=Remote(),Remote(),Remote()
+    b=Bridge(tmp_path/"bridge.sqlite",h,p,"fixture-director",o,publisher)
+    return b,h,p,o
+
+def run(b,key="run-1"):
+    return b.create("hermes",key,{"input":"fixture task","instructions":"fixture instructions","session_id":"fixture-session"})["run_id"]
+
+def job(b,r):return b.propose_job({"job_id":"job-1","run_id":r,"generation":1,"template":"fixture"},{"fixture":{}})
+
+def test_repeated_create_is_durable_and_payload_conflict_rejected(tmp_path):
+    b,h,p,o=setup(tmp_path);r=run(b)
+    assert run(b)==r
+    b=Bridge(tmp_path/"bridge.sqlite",h,p,"fixture-director",o)
+    assert run(b)==r
+    assert len([c for c in h.calls if c[0]=="POST"])==1
+    with pytest.raises(BridgeError):b.create("hermes","run-1",{"input":"changed"})
+
+def test_lost_reply_never_redispatches_even_after_24h_restart(tmp_path):
+    b,h,p,o=setup(tmp_path);h.fail_create=True
+    with pytest.raises(BridgeError):run(b)
+    b=Bridge(tmp_path/"bridge.sqlite",h,p,"fixture-director",o)
+    with pytest.raises(BridgeError):run(b)
+    assert len(h.calls)==1
+    with b.tx() as db: assert db.execute("SELECT state FROM operations").fetchone()[0]=="unknown"
+
+def test_restart_during_dispatch_quarantines_before_retry(tmp_path):
+    b,h,p,o=setup(tmp_path)
+    b.intent("paperclip","wake-1",{"reason":"fixture"})
+    b=Bridge(tmp_path/"bridge.sqlite",h,p,"fixture-director",o)
+    with pytest.raises(BridgeError): b.create("paperclip","wake-1",{"reason":"fixture"})
+    assert p.calls==[]
+
+def test_cancel_fences_late_worker_and_explicitly_stops_remote(tmp_path):
+    b,h,p,o=setup(tmp_path);r=run(b);job(b,r);b.claim_job("job-1")
+    assert b.cancel(r)["status"]=="cancelled"
+    with pytest.raises(BridgeError):b.fence("job-1")
+    assert any(c[1].endswith("/stop") for c in h.calls)
+    assert any(c[1].endswith("/pause") for c in o.calls)
+    assert b.job("job-1")["state"]=="cancelled"
+
+def test_stop_network_failure_keeps_cancelling_not_claimed_stopped(tmp_path):
+    b,h,_,_=setup(tmp_path);r=run(b);h.fail_stop=True
+    assert b.cancel(r)["status"]=="cancelling"
+    h.fail_stop=False
+    assert b.cancel(r)["status"]=="cancelled"
+
+def test_interrupted_hermes_invalidates_publication_on_reconcile(tmp_path):
+    b,h,_,_=setup(tmp_path);r=run(b);job(b,r);h.status="interrupted"
+    with pytest.raises(BridgeError):b.fence("job-1")
+
+def test_pause_and_one_director_lease(tmp_path):
+    b,_,_,_=setup(tmp_path);run(b)
+    with pytest.raises(BridgeError):run(b,"run-2")
+    b.pause(True)
+    with pytest.raises(BridgeError):b.create("paperclip","wake-1",{})
+
+def test_paperclip_wakeup_is_not_assumed_globally_idempotent_and_cursor_persists(tmp_path):
+    b,_,p,_=setup(tmp_path)
+    r=b.create("paperclip","wake-1",{})["run_id"]
+    assert b.paperclip_events(r)=={"cursor":1,"count":1}
+    assert b.paperclip_events(r)=={"cursor":1,"count":1}
+    with b.tx() as db: assert db.execute("SELECT count(*) FROM events").fetchone()[0]==1
+    assert p.calls[0][1]=="/api/agents/fixture-director/wakeup"
+    assert p.calls[0][2]["forceFreshSession"] is False
+
+def test_only_exact_independent_receipts_can_reach_pr_and_no_auto_merge(tmp_path):
+    published=[]
+    b,_,_,_=setup(tmp_path,lambda job,sha:published.append((job,sha)) or "https://github.com/fixture/repo/pull/1")
+    r=run(b);job(b,r);b.claim_job("job-1")
+    with pytest.raises(BridgeError):b.publish("job-1",{"worker_says":"PASS"})
+    assert published==[]
+    sha="a"*40
+    report={"producer":"harper","sha":sha,"checks":{name:{"sha":sha,"status":"pass","skipped":0} for name in ["verify","build","review"]}}
+    assert b.publish("job-1",report)["state"]=="ready_pr"
+    assert len(published)==1
+    assert b.publish("job-1",report)["state"]=="ready_pr"
+    assert len(published)==1
+
+def test_http_identity_separates_gateway_director_and_runner(tmp_path):
+    b,_,_,_=setup(tmp_path)
+    credentials={}
+    for role in ["gateway","operator","director","runner"]:
+        path=tmp_path/(role+".key");path.write_text("fixture-"+role);path.chmod(0o600);credentials[role]=str(path)
+    http=server(b,{"port":0,"credential_files":credentials,"templates":{"fixture":{}}})
+    thread=threading.Thread(target=http.serve_forever,daemon=True);thread.start()
+    url=f"http://127.0.0.1:{http.server_port}"
+    try:
+        gateway=JsonHTTP(url,"fixture-gateway")
+        result=gateway.call("POST","/hermes/v1/runs",{"input":"fixture","instructions":"fixture","session_id":"fixture-session"},{"Idempotency-Key":"paperclip-run","X-Hermes-Session-Key":"fixture-session"})
+        assert result["status"]=="running"
+        with pytest.raises(BridgeError):gateway.call("POST","/v1/wake",{})
+        director=JsonHTTP(url,"fixture-director")
+        director.call("POST","/v1/jobs",{"job_id":"job-1","run_id":result["run_id"],"generation":1,"template":"fixture"})
+        with pytest.raises(BridgeError):director.call("POST","/v1/runner/jobs/job-1/publish",{"worker_says":"PASS"})
+    finally:http.shutdown();http.server_close();thread.join()
+
+
+def test_cancelled_paperclip_parent_rejects_delayed_hermes_dispatch(tmp_path):
+    b,h,p,o=setup(tmp_path)
+    parent=b.create("paperclip","wake-1",{})["run_id"]
+    b.cancel(parent)
+    with pytest.raises(BridgeError):run(b,"remote-1")
+    assert h.calls==[]
+
+@pytest.mark.parametrize("upstream,normalized",[("succeeded","completed"),("scheduled_retry","interrupted"),("timed_out","failed")])
+def test_paperclip_terminal_mapping(tmp_path,upstream,normalized):
+    b,_,p,_=setup(tmp_path)
+    parent=b.create("paperclip","wake-1",{})["run_id"]
+    p.status=upstream
+    assert b.reconcile(parent)["status"]==normalized
+
+
+def test_restart_recovers_existing_pr_without_repeating_create(tmp_path):
+    class Publisher:
+        def __call__(self,job,sha):raise OSError("lost receipt")
+        def lookup(self,job,sha):return "https://github.com/fixture/repo/pull/9"
+    b,h,p,o=setup(tmp_path,Publisher());r=run(b);job(b,r);b.claim_job("job-1")
+    sha="a"*40;report={"producer":"harper","sha":sha,"checks":{name:{"sha":sha,"status":"pass","skipped":0} for name in ["verify","build","review"]}}
+    with pytest.raises(BridgeError):b.publish("job-1",report)
+    b=Bridge(tmp_path/"bridge.sqlite",h,p,"fixture-director",o,Publisher())
+    assert b.recover_pr("job-1")["state"]=="ready_pr"
+
+def test_unrouteable_job_ids_are_rejected(tmp_path):
+    b,_,_,_=setup(tmp_path);r=run(b)
+    with pytest.raises(BridgeError):b.propose_job({"job_id":"Colon:Job_1","run_id":r,"generation":1,"template":"fixture"},{"fixture":{}})

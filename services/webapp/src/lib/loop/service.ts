@@ -21,7 +21,7 @@ export type TaskItem = {
   expected_outcome: string; horizon_days: number; created_at: string;
   status: "open" | "blocked" | "completed" | "cancelled"; orphaned: boolean;
   blocker: string | null; evidence: string | null; completed_at: string | null;
-  observation: { status: string; reason: string; created_at: string } | null;
+  observation: { status: string; reason: string; created_at: string; snapshot: { evaluation_day: string; measurements: { name: string; expected: string; actual: string; unit: string; source_refs: string[] }[] } | null } | null;
 };
 const taskSelect = `SELECT t.task_id, t.assignee_id, u.name AS assignee_name, t.action, t.due_at::text, t.expected_outcome,
  t.horizon_days, t.created_at::text, d.source_brief_run_id IS NULL AS orphaned,
@@ -32,7 +32,7 @@ const taskSelect = `SELECT t.task_id, t.assignee_id, u.name AS assignee_name, t.
  (SELECT e.evidence FROM task_events e WHERE e.tenant_id=t.tenant_id AND e.task_id=t.task_id AND e.kind='blocked') AS blocker,
  (SELECT e.created_at::text FROM task_events e WHERE e.tenant_id=t.tenant_id AND e.task_id=t.task_id
  AND e.kind='completed') AS completed_at,
- (SELECT jsonb_build_object('status', o.status, 'reason', o.reason, 'created_at', o.created_at)
+ (SELECT jsonb_build_object('status', o.status, 'reason', o.reason, 'created_at', o.created_at, 'snapshot', o.snapshot)
  FROM task_observations o WHERE o.tenant_id=t.tenant_id AND o.task_id=t.task_id
  ORDER BY o.created_at DESC, o.observation_id DESC LIMIT 1) AS observation
  FROM loop_tasks t JOIN decision_records d ON d.tenant_id=t.tenant_id AND d.decision_id=t.decision_id JOIN webapp_auth.\"user\" u ON u.id=t.assignee_id`;
@@ -170,12 +170,12 @@ export function createQueueService(pool: QueuePool, clock = () => new Date()) {
       if (run.replay) return run.result!;
       if (t.status === "cancelled") throw new QueueError(409, "Задача отменена.");
       let reason = observationReadiness(t, clock());
-      let status = reason ? "pending" : "observed";
+      let status = t.orphaned ? "unknown" : reason ? "pending" : "observed";
       let snapshot: unknown = null;
       if (!reason) {
         try {
           const row = await freshBrief(db, p);
-          const end = new Date(Date.parse(t.completed_at!) + t.horizon_days * 86_400_000).toISOString().slice(0, 10);
+          const end = new Date(Date.parse(t.completed_at!) + t.horizon_days * 86_400_000 + 3 * 3_600_000).toISOString().slice(0, 10);
           if (row.brief_day < end) { status = "unknown"; reason = "В сводке ещё нет полного дня после срока наблюдения."; }
           else {
             const saved = await db.query("SELECT d.signal_snapshot, d.payload FROM decision_records d JOIN loop_tasks t ON d.tenant_id=t.tenant_id AND d.decision_id=t.decision_id WHERE t.tenant_id=$1 AND t.task_id=$2", [p.tenantId, taskId]);

@@ -23,7 +23,7 @@ function useCommand() {
       const response = await fetch("/api/loop/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, idempotencyKey: attempt.current.key }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Команда не выполнена.");
-      setMessage(success); router.refresh();
+      attempt.current = null; setMessage(success); router.refresh();
     } catch (e) { setError(e instanceof Error ? e.message : "Нет связи. Повторите ту же команду."); }
     finally { setPending(false); }
   }
@@ -75,6 +75,7 @@ function TaskCard({ task, role }: { task: TaskItem; role: "owner" | "employee" }
     {task.evidence && <p className="mt-3 whitespace-pre-wrap break-words text-sm">Подтверждение сотрудника: {task.evidence}</p>}
     {task.blocker && <p className="mt-3 whitespace-pre-wrap break-words text-sm">Блокер: {task.blocker}</p>}
     {task.status === "completed" && <p className="mt-3 text-sm text-muted-foreground">{task.observation?.reason ?? "Проверка ещё не проведена. Восстановление продаж не подтверждено."}</p>}
+    {task.observation?.snapshot && <details className="mt-3 text-sm"><summary className="cursor-pointer py-2">Показатели и источники проверки</summary><p className="font-mono">День: {task.observation.snapshot.evaluation_day}</p>{task.observation.snapshot.measurements.map((m, i) => <div key={i} className="mt-3 space-y-1"><p>{m.name === "orders" ? "Заказы" : "Выручка"}: <span className="font-mono">{m.actual} {m.unit}</span>; цель <span className="font-mono">{m.expected} {m.unit}</span></p>{m.source_refs.map(ref => <p className="break-all text-xs text-muted-foreground" key={ref}>Источник: {ref}</p>)}</div>)}</details>}
     {task.status !== "cancelled" && (role === "owner" || ["open", "blocked"].includes(task.status)) && <form onSubmit={submit} className="mt-4 space-y-3"><label className="grid gap-1 text-sm">{role === "owner" ? "Причина отмены" : "Результат или блокер, ссылка на подтверждение"}<textarea name="evidence" required maxLength={5000} rows={2} className={control} disabled={request.pending} /></label><div className="flex flex-wrap gap-3"><button className={role === "owner" ? "min-h-11 rounded-sm border border-border px-4 py-2 text-sm disabled:opacity-60" : button} value="complete" disabled={request.pending}>{request.pending ? "Сохраняем…" : role === "owner" ? "Отменить задачу" : "Подтвердить выполнение"}</button>{role === "employee" && task.status === "open" && <button className="min-h-11 rounded-sm border border-border px-4 py-2 text-sm" value="block" disabled={request.pending}>Сообщить о блокере</button>}</div></form>}
     {role === "owner" && task.status === "completed" && <button className="mt-3 min-h-11 rounded-sm border border-border px-4 py-2 text-sm disabled:opacity-60" disabled={request.pending} onClick={() => request.send({ operation: "observe", taskId: task.task_id }, "Наблюдение записано.")}>Проверить результат по данным</button>}
     <Result {...request} />
