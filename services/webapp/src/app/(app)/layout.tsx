@@ -6,11 +6,9 @@ import { MetricStrip } from "@/components/metrics/metric-strip";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UnreleasedBanner } from "@/components/shell/unreleased-banner";
 
-/*
- * Шелл приложения. Пока auth-контур подключается на деплой-сессии (PA-49 сессия 2):
- * при WEBAPP_REQUIRE_AUTH=true без сессионной cookie уводим на /login.
- * Полная серверная валидация сессии (auth.api.getSession) - вместе с БД-ролью webapp_auth_writer.
- */
+export const dynamic = "force-dynamic";
+
+/* Auth is evaluated per request, even when the image was built in fixtures mode. */
 export default async function AppLayout({
   children,
 }: Readonly<{

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 const { session, list, accept }=vi.hoisted(()=>({session:vi.fn(),list:vi.fn(),accept:vi.fn()}));
 vi.mock("@/lib/auth",()=>({getAuth:()=>({api:{getSession:session}})}));
 vi.mock("next/headers",()=>({headers:async()=>new Headers()}));
@@ -26,6 +27,10 @@ describe("queue API authentication",()=>{
     const make=(origin:string)=>new Request("https://fixture.invalid/api/loop/queue",{method:"POST",headers:{origin},body:JSON.stringify({operation:"accept"})});
     expect((await queueRequest(make("https://evil.invalid"),"POST")).status).toBe(403); expect(accept).not.toHaveBeenCalled();
     accept.mockRejectedValue(new Error("postgres://secret")); const r=await queueRequest(make("https://fixture.invalid"),"POST");expect(r.status).toBe(503);expect(await r.text()).not.toContain("secret");
+  });
+  it("keeps all app routes dynamic across fixture builds and postgres runtime",()=>{
+    const layout=readFileSync(new URL("../app/(app)/layout.tsx",import.meta.url),"utf8");
+    expect(layout).toContain('export const dynamic = "force-dynamic"');
   });
   it("cannot turn off auth for the postgres mode",()=>{
     expect(requiresSession({WEBAPP_DATA_MODE:"postgres",WEBAPP_REQUIRE_AUTH:"false"})).toBe(true);
