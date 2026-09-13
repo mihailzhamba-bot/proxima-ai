@@ -342,7 +342,7 @@ echo "detector: db signals on nm facts, none when brief not ok (${DETECTOR_PASSE
 
 # LOOP: run real DB tests in the webapp too; this must not silently skip.
 LOOP_LOG="${WORK}/loop-db-tests.log"
-if ! (cd "${REPO_ROOT}" && npm --workspace @proxima/webapp exec -- vitest run src/tests/loop.db.test.ts) >"${LOOP_LOG}" 2>&1; then
+if ! (cd "${REPO_ROOT}" && npm --workspace @proxima/webapp exec -- vitest run src/tests/loop.db.test.ts src/tests/auth-native.db.test.ts) >"${LOOP_LOG}" 2>&1; then
   python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text())' "${LOOP_LOG}"
   exit 1
 fi

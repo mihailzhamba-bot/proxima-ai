@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { createQueueService, type Acceptance } from "@/lib/loop/service";
+import { lastFullMoscowDay } from "@/lib/loop/calendar";
 import type { SignalV1 } from "@/lib/contracts/signal";
 const dsn = process.env.PROXIMA_TEST_POSTGRES_DSN;
 const suite = dsn ? describe : describe.skip;
@@ -12,7 +13,7 @@ suite("LOOP PostgreSQL roles and transactions", () => {
   const employee = { tenantId: tenant, userId: `${tenant}-employee` };
   const other = { tenantId: tenant, userId: `${tenant}-other` };
   const seed = randomUUID(), collect = randomUUID(), brief = randomUUID();
-  const day = new Date(Date.now() - 86400000).toISOString().slice(0,10);
+  const day = lastFullMoscowDay(new Date());
   const signal: SignalV1 = { schema_version:1, scenario_code:"SCN-001", signal_id:`${tenant}-signal`, snapshot_id:"snapshot-a", tenant_id:tenant, created_at:new Date().toISOString(), trust_marking:"unreleased", source_refs:["fixture-source"], rub_assessment:{value_rub:"30.00",method:"revenue"}, detection_data:{ level:{value:"sku",is_unknown:false},nm_id:{value:12345,is_unknown:false},orders_actual:{value:7,is_unknown:false},orders_norm_median:{value:"10.00",is_unknown:false} } };
   const now = new Date();
   const queue = createQueueService({ async connect() {
@@ -79,11 +80,28 @@ suite("LOOP PostgreSQL roles and transactions", () => {
     await sql("UPDATE collector_runs SET finished_at=now()-interval '2 days' WHERE run_id=$1",[collect]);
     await expect(queue.accept(owner,command({signalId:next.signal_id}))).rejects.toMatchObject({status:409});
   });
+  it("keeps old active tasks ahead of paginated history and exposes approved targets", async () => {
+    for (let i=0;i<55;i++) {
+      const run=randomUUID(),decision=randomUUID(),id=randomUUID();
+      await sql("INSERT INTO workflow_runs (tenant_id,run_id,actor_id,command,idempotency_key,request_hash,state) VALUES ($1,$2,$3,'fixture',$4,$5,'succeeded')",[tenant,run,owner.userId,`page-${i}`,"0".repeat(64)]);
+      await sql("INSERT INTO decision_records (tenant_id,decision_id,run_id,signal_id,actor_id,source_brief_run_id,signal_snapshot,diagnosis_snapshot,payload) VALUES ($1,$2,$3,$4,$5,$6,$7,'{}',$8)",[tenant,decision,run,`page-signal-${i}`,owner.userId,brief,signal,{expected:command().expected}]);
+      await sql("INSERT INTO loop_tasks (tenant_id,task_id,decision_id,run_id,assignee_id,action,due_at,expected_outcome,horizon_days,created_at) VALUES ($1,$2,$3,$4,$5,$6,now(),'Fixture',1,$7)",[tenant,id,decision,run,employee.userId,`Page ${i}`,i===0?"2020-01-01T00:00:00Z":new Date().toISOString()]);
+      if(i>0) await sql("INSERT INTO task_events (tenant_id,event_id,task_id,run_id,actor_id,kind,evidence) VALUES ($1,$2,$3,$4,$5,'completed','fixture')",[tenant,randomUUID(),id,run,employee.userId]);
+    }
+    const first=await queue.list(employee);
+    expect(first.tasks[0].action).toBe("Page 0");
+    expect(first.tasks[0].expected_metrics[0]).toEqual(command().expected.metrics[0]);
+    expect(first.nextCursor).not.toBeNull();
+    const second=await queue.list(employee,{cursor:first.nextCursor!});
+    expect(second.tasks.length).toBeGreaterThan(0);
+    expect(second.tasks.some(t=>first.tasks.some(f=>f.task_id===t.task_id))).toBe(false);
+    expect((await queue.list(employee,{filter:"active"})).tasks.map(t=>t.action)).toEqual(["Page 0"]);
+  });
   it("enforces domain immutability and RLS under runtime role; source deletion orphans", async () => {
     const c=await admin.connect();
     try { await c.query("SET ROLE proxima_loop_writer"); await c.query("SELECT set_config('proxima.tenant_id','foreign-tenant',false)"); expect((await c.query("SELECT * FROM loop_tasks")).rows).toEqual([]); await expect(c.query("UPDATE decision_records SET payload='{}'")).rejects.toMatchObject({code:"42501"}); await expect(c.query("UPDATE cabinet_memberships SET role='owner'")).rejects.toMatchObject({code:"42501"}); }
     finally { c.release(); }
     await sql("DELETE FROM collector_runs WHERE run_id=$1",[brief]);
-    expect((await queue.list(owner)).tasks[0].orphaned).toBe(true);
+    expect((await queue.list(owner)).tasks.every(t=>t.orphaned)).toBe(true);
   });
 });

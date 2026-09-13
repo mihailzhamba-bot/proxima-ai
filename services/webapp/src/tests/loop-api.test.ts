@@ -20,7 +20,7 @@ describe("queue API authentication",()=>{
   });
   it("uses the authenticated employee and configured tenant, never caller identity",async()=>{
     await queueRequest(new Request("https://fixture.invalid/api/loop/queue?tenantId=foreign&userId=owner"),"GET");
-    expect(list).toHaveBeenCalledWith({userId:"employee",tenantId:"fixture-cabinet"});
+    expect(list).toHaveBeenCalledWith({userId:"employee",tenantId:"fixture-cabinet"}, {filter:"all",cursor:undefined});
     expect(session.mock.calls[0][0].query.disableCookieCache).toBe(true);
   });
   it("rejects cross-origin writes and redacts internal errors",async()=>{

@@ -18,13 +18,14 @@ export type Acceptance = {
 };
 export type TaskItem = {
   task_id: string; assignee_id: string; assignee_name: string; action: string; due_at: string;
+  expected_metrics: DecisionRecordV1["expected"]["metrics"];
   expected_outcome: string; horizon_days: number; created_at: string;
   status: "open" | "blocked" | "completed" | "cancelled"; orphaned: boolean;
   blocker: string | null; evidence: string | null; completed_at: string | null;
   observation: { status: string; reason: string; created_at: string; snapshot: { evaluation_day: string; measurements: { name: string; expected: string; actual: string; unit: string; source_refs: string[] }[] } | null } | null;
 };
 const taskSelect = `SELECT t.task_id, t.assignee_id, u.name AS assignee_name, t.action, t.due_at::text, t.expected_outcome,
- t.horizon_days, t.created_at::text, d.source_brief_run_id IS NULL AS orphaned,
+ d.payload->'expected'->'metrics' AS expected_metrics, t.horizon_days, t.created_at::text, d.source_brief_run_id IS NULL AS orphaned,
  COALESCE((SELECT e.kind FROM task_events e WHERE e.tenant_id=t.tenant_id AND e.task_id=t.task_id
  ORDER BY (e.kind='cancelled') DESC, (e.kind='completed') DESC, e.created_at DESC LIMIT 1), 'open') AS status,
  (SELECT e.evidence FROM task_events e WHERE e.tenant_id=t.tenant_id AND e.task_id=t.task_id
@@ -68,6 +69,19 @@ export function observationReadiness(task: Pick<TaskItem, "status" | "completed_
   return null;
 }
 
+export type QueuePage = { filter?: "all" | "active" | "history"; cursor?: string; limit?: number };
+export function decodeQueuePage(page: QueuePage = {}) {
+  const filter = page.filter ?? "all", limit = page.limit ?? 50;
+  if (!["all", "active", "history"].includes(filter) || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new QueueError(400, "Неверная страница очереди.");
+  let cursor: { active: boolean; created: string; id: string } | null = null;
+  if (page.cursor) {
+    try {
+      cursor = JSON.parse(Buffer.from(page.cursor, "base64url").toString());
+      if (!cursor || typeof cursor.active !== "boolean" || typeof cursor.created !== "string" || !Number.isFinite(Date.parse(cursor.created)) || !/^[0-9a-f-]{36}$/i.test(cursor.id)) throw new Error();
+    } catch { throw new QueueError(400, "Неверная страница очереди."); }
+  }
+  return { filter, limit, cursor };
+}
 export function createQueueService(pool: QueuePool, clock = () => new Date()) {
   async function member(db: Db, p: Principal): Promise<Member> {
     if (!nonempty(p.userId) || !/^[a-z0-9][a-z0-9_-]{2,63}$/.test(p.tenantId)) throw new QueueError(403, "Нет доступа к кабинету.");
@@ -118,10 +132,17 @@ export function createQueueService(pool: QueuePool, clock = () => new Date()) {
   }
   return {
     membership(p: Principal) { return transaction(p, async (_db, m) => m); },
-    list(p: Principal) { return transaction(p, async (db, m) => {
-      const r = await db.query(`${taskSelect} WHERE t.tenant_id=$1 AND ($2='owner' OR t.assignee_id=$3) ORDER BY t.created_at DESC, t.task_id LIMIT 200`, [p.tenantId, m.role, p.userId]);
-      const people = m.role === "owner" ? (await db.query("SELECT m.user_id,u.name FROM cabinet_memberships m JOIN webapp_auth.\"user\" u ON u.id=m.user_id WHERE m.tenant_id=$1 AND m.active=true AND m.role='employee' ORDER BY u.name,m.user_id", [p.tenantId])).rows.map(r => ({ id: r.user_id as string, name: (r.name as string) || "Сотрудник" })) : [];
-      return { role: m.role, tasks: r.rows as TaskItem[], assignees: people };
+    list(p: Principal, page: QueuePage = {}) { return transaction(p, async (db, m) => {
+      const { filter, limit, cursor } = decodeQueuePage(page);
+      const r = await db.query(`SELECT * FROM (${taskSelect} WHERE t.tenant_id=$1 AND ($2='owner' OR t.assignee_id=$3)) q
+        WHERE ($4='all' OR ($4='active' AND status IN ('open','blocked')) OR ($4='history' AND status IN ('completed','cancelled')))
+        AND ($5::boolean IS NULL OR ((status IN ('open','blocked')), created_at::timestamptz, task_id) < ($5::boolean,$6::timestamptz,$7::uuid))
+        ORDER BY (status IN ('open','blocked')) DESC, created_at::timestamptz DESC, task_id DESC LIMIT $8`, [p.tenantId, m.role, p.userId, filter, cursor?.active ?? null, cursor?.created ?? null, cursor?.id ?? null, limit + 1]);
+      const tasks = r.rows.slice(0, limit) as TaskItem[];
+      const last = tasks.at(-1);
+      const nextCursor = r.rows.length > limit && last ? Buffer.from(JSON.stringify({ active: ["open", "blocked"].includes(last.status), created: last.created_at, id: last.task_id })).toString("base64url") : null;
+      const people = m.role === "owner" ? (await db.query('SELECT m.user_id,u.name FROM cabinet_memberships m JOIN webapp_auth."user" u ON u.id=m.user_id WHERE m.tenant_id=$1 AND m.active=true AND m.role=\'employee\' ORDER BY u.name,m.user_id', [p.tenantId])).rows.map(r => ({ id: r.user_id as string, name: (r.name as string) || "Сотрудник" })) : [];
+      return { role: m.role, tasks, assignees: people, nextCursor, filter };
     }); },
     accept(p: Principal, input: unknown) { const v = validateAcceptance(input); return transaction(p, async (db, m) => {
       if (m.role !== "owner") throw new QueueError(403, "Подтверждение доступно владельцу кабинета.");

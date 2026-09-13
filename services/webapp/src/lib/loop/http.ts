@@ -1,5 +1,5 @@
 import { currentPrincipal } from "./access";
-import { getQueueService, QueueError } from "./service";
+import { getQueueService, QueueError, type QueuePage } from "./service";
 
 export function assertSameOrigin(request: Request) {
   const configured = process.env.BETTER_AUTH_URL;
@@ -10,7 +10,7 @@ export async function queueRequest(request: Request, method: "GET" | "POST") {
     if (method === "POST") assertSameOrigin(request);
     const p = await currentPrincipal(request.headers);
     const queue = getQueueService();
-    if (method === "GET") return Response.json(await queue.list(p), { headers: { "Cache-Control": "no-store" } });
+    if (method === "GET") return Response.json(await queue.list(p, { filter: (new URL(request.url).searchParams.get("filter") ?? "all") as QueuePage["filter"], cursor: new URL(request.url).searchParams.get("cursor") ?? undefined }), { headers: { "Cache-Control": "no-store" } });
     const text = await request.text();
     if (text.length > 20_000) throw new QueueError(413, "Запрос слишком большой.");
     let body: Record<string, unknown>;

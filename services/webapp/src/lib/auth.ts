@@ -12,7 +12,7 @@ import { account, session, user, verification } from "@/lib/db/schema.auth";
  * Trusted origins конфигурируются на деплой-сессии вместе с доменом.
  */
 
-function createAuth() {
+export function createAuth(database = getAuthDb()) {
   if (!process.env.BETTER_AUTH_SECRET || !process.env.BETTER_AUTH_URL) {
     throw new Error("BetterAuth requires BETTER_AUTH_SECRET and BETTER_AUTH_URL.");
   }
@@ -20,7 +20,7 @@ function createAuth() {
     baseURL: process.env.BETTER_AUTH_URL,
     secret: process.env.BETTER_AUTH_SECRET,
     trustedOrigins: [new URL(process.env.BETTER_AUTH_URL).origin],
-    database: drizzleAdapter(getAuthDb(), {
+    database: drizzleAdapter(database, {
       provider: "pg",
       schema: { user, session, account, verification },
     }),

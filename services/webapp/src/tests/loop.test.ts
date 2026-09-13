@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { lastFullMoscowDay } from "@/lib/loop/calendar";
 import { diagnoseSignal } from "@/lib/loop/diagnosis";
 import { observationReadiness, validateAcceptance } from "@/lib/loop/service";
 import type { SignalV1 } from "@/lib/contracts/signal";
 describe("LOOP deterministic boundaries",()=>{
+  it("changes the full Moscow day exactly at 21:00 UTC",()=>{
+    expect(lastFullMoscowDay(new Date("2026-09-13T20:59:59Z"))).toBe("2026-09-12");
+    expect(lastFullMoscowDay(new Date("2026-09-13T21:00:00Z"))).toBe("2026-09-13");
+  });
   it("does not invent unknown metrics or call an assessment an LLM diagnosis",()=>{
     const signal={source_refs:["source"],detection_data:{orders_actual:{value:5,is_unknown:false},orders_norm_median:{value:"10.00",is_unknown:false},revenue_actual:{value:"100.00",is_unknown:true},unsupported:{value:999,is_unknown:false}}} as unknown as SignalV1;
     const d=diagnoseSignal(signal,"2026-09-13");
