@@ -100,3 +100,10 @@ recorded Linux session. Native descendant crash regressions are mandatory on Har
 Fresh untracked mountpoints and bounded post-prepare Vite caches are prepared without
 loosening source/dependency read-only guards. Temporary pause retains publication
 permits; only confirmed revocation cancels a finish. Root owns actual final Linux run.
+
+Проверка read-only checkout, 13.09.2026
+В полном прогоне на Harper обнаружены четыре исторических теста WB verifier,
+которые временно меняли tracked исходники самого checkout. Мутации перенесены
+в независимые tmp_path копии; исходный verifier, его отрицательные проверки
+и business/SQL-код сохранены. Fixture проверяет исходные bytes после каждого теста.
+Targeted WB gate: 6 PASS. Полный immutable прогон повторяется на новом SHA.

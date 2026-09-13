@@ -1,221 +1,207 @@
-LOOP pilot package - 2026-09-13, PREPARED, LIVE UNAVAILABLE
+LOOP: подготовка и эксплуатация пилота
+План Mike от 13.09.2026. Код и испытания не означают развёрнутый LOOP-control.
 
-Topology
-New dedicated LOOP-control VPS: Paperclip, separate Hermes Director and persistent
-Bridge only. IP and fresh Director/model credentials are not supplied. Simone is
-excluded. Never copy an existing Hermes home, memory, OAuth or tokens. Claudette
-keeps the existing OpenHands service and a dedicated source checkout. Harper runs
-all builds and verification. Stop at ready PR. No merge/deploy command is present.
+Размещение и границы
+Новый отдельный VPS LOOP-control: Paperclip, Hermes Director, Bridge, Telegram ingress
+и собственный PostgreSQL. Стартовый план: 4 vCPU, 8 GB RAM, 80 GB SSD, Ubuntu 24.04.
+IP и отдельные credentials ещё не заданы. VPS не покупался. Simone исключён;
+память, OAuth, сессии и боты существующего Hermes не переносятся.
+Claudette сохраняет PROXIMA AI, данные WB, webapp и существующий OpenHands.
+Harper выполняет сборки, тесты и независимую проверку. Конечный результат разработки
+- готовый PR. Merge и production deploy подтверждает Mike. Записи в WB выполняют
+сотрудники; этот код не отправляет мутирующие запросы в кабинет WB.
 
-Provision after Mike creates/approves the VPS
-1. On Harper run prepare_upstream.py with exact host identity; build each upstream
-   using its pinned source Dockerfile, never an unpinned latest image. Extend the
-   established runner with Dockerfile.verification. Record resulting registry image
-   digests in versions.lock.json and the deployment environment. No build on control.
-2. On the new VPS install Docker, firewall SSH/admin ingress to approved sources,
-   provision unique service users and root-owned /etc/loop configs. Use new volumes.
-   Set /etc/loop/director.env from newly issued model credentials. API_SERVER_KEY and
-   HERMES_HOME belong to this Director only. Configure Hermes allowed toolsets to
-   read/research and the narrow Bridge tool; terminal/process/cron are disabled.
-   Verify the actual tool inventory before the first run. The model gets only the
-   Bridge director credential, never Board, runner, OpenHands or GitHub credentials.
-3. In Paperclip create exactly one Director using the official hermes_gateway adapter
-   (paperclip-director.example.json). Resolve the gateway key from its secret store;
-   example contains no secret value. dangerouslyAllowInsecureRemoteHttp is scoped
-   only to bridge:18770 in this same-host Docker network; cross-host URLs require HTTPS. Its baseUrl points at Bridge /hermes. Disable
-   all other Director timers/cron. Configure routines only in Paperclip. The 900-second
-   routine is an operator-adjustable startup interval, not a measured SLA.
-4. Store Bridge secrets mode0600 with ownership for UID10001. Give operator, gateway,
-   director and runner distinct credentials. Fill actual private endpoints; do not
-   expose plaintext HTTP across hosts. Install runner.py on Harper, worker_dispatch.py
-   on Claudette, root-owned templates outside worker workspaces. templates start empty;
-   populate only reviewed base SHA/prompt_file/allowed_paths. Install the independent
-   reviewer executable outside candidate workspaces. Its report is accepted only for
-   the exact SHA and zero blockers. No worker-supplied PASS satisfies this gate.
-5. Pull digest-pinned images and start compose only after deploy approval. Validate
-   BetterAuth with separate DB login roles inheriting proxima_auth_writer and
-   proxima_loop_writer. SQL bootstrap is migration019. No auth tables existed on the
-   live/rehearsal DB at the read-only inspection 2026-09-13; existing model table names
-   user/session/account/verification are preserved. Registration gives no membership.
+Подготовка образов на Harper
+1. Запустить prepare_upstream.py с --destination build/upstream и фактическим
+   --harper-hostname. Он проверяет hostname и exact commit из versions.lock.json,
+   не перезаписывает существующие каталоги. Paperclip: release v2026.831.1,
+   commit 65ec059bde30d98c92165b24a30a540800dd1f6f. Hermes: release v2026.9.11,
+   commit 939e45c91d751fadd94dcd1b873ac3cb44846213.
+2. Собирать Dockerfile.paperclip и Dockerfile.hermes-overlay с корнем репозитория
+   в качестве context. Их отдельные .dockerignore включают build/upstream и нужные
+   Markdown/HTML assets, исключают .git и runtime secrets. Общий .dockerignore
+   производственных образов PROXIMA менять не требуется.
+3. Paperclip использует Node 24.11.0 и pnpm9.15.4. Hermes - Python 3.12 и закреплённые
+   extras sms/mcp. Образы upstream с root-entrypoint не используются.
+4. Собрать Dockerfile.bridge и расширение доверенного verifier через
+   Dockerfile.verification. Записать полученные registry digests в versions.lock.json
+   и deployment environment. Сборки на LOOP-control не выполняются.
+5. Отдельно проверить доставку образов в выбранный приватный registry. Digest образа
+   в локальном registry Harper сам по себе не подтверждает доступ нового VPS.
 
-DB environment and membership
-WEBAPP_DATA_MODE=postgres and WEBAPP_TENANT_ID select the pilot cabinet. Set
-WEBAPP_DATA_DATABASE_URI_FILE for readonly data, WEBAPP_LOOP_DATABASE_URI_FILE for
-queue, WEBAPP_AUTH_DATABASE_URI_FILE for BetterAuth, plus BETTER_AUTH_SECRET and
-BETTER_AUTH_URL. Postgres mode always validates real server sessions. Operator first
-creates personal accounts, then one workflow_runs command='provision' and explicitly
-inserts cabinet_memberships (owner Mike, named employees). Do not seed owner on signup.
-Queue writes never touch WB. Completion requires assignee evidence. The owner observes
-later; only same-SKU orders/revenue targets are currently comparable. Category targets
-remain unknown, and reaching a goal is not a causal claim.
+Новый управляющий VPS
+После создания VPS и разрешения deploy оператор устанавливает Docker, ограничивает
+SSH/admin ingress утверждёнными адресами и создаёт отдельные каталоги /etc/loop,
+служебные учётные записи и новые volumes. Через compose публикуются только локальные
+127.0.0.1:3100 и 127.0.0.1:18770; PostgreSQL не публикует host port. Между серверами
+используется HTTPS/проверенная приватная сеть. Реальный ingress принимается отдельно.
 
-Operation and recovery
-Use tools/loop/loopctl.py for status, wake, pause, resume, stop, events and recover-pr.
-Wake goes to Paperclip; Bridge is not a scheduler. Runner is invoked for a queued
-approved job via runner.py --config <trusted file> --job <job ID> on Harper.
-Install loop-runner.service on Harper for --serve consumption of queued commands.
-Bridge admits one heavy execution at a time; unknown work requires reconciliation. Director
-sees the Bridge run_id and generation in its trusted wake input. Unknown dispatch is
-never repeated, even after the upstream 24h idempotency expiry. Check remote run lists
-and adopt a confirmed external ID with operator credentials. A dispatching job cannot
-be claimed a second time; inspect deterministic OpenHands conversation and its saved
-bundle. An uncertain PR is recovered by its fixed branch plus verified SHA only.
+prepare_credentials.py создаёт только новые локальные capability keys. Файлы mode0600:
+Paperclip работает как UID 1000, Hermes UID 10000, Bridge/Telegram UID 10001. PostgreSQL
+получает секреты с владельцем UID его фактического образа. Каждый сервис монтирует
+только нужные файлы. bridge_director и hermes_bridge_director - разные файлы для
+разных UID, содержащие один Director credential. Ключи Board, runner, OpenHands,
+GitHub и operator в Hermes не монтируются. Provider/Board/GitHub/Telegram credentials
+выдаёт оператор отдельно; генератор не создаёт авторизацию во внешних сервисах.
 
-Cancellation fences locally before network. Paperclip cancel is Board-only and does
-not imply Hermes stop. Bridge explicitly stops Hermes and pauses OpenHands, then
-reads their actual states. No confirmation means CANCELLING, not stopped. A delayed
-Hermes child of a cancelled parent cannot obtain a lease. SSE is a status snapshot,
-not replay; Paperclip event cursor is durable. Heavy verification never runs here.
+Compose задаёт отдельные лимиты памяти/CPU/PIDs: PostgreSQL 1GiB/0.5/128,
+Paperclip 2GiB/1.5/256, Hermes 2GiB/1/128, Bridge 256MiB/0.5/64,
+Telegram 128MiB/0.25/32. Все Docker logs ротируются: local, 10MB x3.
+Bridge запрещает новый dispatch при свободном месте менее 512MiB в его volume.
+Достаточность стартового VPS проверяется на реальных управляющих задачах.
 
-Backup and rollback
-Before deployment retain mode0600 encrypted backups of DB, Bridge SQLite online
-backup (sqlite backup API), separate Hermes state and Paperclip storage. Do not copy
-live SQLite with cp. Stop new dispatch before rollback, stop active attempts, retain
-unknown intents. Restore previous pinned images with compatible persistent schema;
-never delete decisions or clear uncertain runs to unblock the queue. Test restore on
-an isolated volume, validate SQLite integrity and expected row counts before use.
+PostgreSQL и персональный доступ
+Собственный PostgreSQL 16.6 хранится в отдельном volume. 10-paperclip-role.sh создаёт
+paperclip_runtime без superuser/CREATEROLE/CREATEDB. DATABASE_URL в приватном
+paperclip.env указывает на postgres:5432/paperclip с этой ролью. Пароли admin и runtime
+раздельны. Paperclip HOME/PAPERCLIP_HOME: /paperclip; PAPERCLIP_CONFIG:
+/paperclip/instances/default/config.json. Используется отдельный persistent volume.
 
-Acceptance still required
-New VPS IP, dedicated credentials, image digests, configured no-terminal tool inventory,
-HTTPS/private ingress, personal membership, real Paperclip/Hermes/OpenHands roundtrip,
-Harper build/review/publish, cancel/restart and backup restore on this VPS. Repository
-unit/DB/browser checks cannot establish live readiness. Daily operation acceptance is
-separate from this PR. Production and merge remain Mike's decision.
+Webapp первого кабинета работает в WEBAPP_DATA_MODE=postgres; WEBAPP_TENANT_ID выбирает
+кабинет. Нужны WEBAPP_DATA_DATABASE_URI_FILE, WEBAPP_LOOP_DATABASE_URI_FILE,
+WEBAPP_AUTH_DATABASE_URI_FILE, BETTER_AUTH_SECRET и BETTER_AUTH_URL. Отдельные DB login
+roles наследуют proxima_auth_writer и proxima_loop_writer. Миграции 019-021 additive:
+схема auth/queue, native BetterAuth issuer, read-only role proxima_loop_context.
+Исходные имена auth user/session/account/verification сохранены. Read-only осмотр
+13.09.2026 не обнаружил auth-таблиц в live/rehearsal DB; production migration не выполнялась.
 
-Dedicated control PostgreSQL and bounded storage
-Compose starts PostgreSQL16 in its own persistent volume. 10-paperclip-role.sh creates
-paperclip_runtime without superuser/role/database administration. The Paperclip
-DATABASE_URL in private paperclip.env must point to postgres:5432/paperclip with that
-role; its credential and postgres_admin are separate new mode0600 secrets. PostgreSQL
-has no published host port. All service logs rotate through Docker local, max10MB x3.
-Bridge refuses new dispatch if its volume has less than512MiB free; expand/archive
-verified logs and retry the same command, never delete uncertain intents.
+Оператор создаёт личные аккаунты, регистрирует workflow_runs command='provision'
+и явно добавляет cabinet_memberships: Mike как owner, конкретные сотрудники как employee.
+Регистрация аккаунта не выдаёт membership. Сервер проверяет настоящую BetterAuth-сессию,
+её срок и активное членство на каждом запросе. Сотрудник видит только свои задачи.
+Подтверждение решения Mike и создание задачи атомарны; повтор возвращает прежнюю задачу.
 
-Telegram and model evaluation
-telegram.config.example.json starts with empty allowlists and refuses startup until
-both permitted user IDs and chat IDs are supplied. Use a newly created dedicated bot.
-The ingress persists update IDs and cursor before processing, invokes the same Bridge
-intents, and never guesses approval from free text. Unknown sendMessage receipts are
-not blindly resent. No live Telegram send occurred during package preparation.
-For model choice configure at least two authorized separate model profiles in
-director-eval.config.example.json, then run evaluate_director.py --config <file>
---cases infra/loop-control/director-eval-cases.json --output <report.json> on Harper.
-Each candidate sees identical facts and tasks. The scorer checks goal preservation,
-source grounding, uncertainty, executor selection, Mike approval and publication
-control. Usage is UNKNOWN when the provider does not return it. The harness has no
-bundled model credentials and does not start evaluations from an empty config.
+Для read-only контекста Director задать WEBAPP_LOOP_CONTEXT_DATABASE_URI_FILE и
+WEBAPP_LOOP_CONTEXT_TOKEN_FILE; соответствующий webapp_context secret получает только
+Bridge. /api/loop/context выбирает кабинет из server config, не из запроса клиента.
+Текст записей и evidence остаётся недоверенными данными, а не инструкциями для Director.
 
-Runtime file ownership
-The trusted Harper service user must match UID/GID1000 of the verification image;
-use the existing named UID1000 account or build the image for the chosen dedicated
-service UID. Candidate trees remain owner-writable only, never world-writable.
-PostgreSQL runtime secrets are owned by its actual container UID (inspect the pinned
-image); Bridge/Telegram secrets by UID10001. Mount only the required secret files in
-each service. The Hermes container receives only its Director credential and model
-environment, not the operator/runner/Board/GitHub credentials.
+Paperclip и Hermes
+В Paperclip создать одного Director с официальным hermes_gateway и конфигом
+paperclip-director.example.json. Поле apiBaseUrl указывает на Bridge /hermes.
+dangerouslyAllowInsecureRemoteHttp относится только к http://bridge:18770 внутри
+Docker-сети одного сервера; внешний HTTP этим флагом не разрешается. Gateway key
+выдаётся через secret store. Routines задаются только в Paperclip; интервал 900 секунд
+является стартовой настройкой, а не измеренным SLA.
 
-Review fixes, 2026-09-13
-Migration020 adds native BetterAuth1.7.1 issuer/accountId uniqueness without changing
-migration019 or the existing account table. Migration021 grants proxima_loop_context
-read-only access to the configured cabinet. Set WEBAPP_LOOP_CONTEXT_DATABASE_URI_FILE
-and WEBAPP_LOOP_CONTEXT_TOKEN_FILE on the webapp; set the matching webapp_context
-credential only on Bridge. Director's loop_read_context uses that service credential,
-not a human cookie. Its returned notes remain untrusted record text.
+Hermes получает новый HERMES_HOME, отдельный API_SERVER_KEY и provider environment
+в director.env. Использовать hermes.example.yaml: platform api_server с toolset loop
+и stdio MCP /opt/loop/director_tool.py. Проверить фактический deferred tool catalog:
+только loop_read_context и loop_propose_job за штатными метаинструментами Hermes.
+Terminal/process/cron/browser/delegation не должны появляться в доступном каталоге.
+Один /health или список /v1/toolsets этой проверки не заменяет. Telegram polling
+существующего Hermes не включается. Paperclip - единственный планировщик Director.
 
-Build the dedicated Dockerfile.paperclip and Dockerfile.hermes-overlay from sources
-prepared into build/upstream, not stock root-entrypoint runtime images. Hermes uses
-Python3.12 plus pinned sms/mcp extras; Paperclip uses Node24.11.0 and /paperclip for
-HOME, PAPERCLIP_HOME and PAPERCLIP_CONFIG. prepare_credentials.py creates only fresh
-local capability keys. BridgeUID10001 reads bridge_director; HermesUID10000 reads
-hermes_bridge_director, a separate0600 file with the same value. External provider,
-Board, OpenHands, GitHub and Telegram credentials still require operator issuance.
+Harper и OpenHands
+Установить bridge.py, runner.py, publication.py, push_gate.py, loopctl.py и verify_candidate.py
+вместе в /opt/loop на Harper; worker_dispatch.py - на Claudette. Trusted configs,
+templates, prompt_file, reviewer и исходные fixtures хранятся вне worker checkout.
+Проверить SSH aliases loop-worker/github-loop, отдельные служебные ключи и known_hosts.
+Личные приватные ключи Mac на серверы не переносятся; ForwardAgent отключён.
+Runner получает свой Bridge credential; worker/model не получают runner/Git credentials.
 
-Runner protocol is prepare -> immutable verify -> immutable build -> independent
-review -> begin-publication -> push -> finish-publication. The durable permit covers
-both branch push and PR. Cancellation revokes generation immediately but remains
-CANCELLING while admitted publication has no final receipt. A revoked finish cannot
-create a PR. Do not clear an uncertain publication permit to make stop look complete.
-Operator recover-pr checks an existing exact-SHA PR; it never repeats create blindly.
+Service UID/GID Harper должен совпадать с UID 1000 verification image, либо образ
+собирается под выбранный отдельный service UID. Каталоги не делаются world-writable.
+Шаблоны изначально пусты; оператор задаёт только проверенные base_sha,
+allowed_paths и prompt_file. reviewer_command - доверенный абсолютный executable
+вне candidate workspace; его ответ относится к точному SHA и не содержит пропусков.
+Self-report OpenHands не считается результатом проверки.
 
-For a lost worker reply, loopctl recover-worker --id <job> --input-file <existing
-handoff receipt> checks the already known OpenHandsCID and resumes bundle collection
-without a second dispatch. The same ancestor/SHA/path/verify gates still run. A queued
-job whose parent was interrupted is quarantined, so it does not block later work.
-Every publication authorization rereads the parent Paperclip state, including direct
-upstream cancellation. Raw worker PASS never counts as a verification receipt.
+loop-runner.service запускает runner.py --config <trusted file> --serve на Harper.
+Он потребляет утверждённые задания, не планирует Director. Для одного задания:
+runner.py --config <trusted file> --job <job ID>. Bridge допускает одну тяжёлую работу;
+неопределённая работа требует сверки до следующего dispatch.
 
-The trusted producer checks every tracked file against the commit's blobs and the
-read-only mount state. Dependencies are installed in a disposable prepare container,
-then mounted read-only along with source/.git for verify/build. Writable outputs are
-separate directories; Next's generated next-env declaration is a separate build-only
-overlay. PROXIMA_VERIFY_READONLY enables checksum-only codegen and preinstalled locked
-dependencies only inside this producer path. Stage stdout/stderr, failure receipts and
-SHA-bound checks are sanitized into the private runner evidence directory, outside
-candidate mounts. SQLite Bridge uses DELETE journal rather than relying on WAL version.
+Проверка кандидата и публикация
+Порядок: prepare, immutable verify, immutable build, independent review,
+begin-publication, gated push, finish-publication. Кандидат проверяется по blob каждого
+tracked-файла и точному SHA; source и .git монтируются read-only. Изменения защищённых
+tests/config/контрактов в worker-кандидате запрещены. Mountpoints создаются заранее;
+tracked coverage, symlink, выход за checkout и неожиданные файлы отклоняются.
 
-Telegram known rejections are explained; execution_unknown and delivery_unknown are
-separate. An operator can retry only a definitely rejected update using
-telegram.py --config <file> --retry-update <updateID>; its original idempotency key is
-retained. Model evaluation sends the requested model in the native request and reports
-requested identity separately from unknown observed provider identity; generic
-status.model=hermes-agent is not treated as proof. Numeric narratives outside exact
-SourceRef facts and duplicate facts cannot earn full grounding credit.
+Producer использует только доверенные /opt/offline/npm и /opt/offline/uv, копирует их
+в writable /tmp и явно запрещает сеть/download Python. Python 3.14 заранее установлен
+в verification image. HOME - scratch; USER/LOGNAME берутся из фактического UID.
+Prepare устанавливает locked dependencies, затем package-файлы становятся read-only.
+Отдельно доступны writable build outputs, .vite-temp/.vite caches и build-only overlay
+next-env.d.ts. PROXIMA_VERIFY_READONLY включает сравнение codegen без записи исходников.
+make verify обязан пройти настоящий pg-roundtrip: PASS. Логи и SHA-bound receipts
+сохраняются вне candidate mounts в приватном evidence directory с редактированием секретов.
 
-Review iteration2 recovery and offline environment
-Install bridge.py, runner.py, publication.py and verify_candidate.py together under
-/opt/loop on Harper. The producer copies trusted /opt/offline/npm and /opt/offline/uv
-into its /tmp scratch area and sets explicit offline/no-download policies. Missing
-caches or preinstalled Python3.14 fail closed; there is no network fallback. HOME is
-writable scratch, USER/LOGNAME come from the process UID. Build retains all four
-read-only dependency mounts and appends only the next-env declaration overlay.
+Push запускается через доверенный Python -I -S wrapper. Родитель сохраняет PID/start,
+PGID/SID/boot ID и release intent с fsync до отправки разрешающего байта. Если родитель
+падает раньше, EOF запрещает exec. Дочерний процесс начинает новую session; recovery
+проверяет всех её живых участников, включая SSH/helper после смерти лидера Git.
+GIT_SSH_COMMAND отключает ControlMaster/ControlPersist. Timeout сигналит owned group;
+оставшийся участник session не даёт подтвердить остановку.
 
-Publication journal is evidence/<job>/<attempt>/publisher.json, mode0600. It contains
-a permit, so never paste it in prompts or logs. Each push records start and a stopped
-subprocess receipt before final PR work. Failed and lost push receipts preserve an
-active permit until inspected. After a runner failure use runner.py --config <file>
---recover-push <private journal> on Harper. Recovery checks Linux boot/start identity
-for both parent and child; a matching live PID is a hard refusal. A finished journal
-replays the same receipt, and a dead unfinished process records unknown outcome.
+Управление и восстановление
+loopctl.py поддерживает status/wake/pause/resume/stop/events/recover-pr и явную сверку.
+Wake идёт через Paperclip. Повтор и потеря ответа не создают вторую работу.
+Неопределённый dispatch не повторяется даже после истечения 24h native idempotency Hermes.
+Оператор сверяет remote run list и принимает подтверждённый external ID.
+Hermes после restart переводит незавершённый run в interrupted; SSE не имеет replay,
+поэтому состояние читается polling. Cursor событий Paperclip хранится постоянно.
 
-Then the operator may run loopctl.py --config <operator file> settle-publication
---id <job> --evidence-ref <inspection reference>. Settlement requires a stopped
-publisher (or a push that never started), checks the exact destination branch SHA
-and all matching PRs, and writes the observed result. It never creates a PR, retries
-push or deletes a branch. A different SHA or unavailable inspection leaves the permit
-active. Cancellation cannot be confirmed while a publisher may still run. The prior
-recover-pr path has the same stopped-publisher prerequisite.
+Pause сохраняет queued job и уже выданный publication permit для продолжения после
+resume. Отмена немедленно меняет generation и запрещает новые публикации. Paperclip
+cancel требует Board и сам не останавливает Hermes: Bridge отдельно останавливает
+Hermes и ставит OpenHands на паузу, затем проверяет их состояния. Пока подтверждения
+нет или publisher может работать, отображается CANCELLING, а не подтверждённая остановка.
+Поздний child отменённого parent не получает lease. Подтверждённо отозванный или аварийно завершённый
+parent переводит ещё не отправленную работу в quarantine.
 
-Global pause leaves queued work intact; resume offers the same queued job. Only a
-confirmed revoked/terminal parent quarantines never-dispatched work. JsonHTTP accepts
-explicit uncertainty metadata from configured trusted Bridge clients only; vendor
-5xx replies remain uncertain. Known Bridge503 before dispatch is reported to Telegram
-as a rejection and retains the original key for a safe operator retry.
+Потерянный worker receipt: python3 /opt/loop/loopctl.py --config <operator-config>
+recover-worker --id <job> --input-file <receipt>
+проверяет известный OpenHands CID и продолжает сбор bundle без второго dispatch.
+Проверки ancestry/SHA/paths остаются обязательными. Перед публикацией повторно читается
+Paperclip, включая отмену напрямую в upstream.
 
-Dedicated Dockerfiles carry their own .dockerignore allowlists. Build with repository
-root as context and -f infra/loop-control/Dockerfile.paperclip (or hermes-overlay);
-their build/upstream trees and required assets are included despite the production
-root ignore rule. .git, runtime .env and root secrets directories stay excluded.
+Потерянный push: runner.py --config <file> --recover-push <private publisher.json>.
+Journal evidence/<job>/<attempt>/publisher.json имеет mode0600 и содержит permit;
+не включать его содержимое в логи, prompts или PR. Живой процесс/session запрещает
+settlement. Старый неполный journal без доказательства no-exec остаётся UNKNOWN.
+Finished journal повторяет сохранённый receipt; умерший незавершённый publisher
+фиксирует unknown outcome, после чего нужна внешняя сверка.
 
-Final publication crash-window closure
-Install push_gate.py next to runner.py and publication.py. Git is executed through
-this trusted Python -I -S wrapper. Only the parent holds the permission-pipe writer.
-Parent durably records child PID/start identity and release intent before sending
-one byte; parent death beforehand yields EOF and the child exits without git exec.
-Recovery refuses a missing child identity unless the dead parent's pipe-v1 journal
-proves permission was never released. Legacy incomplete journals stay UNKNOWN.
-A temporary pause retains an admitted publication permit for finish after resume;
-only a confirmed revocation closes it as cancelled.
+Оператор: loopctl.py --config <file> settle-publication --id <job>
+--evidence-ref <inspection reference>. Проверяются destination branch SHA и все
+подходящие PR. Эта операция не создаёт PR, не повторяет push и не удаляет branch.
+Иной SHA или недоступная проверка оставляют permit активным. recover-pr принимает
+только существующий PR с точным SHA и также требует доказанной остановки publisher.
 
-Fresh clone mountpoints are explicitly precreated before read-only bind. The helper
-rejects tracked coverage, symlink parents/targets, escapes and unexpected contents.
-After dependency preparation, only .vite-temp and .vite receive bounded writable
-cache overlays; node_modules package files remain read-only through verify/build.
+Telegram и модели
+Новый отдельный Telegram bot запускается только с заполненными allowlists user IDs
+и chat IDs. Update ID/cursor записываются до обработки; свободный текст не выдаёт
+разрешения. delivery_unknown и execution_unknown различаются; потерянный ответ
+sendMessage не вызывает слепую повторную отправку. Для точно отклонённого update:
+telegram.py --config <file> --retry-update <ID>; сохраняется исходный idempotency key.
+JsonHTTP принимает uncertain:false только от настроенного trusted Bridge, включая
+известный 503 до dispatch. Vendor5xx остаётся неопределённым исходом.
 
-Publisher process-scope proof
-The gated child starts a new session; PGID, SID, boot ID and leader start identity are
-committed before permission. Recovery inspects all non-zombie processes in that
-session/group, so a dead Git leader is insufficient while SSH/helper descendants live.
-Timeout termination signals the owned process group; any remaining session member
-keeps the outcome unconfirmed. GIT_SSH_COMMAND disables ControlMaster/ControlPersist
-for publication. Legacy journals lacking a process-scope proof stay UNKNOWN unless
-the pipe protocol proves that no exec permission was released.
+Для выбора Director настроить минимум две отдельно авторизованные модели в
+director-eval.config.example.json. Запуск на Harper: evaluate_director.py --config
+<file> --cases infra/loop-control/director-eval-cases.json --output <report.json>.
+Проверяются цель, источники, неопределённость, выбор исполнителя, подтверждение Mike
+и публикация. В native request передаётся нужная модель. Requested identity и
+наблюдаемая identity раздельны; status.model=hermes-agent не доказывает provider/model.
+Отсутствующий usage остаётся UNKNOWN. Числа вне точных SourceRef и повторение одного
+факта не получают полный grounding score. Пустой config не запускает оценивание.
+
+Backup, rollback и приёмка
+Перед deploy сохранить mode0600 зашифрованные backups PostgreSQL, Bridge SQLite,
+отдельного Hermes state и Paperclip storage. SQLite копируется через backup API,
+не cp работающего файла; Bridge использует DELETE journal. Перед rollback прекратить
+новый dispatch, остановить активные попытки и сохранить unknown intents. Восстановить
+совместимые версии/schema в отдельном volume; проверить integrity и число записей.
+Не удалять решения и uncertain runs ради разблокировки очереди.
+
+Выполнение задачи подтверждает сотрудник с evidence. Mike отдельно сверяет эффект
+после горизонта наблюдения. Сравниваются orders/revenue того же SKU; неподдержанный
+category target остаётся unknown. Достижение цели не доказывает причинность действия.
+
+Отдельные приёмки: код/PR; управляющий стенд на новом VPS; ежедневная работа кабинета.
+Для live-стенда ещё нужны новый VPS, credentials и model selection, registry delivery,
+private ingress, membership, реальный маршрут Paperclip/Hermes/OpenHands/Harper/PR,
+отмена/restart и restore backup. Unit/DB/browser и component smoke не заменяют эту
+сквозную приёмку. Merge и production deploy остаются решением Mike.
