@@ -2,7 +2,9 @@
 title: 'LOOP: отдельный управляющий VPS и очередь пилотного кабинета'
 type: feature
 created: 2026-09-13
-status: in-review
+status: done
+acceptance_level: code_and_pr
+live_ready: false
 baseline_commit: 6912a92c0ddb298e26d9b93c2b611b720254b56e
 review_loop_iteration: 2
 ---
@@ -38,11 +40,11 @@ Never: установка LOOP на Simone, копирование памяти/
 - /Users/mikezhamba/Desktop/1LOOP_PAI/loop-kit: исходный пакет для сверки, не источник текущего runtime.
 
 ## Tasks & Acceptance
-- [ ] Контракты и БД: связанная задача, неизменяемое решение, события исполнения и наблюдения; атомарность, RLS, журнал запусков.
-- [ ] Webapp: проверка сессии и membership, операции очереди, доступ сотрудника, /brief и /inbox в Warm Precision, причины неполноты.
-- [ ] Диагноз: факты из детерминированных сигналов, гипотезы/альтернативы/неизвестные/проверка; неподтверждённые числа запрещены.
-- [ ] LOOP-control: закреплённые версии, изоляция, лимиты, persistent Bridge, официальный hermes_gateway, восстановление/отмена, OpenHands/Harper до PR.
-- [ ] Проверки: meaningful unit/DB/API tests, полный verify и build на Harper, визуальная проверка light/dark/mobile/keyboard, независимый review, PR.
+- [x] Контракты и БД: связанная задача, неизменяемое решение, события исполнения и наблюдения; атомарность, RLS, журнал запусков.
+- [x] Webapp: проверка сессии и membership, операции очереди, доступ сотрудника, /brief и /inbox в Warm Precision, причины неполноты.
+- [x] Диагноз: факты из детерминированных сигналов, гипотезы/альтернативы/неизвестные/проверка; неподтверждённые числа запрещены.
+- [x] LOOP-control: подготовленный пакет, закреплённые версии, изоляция, лимиты, persistent Bridge, официальный hermes_gateway, восстановление/отмена, OpenHands/Harper до PR.
+- [x] Проверки: meaningful unit/DB/API tests, полный verify и build на Harper, визуальная проверка light/dark/mobile/keyboard, независимый review, PR.
 
 Given валидная личная сессия сотрудника, when очередь запрошена, then доступны только его задачи.
 Given действие выполнено, when горизонт наблюдения ещё не прошёл, then восстановление продаж не заявляется.
@@ -60,50 +62,74 @@ Paperclip pin: 65ec059bde30d98c92165b24a30a540800dd1f6f; Hermes pin: 939e45c91d7
 Навигация для проверок: Harper root@135.106.211.64:22, IdentityFile /Users/mikezhamba/.ssh/id_ed25519_proxima_harness; SSH BatchMode, IdentitiesOnly, StrictHostKeyChecking, ForwardAgent=no. Корневой агент готовит отдельный verification checkout на Harper и запускает итоговые проверки; production сервисы не менять. Не создавать новые .md-файлы (правило Mike); существующие SPEC/архитектуру/пакет обновлять при необходимости, новые сопровождающие артефакты писать .txt/.yaml. Для UI применять ui-skills-root и better-accessibility, тексты humanizer-ru; сохранять Warm Precision из DESIGN.md. Не запускать повторно полный bmad-build: этот spec является его текущим implementation handoff.
 
 ## Verification
-make verify; npm --workspace @proxima/webapp run build; отдельные тесты транзакций/ролей/повторов/отмены; браузерные проверки /brief и /inbox. Полный прогон и сборка выполняются на Harper. Проверки стенда и ежедневной эксплуатации принимаются отдельно после предоставления VPS и credentials.
 
+Код `1dfb971b09d873e47aa31e80c9b785bfbbf722b2` проверен 13.09.2026. Полный make verify с реальным PostgreSQL и build
+прошли на Harper: source/.git и package dependencies read-only, network none,
+лимиты6GiB/3CPU/512PIDs. Manifest до и после проверок совпал. Mermaid использует
+штатный puppeteer.ci.json внутри Docker; изоляция не ослаблена. scripts/agent/verify PASS.
+41 browser-check PASS с synthetic данными, настоящими BetterAuth/PostgreSQL;
+светлая/тёмная темы, mobile, keyboard, stale, повтор и чужой доступ проверены.
+Шесть native Linux publication regressions PASS; CI проверенного кода зелёный.
+Результаты и hashes: `loop-pilot.verification.json`. [PR #140](https://github.com/mihailzhamba-bot/proxima-ai/pull/140).
 
-Implementation handoff 2026-09-13
-Code and prepared control-runtime interfaces implemented. Independent review and final
-Harper verification are in progress under root orchestration. No push/merge/deploy by
-implementer. Missing new VPS/model/bot credentials and image digests remain explicit
-external runtime gates; this status does not assert a live system.
+## Review closure
 
-Review batch 1, 2026-09-13
-All 18 consolidated implementation findings addressed in source and targeted tests.
-Additional browser findings addressed: metadata retained while stale, no synthesized
-zero history, precision-preserving units, mobile metric layout and no fixture labels
-in postgres mode. Implementer checks: 52 control tests, 132 webapp unit/API tests,
-typecheck/lint, additive migration and threshold/codegen guards. New context role,
-native auth and 9 DB scenarios require final Harper run. Root owns final evidence,
-real producer/container verification, browser rerender and independent re-review.
+Независимые product/control/blind reviews завершены, известных blockers нет.
+Проверены неизвестные исходы HTTP/push, отмена и pause/resume, durable gated exec
+и session descendants, readonly context, личная сессия и атомарность решения/задачи.
+Четыре исторических WB verifier tests теперь мутируют tmp_path копии; исходные
+отрицательные проверки сохранены, fixture проверяет неизменность candidate bytes.
+Webapp и бизнес-код при этих исправлениях harness не менялись.
 
-Review iteration 2, 2026-09-13
-Closed scoped R2 findings: retained build dependency mounts, pause/resume queue safety,
-explicit trusted Bridge503 uncertainty, registered contextGET denial/noDB regressions,
-and durable push outcome plus operator settlement. Runner keeps a private publisher
-PID/start-identity journal. Recovery cannot acknowledge a live publisher; destination
-branch/SHA/PR inspection settles without creating or deleting remote objects.
-Actual Harper producer-preparation failure addressed by writable copies of /opt/offline
-npm/uv caches, offline-only mode, no Python downloads, and actual process USER/writable
-HOME. Full producer and final closure verification remain assigned to root on Harper.
+## Граница приёмки
 
-Packaging follow-up in review iteration2: Dockerfile-specific context allowlists
-include pinned vendor Markdown/build assets under build/upstream while excluding
-.git/runtime secrets. Root production .dockerignore is unchanged. Context-inclusion
-regression uses the installed ignore parser. Actual Docker/producer recheck is on Harper.
+Статус done относится к коду и PR. Компонентные smoke не подтверждают живой LOOP:
+нет нового VPS, отдельной авторизации моделей/бота, registry delivery и membership
+пилота. Сквозной Paperclip/Hermes/OpenHands/Harper/PR, restore и ежедневная работа
+принимаются отдельно. Simone исключён; merge и production deploy подтверждает Mike.
 
-Bounded actual-verification follow-up
-Gated publisher records PID/start identity and dedicated PGID/SID before exec release;
-legacy missing-child journals fail closed. Quiescence includes live descendants in the
-recorded Linux session. Native descendant crash regressions are mandatory on Harper.
-Fresh untracked mountpoints and bounded post-prepare Vite caches are prepared without
-loosening source/dependency read-only guards. Temporary pause retains publication
-permits; only confirmed revocation cancels a finish. Root owns actual final Linux run.
+## Suggested Review Order
 
-Проверка read-only checkout, 13.09.2026
-В полном прогоне на Harper обнаружены четыре исторических теста WB verifier,
-которые временно меняли tracked исходники самого checkout. Мутации перенесены
-в независимые tmp_path копии; исходный verifier, его отрицательные проверки
-и business/SQL-код сохранены. Fixture проверяет исходные bytes после каждого теста.
-Targeted WB gate: 6 PASS. Полный immutable прогон повторяется на новом SHA.
+**Управление и публикация**
+
+- Единственный вход команд, durable состояние, права и запрет публикации отменённой попытки.
+  [bridge.py:75](../../../tools/loop/bridge.py#L75)
+
+- Harper проверяет неизменяемый кандидат до выдачи разрешения на push.
+  [runner.py:52](../../../tools/loop/runner.py#L52)
+
+- Восстановление требует доказать остановку всей session publisher.
+  [publication.py:50](../../../tools/loop/publication.py#L50)
+
+**Личный доступ, решение и задача**
+
+- Личная сессия проверяется сервером до чтения кабинета.
+  [access.ts:8](../../../services/webapp/src/lib/loop/access.ts#L8)
+
+- Транзакция связывает решение Mike, задачу, повторы и последующую сверку.
+  [service.ts:85](../../../services/webapp/src/lib/loop/service.ts#L85)
+
+- Добавочные таблицы и роли сохраняют историю решения.
+  [019_loop_queue.sql:7](../../../db/migrations/019_loop_queue.sql#L7)
+
+**Факты и интерфейс**
+
+- Числа поступают из сигнала; гипотеза и неизвестные явно отделены.
+  [diagnosis.ts:13](../../../services/webapp/src/lib/loop/diagnosis.ts#L13)
+
+- Mike подтверждает действие, сотрудника, срок и ожидаемый результат.
+  [queue.tsx:36](../../../services/webapp/src/components/loop/queue.tsx#L36)
+
+- Личная очередь ведёт к evidence и отдельной оценке эффекта.
+  [queue.tsx:85](../../../services/webapp/src/components/loop/queue.tsx#L85)
+
+**Проверки и установка**
+
+- Доверенный producer проверяет SHA, PostgreSQL и неизменность входа.
+  [verify_candidate.py:62](../../../tools/loop/verify_candidate.py#L62)
+
+- Реальный Linux subprocess проверяет сбой после смерти лидера.
+  [test_loop_push_gate.py:99](../../../tools/tests/test_loop_push_gate.py#L99)
+
+- Порядок установки, раздельные credentials и незакрытые live-гейты.
+  [OPERATIONS.txt:1](../../../infra/loop-control/OPERATIONS.txt#L1)

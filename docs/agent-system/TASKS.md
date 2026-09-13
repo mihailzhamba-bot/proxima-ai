@@ -1,25 +1,27 @@
 # TASKS — PROXIMA AI
 
 
-## LOOP pilot - реализация 13.09.2026, финальная проверка продолжается
+## LOOP pilot - код готов к review, 13.09.2026
 
-Рабочая ветка `feat/loop-pilot`, baseline `6912a92`; scope:
-`docs/exec-plans/active/loop-pilot.txt`. Реализованы migration019, серверная
-BetterAuth/membership, очередь Mike/сотрудника, блокеры, выполнение и отдельное
-наблюдение, preliminary threshold -30 с источником решения, deterministic diagnosis.
-Рабочие файлы `tools/loop/` и `infra/loop-control/` связывают official hermes_gateway,
-persistent intents/cancel/fences, существующий OpenHands handoff, Harper verification
-и готовый PR. Telegram и eval поставляются без реальных credentials.
+[PR #140](https://github.com/mihailzhamba-bot/proxima-ai/pull/140), ветка `feat/loop-pilot`, проверенный код `1dfb971b09d873e47aa31e80c9b785bfbbf722b2`.
+Baseline `6912a92`; scope: `docs/exec-plans/active/loop-pilot.txt`.
+Сохранены сбор, PostgreSQL, календарная норма и SourceRef. Добавлены реальные
+BetterAuth-сессии/membership, атомарные решение и задача, личная очередь сотрудника,
+evidence/блокер и отдельное наблюдение эффекта. Порог пилота -30% задан планом Mike
+13.09.2026. Диагноз основан на кодовых фактах и явно отмеченных гипотезах.
 
-Проверено implementer: webapp typecheck/lint, 127 unit/API tests, 37 threshold/median
-checks; 30 новых Bridge/runner/transport/Telegram/eval/migration checks. Root отдельно
-подтвердил 5 PostgreSQL queue tests без skips на Harper; полный verify/build и
-браузерный BetterAuth flow ещё выполняются. Итоговые логи и verdict добавляет root.
+Harper: immutable prepare/make verify/pg-roundtrip/build PASS; scripts/agent/verify
+PASS; шесть Linux-тестов publication process PASS. Browser: 41 PASS на synthetic
+данных с настоящим PostgreSQL/BetterAuth, проверены light/dark/mobile/keyboard.
+Webapp-код после browser-прогона не менялся. GitHub CI на проверенном коде зелёный.
+Три control image собраны и прошли изолированные smoke; реальные providers не вызывались.
+Подробные commits, hashes и evidence: `docs/exec-plans/active/loop-pilot.verification.json`.
 
-Задача остаётся IN_PROGRESS до финального verify, browser check и независимого
-review. Нет merge/deploy, live WB writes и установки на Simone. Новый управляющий
-VPS, его IP и отдельные model/bot credentials не выданы; live_ready остаётся false.
-Следующий шаг: исправить findings итогового Harper/review прогона и добавить PR.
+Приёмка кода/PR завершена. Новый LOOP-control не создан, отдельные credentials
+и модель Director не настроены; live_ready=false. Полный живой управляющий маршрут,
+restore и ежедневная работа кабинета принимаются отдельно. Simone, production и
+кабинет WB не изменялись; merge/deploy не выполнялись и требуют решения Mike.
+Следующий шаг после review: получить SSH-алиас нового VPS для отдельной подготовки стенда.
 
 
 > Snapshot of task state in this repo. Full backlog lives in Jira project PA (zhamba.atlassian.net); this file mirrors only what an agent needs to resume work.
