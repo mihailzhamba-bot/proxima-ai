@@ -2,7 +2,7 @@
 title: 'LOOP: отдельный управляющий VPS и очередь пилотного кабинета'
 type: feature
 created: 2026-09-13
-status: in-progress
+status: in-review
 baseline_commit: 6912a92c0ddb298e26d9b93c2b611b720254b56e
 review_loop_iteration: 0
 ---
@@ -61,3 +61,10 @@ Paperclip pin: 65ec059bde30d98c92165b24a30a540800dd1f6f; Hermes pin: 939e45c91d7
 
 ## Verification
 make verify; npm --workspace @proxima/webapp run build; отдельные тесты транзакций/ролей/повторов/отмены; браузерные проверки /brief и /inbox. Полный прогон и сборка выполняются на Harper. Проверки стенда и ежедневной эксплуатации принимаются отдельно после предоставления VPS и credentials.
+
+
+Implementation handoff 2026-09-13
+Code and prepared control-runtime interfaces implemented. Independent review and final
+Harper verification are in progress under root orchestration. No push/merge/deploy by
+implementer. Missing new VPS/model/bot credentials and image digests remain explicit
+external runtime gates; this status does not assert a live system.
