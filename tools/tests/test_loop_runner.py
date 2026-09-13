@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 from tools.loop.bridge import Bridge, BridgeError
-from tools.loop.runner import DeliveryRunner
+from tools.loop.runner import DeliveryRunner,prepare_mountpoints
 
 class Remote:
     def call(self,method,path,payload=None,headers=None):return {"id":"remote-run","status":"running"}
@@ -80,3 +80,38 @@ def test_all_stages_preserve_dependency_mounts_and_build_adds_only_declaration_o
             assert any(value.endswith(":/work/"+name+expected) for value in args)
         assert any(value.endswith(":/work:ro") for value in args)
     assert any(value.endswith(":/work/services/webapp/next-env.d.ts:rw") for value in stages["build"])
+
+
+def test_fresh_git_mountpoints_are_precreated_without_covering_source(tmp_path):
+    import subprocess
+    root=tmp_path/"checkout";root.mkdir();(root/"source.txt").write_text("source")
+    subprocess.run(["git","init","-q",str(root)],check=True);subprocess.run(["git","-C",str(root),"add","source.txt"],check=True)
+    tracked=subprocess.check_output(["git","-C",str(root),"ls-files","-z"],text=True).split("\0")
+    targets=["build","node_modules","services/webapp/node_modules","services/webapp/.next","services/collector/dist","services/control-plane/.venv","fixtures/wb-api"]
+    prepare_mountpoints(root,targets,["services/webapp/tsconfig.tsbuildinfo"],tracked)
+    assert all((root/value).is_dir() for value in targets)
+    assert (root/"services/webapp/tsconfig.tsbuildinfo").is_file()
+    assert (root/"source.txt").read_text()=="source"
+    assert subprocess.check_output(["git","-C",str(root),"ls-files","-z"],text=True).split("\0")==tracked
+
+@pytest.mark.parametrize("kind",["tracked","symlink","escape","parent_file","nonempty"])
+def test_mountpoint_preparation_rejects_unexpected_targets(tmp_path,kind):
+    root=tmp_path/"checkout";root.mkdir();tracked=[];target="build"
+    if kind=="tracked":tracked=["build/source.js"]
+    elif kind=="symlink":(root/"build").symlink_to(tmp_path,target_is_directory=True)
+    elif kind=="escape":target="../outside"
+    elif kind=="parent_file":(root/"services").write_text("source");target="services/webapp/node_modules"
+    elif kind=="nonempty":(root/"build").mkdir();(root/"build/private").write_text("retain")
+    with pytest.raises(ValueError):prepare_mountpoints(root,[target],[],tracked)
+
+
+def test_vite_overlays_are_bounded_and_created_only_after_prepare(tmp_path):
+    runner,b,calls,_=setup(tmp_path);runner.run("job-1")
+    stages={args[-1]:args for args in calls if args[0]=="docker"}
+    for stage in ("verify","build"):
+        for dependency in ("node_modules","services/webapp/node_modules"):
+            assert any(arg.endswith(":/work/"+dependency+":ro") for arg in stages[stage])
+            for name in (".vite-temp",".vite"):
+                suffix=":/work/"+dependency+"/"+name+":rw"
+                assert any(arg.endswith(suffix) for arg in stages[stage])
+                assert not any(arg.endswith(suffix) for arg in stages["prepare"])

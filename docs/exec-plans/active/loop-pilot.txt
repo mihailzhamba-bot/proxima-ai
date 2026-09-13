@@ -92,3 +92,11 @@ Packaging follow-up in review iteration2: Dockerfile-specific context allowlists
 include pinned vendor Markdown/build assets under build/upstream while excluding
 .git/runtime secrets. Root production .dockerignore is unchanged. Context-inclusion
 regression uses the installed ignore parser. Actual Docker/producer recheck is on Harper.
+
+Bounded actual-verification follow-up
+Gated publisher records PID/start identity and dedicated PGID/SID before exec release;
+legacy missing-child journals fail closed. Quiescence includes live descendants in the
+recorded Linux session. Native descendant crash regressions are mandatory on Harper.
+Fresh untracked mountpoints and bounded post-prepare Vite caches are prepared without
+loosening source/dependency read-only guards. Temporary pause retains publication
+permits; only confirmed revocation cancels a finish. Root owns actual final Linux run.

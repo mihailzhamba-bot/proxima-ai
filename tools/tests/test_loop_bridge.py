@@ -203,3 +203,21 @@ def test_global_pause_keeps_same_queued_job_available_after_resume(tmp_path):
     b.pause(False);assert b.next_job()=={"job_id":"job-1"}
     p.status="queued";assert b.next_job()=={"job_id":None};assert b.job("job-1")["state"]=="queued"
     p.status="running";assert b.next_job()=={"job_id":"job-1"}
+
+
+def test_publication_pause_preserves_permit_for_finish_after_resume(tmp_path):
+    published=[]
+    b,_,_,_=setup(tmp_path,lambda job,sha:published.append(sha) or "https://github.com/fixture/repo/pull/1")
+    r=run(b);job(b,r);b.claim_job("job-1");sha="a"*40
+    report={"producer":"harper","sha":sha,"checks":{name:{"sha":sha,"status":"pass","skipped":0} for name in ["verify","build","review"]}}
+    permit=b.begin_publication("job-1",report)["permit"]
+    b.start_push("job-1",{"permit":permit,"publisher_id":"fixture-publisher"})
+    b.record_push("job-1",{"permit":permit,"publisher_id":"fixture-publisher","outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":"fixture-push"})
+    b.pause(True)
+    with pytest.raises(BridgeError) as error:b.finish_publication("job-1",permit)
+    assert error.value.revoked is False
+    assert b.job("job-1")["publication_active"]==1 and b.job("job-1")["state"]=="publishing"
+    assert published==[]
+    b.pause(False)
+    assert b.finish_publication("job-1",permit)["state"]=="ready_pr"
+    assert len(published)==1

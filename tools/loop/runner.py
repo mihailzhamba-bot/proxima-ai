@@ -12,38 +12,79 @@ import subprocess
 import tempfile
 import time
 import uuid
+import sys
 from pathlib import Path
 try:
     from .bridge import BridgeError, JsonHTTP, secret
     from .verify_candidate import sanitize
-    from .publication import process_identity, write_journal, recover_push
+    from .publication import process_identity, process_scope_running, terminate_gated_process, write_journal, recover_push
 except ImportError:
     from bridge import BridgeError, JsonHTTP, secret
     from verify_candidate import sanitize
-    from publication import process_identity, write_journal, recover_push
+    from publication import process_identity, process_scope_running, terminate_gated_process, write_journal, recover_push
 
 ID=re.compile(r"^[a-z0-9][a-z0-9-]{2,40}$")
 SHA=re.compile(r"^[a-f0-9]{40}$")
+def prepare_mountpoints(checkout,directories,files,tracked_paths):
+    root=Path(checkout)
+    if root.is_symlink() or not root.is_dir():raise ValueError("invalid checkout root")
+    root=root.resolve();tracked=set(tracked_paths)
+    for relative,is_file in [(value,False) for value in directories]+[(value,True) for value in files]:
+        path=Path(relative)
+        if path.is_absolute() or not path.parts or any(part in {".",".."} for part in path.parts):raise ValueError("mountpoint escapes checkout")
+        normalized=path.as_posix()
+        if any(item==normalized or item.startswith(normalized+"/") for item in tracked):raise ValueError("mountpoint covers tracked source")
+        current=root
+        for index,part in enumerate(path.parts):
+            current=current/part
+            if current.is_symlink():raise ValueError("symlink mountpoint or parent")
+            current.resolve().relative_to(root)
+            last=index==len(path.parts)-1
+            if last and is_file:
+                if current.exists():
+                    if not current.is_file() or current.stat().st_nlink!=1 or current.stat().st_size:raise ValueError("unexpected mountpoint file")
+                else:current.touch(mode=0o600,exist_ok=False)
+            else:
+                if current.exists() and not current.is_dir():raise ValueError("mountpoint parent is not a directory")
+                if last and current.exists() and any(current.iterdir()):raise ValueError("unexpected mountpoint directory content")
+                current.mkdir(mode=0o755,exist_ok=True)
+
 class DeliveryRunner:
-    def __init__(self, config, bridge, execute=None, identity_reader=process_identity):
+    def __init__(self, config, bridge, execute=None, identity_reader=process_identity, scope_reader=process_scope_running):
         self.config,self.bridge=config,bridge
         self.execute=execute or self._execute
         self.identity_reader=identity_reader
+        self.scope_reader=scope_reader
         self.push_context=None
         self.stage_number=0
         self.evidence=None
-        self.env={"PATH":os.environ.get("PATH","/usr/bin:/bin"),"HOME":config["trusted_home"],"GIT_CONFIG_GLOBAL":"/dev/null","GIT_CONFIG_SYSTEM":"/dev/null","GIT_TERMINAL_PROMPT":"0"}
+        self.env={"PATH":os.environ.get("PATH","/usr/bin:/bin"),"HOME":config["trusted_home"],"GIT_CONFIG_GLOBAL":"/dev/null","GIT_CONFIG_SYSTEM":"/dev/null","GIT_TERMINAL_PROMPT":"0","GIT_SSH_COMMAND":"ssh -oBatchMode=yes -oControlMaster=no -oControlPersist=no -oControlPath=none -oForwardAgent=no -oIdentitiesOnly=yes -oStrictHostKeyChecking=yes"}
     def _execute(self,argv,cwd=None):
         self.stage_number+=1
         process=None
+        gate_read=gate_write=None
         try:
             if self.push_context:
-                process=subprocess.Popen(argv,cwd=cwd,env=self.env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                # Child cannot execute git until its identity is durable. The
+                # write fd is non-inheritable and is never passed to the child.
+                gate_read,gate_write=os.pipe()
+                gate=[sys.executable,"-I","-S",str(Path(__file__).with_name("push_gate.py")),str(gate_read),*argv]
+                process=subprocess.Popen(gate,cwd=cwd,env=self.env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,pass_fds=(gate_read,),start_new_session=True)
+                os.close(gate_read);gate_read=None
                 journal=self.push_context["journal"]
                 journal["child_pid"]=process.pid;journal["child_identity"]=self.identity_reader(process.pid)
+                if not journal["child_identity"]:raise RuntimeError("gated child identity unavailable")
+                journal["child_pgid"]=os.getpgid(process.pid);journal["child_sid"]=os.getsid(process.pid)
+                if journal["child_pgid"]!=process.pid or journal["child_sid"]!=process.pid:raise RuntimeError("publisher did not start a dedicated session")
+                journal["child_boot_id"]=journal["child_identity"].split(":",1)[0]
+                journal["process_scope"]="session-v1"
+                # True means permission may have been sent, never proof of exec.
+                # It is committed before writing the permission byte.
+                journal["exec_released"]=True
                 write_journal(self.push_context["path"],journal)
+                os.write(gate_write,b"R");os.close(gate_write);gate_write=None
                 try:stdout,stderr=process.communicate(timeout=self.config.get("command_timeout",7200));code=process.returncode
-                except subprocess.TimeoutExpired:process.kill();stdout,stderr=process.communicate();code=124
+                except subprocess.TimeoutExpired:terminate_gated_process(process,journal,self.identity_reader);stdout,stderr=process.communicate();code=124
                 result=subprocess.CompletedProcess(argv,code,stdout,stderr)
             else:
                 result=subprocess.run(argv,cwd=cwd,env=self.env,capture_output=True,text=True,timeout=self.config.get("command_timeout",7200),check=False)
@@ -53,22 +94,32 @@ class DeliveryRunner:
             result=subprocess.CompletedProcess(argv,124,stdout,stderr)
         except Exception:
             if process is not None:
-                process.kill();process.communicate()
+                try:terminate_gated_process(process,self.push_context["journal"],self.identity_reader)
+                except (ProcessLookupError,RuntimeError):pass
+                try:process.communicate(timeout=1)
+                except subprocess.TimeoutExpired:pass
             result=subprocess.CompletedProcess(argv,127,"","publisher subprocess could not complete")
+        finally:
+            for descriptor in (gate_read,gate_write):
+                if descriptor is not None:os.close(descriptor)
+        stopped=True
+        if self.push_context and self.push_context["journal"].get("exec_released") is True:
+            try:stopped=not self.scope_reader(self.push_context["journal"])
+            except Exception:stopped=False
         if self.evidence:
             log=sanitize(result.stdout+result.stderr)
             token=getattr(self.bridge,"token","")
             if token:log=log.replace(token,"[redacted]")
             (self.evidence/f"stage-{self.stage_number:02d}.log").write_text(log)
             (self.evidence/f"stage-{self.stage_number:02d}.json").write_text(json.dumps({"program":Path(argv[0]).name,"returncode":result.returncode}))
-        if result.returncode:
+        if result.returncode or not stopped:
             error=BridgeError(502,"trusted runner command failed; sanitized stage logs retained")
-            error.process_stopped=True;error.returncode=result.returncode
+            error.process_stopped=stopped;error.returncode=result.returncode
             raise error
         return result.stdout
     def push(self,job_id,admitted,argv):
         publisher_id=str(uuid.uuid4());path=self.evidence/"publisher.json"
-        journal={"job_id":job_id,"permit":admitted["permit"],"publisher_id":publisher_id,"sha":admitted["sha"],"state":"starting","parent_pid":os.getpid(),"parent_identity":self.identity_reader(os.getpid()),"child_pid":None,"child_identity":None}
+        journal={"job_id":job_id,"permit":admitted["permit"],"publisher_id":publisher_id,"sha":admitted["sha"],"state":"starting","parent_pid":os.getpid(),"parent_identity":self.identity_reader(os.getpid()),"child_pid":None,"child_identity":None,"exec_gate":"pipe-v1","exec_released":False}
         write_journal(path,journal)
         self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/start-push",{"permit":admitted["permit"],"publisher_id":publisher_id})
         journal["state"]="running";write_journal(path,journal)
@@ -130,6 +181,8 @@ class DeliveryRunner:
         cache=work/"writable";cache.mkdir()
         dependencies=["node_modules","services/webapp/node_modules","services/collector/node_modules","services/control-plane/.venv"]
         outputs=["services/collector/dist","services/webapp/.next","build"]
+        tracked=self.execute([*git,"-C",str(checkout),"ls-tree","-r","--name-only","-z",sha]).split("\0")
+        prepare_mountpoints(checkout,[*dependencies,*outputs,"fixtures/wb-api"],["services/webapp/tsconfig.tsbuildinfo"],[name for name in tracked if name])
         base_mounts=["-v",str(checkout)+":/work:ro","-v",self.config["fixture_root"]+":/work/fixtures/wb-api:ro"]
         dependency_dirs={}
         for i,relative in enumerate(dependencies):
@@ -140,10 +193,12 @@ class DeliveryRunner:
         tsinfo=cache/"tsconfig.tsbuildinfo";tsinfo.touch();output_mounts.extend(["-v",str(tsinfo)+":/work/services/webapp/tsconfig.tsbuildinfo:rw"])
         docker=["docker","run","--rm","--network","none","--memory",self.config.get("memory","6g"),"--cpus",str(self.config.get("cpus",3)),"--pids-limit","512","--cap-drop","ALL","--security-opt","no-new-privileges","--read-only","--tmpfs","/tmp:rw,exec,size=2g","--user","1000:1000",*base_mounts,*output_mounts,"-w","/work"]
         checks={}
+        vite_mounts=[]
         for stage in ("prepare","verify","build"):
             extra=[]
             for relative,directory in dependency_dirs.items():
                 extra.extend(["-v",str(directory)+":/work/"+relative+(":rw" if stage=="prepare" else ":ro")])
+            if stage!="prepare":extra.extend(vite_mounts)
             if stage=="build":
                 declaration=cache/"next-env.d.ts"
                 # Tests may fake command execution; production always has this checkout.
@@ -154,6 +209,14 @@ class DeliveryRunner:
             if receipt.get("status")!="pass" or (stage!="prepare" and receipt.get("checks")!={stage:{"sha":sha,"status":"pass","skipped":0}}):raise BridgeError(409,"verification incomplete")
             (self.evidence/(stage+"-receipt.json")).write_text(json.dumps(receipt,indent=2))
             if stage!="prepare":checks.update(receipt["checks"])
+            else:
+                # Vite-generated config/transform caches are writable overlays,
+                # never a writable node_modules package tree.
+                for number,relative in enumerate(("node_modules","services/webapp/node_modules")):
+                    prepare_mountpoints(dependency_dirs[relative],[".vite-temp",".vite"],[],[])
+                    for name in (".vite-temp",".vite"):
+                        directory=cache/("vite-"+str(number)+name);directory.mkdir()
+                        vite_mounts.extend(["-v",str(directory)+":/work/"+relative+"/"+name+":rw"])
         self.fence(job_id)
         reviewer=self.config["reviewer_command"]
         if not isinstance(reviewer,list) or not reviewer or not Path(reviewer[0]).is_absolute(): raise ValueError("reviewer must be a trusted absolute executable")

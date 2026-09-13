@@ -57,7 +57,7 @@ def test_lost_push_receipt_requires_dead_publisher_and_checks_destination_after_
     write_journal(journal,{"job_id":"job-1","permit":permit["permit"],"publisher_id":"publisher","state":"running","parent_pid":123,"parent_identity":"fixture-parent","child_pid":124,"child_identity":"fixture-child"})
     with pytest.raises(ValueError,match="may still run"):recover_push(Client(b),journal,tmp_path,lambda pid:"fixture-parent" if pid==123 else "fixture-child")
     assert b.job("job-1")["publication_active"]==1
-    recover_push(Client(b),journal,tmp_path,lambda pid:None)
+    recover_push(Client(b),journal,tmp_path,lambda pid:None,scope_reader=lambda journal:False)
     result=b.settle_publication("job-1","operator verified stopped process and matching destination")
     assert result["destination"]["branch_state"]=="matches"
     assert result["destination"]["pull_requests"][0]["url"].endswith("/1")
@@ -73,7 +73,7 @@ def test_settlement_never_accepts_a_different_destination_sha(tmp_path):
 
 def test_real_failed_subprocess_is_journaled_before_recording_outcome(tmp_path):
     b,_,_,_,_,permit,_=admitted(tmp_path)
-    runner=DeliveryRunner({"trusted_home":str(tmp_path)},Client(b),identity_reader=lambda pid:"fixture-process")
+    runner=DeliveryRunner({"trusted_home":str(tmp_path)},Client(b),identity_reader=lambda pid:"fixture-process",scope_reader=lambda journal:False)
     runner.evidence=tmp_path/"evidence";runner.evidence.mkdir(mode=0o700)
     with pytest.raises(BridgeError):runner.push("job-1",permit,[sys.executable,"-c","import sys;print('push failed');sys.exit(7)"])
     journal=json.loads((runner.evidence/"publisher.json").read_text())

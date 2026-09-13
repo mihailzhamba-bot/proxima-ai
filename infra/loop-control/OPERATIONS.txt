@@ -195,3 +195,27 @@ Dedicated Dockerfiles carry their own .dockerignore allowlists. Build with repos
 root as context and -f infra/loop-control/Dockerfile.paperclip (or hermes-overlay);
 their build/upstream trees and required assets are included despite the production
 root ignore rule. .git, runtime .env and root secrets directories stay excluded.
+
+Final publication crash-window closure
+Install push_gate.py next to runner.py and publication.py. Git is executed through
+this trusted Python -I -S wrapper. Only the parent holds the permission-pipe writer.
+Parent durably records child PID/start identity and release intent before sending
+one byte; parent death beforehand yields EOF and the child exits without git exec.
+Recovery refuses a missing child identity unless the dead parent's pipe-v1 journal
+proves permission was never released. Legacy incomplete journals stay UNKNOWN.
+A temporary pause retains an admitted publication permit for finish after resume;
+only a confirmed revocation closes it as cancelled.
+
+Fresh clone mountpoints are explicitly precreated before read-only bind. The helper
+rejects tracked coverage, symlink parents/targets, escapes and unexpected contents.
+After dependency preparation, only .vite-temp and .vite receive bounded writable
+cache overlays; node_modules package files remain read-only through verify/build.
+
+Publisher process-scope proof
+The gated child starts a new session; PGID, SID, boot ID and leader start identity are
+committed before permission. Recovery inspects all non-zombie processes in that
+session/group, so a dead Git leader is insufficient while SSH/helper descendants live.
+Timeout termination signals the owned process group; any remaining session member
+keeps the outcome unconfirmed. GIT_SSH_COMMAND disables ControlMaster/ControlPersist
+for publication. Legacy journals lacking a process-scope proof stay UNKNOWN unless
+the pipe protocol proves that no exec permission was released.

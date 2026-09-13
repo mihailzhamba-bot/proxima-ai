@@ -402,7 +402,7 @@ class Bridge:
             if job["push_outcome"]!="succeeded" or not job["push_process_stopped"]:raise BridgeError(409,"successful stopped push receipt required")
             try: self.fence(job_id)
             except BridgeError as exc:
-                if exc.status!=409: raise
+                if exc.status!=409 or not exc.revoked: raise
                 # The admitted push has returned, and this generation was revoked.
                 # No new PR request can now be issued by this attempt.
                 with self.tx() as db: db.execute("UPDATE jobs SET state='cancelled',publication_active=0 WHERE id=?",(job_id,))
