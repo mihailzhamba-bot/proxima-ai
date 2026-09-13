@@ -52,6 +52,7 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
             assert not can("proxima_loop_writer", "UPDATE", table)
             assert not can("proxima_loop_writer", "DELETE", table)
             assert not can("proxima_auth_writer", "SELECT", table)
+            assert not can("proxima_run_janitor", "DELETE", table)
         assert not can("proxima_loop_writer", "INSERT", "cabinet_memberships")
         assert not can("proxima_loop_writer", "UPDATE", "cabinet_memberships")
         assert can("proxima_auth_writer", "DELETE", 'webapp_auth."session"')
