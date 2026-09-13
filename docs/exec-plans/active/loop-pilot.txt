@@ -4,7 +4,7 @@ type: feature
 created: 2026-09-13
 status: in-review
 baseline_commit: 6912a92c0ddb298e26d9b93c2b611b720254b56e
-review_loop_iteration: 0
+review_loop_iteration: 2
 ---
 
 <frozen-after-approval reason="План Mike в чате 13.09.2026, поручение реализовать полностью">
@@ -77,3 +77,18 @@ in postgres mode. Implementer checks: 52 control tests, 132 webapp unit/API test
 typecheck/lint, additive migration and threshold/codegen guards. New context role,
 native auth and 9 DB scenarios require final Harper run. Root owns final evidence,
 real producer/container verification, browser rerender and independent re-review.
+
+Review iteration 2, 2026-09-13
+Closed scoped R2 findings: retained build dependency mounts, pause/resume queue safety,
+explicit trusted Bridge503 uncertainty, registered contextGET denial/noDB regressions,
+and durable push outcome plus operator settlement. Runner keeps a private publisher
+PID/start-identity journal. Recovery cannot acknowledge a live publisher; destination
+branch/SHA/PR inspection settles without creating or deleting remote objects.
+Actual Harper producer-preparation failure addressed by writable copies of /opt/offline
+npm/uv caches, offline-only mode, no Python downloads, and actual process USER/writable
+HOME. Full producer and final closure verification remain assigned to root on Harper.
+
+Packaging follow-up in review iteration2: Dockerfile-specific context allowlists
+include pinned vendor Markdown/build assets under build/upstream while excluding
+.git/runtime secrets. Root production .dockerignore is unchanged. Context-inclusion
+regression uses the installed ignore parser. Actual Docker/producer recheck is on Harper.

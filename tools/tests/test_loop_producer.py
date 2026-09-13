@@ -5,12 +5,16 @@ import sys
 from pathlib import Path
 import pytest
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
-from tools.loop.verify_candidate import produce,VerificationFailure
+from tools.loop.verify_candidate import produce,VerificationFailure,prepare_environment
+import tools.loop.verify_candidate as producer
 from tools.loop.runner import DeliveryRunner
 from tools.loop.bridge import BridgeError
 
 @pytest.fixture
-def project(tmp_path):
+def project(tmp_path,monkeypatch):
+    offline=tmp_path/"offline"
+    (offline/"npm").mkdir(parents=True);(offline/"uv").mkdir()
+    monkeypatch.setattr(producer,"OFFLINE_ROOT",offline)
     root=tmp_path/"repo";root.mkdir();(root/"source.txt").write_text("verified source")
     subprocess.run(["git","init","-q",str(root)],check=True)
     subprocess.run(["git","-C",str(root),"add","source.txt"],check=True)
@@ -47,3 +51,15 @@ def test_runner_retains_failed_subprocess_logs_outside_candidate(tmp_path):
     with pytest.raises(BridgeError):runner._execute([sys.executable,"-c","import sys;print('stage stdout');print('Bearer fixture-private',file=sys.stderr);sys.exit(7)"])
     log=(runner.evidence/"stage-01.log").read_text();assert "stage stdout" in log;assert "fixture-private" not in log
     assert json.loads((runner.evidence/"stage-01.json").read_text())["returncode"]==7
+
+
+def test_cache_preparation_is_writable_local_and_strictly_offline(tmp_path):
+    source=tmp_path/"offline"; (source/"npm").mkdir(parents=True);(source/"uv").mkdir()
+    (source/"npm"/"fixture").write_text("npm source");(source/"uv"/"fixture").write_text("uv source")
+    result=prepare_environment({"PATH":os.environ["PATH"]},source,tmp_path)
+    assert result["NPM_CONFIG_OFFLINE"]=="true" and result["UV_OFFLINE"]=="1" and result["UV_PYTHON_DOWNLOADS"]=="never"
+    assert Path(result["HOME"]).is_dir()
+    copied=Path(result["npm_config_cache"])/"fixture";copied.write_text("changed copy")
+    assert (source/"npm"/"fixture").read_text()=="npm source"
+    assert Path(result["UV_CACHE_DIR"]).parent!=source
+    with pytest.raises(ValueError,match="offline"):prepare_environment({"PATH":os.environ["PATH"]},tmp_path/"missing",tmp_path)

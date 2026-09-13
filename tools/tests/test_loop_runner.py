@@ -15,6 +15,8 @@ class Client:
         job=path.split("/")[4]
         if path.endswith("/claim"):return self.b.claim_job(job)
         if path.endswith("/begin-publication"):return self.b.begin_publication(job,payload)
+        if path.endswith("/start-push"):return self.b.start_push(job,payload)
+        if path.endswith("/record-push"):return self.b.record_push(job,payload)
         if path.endswith("/finish-publication"):return self.b.finish_publication(job,payload["permit"])
         return self.b.fence(job)
 
@@ -42,7 +44,7 @@ def setup(tmp_path,fail_checks=False,changed="services/webapp/src/lib/rub.ts",ca
                 with b.tx() as db:db.execute("UPDATE operations SET generation=2,state='cancelled' WHERE id=?",(r,))
             return json.dumps({"sha":sha,"status":"pass","skipped":0})
         return ""
-    return DeliveryRunner(config,Client(b),execute),b,calls,published
+    return DeliveryRunner(config,Client(b),execute,identity_reader=lambda pid:"fixture-process"),b,calls,published
 
 def test_same_delivery_path_reaches_ready_pr_after_real_runner_receipts(tmp_path):
     runner,b,calls,published=setup(tmp_path)
@@ -67,3 +69,14 @@ def test_candidate_cannot_rewrite_its_own_verifier(tmp_path):
     runner,b,calls,published=setup(tmp_path,changed="Makefile")
     with pytest.raises(BridgeError):runner.run("job-1")
     assert published==[];assert not any(c[0]=="docker" for c in calls)
+
+
+def test_all_stages_preserve_dependency_mounts_and_build_adds_only_declaration_overlay(tmp_path):
+    runner,b,calls,_=setup(tmp_path);runner.run("job-1")
+    stages={argv[-1]:argv for argv in calls if argv[0]=="docker"}
+    for stage,args in stages.items():
+        expected=":rw" if stage=="prepare" else ":ro"
+        for name in ["node_modules","services/webapp/node_modules","services/collector/node_modules","services/control-plane/.venv"]:
+            assert any(value.endswith(":/work/"+name+expected) for value in args)
+        assert any(value.endswith(":/work:ro") for value in args)
+    assert any(value.endswith(":/work/services/webapp/next-env.d.ts:rw") for value in stages["build"])

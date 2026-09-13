@@ -41,3 +41,30 @@ def test_known_rejection_is_explained_and_safe_retry_keeps_same_intent(tmp_path)
     assert i.retry_rejected(1);i.process()
     assert b.calls[0][-1]==b.calls[1][-1]=={"Idempotency-Key":"telegram-1"}
     assert not i.retry_rejected(1)
+
+
+def test_actual_http_known_bridge_503_is_rejected_and_retryable_but_vendor_503_is_uncertain(tmp_path,monkeypatch):
+    import threading
+    from collections import namedtuple
+    from tools.loop.bridge import JsonHTTP,BridgeError,server
+    from tools.tests.test_loop_bridge import setup
+    import tools.loop.bridge as module
+    b,h,p,o=setup(tmp_path)
+    keys={}
+    for role in ["operator","gateway","director","runner"]:
+        path=tmp_path/(role+".key");path.write_text("fixture-"+role);path.chmod(0o600);keys[role]=str(path)
+    http=server(b,{"port":0,"credential_files":keys});thread=threading.Thread(target=http.serve_forever,daemon=True);thread.start()
+    url=f"http://127.0.0.1:{http.server_port}";Usage=namedtuple("Usage","total used free")
+    monkeypatch.setattr(module.shutil,"disk_usage",lambda path:Usage(1000,1000,0))
+    tg=Telegram();client=JsonHTTP(url,"fixture-operator",trusted_bridge=True);i=Ingress(tmp_path/"ingress.db",tg,client,[10],[20])
+    try:
+        i.ingest([update()]);i.process()
+        with i.db() as db:assert db.execute("SELECT state FROM updates").fetchone()[0]=="rejected"
+        assert "503" in tg.calls[0][1]["text"] and p.calls==[]
+        try:JsonHTTP(url,"fixture-operator").call("POST","/v1/wake",{}, {"Idempotency-Key":"vendor-1"})
+        except BridgeError as error:assert error.uncertain is True
+        else:raise AssertionError("vendor503 must be uncertain")
+        monkeypatch.setattr(module.shutil,"disk_usage",lambda path:Usage(10**12,0,10**12))
+        assert i.retry_rejected(1);i.process()
+        assert p.calls[0][2]["idempotencyKey"]=="telegram-1"
+    finally:http.shutdown();http.server_close();thread.join()

@@ -97,7 +97,7 @@ def main():
     parser=argparse.ArgumentParser();parser.add_argument("--config",required=True);parser.add_argument("--retry-update",type=int);args=parser.parse_args()
     config=json.loads(Path(args.config).read_text())
     if not config["allowed_user_ids"] or not config["allowed_chat_ids"]:raise SystemExit("explicit Telegram allowlists required")
-    bridge=JsonHTTP(config["bridge_url"],secret(config["operator_token_file"]))
+    bridge=JsonHTTP(config["bridge_url"],secret(config["operator_token_file"]),trusted_bridge=True)
     bot=Ingress(config["database"],Telegram(secret(config["bot_token_file"])),bridge,config["allowed_user_ids"],config["allowed_chat_ids"],config.get("webapp_url"))
     if args.retry_update is not None:
         if not bot.retry_rejected(args.retry_update):raise SystemExit("only a definitely rejected command can be retried")

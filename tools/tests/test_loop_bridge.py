@@ -23,6 +23,14 @@ class Remote:
         if "/events?" in path:return [{"seq":1,"type":"event"}]
         return {"run_id":"remote-1","status":self.status}
 
+def publish_verified(b,job_id,report):
+    old=b.job(job_id)
+    if old["state"]=="ready_pr":return {"state":"ready_pr","pr_url":old["pr_url"]}
+    permit=b.begin_publication(job_id,report)["permit"]
+    b.start_push(job_id,{"permit":permit,"publisher_id":"fixture-publisher"})
+    b.record_push(job_id,{"permit":permit,"publisher_id":"fixture-publisher","outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":"fixture-push"})
+    return b.finish_publication(job_id,permit)
+
 def setup(tmp_path,publisher=None):
     h,p,o=Remote(),Remote(),Remote()
     b=Bridge(tmp_path/"bridge.sqlite",h,p,"fixture-director",o,publisher)
@@ -93,13 +101,13 @@ def test_only_exact_independent_receipts_can_reach_pr_and_no_auto_merge(tmp_path
     published=[]
     b,_,_,_=setup(tmp_path,lambda job,sha:published.append((job,sha)) or "https://github.com/fixture/repo/pull/1")
     r=run(b);job(b,r);b.claim_job("job-1")
-    with pytest.raises(BridgeError):b.publish("job-1",{"worker_says":"PASS"})
+    with pytest.raises(BridgeError):publish_verified(b,"job-1",{"worker_says":"PASS"})
     assert published==[]
     sha="a"*40
     report={"producer":"harper","sha":sha,"checks":{name:{"sha":sha,"status":"pass","skipped":0} for name in ["verify","build","review"]}}
-    assert b.publish("job-1",report)["state"]=="ready_pr"
+    assert publish_verified(b,"job-1",report)["state"]=="ready_pr"
     assert len(published)==1
-    assert b.publish("job-1",report)["state"]=="ready_pr"
+    assert publish_verified(b,"job-1",report)["state"]=="ready_pr"
     assert len(published)==1
 
 def test_http_identity_separates_gateway_director_and_runner(tmp_path):
@@ -142,7 +150,7 @@ def test_restart_recovers_existing_pr_without_repeating_create(tmp_path):
         def lookup(self,job,sha):return "https://github.com/fixture/repo/pull/9"
     b,h,p,o=setup(tmp_path,Publisher());r=run(b);job(b,r);b.claim_job("job-1")
     sha="a"*40;report={"producer":"harper","sha":sha,"checks":{name:{"sha":sha,"status":"pass","skipped":0} for name in ["verify","build","review"]}}
-    with pytest.raises(BridgeError):b.publish("job-1",report)
+    with pytest.raises(BridgeError):publish_verified(b,"job-1",report)
     b=Bridge(tmp_path/"bridge.sqlite",h,p,"fixture-director",o,Publisher())
     assert b.recover_pr("job-1")["state"]=="ready_pr"
 
@@ -157,9 +165,11 @@ def test_cancel_during_admitted_push_is_not_confirmed_and_late_finish_cannot_cre
     r=run(b);job(b,r);b.claim_job("job-1");sha="a"*40
     report={"producer":"harper","sha":sha,"checks":{name:{"sha":sha,"status":"pass","skipped":0} for name in ["verify","build","review"]}}
     permit=b.begin_publication("job-1",report)["permit"]
+    b.start_push("job-1",{"permit":permit,"publisher_id":"fixture-publisher"})
     # Exact race: cancellation is requested after final admission, before push returns.
     assert b.cancel(r)["status"]=="cancelling"
     assert b.get(r)["stop_confirmed"]==0
+    b.record_push("job-1",{"permit":permit,"publisher_id":"fixture-publisher","outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":"fixture-push"})
     assert b.finish_publication("job-1",permit)["state"]=="cancelled"
     assert published==[]
     assert b.cancel(r)["status"]=="cancelled"
@@ -185,3 +195,11 @@ def test_operator_recovers_existing_cid_and_bundle_without_second_dispatch(tmp_p
     assert recovered["recover_only"] is True
     assert recovered["external_id"]==claimed["external_id"]
     assert json.loads(recovered["recovery_receipt"])==receipt
+
+
+def test_global_pause_keeps_same_queued_job_available_after_resume(tmp_path):
+    b,h,p,o=setup(tmp_path);r=run(b);job(b,r)
+    b.pause(True);assert b.next_job()=={"job_id":None};assert b.job("job-1")["state"]=="queued"
+    b.pause(False);assert b.next_job()=={"job_id":"job-1"}
+    p.status="queued";assert b.next_job()=={"job_id":None};assert b.job("job-1")["state"]=="queued"
+    p.status="running";assert b.next_job()=={"job_id":"job-1"}

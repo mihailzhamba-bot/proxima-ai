@@ -160,3 +160,38 @@ retained. Model evaluation sends the requested model in the native request and r
 requested identity separately from unknown observed provider identity; generic
 status.model=hermes-agent is not treated as proof. Numeric narratives outside exact
 SourceRef facts and duplicate facts cannot earn full grounding credit.
+
+Review iteration2 recovery and offline environment
+Install bridge.py, runner.py, publication.py and verify_candidate.py together under
+/opt/loop on Harper. The producer copies trusted /opt/offline/npm and /opt/offline/uv
+into its /tmp scratch area and sets explicit offline/no-download policies. Missing
+caches or preinstalled Python3.14 fail closed; there is no network fallback. HOME is
+writable scratch, USER/LOGNAME come from the process UID. Build retains all four
+read-only dependency mounts and appends only the next-env declaration overlay.
+
+Publication journal is evidence/<job>/<attempt>/publisher.json, mode0600. It contains
+a permit, so never paste it in prompts or logs. Each push records start and a stopped
+subprocess receipt before final PR work. Failed and lost push receipts preserve an
+active permit until inspected. After a runner failure use runner.py --config <file>
+--recover-push <private journal> on Harper. Recovery checks Linux boot/start identity
+for both parent and child; a matching live PID is a hard refusal. A finished journal
+replays the same receipt, and a dead unfinished process records unknown outcome.
+
+Then the operator may run loopctl.py --config <operator file> settle-publication
+--id <job> --evidence-ref <inspection reference>. Settlement requires a stopped
+publisher (or a push that never started), checks the exact destination branch SHA
+and all matching PRs, and writes the observed result. It never creates a PR, retries
+push or deletes a branch. A different SHA or unavailable inspection leaves the permit
+active. Cancellation cannot be confirmed while a publisher may still run. The prior
+recover-pr path has the same stopped-publisher prerequisite.
+
+Global pause leaves queued work intact; resume offers the same queued job. Only a
+confirmed revoked/terminal parent quarantines never-dispatched work. JsonHTTP accepts
+explicit uncertainty metadata from configured trusted Bridge clients only; vendor
+5xx replies remain uncertain. Known Bridge503 before dispatch is reported to Telegram
+as a rejection and retains the original key for a safe operator retry.
+
+Dedicated Dockerfiles carry their own .dockerignore allowlists. Build with repository
+root as context and -f infra/loop-control/Dockerfile.paperclip (or hermes-overlay);
+their build/upstream trees and required assets are included despite the production
+root ignore rule. .git, runtime .env and root secrets directories stay excluded.

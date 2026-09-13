@@ -30,3 +30,16 @@ def test_readiness_rejects_existing_hosts_and_missing_approval():
         result=module.check({"control_vps_ip":ip,"control_vps_approved":True,"approval_ref":"fixture approval"})
         assert "dedicated_control_vps_required" in result["missing"] and result["live_ready"] is False
     assert "explicit_control_vps_approval" in module.check({"control_vps_ip":"192.0.2.1"})["missing"]
+
+
+def test_dedicated_docker_context_includes_pinned_sources_and_excludes_private_state():
+    for name,dockerfile in [("paperclip","Dockerfile.paperclip"),("hermes","Dockerfile.hermes-overlay")]:
+        prefix=f"build/upstream/{name}/"
+        required=[prefix+name+".py",prefix+"README.md",prefix+"build/generated/source.js",prefix+".loop-source-pin.json",prefix+".env.example"]
+        private=[prefix+".git/config",prefix+".env",prefix+".env.local",prefix+"secrets/live.token","infra/jobs.env",".git/config","tools/unrelated.py"]
+        if name=="hermes":required += ["tools/loop/bridge.py","tools/loop/director_tool.py"]
+        ignore=CONF/(dockerfile+".dockerignore")
+        program="import fs from 'node:fs';import ignore from 'ignore';const filter=ignore().add(fs.readFileSync(process.argv[1],'utf8'));const paths=JSON.parse(process.argv[2]);process.stdout.write(JSON.stringify(paths.map(p=>filter.ignores(p))));"
+        results=json.loads(subprocess.check_output(["node","--input-type=module","-e",program,str(ignore),json.dumps(required+private)],cwd=ROOT,text=True))
+        assert results[:len(required)]==[False]*len(required)
+        assert results[len(required):]==[True]*len(private)

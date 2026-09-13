@@ -26,8 +26,9 @@ TERMINAL = {"completed", "failed", "error", "cancelled", "canceled", "stopped", 
 JOB_ID = re.compile(r"^[a-z0-9][a-z0-9-]{2,40}$")
 SAFE_ID = re.compile(r"^[A-Za-z0-9:_-]{1,160}$")
 class BridgeError(Exception):
-    def __init__(self, status, message, uncertain=None):
+    def __init__(self, status, message, uncertain=None, revoked=False):
         self.status, self.message = status, message
+        self.revoked = revoked
         self.uncertain = status >= 500 if uncertain is None else uncertain
 
 def secret(path):
@@ -42,8 +43,9 @@ class NoRedirect(HTTPRedirectHandler):
         raise HTTPError(req.full_url, code, "redirect denied", headers, fp)
 
 class JsonHTTP:
-    def __init__(self, base, token, timeout=30, header="Authorization"):
+    def __init__(self, base, token, timeout=30, header="Authorization", trusted_bridge=False):
         self.header=header
+        self.trusted_bridge=trusted_bridge
         parsed = urlparse(base)
         if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password or parsed.query or parsed.fragment: raise ValueError("invalid upstream URL")
         if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "hermes", "paperclip", "bridge"}: raise ValueError("remote upstream requires HTTPS")
@@ -57,9 +59,13 @@ class JsonHTTP:
                 if len(raw) > 2_000_000: raise BridgeError(502, "upstream response too large")
                 return json.loads(raw) if raw else {}
         except HTTPError as exc:
+            try: body=json.loads(exc.read(4096))
+            except Exception: body={}
+            if self.trusted_bridge and isinstance(body,dict) and isinstance(body.get("uncertain"),bool):
+                uncertain=body["uncertain"]
+                raise BridgeError(exc.code, f"Bridge rejected request (HTTP {exc.code})" if not uncertain else "Bridge result uncertain", uncertain) from None
             if 400 <= exc.code < 500:
-                try: uncertain=json.loads(exc.read(4096)).get("uncertain",False) is True
-                except Exception: uncertain=False
+                uncertain=isinstance(body,dict) and body.get("uncertain") is True
                 raise BridgeError(exc.code, f"upstream rejected request (HTTP {exc.code})", uncertain) from None
             raise BridgeError(502, "upstream response uncertain", True) from None
         except (URLError, TimeoutError, OSError, ValueError):
@@ -93,7 +99,7 @@ class Bridge:
                     external_id TEXT, candidate_sha TEXT, verification TEXT, pr_url TEXT);
             """)
             columns={r[1] for r in db.execute("PRAGMA table_info(jobs)")}
-            for name,definition in (("publication_permit","TEXT"),("publication_active","INTEGER NOT NULL DEFAULT 0"),("recovery_receipt","TEXT")):
+            for name,definition in (("publication_permit","TEXT"),("publication_active","INTEGER NOT NULL DEFAULT 0"),("recovery_receipt","TEXT"),("push_outcome","TEXT"),("push_publisher_id","TEXT"),("push_process_stopped","INTEGER NOT NULL DEFAULT 0"),("push_receipt","TEXT"),("publication_settlement","TEXT")):
                 if name not in columns: db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
             db.execute("UPDATE jobs SET state='unknown' WHERE state='publishing'")
             # The local process cannot infer whether an interrupted create reached upstream.
@@ -272,21 +278,23 @@ class Bridge:
         else:
             observed=self.paperclip.call("GET","/api/heartbeat-runs/"+quote(op["key"],safe=""))
             parent_state={"succeeded":"completed","scheduled_retry":"interrupted","timed_out":"failed"}.get(observed.get("status"),observed.get("status"))
-        if parent_state not in {"running","completed"}: raise BridgeError(409,"parent publication fenced")
-        if j["generation"]!=j["current_generation"] or j["director_state"] not in {"running","completed"} or j["state"] in {"cancelled","unknown"}: raise BridgeError(409,"publication fenced")
+        if parent_state not in {"running","completed"}: raise BridgeError(409,"parent publication fenced",revoked=parent_state in TERMINAL | {"cancelling"})
+        if j["generation"]!=j["current_generation"] or j["director_state"] not in {"running","completed"} or j["state"] in {"cancelled","unknown"}: raise BridgeError(409,"publication fenced",revoked=j["generation"]!=j["current_generation"] or j["director_state"] in TERMINAL - {"completed"} or j["director_state"]=="cancelling")
         with self.tx() as db:
             if db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0]=="true": raise BridgeError(409,"publication paused")
         return j
 
 
     def next_job(self):
+        with self.tx() as db:
+            if db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0]=="true":return {"job_id":None}
         with self.tx() as db: rows=db.execute("SELECT id FROM jobs WHERE state IN ('queued','recoverable') ORDER BY rowid").fetchall()
         for row in rows:
             try:
                 self.fence(row["id"])
                 return {"job_id":row["id"]}
             except BridgeError as exc:
-                if exc.status != 409: continue
+                if exc.status != 409 or not exc.revoked: continue
                 j=self.job(row["id"])
                 # Only never-dispatched jobs can be discarded automatically. An
                 # existing CID remains quarantined until operator reconciliation.
@@ -330,6 +338,7 @@ class Bridge:
         with self.guard:
             job=self.job(job_id)
             if job["state"]!="unknown" or not job["candidate_sha"]: raise BridgeError(409,"no uncertain publication to reconcile")
+            if job["publication_active"] and not job["push_process_stopped"]:raise BridgeError(409,"publisher may still run; obtain stopped receipt first")
             op=self.get(job["director_run"])
             if op["generation"]!=job["generation"] or op["state"] not in {"running","completed"}: raise BridgeError(409,"attempt revoked")
             if not self.publisher or not hasattr(self.publisher,"lookup"): raise BridgeError(503,"publisher lookup unavailable")
@@ -346,14 +355,51 @@ class Bridge:
             if not isinstance(sha,str) or not re.fullmatch(r"[0-9a-f]{40}",sha): raise BridgeError(400,"invalid candidate SHA")
             if report.get("producer")!="harper" or set(report.get("checks",{}))!={"verify","build","review"} or any(v!={"sha":sha,"status":"pass","skipped":0} for v in report["checks"].values()): raise BridgeError(409,"independent exact-SHA checks required")
             permit=str(uuid.uuid4())
-            with self.tx() as db: db.execute("UPDATE jobs SET state='publishing',candidate_sha=?,verification=?,publication_permit=?,publication_active=1 WHERE id=?",(sha,json.dumps(report),permit,job_id))
+            with self.tx() as db: db.execute("UPDATE jobs SET state='publishing',candidate_sha=?,verification=?,publication_permit=?,publication_active=1,push_outcome='not_started',push_process_stopped=0 WHERE id=?",(sha,json.dumps(report),permit,job_id))
             return {"permit":permit,"generation":job["generation"],"sha":sha}
+    def publication_job(self, job_id, permit):
+        job=self.job(job_id)
+        if not isinstance(permit,str) or not hmac.compare_digest(job["publication_permit"] or "",permit):raise BridgeError(403,"invalid publication permit")
+        if not job["publication_active"]:raise BridgeError(409,"publication permit closed")
+        return job
+    def start_push(self, job_id, payload):
+        with self.guard:
+            job=self.publication_job(job_id,payload.get("permit"))
+            self.fence(job_id)
+            publisher_id=payload.get("publisher_id")
+            if not isinstance(publisher_id,str) or not SAFE_ID.fullmatch(publisher_id):raise BridgeError(400,"publisher identity required")
+            if job["push_outcome"]!="not_started":raise BridgeError(409,"push already started; recover receipt instead")
+            with self.tx() as db:db.execute("UPDATE jobs SET push_outcome='running',push_publisher_id=?,push_process_stopped=0 WHERE id=?",(publisher_id,job_id))
+            return {"started":True}
+    def record_push(self, job_id, payload):
+        with self.guard:
+            job=self.publication_job(job_id,payload.get("permit"))
+            if not isinstance(payload.get("publisher_id"),str) or payload.get("publisher_id")!=job["push_publisher_id"]:raise BridgeError(403,"publisher identity mismatch")
+            if payload.get("outcome") not in {"succeeded","failed","unknown"} or payload.get("process_stopped") is not True or not isinstance(payload.get("evidence_ref"),str) or not payload["evidence_ref"]:raise BridgeError(400,"stopped publisher receipt required")
+            if payload["outcome"]=="succeeded" and payload.get("returncode")!=0:raise BridgeError(400,"successful push needs exit zero")
+            if payload["outcome"]=="failed" and (not isinstance(payload.get("returncode"),int) or payload["returncode"]==0):raise BridgeError(400,"failed push needs nonzero exit")
+            if job["push_process_stopped"] and json.loads(job["push_receipt"])!=payload:raise BridgeError(409,"push receipt already recorded")
+            with self.tx() as db:db.execute("UPDATE jobs SET push_outcome=?,push_process_stopped=1,push_receipt=? WHERE id=?",(payload["outcome"],json.dumps(payload),job_id))
+            return {"outcome":payload["outcome"],"process_stopped":True}
+    def settle_publication(self, job_id, evidence_ref):
+        # Operator-only settlement observes destinations; it creates/deletes nothing.
+        with self.guard:
+            job=self.job(job_id)
+            if not job["publication_active"] or not job["candidate_sha"]:raise BridgeError(409,"no active publication to settle")
+            if job["push_outcome"]!="not_started" and not job["push_process_stopped"]:raise BridgeError(409,"publisher may still run; obtain stopped receipt from Harper")
+            if not isinstance(evidence_ref,str) or not evidence_ref.strip():raise BridgeError(400,"operator evidence reference required")
+            if not self.publisher or not hasattr(self.publisher,"inspect"):raise BridgeError(503,"destination inspector unavailable")
+            observed=self.publisher.inspect(job_id,job["candidate_sha"])
+            settlement={"at":time.time(),"evidence_ref":evidence_ref,"push_outcome":job["push_outcome"],"destination":observed}
+            with self.tx() as db:db.execute("UPDATE jobs SET state='settled',publication_active=0,publication_settlement=? WHERE id=?",(json.dumps(settlement),job_id))
+            return {"state":"settled","destination":observed,"created_pr":False,"deleted_ref":False}
     def finish_publication(self, job_id, permit):
         with self.guard:
             job=self.job(job_id)
             if not isinstance(permit,str) or not hmac.compare_digest(job["publication_permit"] or "",permit): raise BridgeError(403,"invalid publication permit")
             if job["state"]=="ready_pr": return {"state":"ready_pr","pr_url":job["pr_url"]}
             if not job["publication_active"]: raise BridgeError(409,"publication permit closed")
+            if job["push_outcome"]!="succeeded" or not job["push_process_stopped"]:raise BridgeError(409,"successful stopped push receipt required")
             try: self.fence(job_id)
             except BridgeError as exc:
                 if exc.status!=409: raise
@@ -368,16 +414,29 @@ class Bridge:
                 raise BridgeError(502,"publication receipt uncertain; active permit requires reconciliation") from None
             with self.tx() as db: db.execute("UPDATE jobs SET state='ready_pr',pr_url=?,publication_active=0 WHERE id=?",(url,job_id))
             return {"state":"ready_pr","pr_url":url,"sha":job["candidate_sha"]}
-    def publish(self, job_id, report):
-        # Internal compatibility seam; production runner uses begin -> push -> finish.
-        job=self.job(job_id)
-        if job["state"]=="ready_pr": return {"state":"ready_pr","pr_url":job["pr_url"]}
-        return self.finish_publication(job_id,self.begin_publication(job_id,report)["permit"])
 
 class GitHubPublisher:
     def __init__(self, client, repository, base="main"):
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+",repository): raise ValueError("invalid repository")
         self.client,self.repository,self.base=client,repository,base
+    def inspect(self, job_id, sha):
+        branch="feat/loop-"+job_id
+        try:
+            ref=self.client.call("GET",f"/repos/{self.repository}/git/ref/heads/{branch}")
+            if ref.get("object",{}).get("sha")!=sha:raise BridgeError(409,"destination branch differs from verified SHA")
+            branch_state="matches"
+        except BridgeError as exc:
+            if exc.status!=404 or exc.uncertain:raise
+            branch_state="absent"
+        prs=self.client.call("GET",f"/repos/{self.repository}/pulls?head={self.repository.split('/')[0]}:{quote(branch,safe='')}&state=all&per_page=100")
+        if not isinstance(prs,list):raise BridgeError(502,"invalid PR inspection response")
+        receipts=[]
+        for pr in prs:
+            if pr.get("head",{}).get("sha")!=sha or pr.get("base",{}).get("ref")!=self.base:raise BridgeError(409,"destination PR differs from verified candidate")
+            url=pr.get("html_url","")
+            if not url.startswith("https://github.com/"+self.repository+"/pull/"):raise BridgeError(502,"invalid PR receipt")
+            receipts.append({"url":url,"state":pr.get("state"),"merged":pr.get("merged_at") is not None})
+        return {"branch":branch,"branch_state":branch_state,"sha":sha if branch_state=="matches" else None,"pull_requests":receipts}
     def lookup(self, job_id, sha):
         branch="feat/loop-"+job_id
         existing=self.client.call("GET",f"/repos/{self.repository}/pulls?head={self.repository.split('/')[0]}:{quote(branch,safe='')}&state=open")
@@ -435,14 +494,17 @@ def server(bridge, config):
                     result=bridge.context(int(values.get("offset",["0"])[0]))
                 elif self.command=="POST" and path=="/v1/jobs": result=bridge.propose_job(payload,config.get("templates",{}))
                 elif self.command=="GET" and path=="/v1/runner/jobs/next": result=bridge.next_job()
-                elif match:=re.fullmatch(r"/v1/runner/jobs/([a-z0-9][a-z0-9-]{2,40})(/(claim|begin-publication|finish-publication|fence|fail))?",path):
+                elif match:=re.fullmatch(r"/v1/runner/jobs/([a-z0-9][a-z0-9-]{2,40})(/(claim|begin-publication|start-push|record-push|finish-publication|fence|fail))?",path):
                     if self.command=="POST" and match[3]=="fail": result=bridge.fail_job(match[1])
                     elif self.command=="POST" and match[3]=="claim": result=bridge.claim_job(match[1])
                     elif self.command=="POST" and match[3]=="begin-publication": result=bridge.begin_publication(match[1],payload)
+                    elif self.command=="POST" and match[3]=="start-push":result=bridge.start_push(match[1],payload)
+                    elif self.command=="POST" and match[3]=="record-push":result=bridge.record_push(match[1],payload)
                     elif self.command=="POST" and match[3]=="finish-publication": result=bridge.finish_publication(match[1],payload.get("permit"))
                     elif self.command=="GET" and match[3]=="fence": result=bridge.fence(match[1])
                     elif self.command=="GET" and match[3] is None: result=bridge.job(match[1])
                     else: raise BridgeError(404,"runner operation unavailable")
+                elif self.command=="POST" and (match:=re.fullmatch(r"/v1/jobs/([a-z0-9][a-z0-9-]{2,40})/settle-publication",path)):result=bridge.settle_publication(match[1],payload.get("evidence_ref"))
                 elif self.command=="POST" and (match:=re.fullmatch(r"/v1/jobs/([a-z0-9][a-z0-9-]{2,40})/recover-worker",path)): result=bridge.recover_job(match[1],payload)
                 elif self.command=="POST" and (match:=re.fullmatch(r"/v1/jobs/([a-z0-9][a-z0-9-]{2,40})/recover-pr",path)): result=bridge.recover_pr(match[1])
                 elif self.command=="POST" and path in {"/v1/pause","/v1/resume"}: result=bridge.pause(path.endswith("pause"))

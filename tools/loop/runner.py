@@ -11,39 +11,82 @@ import shlex
 import subprocess
 import tempfile
 import time
+import uuid
 from pathlib import Path
 try:
     from .bridge import BridgeError, JsonHTTP, secret
     from .verify_candidate import sanitize
+    from .publication import process_identity, write_journal, recover_push
 except ImportError:
     from bridge import BridgeError, JsonHTTP, secret
     from verify_candidate import sanitize
+    from publication import process_identity, write_journal, recover_push
 
 ID=re.compile(r"^[a-z0-9][a-z0-9-]{2,40}$")
 SHA=re.compile(r"^[a-f0-9]{40}$")
 class DeliveryRunner:
-    def __init__(self, config, bridge, execute=None):
+    def __init__(self, config, bridge, execute=None, identity_reader=process_identity):
         self.config,self.bridge=config,bridge
         self.execute=execute or self._execute
+        self.identity_reader=identity_reader
+        self.push_context=None
         self.stage_number=0
         self.evidence=None
         self.env={"PATH":os.environ.get("PATH","/usr/bin:/bin"),"HOME":config["trusted_home"],"GIT_CONFIG_GLOBAL":"/dev/null","GIT_CONFIG_SYSTEM":"/dev/null","GIT_TERMINAL_PROMPT":"0"}
     def _execute(self,argv,cwd=None):
         self.stage_number+=1
+        process=None
         try:
-            result=subprocess.run(argv,cwd=cwd,env=self.env,capture_output=True,text=True,timeout=self.config.get("command_timeout",7200),check=False)
+            if self.push_context:
+                process=subprocess.Popen(argv,cwd=cwd,env=self.env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                journal=self.push_context["journal"]
+                journal["child_pid"]=process.pid;journal["child_identity"]=self.identity_reader(process.pid)
+                write_journal(self.push_context["path"],journal)
+                try:stdout,stderr=process.communicate(timeout=self.config.get("command_timeout",7200));code=process.returncode
+                except subprocess.TimeoutExpired:process.kill();stdout,stderr=process.communicate();code=124
+                result=subprocess.CompletedProcess(argv,code,stdout,stderr)
+            else:
+                result=subprocess.run(argv,cwd=cwd,env=self.env,capture_output=True,text=True,timeout=self.config.get("command_timeout",7200),check=False)
         except subprocess.TimeoutExpired as exc:
             stdout=exc.stdout.decode(errors="replace") if isinstance(exc.stdout,bytes) else exc.stdout or ""
             stderr=exc.stderr.decode(errors="replace") if isinstance(exc.stderr,bytes) else exc.stderr or ""
             result=subprocess.CompletedProcess(argv,124,stdout,stderr)
+        except Exception:
+            if process is not None:
+                process.kill();process.communicate()
+            result=subprocess.CompletedProcess(argv,127,"","publisher subprocess could not complete")
         if self.evidence:
             log=sanitize(result.stdout+result.stderr)
             token=getattr(self.bridge,"token","")
             if token:log=log.replace(token,"[redacted]")
             (self.evidence/f"stage-{self.stage_number:02d}.log").write_text(log)
             (self.evidence/f"stage-{self.stage_number:02d}.json").write_text(json.dumps({"program":Path(argv[0]).name,"returncode":result.returncode}))
-        if result.returncode: raise BridgeError(502,"trusted runner command failed; sanitized stage logs retained")
+        if result.returncode:
+            error=BridgeError(502,"trusted runner command failed; sanitized stage logs retained")
+            error.process_stopped=True;error.returncode=result.returncode
+            raise error
         return result.stdout
+    def push(self,job_id,admitted,argv):
+        publisher_id=str(uuid.uuid4());path=self.evidence/"publisher.json"
+        journal={"job_id":job_id,"permit":admitted["permit"],"publisher_id":publisher_id,"sha":admitted["sha"],"state":"starting","parent_pid":os.getpid(),"parent_identity":self.identity_reader(os.getpid()),"child_pid":None,"child_identity":None}
+        write_journal(path,journal)
+        self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/start-push",{"permit":admitted["permit"],"publisher_id":publisher_id})
+        journal["state"]="running";write_journal(path,journal)
+        self.push_context={"path":path,"journal":journal}
+        try:self.execute(argv)
+        except Exception as exc:
+            stopped=getattr(exc,"process_stopped",False)
+            if stopped:
+                journal["state"]="finished";journal["receipt"]={"permit":admitted["permit"],"publisher_id":publisher_id,"outcome":"failed","process_stopped":True,"returncode":exc.returncode,"evidence_ref":str(path)}
+                write_journal(path,journal)
+                try:self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/record-push",journal["receipt"])
+                except Exception:pass
+            raise
+        else:
+            journal["state"]="finished";journal["receipt"]={"permit":admitted["permit"],"publisher_id":publisher_id,"outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":str(path)}
+            write_journal(path,journal)
+            self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/record-push",journal["receipt"])
+        finally:self.push_context=None
     def fence(self,job_id): return self.bridge.call("GET",f"/v1/runner/jobs/{job_id}/fence")
     def run(self,job_id):
         if not ID.fullmatch(job_id): raise ValueError("invalid job ID")
@@ -105,7 +148,7 @@ class DeliveryRunner:
                 declaration=cache/"next-env.d.ts"
                 # Tests may fake command execution; production always has this checkout.
                 declaration.write_bytes((checkout/"services/webapp/next-env.d.ts").read_bytes())
-                extra=["-v",str(declaration)+":/work/services/webapp/next-env.d.ts:rw"]
+                extra.extend(["-v",str(declaration)+":/work/services/webapp/next-env.d.ts:rw"])
             stage_docker=[arg for arg in docker if arg!="--read-only"] if stage=="prepare" else docker
             receipt=json.loads(self.execute([*stage_docker,*extra,image,"python3","/opt/loop/verify_candidate.py",sha,"--stage",stage]))
             if receipt.get("status")!="pass" or (stage!="prepare" and receipt.get("checks")!={stage:{"sha":sha,"status":"pass","skipped":0}}):raise BridgeError(409,"verification incomplete")
@@ -124,14 +167,16 @@ class DeliveryRunner:
         self.execute([*git,"init","--bare",str(publish)])
         self.execute([*git,"-C",str(publish),"fetch",str(bundle),f"refs/heads/feat/loop-{job_id}:refs/heads/feat/loop-{job_id}"])
         admitted=self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/begin-publication",report)
-        self.execute([*git,"-C",str(publish),"push",self.config["publish_remote"],f"refs/heads/feat/loop-{job_id}:refs/heads/feat/loop-{job_id}"])
+        self.push(job_id,admitted,[*git,"-C",str(publish),"push",self.config["publish_remote"],f"refs/heads/feat/loop-{job_id}:refs/heads/feat/loop-{job_id}"])
         # Bridge holds its publication fence while checking GitHub's actual ref
         # and creating/recovering the PR. No merge/deploy path exists.
         return self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/finish-publication",{"permit":admitted["permit"]})
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument("--config",required=True);parser.add_argument("--job");parser.add_argument("--serve",action="store_true");args=parser.parse_args()
-    config=json.loads(Path(args.config).read_text()); bridge=JsonHTTP(config["bridge_url"],secret(config["runner_token_file"]))
+    parser=argparse.ArgumentParser();parser.add_argument("--config",required=True);parser.add_argument("--job");parser.add_argument("--serve",action="store_true");parser.add_argument("--recover-push");args=parser.parse_args()
+    config=json.loads(Path(args.config).read_text()); bridge=JsonHTTP(config["bridge_url"],secret(config["runner_token_file"]),trusted_bridge=True)
+    if args.recover_push:
+        print(json.dumps(recover_push(bridge,args.recover_push,config["evidence_root"])));return
     if args.serve:
         # Consumer only: Paperclip remains the Director scheduler.
         while True:

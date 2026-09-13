@@ -6,7 +6,28 @@ import json
 import os
 import re
 import subprocess
+import tempfile
+import shutil
+import pwd
+import sys
 from pathlib import Path
+
+OFFLINE_ROOT=Path("/opt/offline")
+
+def prepare_environment(env,offline_root=None,scratch_parent=None):
+    offline=Path(offline_root) if offline_root is not None else OFFLINE_ROOT
+    if any(not (offline/name).is_dir() for name in ("npm","uv")):raise ValueError("trusted offline npm/uv caches are required")
+    scratch=Path(tempfile.mkdtemp(prefix="loop-producer-",dir=scratch_parent))
+    home=scratch/"home";home.mkdir()
+    for name in ("npm","uv"):
+        copied=scratch/name;shutil.copytree(offline/name,copied)
+        for path in [copied,*copied.rglob("*")]:
+            if not path.is_symlink():path.chmod(path.stat().st_mode | (0o700 if path.is_dir() else 0o600))
+    python=shutil.which("python3.14",path=env.get("PATH"))
+    if not python and sys.version_info[:2]==(3,14):python=sys.executable
+    if not python:raise ValueError("preinstalled Python 3.14 required; downloads disabled")
+    user=pwd.getpwuid(os.getuid()).pw_name
+    return {**env,"HOME":str(home),"USER":user,"LOGNAME":user,"PATH":str(Path(python).parent)+os.pathsep+env.get("PATH",""),"npm_config_cache":str(scratch/"npm"),"NPM_CONFIG_CACHE":str(scratch/"npm"),"npm_config_offline":"true","NPM_CONFIG_OFFLINE":"true","UV_CACHE_DIR":str(scratch/"uv"),"UV_OFFLINE":"1","UV_PYTHON_DOWNLOADS":"never","UV_PYTHON":python}
 
 class VerificationFailure(Exception):
     def __init__(self,message,receipt):super().__init__(message);self.receipt=receipt
@@ -43,10 +64,11 @@ def produce(root,sha,stage,require_readonly=True,env=None):
     env={**os.environ,**(env or {}),"PUPPETEER_SKIP_DOWNLOAD":"1","PROXIMA_VERIFY_READONLY":"1","PYTHONDONTWRITEBYTECODE":"1","GIT_OPTIONAL_LOCKS":"0","GIT_CONFIG_GLOBAL":"/dev/null","GIT_CONFIG_SYSTEM":"/dev/null","UV_NO_SYNC":"1","NPM_CONFIG_AUDIT":"false","NPM_CONFIG_FUND":"false","NPM_CONFIG_LOGS_DIR":"/tmp/npm-logs"}
     receipt={"sha":sha,"stage":stage,"status":"fail","checks":{},"logs":{},"manifest_sha256":None}
     try:
+        env=prepare_environment(env)
         receipt["manifest_sha256"]=source_manifest(root,sha,env,require_readonly,stage)
         if stage=="prepare":
             prepare_env={k:v for k,v in env.items() if k!="UV_NO_SYNC"}
-            for name,argv in (("npm",["npm","ci","--ignore-scripts"]),("uv",["uv","sync","--python","3.14","--project","services/control-plane","--extra","test","--locked"])):
+            for name,argv in (("npm",["npm","ci","--ignore-scripts"]),("uv",["uv","sync","--python",env["UV_PYTHON"],"--project","services/control-plane","--extra","test","--locked"])):
                 result=command(argv,root,prepare_env)
                 receipt["logs"][name]=sanitize(result.stdout+result.stderr)
                 if result.returncode:raise ValueError("dependency preparation failed: "+name)

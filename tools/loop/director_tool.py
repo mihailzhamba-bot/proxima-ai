@@ -25,4 +25,4 @@ def serve(client):
             response={"jsonrpc":"2.0","id":request_id,"result":result}
         except Exception:response={"jsonrpc":"2.0","id":request.get("id") if isinstance(locals().get("request"),dict) else None,"error":{"code":-32602,"message":"Bridge rejected request; inspect current attempt and template"}}
         print(json.dumps(response),flush=True)
-if __name__=="__main__":serve(JsonHTTP(os.environ["LOOP_BRIDGE_URL"],secret(os.environ["LOOP_DIRECTOR_TOKEN_FILE"])))
+if __name__=="__main__":serve(JsonHTTP(os.environ["LOOP_BRIDGE_URL"],secret(os.environ["LOOP_DIRECTOR_TOKEN_FILE"]),trusted_bridge=True))
