@@ -1,5 +1,27 @@
 # HANDOFF — PROXIMA AI
 
+
+## LOOP pilot - реализация 13.09.2026, финальная проверка продолжается
+
+Рабочая ветка `feat/loop-pilot`, baseline `6912a92`; scope:
+`docs/exec-plans/active/loop-pilot.txt`. Реализованы migration019, серверная
+BetterAuth/membership, очередь Mike/сотрудника, блокеры, выполнение и отдельное
+наблюдение, preliminary threshold -30 с источником решения, deterministic diagnosis.
+Рабочие файлы `tools/loop/` и `infra/loop-control/` связывают official hermes_gateway,
+persistent intents/cancel/fences, существующий OpenHands handoff, Harper verification
+и готовый PR. Telegram и eval поставляются без реальных credentials.
+
+Проверено implementer: webapp typecheck/lint, 127 unit/API tests, 37 threshold/median
+checks; 30 новых Bridge/runner/transport/Telegram/eval/migration checks. Root отдельно
+подтвердил 5 PostgreSQL queue tests без skips на Harper; полный verify/build и
+браузерный BetterAuth flow ещё выполняются. Итоговые логи и verdict добавляет root.
+
+Задача остаётся IN_PROGRESS до финального verify, browser check и независимого
+review. Нет merge/deploy, live WB writes и установки на Simone. Новый управляющий
+VPS, его IP и отдельные model/bot credentials не выданы; live_ready остаётся false.
+Следующий шаг: исправить findings итогового Harper/review прогона и добавить PR.
+
+
 > **30.08.2026:** роадмап M1 заменён лестницей M-00..M-05 (см. `/DECISIONS.md` D2, `/STATE.md`, `/docs/state/`). Всё ниже - состояние на 25-29.08, историческое; не считать текущими требованиями до обновления в Сессии 2 (bmad-project-context).
 
 > If the current agent disappears right now, what must the next one know? Update after every meaningful stage.

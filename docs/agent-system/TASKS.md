@@ -1,5 +1,27 @@
 # TASKS — PROXIMA AI
 
+
+## LOOP pilot - реализация 13.09.2026, финальная проверка продолжается
+
+Рабочая ветка `feat/loop-pilot`, baseline `6912a92`; scope:
+`docs/exec-plans/active/loop-pilot.txt`. Реализованы migration019, серверная
+BetterAuth/membership, очередь Mike/сотрудника, блокеры, выполнение и отдельное
+наблюдение, preliminary threshold -30 с источником решения, deterministic diagnosis.
+Рабочие файлы `tools/loop/` и `infra/loop-control/` связывают official hermes_gateway,
+persistent intents/cancel/fences, существующий OpenHands handoff, Harper verification
+и готовый PR. Telegram и eval поставляются без реальных credentials.
+
+Проверено implementer: webapp typecheck/lint, 127 unit/API tests, 37 threshold/median
+checks; 30 новых Bridge/runner/transport/Telegram/eval/migration checks. Root отдельно
+подтвердил 5 PostgreSQL queue tests без skips на Harper; полный verify/build и
+браузерный BetterAuth flow ещё выполняются. Итоговые логи и verdict добавляет root.
+
+Задача остаётся IN_PROGRESS до финального verify, browser check и независимого
+review. Нет merge/deploy, live WB writes и установки на Simone. Новый управляющий
+VPS, его IP и отдельные model/bot credentials не выданы; live_ready остаётся false.
+Следующий шаг: исправить findings итогового Harper/review прогона и добавить PR.
+
+
 > Snapshot of task state in this repo. Full backlog lives in Jira project PA (zhamba.atlassian.net); this file mirrors only what an agent needs to resume work.
 
 ## Дневной прогон 08.09.2026 - выполнен (D32)

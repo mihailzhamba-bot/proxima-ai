@@ -10,7 +10,7 @@ def check(config):
     try: ip=ipaddress.ip_address(config.get("control_vps_ip",""))
     except ValueError:missing.append("new_control_vps_ip");ip=None
     if ip and str(ip) in {"135.106.186.210","135.106.211.64"}:missing.append("dedicated_control_vps_required")
-    for name in ("paperclip","hermes","bridge","verification"):
+    for name in ("paperclip","hermes","bridge","postgres","verification"):
         value=config.get("images",{}).get(name) or ""
         if not re.fullmatch(r"[A-Za-z0-9.:/_-]+@sha256:[a-f0-9]{64}",value):missing.append("image_digest:"+name)
     for role in ("operator","gateway","director","runner"):

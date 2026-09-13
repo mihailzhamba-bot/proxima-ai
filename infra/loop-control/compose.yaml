@@ -1,7 +1,37 @@
 name: loop-control
 # Build on Harper, pull digest-pinned artifacts here. No build stanza on control.
+x-logging: &bounded-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
 services:
+  postgres:
+    image: ${LOOP_POSTGRES_IMAGE:?digest-pinned postgres16.6 image required}
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 0.5
+    pids_limit: 128
+    logging: *bounded-logging
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - /etc/loop/secrets/postgres_admin:/run/secrets/postgres_admin:ro
+      - /etc/loop/secrets/paperclip_postgres:/run/secrets/paperclip_postgres:ro
+      - /etc/loop/10-paperclip-role.sh:/docker-entrypoint-initdb.d/10-paperclip-role.sh:ro
+    networks: [control]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
   paperclip:
+    logging: *bounded-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
     image: ${LOOP_PAPERCLIP_IMAGE:?digest-pinned image required}
     restart: unless-stopped
     init: true
@@ -19,6 +49,7 @@ services:
     networks: [control]
     ports: ["127.0.0.1:3100:3100"]
   hermes:
+    logging: *bounded-logging
     image: ${LOOP_HERMES_IMAGE:?digest-pinned image required}
     restart: unless-stopped
     init: true
@@ -37,6 +68,7 @@ services:
     volumes: ["hermes:/var/lib/loop/hermes", "/etc/loop/hermes.yaml:/var/lib/loop/hermes/config.yaml:ro", "/etc/loop/secrets/bridge_director:/run/secrets/bridge_director:ro"]
     networks: [control]
   bridge:
+    logging: *bounded-logging
     image: ${LOOP_BRIDGE_IMAGE:?digest-pinned image required}
     restart: unless-stopped
     init: true
@@ -51,9 +83,25 @@ services:
     networks: [control]
     ports: ["127.0.0.1:18770:18770"]
     command: ["python3", "/opt/loop/bridge.py", "--config", "/etc/loop/bridge.json"]
+  telegram:
+    image: ${LOOP_BRIDGE_IMAGE:?digest-pinned image required}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 32
+    logging: *bounded-logging
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes: ["telegram:/var/lib/loop/telegram", "/etc/loop/telegram.json:/etc/loop/telegram.json:ro", "/etc/loop/secrets/telegram_bot:/run/secrets/telegram_bot:ro", "/etc/loop/secrets/bridge_operator:/run/secrets/bridge_operator:ro"]
+    networks: [control]
+    command: ["python3", "/opt/loop/telegram.py", "--config", "/etc/loop/telegram.json"]
 networks:
   control: {}
 volumes:
+  postgres: {}
+  telegram: {}
   paperclip: {}
   hermes: {}
   bridge: {}

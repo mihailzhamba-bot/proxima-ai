@@ -13,7 +13,7 @@
   "evidence_root": "/srv/loop-runner/evidence",
   "fixture_root": "/srv/loop-runner/fixtures/wb-api",
   "verification_image": "OPERATOR_VERIFIED_IMAGE@sha256:OPERATOR_DIGEST",
-  "publish_remote": "git@github-loop:mihailzhamba-bot/PROXIMA-AI.git",
+  "publish_remote": "git@github-loop:mihailzhamba-bot/proxima-ai.git",
   "reviewer_command": [
     "/opt/loop-review/review-candidate"
   ],

@@ -10,6 +10,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 try:
     from .bridge import BridgeError, JsonHTTP, secret
@@ -66,7 +67,7 @@ class DeliveryRunner:
         # The trusted harness controls command and image. Candidate has no host
         # credentials, Docker socket, network or privileged mount; all checks use
         # disposable writable checkout and preloaded dependencies/fixtures.
-        self.execute(["chmod","-R","a+rwX",str(checkout)])
+        self.execute(["chmod","-R","u+rwX",str(checkout)])
         docker=["docker","run","--rm","--network","none","--memory",self.config.get("memory","6g"),"--cpus",str(self.config.get("cpus",3)),"--pids-limit","512","--cap-drop","ALL","--security-opt","no-new-privileges","--read-only","--tmpfs","/tmp:rw,exec,size=2g","--user","1000:1000","-v",str(checkout)+":/work:rw","-v",self.config["fixture_root"]+":/work/fixtures/wb-api:ro","-w","/work",image]
         # This entrypoint is baked into the trusted verification image, NOT read
         # from the candidate. It executes make verify/build and validates PG PASS
@@ -93,8 +94,21 @@ class DeliveryRunner:
         return self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/publish",report)
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument("--config",required=True);parser.add_argument("--job",required=True);args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument("--config",required=True);parser.add_argument("--job");parser.add_argument("--serve",action="store_true");args=parser.parse_args()
     config=json.loads(Path(args.config).read_text()); bridge=JsonHTTP(config["bridge_url"],secret(config["runner_token_file"]))
+    if args.serve:
+        # Consumer only: Paperclip remains the Director scheduler.
+        while True:
+            job_id=None
+            try:
+                job_id=bridge.call("GET","/v1/runner/jobs/next").get("job_id")
+                if job_id: DeliveryRunner(config,bridge).run(job_id)
+            except Exception:
+                if job_id:
+                    try: bridge.call("POST",f"/v1/runner/jobs/{job_id}/fail",{})
+                    except Exception: pass
+            time.sleep(10)
+    if not args.job: parser.error("--job or --serve is required")
     try: print(json.dumps(DeliveryRunner(config,bridge).run(args.job)))
     except Exception: raise SystemExit("runner stopped; no success claimed; reconcile existing job before retry") from None
 if __name__=="__main__": main()

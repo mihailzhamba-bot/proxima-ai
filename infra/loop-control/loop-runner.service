@@ -1,0 +1,26 @@
+[Unit]
+Description=LOOP trusted verification consumer on Harper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=loop-runner
+Group=loop-runner
+SupplementaryGroups=docker
+WorkingDirectory=/var/lib/loop-runner
+ExecStart=/usr/bin/python3 /opt/loop/runner.py --config /etc/loop-runner/config.json --serve
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/loop-runner /var/lib/loop-runner
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

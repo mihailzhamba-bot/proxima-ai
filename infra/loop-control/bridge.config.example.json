@@ -25,7 +25,8 @@
   "github": {
     "url": "https://api.github.com",
     "token_file": "/run/secrets/github_pr",
-    "repository": "mihailzhamba-bot/PROXIMA-AI"
+    "repository": "mihailzhamba-bot/proxima-ai"
   },
-  "templates": {}
+  "templates": {},
+  "disk_floor_bytes": 536870912
 }

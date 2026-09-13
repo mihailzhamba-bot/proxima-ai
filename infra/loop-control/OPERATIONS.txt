@@ -52,7 +52,9 @@ remain unknown, and reaching a goal is not a causal claim.
 Operation and recovery
 Use tools/loop/loopctl.py for status, wake, pause, resume, stop, events and recover-pr.
 Wake goes to Paperclip; Bridge is not a scheduler. Runner is invoked for a queued
-approved job via runner.py --config <trusted file> --job <job ID> on Harper. Director
+approved job via runner.py --config <trusted file> --job <job ID> on Harper.
+Install loop-runner.service on Harper for --serve consumption of queued commands.
+Bridge admits one heavy execution at a time; unknown work requires reconciliation. Director
 sees the Bridge run_id and generation in its trusted wake input. Unknown dispatch is
 never repeated, even after the upstream 24h idempotency expiry. Check remote run lists
 and adopt a confirmed external ID with operator credentials. A dispatching job cannot
@@ -79,3 +81,35 @@ HTTPS/private ingress, personal membership, real Paperclip/Hermes/OpenHands roun
 Harper build/review/publish, cancel/restart and backup restore on this VPS. Repository
 unit/DB/browser checks cannot establish live readiness. Daily operation acceptance is
 separate from this PR. Production and merge remain Mike's decision.
+
+Dedicated control PostgreSQL and bounded storage
+Compose starts PostgreSQL16 in its own persistent volume. 10-paperclip-role.sh creates
+paperclip_runtime without superuser/role/database administration. The Paperclip
+DATABASE_URL in private paperclip.env must point to postgres:5432/paperclip with that
+role; its credential and postgres_admin are separate new mode0600 secrets. PostgreSQL
+has no published host port. All service logs rotate through Docker local, max10MB x3.
+Bridge refuses new dispatch if its volume has less than512MiB free; expand/archive
+verified logs and retry the same command, never delete uncertain intents.
+
+Telegram and model evaluation
+telegram.config.example.json starts with empty allowlists and refuses startup until
+both permitted user IDs and chat IDs are supplied. Use a newly created dedicated bot.
+The ingress persists update IDs and cursor before processing, invokes the same Bridge
+intents, and never guesses approval from free text. Unknown sendMessage receipts are
+not blindly resent. No live Telegram send occurred during package preparation.
+For model choice configure at least two authorized separate model profiles in
+director-eval.config.example.json, then run evaluate_director.py --config <file>
+--cases infra/loop-control/director-eval-cases.json --output <report.json> on Harper.
+Each candidate sees identical facts and tasks. The scorer checks goal preservation,
+source grounding, uncertainty, executor selection, Mike approval and publication
+control. Usage is UNKNOWN when the provider does not return it. The harness has no
+bundled model credentials and does not start evaluations from an empty config.
+
+Runtime file ownership
+The trusted Harper service user must match UID/GID1000 of the verification image;
+use the existing named UID1000 account or build the image for the chosen dedicated
+service UID. Candidate trees remain owner-writable only, never world-writable.
+PostgreSQL runtime secrets are owned by its actual container UID (inspect the pinned
+image); Bridge/Telegram secrets by UID10001. Mount only the required secret files in
+each service. The Hermes container receives only its Director credential and model
+environment, not the operator/runner/Board/GitHub credentials.

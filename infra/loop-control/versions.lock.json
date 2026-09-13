@@ -18,7 +18,8 @@
     "paperclip": null,
     "hermes": null,
     "bridge": null,
-    "verification": null
+    "verification": null,
+    "postgres": null
   },
   "mode": "pr_only",
   "live_ready": false,
@@ -27,5 +28,10 @@
     "dedicated_director_credentials",
     "built_image_digests",
     "runtime_acceptance"
-  ]
+  ],
+  "postgres": {
+    "version": "16.6",
+    "database": "paperclip",
+    "role": "paperclip_runtime"
+  }
 }

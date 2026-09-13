@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sqlite3
+import shutil
 import threading
 import time
 import uuid
@@ -108,6 +109,7 @@ class Bridge:
         return dict(row)
     def intent(self, kind, key, payload):
         if not isinstance(key, str) or not SAFE_ID.fullmatch(key): raise BridgeError(400, "invalid idempotency key")
+        if shutil.disk_usage(Path(self.database).parent).free < 536870912: raise BridgeError(503,"disk reserve low; dispatch paused")
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         digest = hashlib.sha256(encoded.encode()).hexdigest()
         with self.tx() as db:
@@ -248,10 +250,18 @@ class Bridge:
         return j
 
 
+    def next_job(self):
+        with self.tx() as db:
+            row=db.execute("SELECT id FROM jobs WHERE state='queued' ORDER BY rowid LIMIT 1").fetchone()
+        return {"job_id":row["id"] if row else None}
+    def fail_job(self, job_id):
+        with self.tx() as db: db.execute("UPDATE jobs SET state='unknown' WHERE id=? AND state='dispatching'",(job_id,))
+        return {"state":self.job(job_id)["state"]}
     def claim_job(self, job_id):
         with self.guard:
             job=self.fence(job_id)
             with self.tx() as db:
+                if db.execute("SELECT 1 FROM jobs WHERE state IN ('dispatching','publishing','unknown') AND id!=?",(job_id,)).fetchone(): raise BridgeError(409,"heavy runner slot busy or uncertain")
                 if job["state"]!="queued": raise BridgeError(409,"job already claimed; reconcile, never redispatch")
                 # Existing handoff uses this exact deterministic conversation identity.
                 namespace=uuid.uuid5(uuid.NAMESPACE_URL,"https://proxima.local/bad-dev-story")
@@ -344,8 +354,10 @@ def server(bridge, config):
                     result=bridge.create("hermes",self.headers.get("Idempotency-Key"),payload)
                 elif self.command=="POST" and path=="/v1/wake": result=bridge.create("paperclip",self.headers.get("Idempotency-Key"),payload)
                 elif self.command=="POST" and path=="/v1/jobs": result=bridge.propose_job(payload,config.get("templates",{}))
-                elif match:=re.fullmatch(r"/v1/runner/jobs/([a-z0-9][a-z0-9-]{2,40})(/(claim|publish|fence))?",path):
-                    if self.command=="POST" and match[3]=="claim": result=bridge.claim_job(match[1])
+                elif self.command=="GET" and path=="/v1/runner/jobs/next": result=bridge.next_job()
+                elif match:=re.fullmatch(r"/v1/runner/jobs/([a-z0-9][a-z0-9-]{2,40})(/(claim|publish|fence|fail))?",path):
+                    if self.command=="POST" and match[3]=="fail": result=bridge.fail_job(match[1])
+                    elif self.command=="POST" and match[3]=="claim": result=bridge.claim_job(match[1])
                     elif self.command=="POST" and match[3]=="publish": result=bridge.publish(match[1],payload)
                     elif self.command=="GET" and match[3]=="fence": result=bridge.fence(match[1])
                     elif self.command=="GET" and match[3] is None: result=bridge.job(match[1])
