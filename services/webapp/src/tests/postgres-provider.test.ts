@@ -419,7 +419,7 @@ describe("provider: dashboard metrics (D36 C3)", () => {
     expect(log.queries.join(" ")).not.toContain("fact_nm_daily");
   });
 
-  it("дыры календаря становятся нулями в спарклайне, но не входят в среднее дельты", async () => {
+  it("пропуски календаря скрывают неполный sparkline и неполную семидневную дельту", async () => {
     const { provider } = makeProvider((text) => {
       if (text.includes(STATUS_SQL)) {
         return [{ last_full_day: "2026-08-30", collected_at: "2026-08-30T03:12:00.000Z", stale: false }];
@@ -436,11 +436,11 @@ describe("provider: dashboard metrics (D36 C3)", () => {
     const metrics = await provider.getMetrics();
     const orders = metrics.find((metric) => metric.id === "orders-day");
     const revenue = metrics.find((metric) => metric.id === "revenue-day");
-    expect(orders?.points).toHaveLength(30);
-    expect(orders?.points.slice(-8)).toEqual([10, 0, 0, 0, 20, 0, 0, 30]);
-    expect(orders?.deltaPercent).toBe(100); // 30 против среднего двух имеющихся строк: 15.
-    expect(revenue?.points.slice(-8)).toEqual([10, 0, 0, 0, 20, 0, 0, 30]);
-    expect(revenue?.deltaPercent).toBe(100);
+    expect(orders?.points).toEqual([]);
+    expect(orders?.deltaPercent).toBeNull();
+    expect(revenue?.points).toEqual([]);
+    expect(revenue?.deltaPercent).toBeNull();
+    expect(orders?.value).toBe(30);
   });
 
   it("копейки участвуют в дельте до округления значения для UI", async () => {
@@ -450,13 +450,19 @@ describe("provider: dashboard metrics (D36 C3)", () => {
       }
       return text.includes(FACT_SQL)
         ? [
-            { calendar_day: "2026-08-29", orders_count: 1, revenue_rub: "0.01" },
+            ...Array.from({length:7},(_,i)=>({calendar_day:`2026-08-${23+i}`,orders_count:1,revenue_rub:"0.01"})),
             { calendar_day: "2026-08-30", orders_count: 1, revenue_rub: "0.02" },
           ]
         : [];
     });
     const revenue = (await provider.getMetrics()).find((metric) => metric.id === "revenue-day");
     expect(revenue).toMatchObject({ value: 0, deltaPercent: 100 });
+  });
+
+  it("полный ряд реальных нулей остаётся данными", async () => {
+    const {provider}=makeProvider(text=>text.includes(STATUS_SQL)?[{last_full_day:"2026-08-30",collected_at:"2026-08-30T03:12:00Z",stale:false}]:text.includes(FACT_SQL)?Array.from({length:30},(_,i)=>({calendar_day:isoDay(i+1),orders_count:0,revenue_rub:"0.00"})):[]);
+    const metric=(await provider.getMetrics()).find(m=>m.id==="orders-day");
+    expect(metric?.value).toBe(0);expect(metric?.points).toEqual(Array(30).fill(0));expect(metric?.deltaPercent).toBeNull();
   });
 
   it("stale=true окрашивает freshness в red", async () => {

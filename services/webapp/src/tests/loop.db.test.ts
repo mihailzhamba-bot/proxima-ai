@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { createQueueService, type Acceptance } from "@/lib/loop/service";
+import { readPilotContext } from "@/lib/loop/context";
 import { lastFullMoscowDay } from "@/lib/loop/calendar";
 import type { SignalV1 } from "@/lib/contracts/signal";
 const dsn = process.env.PROXIMA_TEST_POSTGRES_DSN;
@@ -49,6 +50,17 @@ suite("LOOP PostgreSQL roles and transactions", () => {
     expect((await queue.list(other)).tasks).toEqual([]);
     expect((await queue.list(employee)).tasks.map(t=>t.task_id)).toEqual([taskId]);
     await expect(queue.accept(owner,{...body,action:"Другая команда"})).rejects.toMatchObject({status:409});
+  });
+  it("uses a dedicated read-only service role for live cabinet context",async()=>{
+    const contextPool={async connect(){const c=await admin.connect();await c.query("SET ROLE proxima_loop_context");return {query:c.query.bind(c),release(){c.release();}};}};
+    const context=await readPilotContext(contextPool,tenant);
+    expect(context.brief?.payload.signals[0].signal_id).toBe(signal.signal_id);
+    expect(context.queue.tasks[0].expected.metrics[0].value).toBe("9.00");
+    expect(context.employees.map(e=>e.user_id)).toContain(employee.userId);
+    expect((await readPilotContext(contextPool,"foreign-tenant")).queue.tasks).toEqual([]);
+    const c=await contextPool.connect();
+    try {await expect(c.query("INSERT INTO workflow_runs DEFAULT VALUES")).rejects.toMatchObject({code:"42501"});}
+    finally {c.release();}
   });
   it("refuses revoked membership and another employee's event without data leak", async () => {
     await expect(queue.event(other,taskId,"completed","evidence",randomUUID())).rejects.toMatchObject({status:404});

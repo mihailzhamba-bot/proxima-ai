@@ -5,10 +5,12 @@ import { cn } from "@/lib/utils";
 
 type DigestProps = {
   items: readonly BriefDigestItem[];
+  demo?: boolean;
 };
 
 /** Дайджест дня: 2-3 демо-пункта под hairline-разделителями; без critical занимает их место (R06.1). */
-export function Digest({ items }: DigestProps) {
+export function Digest({ items, demo = true }: DigestProps) {
+  if (!items.length) return null;
   return (
     <section aria-labelledby="brief-digest-title" className="flex flex-col">
       <h2
@@ -16,7 +18,7 @@ export function Digest({ items }: DigestProps) {
         className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"
       >
         Дайджест дня
-        <FxBadge />
+        {demo && <FxBadge />}
       </h2>
       <ul className="mt-1 border-t border-border">
         {items.map((item) => (

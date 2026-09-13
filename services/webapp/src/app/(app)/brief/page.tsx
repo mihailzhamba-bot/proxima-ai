@@ -72,7 +72,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
         </SectionErrorBoundary>
       )}
       <SectionErrorBoundary title="Дайджест">
-        <Digest items={brief.digest} />
+        <Digest items={brief.digest} demo={provider.mode === "fixtures"} />
       </SectionErrorBoundary>
     </div>
   );

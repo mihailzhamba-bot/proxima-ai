@@ -68,3 +68,12 @@ Code and prepared control-runtime interfaces implemented. Independent review and
 Harper verification are in progress under root orchestration. No push/merge/deploy by
 implementer. Missing new VPS/model/bot credentials and image digests remain explicit
 external runtime gates; this status does not assert a live system.
+
+Review batch 1, 2026-09-13
+All 18 consolidated implementation findings addressed in source and targeted tests.
+Additional browser findings addressed: metadata retained while stale, no synthesized
+zero history, precision-preserving units, mobile metric layout and no fixture labels
+in postgres mode. Implementer checks: 52 control tests, 132 webapp unit/API tests,
+typecheck/lint, additive migration and threshold/codegen guards. New context role,
+native auth and 9 DB scenarios require final Harper run. Root owns final evidence,
+real producer/container verification, browser rerender and independent re-review.

@@ -1,3 +1,4 @@
+import { resolveDataMode } from "@/lib/data/provider";
 import { redirect } from "next/navigation";
 import { currentMember, requiresSession } from "@/lib/loop/access";
 import { QueueError } from "@/lib/loop/service";
@@ -25,7 +26,7 @@ export default async function AppLayout({
   return (
     <div className="flex min-h-screen flex-col">
       <a className="sr-only focus:not-sr-only focus:p-3" href="#main-content">К содержимому</a>
-      <UnreleasedBanner />
+      <UnreleasedBanner dataMode={resolveDataMode()} />
       <div className="flex flex-1">
         <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-card md:flex">
           <div className="flex h-14 items-center gap-2 border-b border-border px-5">

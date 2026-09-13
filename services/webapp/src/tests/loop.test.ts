@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vitest";
+import { formatTarget } from "@/lib/loop/format-target";
+import { authenticateContext } from "@/lib/loop/context";
 import { lastFullMoscowDay } from "@/lib/loop/calendar";
 import { diagnoseSignal } from "@/lib/loop/diagnosis";
 import { observationReadiness, validateAcceptance } from "@/lib/loop/service";
 import type { SignalV1 } from "@/lib/contracts/signal";
 describe("LOOP deterministic boundaries",()=>{
+  it("formats approved targets without floating-point rounding or technical units",()=>{
+    expect(formatTarget("32.00","count")).toBe("32 шт.");
+    expect(formatTarget("123456789012.01","RUB")).toBe("123 456 789 012,01 ₽");
+  });
+  it("context reader accepts only its credential and a fixed server scope",()=>{
+    expect(()=>authenticateContext(new Request("https://fixture.invalid/api/loop/context",{headers:{authorization:"Bearer fixture-key"}}),"fixture-key")).not.toThrow();
+    expect(()=>authenticateContext(new Request("https://fixture.invalid/api/loop/context?tenant=foreign",{headers:{authorization:"Bearer fixture-key"}}),"fixture-key")).toThrow();
+    expect(()=>authenticateContext(new Request("https://fixture.invalid/api/loop/context",{headers:{cookie:"better-auth.session_token=human-session"}}),"fixture-key")).toThrow();
+  });
   it("changes the full Moscow day exactly at 21:00 UTC",()=>{
     expect(lastFullMoscowDay(new Date("2026-09-13T20:59:59Z"))).toBe("2026-09-12");
     expect(lastFullMoscowDay(new Date("2026-09-13T21:00:00Z"))).toBe("2026-09-13");

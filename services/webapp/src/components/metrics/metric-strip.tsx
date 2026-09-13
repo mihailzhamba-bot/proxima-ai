@@ -31,7 +31,7 @@ export async function MetricStrip({ provider = getDataProvider() }: MetricStripP
       <div className="flex items-center justify-between gap-3">
         {provider.mode === "postgres" ? <p className="text-sm font-medium">Кабинет WB</p> : <CabinetSwitcher />}
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+      <div className={provider.mode === "postgres" ? "mt-3 grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 lg:grid-cols-3" : "mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5"}>
         {visibleMetrics.map((metric) => (
           <SectionErrorBoundary key={metric.id} title={metric.label}>
             <MetricCard metric={metric} />

@@ -177,7 +177,7 @@ def assert_grant_matrix(candidate: str, name: str) -> None:
         return
     if re.fullmatch(r"GRANT SELECT, INSERT, UPDATE, DELETE ON webapp_auth\.auth_(user|session|account|verification) TO proxima_auth_writer", candidate, re.IGNORECASE):
         return
-    if candidate.lower() in {"grant usage on schema webapp_auth to proxima_loop_writer", "grant select (id, name) on webapp_auth.auth_user to proxima_loop_writer"}:
+    if candidate.lower() in {"grant usage on schema webapp_auth to proxima_loop_writer", "grant select (id, name) on webapp_auth.auth_user to proxima_loop_writer", "grant usage on schema webapp_auth to proxima_loop_context", "grant select (id, name) on webapp_auth.auth_user to proxima_loop_context"}:
         return
     match = GRANT_PARSED_PATTERN.match(candidate)
     if match is None:

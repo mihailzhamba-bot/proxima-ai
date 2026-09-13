@@ -19,7 +19,7 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
                 "'proxima_migration_owner', 'proxima_source_publisher',"
                 "'proxima_release_publisher', 'proxima_data_health_read',"
                 "'proxima_job_collector', 'proxima_job_norm',"
-                "'proxima_webapp_readonly', 'proxima_run_janitor', 'proxima_loop_writer', 'proxima_auth_writer')"
+                "'proxima_webapp_readonly', 'proxima_run_janitor', 'proxima_loop_writer', 'proxima_auth_writer', 'proxima_loop_context')"
             ).fetchall()
         }
         assert roles == {
@@ -31,7 +31,7 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
             "proxima_job_norm",
             "proxima_webapp_readonly",
             "proxima_run_janitor",
-            "proxima_loop_writer", "proxima_auth_writer",
+            "proxima_loop_writer", "proxima_auth_writer", "proxima_loop_context",
         }
         for role in roles:
             row = connection.execute(
@@ -53,6 +53,8 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
             assert not can("proxima_loop_writer", "DELETE", table)
             assert not can("proxima_auth_writer", "SELECT", table)
             assert not can("proxima_run_janitor", "DELETE", table)
+            assert not can("proxima_loop_context", "INSERT", table)
+            assert not can("proxima_loop_context", "UPDATE", table)
         assert not can("proxima_loop_writer", "INSERT", "cabinet_memberships")
         assert not can("proxima_loop_writer", "UPDATE", "cabinet_memberships")
         assert can("proxima_auth_writer", "DELETE", 'webapp_auth."session"')
@@ -199,7 +201,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         policy_count = connection.execute(
             "SELECT count(*) AS n FROM pg_policies WHERE schemaname = 'public'"
         ).fetchone()["n"]
-        assert policy_count == 68
+        assert policy_count == 75
         janitor_tables = {
             row["tablename"]
             for row in connection.execute(

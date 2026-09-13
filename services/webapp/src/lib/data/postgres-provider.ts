@@ -358,11 +358,12 @@ export function createPostgresProvider(
         const row = byDay.get(day);
         return row === undefined ? [] : [row];
       });
-      const orderPoints = days.map((day) => Number(byDay.get(day)?.orders_count ?? 0));
-      const revenuePoints = days.map((day) => {
+      const completeHistory = days.every(day => byDay.has(day));
+      const orderPoints = completeHistory ? days.map((day) => Number(byDay.get(day)!.orders_count)) : [];
+      const revenuePoints = completeHistory ? days.map((day) => {
         const row = byDay.get(day);
-        return row === undefined ? 0 : centsToRoundedRubles(parseMoneyCents(row.revenue_rub));
-      });
+        return centsToRoundedRubles(parseMoneyCents(row!.revenue_rub));
+      }) : [];
       const currentOrders = current === undefined ? null : BigInt(current.orders_count);
       const currentRevenue = current === undefined ? null : parseMoneyCents(current.revenue_rub);
 
@@ -371,13 +372,13 @@ export function createPostgresProvider(
         {
           id: "revenue-day", label: METRIC_LABELS.revenue,
           value: currentRevenue === null ? null : centsToRoundedRubles(currentRevenue), format: "rub-compact", status: null,
-          deltaPercent: currentRevenue === null ? null : deltaPercent(currentRevenue, previousRows.map((row) => parseMoneyCents(row.revenue_rub))),
+          deltaPercent: currentRevenue === null || previousRows.length !== 7 ? null : deltaPercent(currentRevenue, previousRows.map((row) => parseMoneyCents(row.revenue_rub))),
           deltaGoodWhen: "up", points: revenuePoints, fx: false,
         },
         {
           id: "orders-day", label: METRIC_LABELS.orders,
           value: currentOrders === null ? null : Number(currentOrders), format: "count", status: null,
-          deltaPercent: currentOrders === null ? null : deltaPercent(currentOrders, previousRows.map((row) => BigInt(row.orders_count))),
+          deltaPercent: currentOrders === null || previousRows.length !== 7 ? null : deltaPercent(currentOrders, previousRows.map((row) => BigInt(row.orders_count))),
           deltaGoodWhen: "up", points: orderPoints, fx: false,
         },
         { id: "oos-risks", label: METRIC_LABELS.oos, value: null, format: "count", status: null, deltaPercent: null, deltaGoodWhen: null, points: [], fx: false },

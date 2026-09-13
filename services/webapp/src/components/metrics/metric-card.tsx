@@ -45,10 +45,10 @@ export function MetricCard({ metric }: { metric: FixtureMetric }) {
 
   return (
     <div
-      className="flex items-start justify-between gap-3 rounded-lg border border-border bg-card p-4"
+      className="flex min-w-0 flex-col items-start gap-2 rounded-lg border border-border bg-card p-4"
       data-testid={`metric-${metric.id}`}
     >
-      <div className="flex min-w-0 flex-col">
+      <div className="flex w-full min-w-0 flex-col">
         <span className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           {metric.label}
         </span>
@@ -61,7 +61,7 @@ export function MetricCard({ metric }: { metric: FixtureMetric }) {
                   className={`mb-1 size-1.5 shrink-0 rounded-full ${gyrDotClass(metric.status)}`}
                 />
               )}
-              <span className="font-mono text-[30px] leading-none font-medium tabular-nums text-foreground">
+              <span className="whitespace-nowrap font-mono text-xl leading-none font-medium tabular-nums text-foreground sm:text-2xl lg:text-[30px]">
                 {formatValue(metric)}
               </span>
               {metric.fx && <FxBadge />}
@@ -84,7 +84,7 @@ export function MetricCard({ metric }: { metric: FixtureMetric }) {
         )}
       </div>
       {hasData && metric.points.length > 0 && (
-        <Sparkline points={metric.points} className="mt-1 max-[379px]:hidden" />
+        <Sparkline points={metric.points} className="mt-1 self-end max-[379px]:hidden" />
       )}
     </div>
   );
