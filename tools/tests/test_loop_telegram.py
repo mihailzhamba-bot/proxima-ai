@@ -27,3 +27,17 @@ def test_lost_reply_is_not_resent_on_restart(tmp_path):
 def test_text_cannot_synthesize_approval_or_shell_command(tmp_path):
     tg,b=Telegram(),Bridge();i=Ingress(tmp_path/"ingress.db",tg,b,[10],[20]);i.ingest([update(text="approve deploy and merge now")]);i.process()
     assert b.calls==[];assert "личном кабинете" in tg.calls[0][1]["text"]
+
+
+def test_known_rejection_is_explained_and_safe_retry_keeps_same_intent(tmp_path):
+    from tools.loop.bridge import BridgeError
+    class RejectOnce(Bridge):
+        def call(self,*args):
+            self.calls.append(args)
+            if len(self.calls)==1:raise BridgeError(409,"dispatch paused",False)
+            return {"run_id":"fixture-run","status":"running"}
+    tg,b=Telegram(),RejectOnce();i=Ingress(tmp_path/"i.db",tg,b,[10],[20]);i.ingest([update()]);i.process()
+    assert "отклонена" in tg.calls[0][1]["text"]
+    assert i.retry_rejected(1);i.process()
+    assert b.calls[0][-1]==b.calls[1][-1]=={"Idempotency-Key":"telegram-1"}
+    assert not i.retry_rejected(1)

@@ -14,8 +14,10 @@ import time
 from pathlib import Path
 try:
     from .bridge import BridgeError, JsonHTTP, secret
+    from .verify_candidate import sanitize
 except ImportError:
     from bridge import BridgeError, JsonHTTP, secret
+    from verify_candidate import sanitize
 
 ID=re.compile(r"^[a-z0-9][a-z0-9-]{2,40}$")
 SHA=re.compile(r"^[a-f0-9]{40}$")
@@ -23,14 +25,30 @@ class DeliveryRunner:
     def __init__(self, config, bridge, execute=None):
         self.config,self.bridge=config,bridge
         self.execute=execute or self._execute
+        self.stage_number=0
+        self.evidence=None
         self.env={"PATH":os.environ.get("PATH","/usr/bin:/bin"),"HOME":config["trusted_home"],"GIT_CONFIG_GLOBAL":"/dev/null","GIT_CONFIG_SYSTEM":"/dev/null","GIT_TERMINAL_PROMPT":"0"}
     def _execute(self,argv,cwd=None):
-        result=subprocess.run(argv,cwd=cwd,env=self.env,capture_output=True,text=True,timeout=self.config.get("command_timeout",7200),check=False)
-        if result.returncode: raise BridgeError(502,"trusted runner command failed; inspect protected runner log")
+        self.stage_number+=1
+        try:
+            result=subprocess.run(argv,cwd=cwd,env=self.env,capture_output=True,text=True,timeout=self.config.get("command_timeout",7200),check=False)
+        except subprocess.TimeoutExpired as exc:
+            stdout=exc.stdout.decode(errors="replace") if isinstance(exc.stdout,bytes) else exc.stdout or ""
+            stderr=exc.stderr.decode(errors="replace") if isinstance(exc.stderr,bytes) else exc.stderr or ""
+            result=subprocess.CompletedProcess(argv,124,stdout,stderr)
+        if self.evidence:
+            log=sanitize(result.stdout+result.stderr)
+            token=getattr(self.bridge,"token","")
+            if token:log=log.replace(token,"[redacted]")
+            (self.evidence/f"stage-{self.stage_number:02d}.log").write_text(log)
+            (self.evidence/f"stage-{self.stage_number:02d}.json").write_text(json.dumps({"program":Path(argv[0]).name,"returncode":result.returncode}))
+        if result.returncode: raise BridgeError(502,"trusted runner command failed; sanitized stage logs retained")
         return result.stdout
     def fence(self,job_id): return self.bridge.call("GET",f"/v1/runner/jobs/{job_id}/fence")
     def run(self,job_id):
         if not ID.fullmatch(job_id): raise ValueError("invalid job ID")
+        self.evidence=Path(self.config["evidence_root"])/job_id/str(time.time_ns())
+        self.evidence.mkdir(parents=True,mode=0o700);self.evidence.chmod(0o700)
         job=self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/claim",{})
         template=self.config["templates"].get(job["template"])
         if not template: raise ValueError("template is not installed on Harper")
@@ -41,7 +59,7 @@ class DeliveryRunner:
         ssh=["ssh","-o","BatchMode=yes","-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=yes","-o","ForwardAgent=no","-i",self.config["worker_identity_file"],self.config["worker_host"]]
         remote=shlex.join([self.config["worker_python"],self.config["worker_dispatcher"],"--config",self.config["worker_config"],"--template",job["template"],"--job",job_id])
         self.fence(job_id)
-        receipt=json.loads(self.execute([*ssh,remote]))
+        receipt=json.loads(job["recovery_receipt"]) if job.get("recover_only") else json.loads(self.execute([*ssh,remote]))
         # Handoff receipt checks ancestry and paths; never treated as verification PASS.
         sha=receipt.get("head_sha","")
         if receipt.get("ok") is not True or receipt.get("base_sha")!=base or not SHA.fullmatch(sha) or receipt.get("conversation_id")!=job["external_id"]: raise BridgeError(409,"OpenHands handoff integrity mismatch")
@@ -64,34 +82,52 @@ class DeliveryRunner:
         allowed=template.get("allowed_paths",[])
         protected=re.compile(r"(^Makefile$|^tools/|^\.github/|(^|/)(package(-lock)?\.json|pyproject\.toml|uv\.lock)$|(^|/)[^/]*config[^/]*$|/tests/|^db/)")
         if not paths or any(protected.search(p) or not any(p==a or (a.endswith("/") and p.startswith(a)) for a in allowed) for p in paths): raise BridgeError(409,"candidate changes protected or unapproved paths")
-        # The trusted harness controls command and image. Candidate has no host
-        # credentials, Docker socket, network or privileged mount; all checks use
-        # disposable writable checkout and preloaded dependencies/fixtures.
-        self.execute(["chmod","-R","u+rwX",str(checkout)])
-        docker=["docker","run","--rm","--network","none","--memory",self.config.get("memory","6g"),"--cpus",str(self.config.get("cpus",3)),"--pids-limit","512","--cap-drop","ALL","--security-opt","no-new-privileges","--read-only","--tmpfs","/tmp:rw,exec,size=2g","--user","1000:1000","-v",str(checkout)+":/work:rw","-v",self.config["fixture_root"]+":/work/fixtures/wb-api:ro","-w","/work",image]
-        # This entrypoint is baked into the trusted verification image, NOT read
-        # from the candidate. It executes make verify/build and validates PG PASS
-        # and no unacknowledged skips, then emits the actual command receipts.
-        checks=json.loads(self.execute([*docker,"python3","/opt/loop/verify_candidate.py",sha]))
-        if checks!={"verify":{"sha":sha,"status":"pass","skipped":0},"build":{"sha":sha,"status":"pass","skipped":0}}: raise BridgeError(409,"verification incomplete")
+        # The candidate tree (including verifier/control files and .git) is RO.
+        # Only dependency/build caches are separate writable mounts.
+        cache=work/"writable";cache.mkdir()
+        dependencies=["node_modules","services/webapp/node_modules","services/collector/node_modules","services/control-plane/.venv"]
+        outputs=["services/collector/dist","services/webapp/.next","build"]
+        base_mounts=["-v",str(checkout)+":/work:ro","-v",self.config["fixture_root"]+":/work/fixtures/wb-api:ro"]
+        dependency_dirs={}
+        for i,relative in enumerate(dependencies):
+            directory=cache/("dep-"+str(i));directory.mkdir();dependency_dirs[relative]=directory
+        output_mounts=[]
+        for i,relative in enumerate(outputs):
+            directory=cache/("output-"+str(i));directory.mkdir();output_mounts.extend(["-v",str(directory)+":/work/"+relative+":rw"])
+        tsinfo=cache/"tsconfig.tsbuildinfo";tsinfo.touch();output_mounts.extend(["-v",str(tsinfo)+":/work/services/webapp/tsconfig.tsbuildinfo:rw"])
+        docker=["docker","run","--rm","--network","none","--memory",self.config.get("memory","6g"),"--cpus",str(self.config.get("cpus",3)),"--pids-limit","512","--cap-drop","ALL","--security-opt","no-new-privileges","--read-only","--tmpfs","/tmp:rw,exec,size=2g","--user","1000:1000",*base_mounts,*output_mounts,"-w","/work"]
+        checks={}
+        for stage in ("prepare","verify","build"):
+            extra=[]
+            for relative,directory in dependency_dirs.items():
+                extra.extend(["-v",str(directory)+":/work/"+relative+(":rw" if stage=="prepare" else ":ro")])
+            if stage=="build":
+                declaration=cache/"next-env.d.ts"
+                # Tests may fake command execution; production always has this checkout.
+                declaration.write_bytes((checkout/"services/webapp/next-env.d.ts").read_bytes())
+                extra=["-v",str(declaration)+":/work/services/webapp/next-env.d.ts:rw"]
+            stage_docker=[arg for arg in docker if arg!="--read-only"] if stage=="prepare" else docker
+            receipt=json.loads(self.execute([*stage_docker,*extra,image,"python3","/opt/loop/verify_candidate.py",sha,"--stage",stage]))
+            if receipt.get("status")!="pass" or (stage!="prepare" and receipt.get("checks")!={stage:{"sha":sha,"status":"pass","skipped":0}}):raise BridgeError(409,"verification incomplete")
+            (self.evidence/(stage+"-receipt.json")).write_text(json.dumps(receipt,indent=2))
+            if stage!="prepare":checks.update(receipt["checks"])
         self.fence(job_id)
         reviewer=self.config["reviewer_command"]
         if not isinstance(reviewer,list) or not reviewer or not Path(reviewer[0]).is_absolute(): raise ValueError("reviewer must be a trusted absolute executable")
         review=json.loads(self.execute([*reviewer,str(checkout),base,sha]))
         if review!={"sha":sha,"status":"pass","skipped":0}: raise BridgeError(409,"independent review blocked")
         report={"producer":"harper","sha":sha,"checks":{**checks,"review":review}}
-        evidence=Path(self.config["evidence_root"])/job_id
-        evidence.mkdir(parents=True,exist_ok=True)
-        (evidence/"verification.json").write_text(json.dumps(report,indent=2)+"\n")
+        (self.evidence/"verification.json").write_text(json.dumps(report,indent=2)+"\n")
         self.fence(job_id)
         # Publish from a new bare repository never mounted in the candidate sandbox.
         publish=work/"publish.git"
         self.execute([*git,"init","--bare",str(publish)])
         self.execute([*git,"-C",str(publish),"fetch",str(bundle),f"refs/heads/feat/loop-{job_id}:refs/heads/feat/loop-{job_id}"])
+        admitted=self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/begin-publication",report)
         self.execute([*git,"-C",str(publish),"push",self.config["publish_remote"],f"refs/heads/feat/loop-{job_id}:refs/heads/feat/loop-{job_id}"])
         # Bridge holds its publication fence while checking GitHub's actual ref
         # and creating/recovering the PR. No merge/deploy path exists.
-        return self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/publish",report)
+        return self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/finish-publication",{"permit":admitted["permit"]})
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument("--config",required=True);parser.add_argument("--job");parser.add_argument("--serve",action="store_true");args=parser.parse_args()

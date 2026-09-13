@@ -113,3 +113,50 @@ PostgreSQL runtime secrets are owned by its actual container UID (inspect the pi
 image); Bridge/Telegram secrets by UID10001. Mount only the required secret files in
 each service. The Hermes container receives only its Director credential and model
 environment, not the operator/runner/Board/GitHub credentials.
+
+Review fixes, 2026-09-13
+Migration020 adds native BetterAuth1.7.1 issuer/accountId uniqueness without changing
+migration019 or the existing account table. Migration021 grants proxima_loop_context
+read-only access to the configured cabinet. Set WEBAPP_LOOP_CONTEXT_DATABASE_URI_FILE
+and WEBAPP_LOOP_CONTEXT_TOKEN_FILE on the webapp; set the matching webapp_context
+credential only on Bridge. Director's loop_read_context uses that service credential,
+not a human cookie. Its returned notes remain untrusted record text.
+
+Build the dedicated Dockerfile.paperclip and Dockerfile.hermes-overlay from sources
+prepared into build/upstream, not stock root-entrypoint runtime images. Hermes uses
+Python3.12 plus pinned sms/mcp extras; Paperclip uses Node24.11.0 and /paperclip for
+HOME, PAPERCLIP_HOME and PAPERCLIP_CONFIG. prepare_credentials.py creates only fresh
+local capability keys. BridgeUID10001 reads bridge_director; HermesUID10000 reads
+hermes_bridge_director, a separate0600 file with the same value. External provider,
+Board, OpenHands, GitHub and Telegram credentials still require operator issuance.
+
+Runner protocol is prepare -> immutable verify -> immutable build -> independent
+review -> begin-publication -> push -> finish-publication. The durable permit covers
+both branch push and PR. Cancellation revokes generation immediately but remains
+CANCELLING while admitted publication has no final receipt. A revoked finish cannot
+create a PR. Do not clear an uncertain publication permit to make stop look complete.
+Operator recover-pr checks an existing exact-SHA PR; it never repeats create blindly.
+
+For a lost worker reply, loopctl recover-worker --id <job> --input-file <existing
+handoff receipt> checks the already known OpenHandsCID and resumes bundle collection
+without a second dispatch. The same ancestor/SHA/path/verify gates still run. A queued
+job whose parent was interrupted is quarantined, so it does not block later work.
+Every publication authorization rereads the parent Paperclip state, including direct
+upstream cancellation. Raw worker PASS never counts as a verification receipt.
+
+The trusted producer checks every tracked file against the commit's blobs and the
+read-only mount state. Dependencies are installed in a disposable prepare container,
+then mounted read-only along with source/.git for verify/build. Writable outputs are
+separate directories; Next's generated next-env declaration is a separate build-only
+overlay. PROXIMA_VERIFY_READONLY enables checksum-only codegen and preinstalled locked
+dependencies only inside this producer path. Stage stdout/stderr, failure receipts and
+SHA-bound checks are sanitized into the private runner evidence directory, outside
+candidate mounts. SQLite Bridge uses DELETE journal rather than relying on WAL version.
+
+Telegram known rejections are explained; execution_unknown and delivery_unknown are
+separate. An operator can retry only a definitely rejected update using
+telegram.py --config <file> --retry-update <updateID>; its original idempotency key is
+retained. Model evaluation sends the requested model in the native request and reports
+requested identity separately from unknown observed provider identity; generic
+status.model=hermes-agent is not treated as proof. Numeric narratives outside exact
+SourceRef facts and duplicate facts cannot earn full grounding credit.

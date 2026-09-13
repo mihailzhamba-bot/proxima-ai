@@ -14,7 +14,8 @@ class Client:
     def call(self,method,path,payload=None,headers=None):
         job=path.split("/")[4]
         if path.endswith("/claim"):return self.b.claim_job(job)
-        if path.endswith("/publish"):return self.b.publish(job,payload)
+        if path.endswith("/begin-publication"):return self.b.begin_publication(job,payload)
+        if path.endswith("/finish-publication"):return self.b.finish_publication(job,payload["permit"])
         return self.b.fence(job)
 
 def setup(tmp_path,fail_checks=False,changed="services/webapp/src/lib/rub.ts",cancel_before_publish=False):
@@ -27,13 +28,15 @@ def setup(tmp_path,fail_checks=False,changed="services/webapp/src/lib/rub.ts",ca
     def execute(argv,cwd=None):
         calls.append(argv)
         if argv[0]=="ssh":return json.dumps({"ok":True,"head_sha":sha,"base_sha":base,"conversation_id":b.job("job-1")["external_id"],"branch":"feat/loop-job-1","worker_says":"PASS"})
+        if "clone" in argv:
+            checkout=Path(argv[-1]);(checkout/"services/webapp").mkdir(parents=True);(checkout/"services/webapp/next-env.d.ts").write_text("fixture declaration")
         if "rev-parse" in argv:return sha+"\n"
         if "--name-only" in argv:return changed+"\n"
         if argv[0]=="docker":
             assert "--network" in argv and argv[argv.index("--network")+1]=="none"
             assert not any("docker.sock" in value for value in argv)
             if fail_checks:raise BridgeError(409,"independent verifier failed")
-            return json.dumps({name:{"sha":sha,"status":"pass","skipped":0} for name in ["verify","build"]})
+            return json.dumps({"status":"pass","checks":{argv[-1]:{"sha":sha,"status":"pass","skipped":0}},"logs":{argv[-1]:"fixture log"}})
         if argv[0]=="/opt/reviewer":
             if cancel_before_publish:
                 with b.tx() as db:db.execute("UPDATE operations SET generation=2,state='cancelled' WHERE id=?",(r,))

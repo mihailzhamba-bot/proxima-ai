@@ -149,3 +149,39 @@ def test_restart_recovers_existing_pr_without_repeating_create(tmp_path):
 def test_unrouteable_job_ids_are_rejected(tmp_path):
     b,_,_,_=setup(tmp_path);r=run(b)
     with pytest.raises(BridgeError):b.propose_job({"job_id":"Colon:Job_1","run_id":r,"generation":1,"template":"fixture"},{"fixture":{}})
+
+
+def test_cancel_during_admitted_push_is_not_confirmed_and_late_finish_cannot_create_pr(tmp_path):
+    published=[]
+    b,h,p,o=setup(tmp_path,lambda job,sha:published.append(sha) or "https://github.com/fixture/repo/pull/1")
+    r=run(b);job(b,r);b.claim_job("job-1");sha="a"*40
+    report={"producer":"harper","sha":sha,"checks":{name:{"sha":sha,"status":"pass","skipped":0} for name in ["verify","build","review"]}}
+    permit=b.begin_publication("job-1",report)["permit"]
+    # Exact race: cancellation is requested after final admission, before push returns.
+    assert b.cancel(r)["status"]=="cancelling"
+    assert b.get(r)["stop_confirmed"]==0
+    assert b.finish_publication("job-1",permit)["state"]=="cancelled"
+    assert published==[]
+    assert b.cancel(r)["status"]=="cancelled"
+
+def test_direct_upstream_parent_cancel_is_seen_before_publish(tmp_path):
+    b,h,p,o=setup(tmp_path)
+    parent=b.create("paperclip","wake-1",{})["run_id"]
+    r=run(b,"remote-1");job(b,r);b.claim_job("job-1")
+    p.status="cancelled"
+    with pytest.raises(BridgeError,match="parent"):b.fence("job-1")
+
+def test_interrupted_never_dispatched_job_is_quarantined_without_poisoning_queue(tmp_path):
+    b,h,p,o=setup(tmp_path);r=run(b);job(b,r);h.status="interrupted"
+    assert b.next_job()=={"job_id":None}
+    assert b.job("job-1")["state"]=="quarantined"
+    assert b.job("job-1")["external_id"] is None
+
+def test_operator_recovers_existing_cid_and_bundle_without_second_dispatch(tmp_path):
+    b,h,p,o=setup(tmp_path);r=run(b);job(b,r);claimed=b.claim_job("job-1");b.fail_job("job-1")
+    receipt={"ok":True,"conversation_id":claimed["external_id"],"branch":"feat/loop-job-1","head_sha":"a"*40,"base_sha":"b"*40}
+    b.recover_job("job-1",receipt)
+    recovered=b.claim_job("job-1")
+    assert recovered["recover_only"] is True
+    assert recovered["external_id"]==claimed["external_id"]
+    assert json.loads(recovered["recovery_receipt"])==receipt

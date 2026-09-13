@@ -9,7 +9,7 @@ except ImportError:
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument("--config",required=True)
-    parser.add_argument("command",choices=["status","wake","pause","resume","stop","events","adopt","recover-pr"])
+    parser.add_argument("command",choices=["status","wake","pause","resume","stop","events","adopt","recover-pr","recover-worker"])
     parser.add_argument("--id");parser.add_argument("--key");parser.add_argument("--input-file");parser.add_argument("--external-id");args=parser.parse_args()
     config=json.loads(Path(args.config).read_text());client=JsonHTTP(config["bridge_url"],secret(config["operator_token_file"]))
     if args.command=="status": method,path,payload="GET","/v1/status",None
@@ -19,7 +19,10 @@ def main():
         method,path,payload="POST","/v1/wake",json.loads(Path(args.input_file).read_text())
     else:
         if not args.id:parser.error("command needs --id")
-        if args.command=="recover-pr":method,path,payload="POST",f"/v1/jobs/{args.id}/recover-pr",{}
+        if args.command=="recover-worker":
+            if not args.input_file:parser.error("recover-worker needs an independently checked existing handoff receipt")
+            method,path,payload="POST",f"/v1/jobs/{args.id}/recover-worker",json.loads(Path(args.input_file).read_text())
+        elif args.command=="recover-pr":method,path,payload="POST",f"/v1/jobs/{args.id}/recover-pr",{}
         elif args.command=="adopt":
             if not args.external_id:parser.error("adopt needs independently verified --external-id")
             method,path,payload="POST",f"/v1/runs/{args.id}/adopt",{"external_id":args.external_id}

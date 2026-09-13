@@ -17,5 +17,6 @@ def main():
         subprocess.run(["git","-C",str(path),"checkout","--detach",info["commit"]],check=True)
         actual=subprocess.check_output(["git","-C",str(path),"rev-parse","HEAD"],text=True).strip()
         if actual!=info["commit"]:raise SystemExit("pin mismatch")
-    print("Exact sources prepared. Build upstream Dockerfiles on Harper; record image digests before deployment.")
+        (path/".loop-source-pin.json").write_text(json.dumps({"commit":actual,"repository":info["repository"]})+"\n")
+    print("Exact sources prepared. Build dedicated LOOP Dockerfiles on Harper; record image digests before deployment.")
 if __name__=="__main__":main()

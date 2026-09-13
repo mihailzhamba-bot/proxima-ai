@@ -41,11 +41,13 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     environment:
-      PAPERCLIP_HOME: /var/lib/paperclip
+      HOME: /paperclip
+      PAPERCLIP_HOME: /paperclip
+      PAPERCLIP_CONFIG: /paperclip/instances/default/config.json
       PORT: "3100"
       HOST: "0.0.0.0"
     env_file: /etc/loop/paperclip.env
-    volumes: [paperclip:/var/lib/paperclip]
+    volumes: [paperclip:/paperclip]
     networks: [control]
     ports: ["127.0.0.1:3100:3100"]
   hermes:
@@ -65,7 +67,7 @@ services:
       API_SERVER_HOST: "0.0.0.0"
       API_SERVER_PORT: "8642"
     env_file: /etc/loop/director.env
-    volumes: ["hermes:/var/lib/loop/hermes", "/etc/loop/hermes.yaml:/var/lib/loop/hermes/config.yaml:ro", "/etc/loop/secrets/bridge_director:/run/secrets/bridge_director:ro"]
+    volumes: ["hermes:/var/lib/loop/hermes", "/etc/loop/hermes.yaml:/var/lib/loop/hermes/config.yaml:ro", "/etc/loop/secrets/hermes_bridge_director:/run/secrets/bridge_director:ro"]
     networks: [control]
   bridge:
     logging: *bounded-logging
@@ -79,7 +81,7 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
-    volumes: ["bridge:/var/lib/loop/bridge", "/etc/loop/bridge.json:/etc/loop/bridge.json:ro", "/etc/loop/secrets:/run/secrets:ro"]
+    volumes: ["bridge:/var/lib/loop/bridge", "/etc/loop/bridge.json:/etc/loop/bridge.json:ro", "/etc/loop/secrets/bridge_operator:/run/secrets/bridge_operator:ro", "/etc/loop/secrets/bridge_gateway:/run/secrets/bridge_gateway:ro", "/etc/loop/secrets/bridge_director:/run/secrets/bridge_director:ro", "/etc/loop/secrets/bridge_runner:/run/secrets/bridge_runner:ro", "/etc/loop/secrets/hermes_api:/run/secrets/hermes_api:ro", "/etc/loop/secrets/paperclip_board:/run/secrets/paperclip_board:ro", "/etc/loop/secrets/openhands_api:/run/secrets/openhands_api:ro", "/etc/loop/secrets/github_pr:/run/secrets/github_pr:ro", "/etc/loop/secrets/webapp_context:/run/secrets/webapp_context:ro"]
     networks: [control]
     ports: ["127.0.0.1:18770:18770"]
     command: ["python3", "/opt/loop/bridge.py", "--config", "/etc/loop/bridge.json"]

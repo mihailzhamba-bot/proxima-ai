@@ -26,7 +26,9 @@ TERMINAL = {"completed", "failed", "error", "cancelled", "canceled", "stopped", 
 JOB_ID = re.compile(r"^[a-z0-9][a-z0-9-]{2,40}$")
 SAFE_ID = re.compile(r"^[A-Za-z0-9:_-]{1,160}$")
 class BridgeError(Exception):
-    def __init__(self, status, message): self.status, self.message = status, message
+    def __init__(self, status, message, uncertain=None):
+        self.status, self.message = status, message
+        self.uncertain = status >= 500 if uncertain is None else uncertain
 
 def secret(path):
     p = Path(path)
@@ -54,13 +56,20 @@ class JsonHTTP:
                 raw = response.read(2_000_001)
                 if len(raw) > 2_000_000: raise BridgeError(502, "upstream response too large")
                 return json.loads(raw) if raw else {}
-        except (HTTPError, URLError, TimeoutError, OSError, ValueError):
+        except HTTPError as exc:
+            if 400 <= exc.code < 500:
+                try: uncertain=json.loads(exc.read(4096)).get("uncertain",False) is True
+                except Exception: uncertain=False
+                raise BridgeError(exc.code, f"upstream rejected request (HTTP {exc.code})", uncertain) from None
+            raise BridgeError(502, "upstream response uncertain", True) from None
+        except (URLError, TimeoutError, OSError, ValueError):
             # Never expose transport errors: urllib exceptions may carry secrets or body.
             raise BridgeError(502, "upstream unavailable; reconcile intent") from None
 
 class Bridge:
-    def __init__(self, database, hermes, paperclip, director_id, openhands=None, publisher=None):
+    def __init__(self, database, hermes, paperclip, director_id, openhands=None, publisher=None, context_reader=None):
         self.publisher = publisher
+        self.context_reader = context_reader
         self.database, self.hermes, self.paperclip, self.director_id, self.openhands = str(database), hermes, paperclip, director_id, openhands
         Path(database).parent.mkdir(parents=True, exist_ok=True)
         self.guard = threading.RLock()
@@ -83,6 +92,9 @@ class Bridge:
                     template TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'queued',
                     external_id TEXT, candidate_sha TEXT, verification TEXT, pr_url TEXT);
             """)
+            columns={r[1] for r in db.execute("PRAGMA table_info(jobs)")}
+            for name,definition in (("publication_permit","TEXT"),("publication_active","INTEGER NOT NULL DEFAULT 0"),("recovery_receipt","TEXT")):
+                if name not in columns: db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
             db.execute("UPDATE jobs SET state='unknown' WHERE state='publishing'")
             # The local process cannot infer whether an interrupted create reached upstream.
             db.execute("UPDATE operations SET state='unknown',updated=? WHERE state='dispatching'", (time.time(),))
@@ -93,7 +105,7 @@ class Bridge:
             db = sqlite3.connect(self.database, timeout=20)
             db.row_factory = sqlite3.Row
             db.execute("PRAGMA foreign_keys=ON")
-            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("PRAGMA journal_mode=DELETE")
             db.execute("BEGIN IMMEDIATE")
             try:
                 yield db
@@ -102,6 +114,10 @@ class Bridge:
                 db.rollback()
                 raise
             finally: db.close()
+    def context(self, offset=0):
+        if not isinstance(offset,int) or offset<0 or offset>10000:raise BridgeError(400,"invalid context offset")
+        if not self.context_reader:raise BridgeError(503,"context reader not configured",False)
+        return self.context_reader.call("GET","/api/loop/context?offset="+str(offset))
     def get(self, op_id):
         with self.tx() as db:
             row = db.execute("SELECT * FROM operations WHERE id=?", (op_id,)).fetchone()
@@ -109,7 +125,7 @@ class Bridge:
         return dict(row)
     def intent(self, kind, key, payload):
         if not isinstance(key, str) or not SAFE_ID.fullmatch(key): raise BridgeError(400, "invalid idempotency key")
-        if shutil.disk_usage(Path(self.database).parent).free < 536870912: raise BridgeError(503,"disk reserve low; dispatch paused")
+        if shutil.disk_usage(Path(self.database).parent).free < 536870912: raise BridgeError(503,"disk reserve low; dispatch paused",False)
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         digest = hashlib.sha256(encoded.encode()).hexdigest()
         with self.tx() as db:
@@ -129,7 +145,8 @@ class Bridge:
     def create(self, kind, key, payload):
         op, new = self.intent(kind, key, payload)
         if not new:
-            if op["state"] in {"dispatching", "unknown"}: raise BridgeError(409, "dispatch uncertain; operator reconciliation required")
+            if op["state"] in {"dispatching", "unknown"}: raise BridgeError(409, "dispatch uncertain; operator reconciliation required",True)
+            if op["state"]=="rejected": raise BridgeError(json.loads(op["response"])["status"],"upstream rejected this intent; no dispatch performed",False)
             return {"run_id": op["id"], "status": op["state"]}
         try:
             if kind == "hermes":
@@ -139,9 +156,12 @@ class Bridge:
                 response = self.paperclip.call("POST", "/api/agents/"+quote(self.director_id,safe="")+"/wakeup", {"source":"on_demand", "triggerDetail":"manual", "reason":"LOOP event", "payload":payload, "idempotencyKey":key, "forceFreshSession":False})
             external_id = response.get("run_id") or response.get("runId") or response.get("id")
             if not external_id or not isinstance(external_id, str) or not SAFE_ID.fullmatch(external_id): raise BridgeError(502,"upstream did not confirm run identity")
-        except Exception:
-            with self.tx() as db: db.execute("UPDATE operations SET state=CASE WHEN state='dispatching' THEN 'unknown' ELSE state END,updated=? WHERE id=?", (time.time(),op["id"]))
-            raise BridgeError(502,"dispatch uncertain; do not retry upstream") from None
+        except Exception as exc:
+            known=isinstance(exc,BridgeError) and not exc.uncertain
+            with self.tx() as db:
+                db.execute("UPDATE operations SET state=CASE WHEN state='dispatching' THEN ? ELSE state END,response=?,updated=? WHERE id=?",("rejected" if known else "unknown",json.dumps({"status":exc.status}) if known else None,time.time(),op["id"]))
+            if known: raise BridgeError(exc.status,"upstream rejected dispatch; no run acknowledged",False) from None
+            raise BridgeError(502,"dispatch uncertain; do not retry upstream",True) from None
         with self.tx() as db:
             db.execute("UPDATE operations SET external_id=?,state=CASE WHEN state='dispatching' THEN 'running' ELSE state END,updated=? WHERE id=?", (external_id,time.time(),op["id"]))
         result = self.get(op["id"])
@@ -193,6 +213,7 @@ class Bridge:
                 if child: stop_ok = self.cancel(child["id"])["status"] == "cancelled"
                 # Without gateway binding, cancellation remains unconfirmed.
         with self.tx() as db:
+            if db.execute("SELECT 1 FROM jobs WHERE director_run=? AND publication_active=1",(op_id,)).fetchone(): stop_ok=False
             jobs = db.execute("SELECT external_id FROM jobs WHERE director_run=? AND external_id IS NOT NULL",(op_id,)).fetchall()
         for job in jobs:
             try:
@@ -242,8 +263,16 @@ class Bridge:
         self.reconcile(j["director_run"])
         j=self.job(job_id)
         op=self.get(j["director_run"])
-        with self.tx() as db: parent=db.execute("SELECT state FROM operations WHERE kind='paperclip' AND external_id=?",(op["key"],)).fetchone()
-        if parent and parent["state"] in {"cancelling","cancelled","interrupted","failed","error"}: raise BridgeError(409,"parent publication fenced")
+        with self.tx() as db: parent=db.execute("SELECT id,state FROM operations WHERE kind='paperclip' AND external_id=?",(op["key"],)).fetchone()
+        if parent:
+            self.reconcile(parent["id"])
+            parent=self.get(parent["id"])
+        if parent:
+            parent_state=parent["state"]
+        else:
+            observed=self.paperclip.call("GET","/api/heartbeat-runs/"+quote(op["key"],safe=""))
+            parent_state={"succeeded":"completed","scheduled_retry":"interrupted","timed_out":"failed"}.get(observed.get("status"),observed.get("status"))
+        if parent_state not in {"running","completed"}: raise BridgeError(409,"parent publication fenced")
         if j["generation"]!=j["current_generation"] or j["director_state"] not in {"running","completed"} or j["state"] in {"cancelled","unknown"}: raise BridgeError(409,"publication fenced")
         with self.tx() as db:
             if db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0]=="true": raise BridgeError(409,"publication paused")
@@ -251,9 +280,37 @@ class Bridge:
 
 
     def next_job(self):
-        with self.tx() as db:
-            row=db.execute("SELECT id FROM jobs WHERE state='queued' ORDER BY rowid LIMIT 1").fetchone()
-        return {"job_id":row["id"] if row else None}
+        with self.tx() as db: rows=db.execute("SELECT id FROM jobs WHERE state IN ('queued','recoverable') ORDER BY rowid").fetchall()
+        for row in rows:
+            try:
+                self.fence(row["id"])
+                return {"job_id":row["id"]}
+            except BridgeError as exc:
+                if exc.status != 409: continue
+                j=self.job(row["id"])
+                # Only never-dispatched jobs can be discarded automatically. An
+                # existing CID remains quarantined until operator reconciliation.
+                with self.tx() as db:
+                    db.execute("UPDATE jobs SET state='quarantined' WHERE id=? AND external_id IS NULL",(row["id"],))
+        return {"job_id":None}
+    def recover_job(self, job_id, receipt):
+        # Operator resumes COLLECTION of a known finished CID; no new dispatch.
+        with self.guard:
+            job=self.job(job_id)
+            if job["state"] not in {"unknown","dispatching"} or job["publication_active"] or job["candidate_sha"]: raise BridgeError(409,"job is not a recoverable worker handoff")
+            if not self.openhands or not job["external_id"]: raise BridgeError(409,"worker identity unavailable")
+            observed=self.openhands.call("GET","/api/conversations/"+quote(job["external_id"],safe=""))
+            if observed.get("execution_status") not in {"finished","idle","paused","stopped"}: raise BridgeError(409,"worker has not stopped")
+            if receipt.get("conversation_id")!=job["external_id"] or receipt.get("branch")!="feat/loop-"+job_id or receipt.get("ok") is not True or not re.fullmatch(r"[0-9a-f]{40}",receipt.get("head_sha","")) or not re.fullmatch(r"[0-9a-f]{40}",receipt.get("base_sha","")): raise BridgeError(400,"existing handoff receipt required")
+            # Temporarily move to a state that fence can authorize, then rollback
+            # the state if this Director/parent no longer owns the attempt.
+            with self.tx() as db: db.execute("UPDATE jobs SET state='recoverable' WHERE id=?",(job_id,))
+            try: self.fence(job_id)
+            except Exception:
+                with self.tx() as db: db.execute("UPDATE jobs SET state='unknown' WHERE id=?",(job_id,))
+                raise
+            with self.tx() as db: db.execute("UPDATE jobs SET recovery_receipt=? WHERE id=?",(json.dumps(receipt),job_id))
+            return {"job_id":job_id,"state":"recoverable","dispatch":False}
     def fail_job(self, job_id):
         with self.tx() as db: db.execute("UPDATE jobs SET state='unknown' WHERE id=? AND state='dispatching'",(job_id,))
         return {"state":self.job(job_id)["state"]}
@@ -262,12 +319,12 @@ class Bridge:
             job=self.fence(job_id)
             with self.tx() as db:
                 if db.execute("SELECT 1 FROM jobs WHERE state IN ('dispatching','publishing','unknown') AND id!=?",(job_id,)).fetchone(): raise BridgeError(409,"heavy runner slot busy or uncertain")
-                if job["state"]!="queued": raise BridgeError(409,"job already claimed; reconcile, never redispatch")
+                if job["state"] not in {"queued","recoverable"}: raise BridgeError(409,"job already claimed; reconcile, never redispatch")
                 # Existing handoff uses this exact deterministic conversation identity.
                 namespace=uuid.uuid5(uuid.NAMESPACE_URL,"https://proxima.local/bad-dev-story")
                 cid=str(uuid.uuid5(namespace,job_id+"/1"))
                 db.execute("UPDATE jobs SET state='dispatching',external_id=? WHERE id=?",(cid,job_id))
-            return {**job,"state":"dispatching","external_id":cid}
+            return {**job,"state":"dispatching","external_id":cid,"recover_only":job["state"]=="recoverable"}
     def recover_pr(self, job_id):
         # Operator-only; reconcile an already-created PR, never repeat create.
         with self.guard:
@@ -278,26 +335,44 @@ class Bridge:
             if not self.publisher or not hasattr(self.publisher,"lookup"): raise BridgeError(503,"publisher lookup unavailable")
             url=self.publisher.lookup(job_id,job["candidate_sha"])
             if not url: return {"state":"unknown","reason":"no matching PR confirmed; no create repeated"}
-            with self.tx() as db: db.execute("UPDATE jobs SET state='ready_pr',pr_url=? WHERE id=?",(url,job_id))
+            with self.tx() as db: db.execute("UPDATE jobs SET state='ready_pr',pr_url=?,publication_active=0 WHERE id=?",(url,job_id))
             return {"state":"ready_pr","pr_url":url}
-    def publish(self, job_id, report):
-        # Only the runner credential can reach this method over HTTP. Worker/model
-        # credentials never enter verification containers or this route.
+    def begin_publication(self, job_id, report):
         with self.guard:
             job=self.fence(job_id)
-            if job["state"]=="ready_pr": return {"state":"ready_pr","pr_url":job["pr_url"]}
+            if job["publication_active"]: raise BridgeError(409,"publication already admitted; reconcile its receipt")
             if job["state"]!="dispatching": raise BridgeError(409,"job not awaiting verification")
             sha=report.get("sha")
             if not isinstance(sha,str) or not re.fullmatch(r"[0-9a-f]{40}",sha): raise BridgeError(400,"invalid candidate SHA")
             if report.get("producer")!="harper" or set(report.get("checks",{}))!={"verify","build","review"} or any(v!={"sha":sha,"status":"pass","skipped":0} for v in report["checks"].values()): raise BridgeError(409,"independent exact-SHA checks required")
+            permit=str(uuid.uuid4())
+            with self.tx() as db: db.execute("UPDATE jobs SET state='publishing',candidate_sha=?,verification=?,publication_permit=?,publication_active=1 WHERE id=?",(sha,json.dumps(report),permit,job_id))
+            return {"permit":permit,"generation":job["generation"],"sha":sha}
+    def finish_publication(self, job_id, permit):
+        with self.guard:
+            job=self.job(job_id)
+            if not isinstance(permit,str) or not hmac.compare_digest(job["publication_permit"] or "",permit): raise BridgeError(403,"invalid publication permit")
+            if job["state"]=="ready_pr": return {"state":"ready_pr","pr_url":job["pr_url"]}
+            if not job["publication_active"]: raise BridgeError(409,"publication permit closed")
+            try: self.fence(job_id)
+            except BridgeError as exc:
+                if exc.status!=409: raise
+                # The admitted push has returned, and this generation was revoked.
+                # No new PR request can now be issued by this attempt.
+                with self.tx() as db: db.execute("UPDATE jobs SET state='cancelled',publication_active=0 WHERE id=?",(job_id,))
+                return {"state":"cancelled","pr_url":None}
             if not self.publisher: raise BridgeError(503,"publisher not configured")
-            with self.tx() as db: db.execute("UPDATE jobs SET state='publishing',candidate_sha=?,verification=? WHERE id=?",(sha,json.dumps(report),job_id))
-            try: url=self.publisher(job_id,sha)
+            try: url=self.publisher(job_id,job["candidate_sha"])
             except Exception:
                 with self.tx() as db: db.execute("UPDATE jobs SET state='unknown' WHERE id=?",(job_id,))
-                raise BridgeError(502,"PR publication uncertain; reconcile by branch") from None
-            with self.tx() as db: db.execute("UPDATE jobs SET state='ready_pr',pr_url=? WHERE id=?",(url,job_id))
-            return {"state":"ready_pr","pr_url":url,"sha":sha}
+                raise BridgeError(502,"publication receipt uncertain; active permit requires reconciliation") from None
+            with self.tx() as db: db.execute("UPDATE jobs SET state='ready_pr',pr_url=?,publication_active=0 WHERE id=?",(url,job_id))
+            return {"state":"ready_pr","pr_url":url,"sha":job["candidate_sha"]}
+    def publish(self, job_id, report):
+        # Internal compatibility seam; production runner uses begin -> push -> finish.
+        job=self.job(job_id)
+        if job["state"]=="ready_pr": return {"state":"ready_pr","pr_url":job["pr_url"]}
+        return self.finish_publication(job_id,self.begin_publication(job_id,report)["permit"])
 
 class GitHubPublisher:
     def __init__(self, client, repository, base="main"):
@@ -338,7 +413,7 @@ def server(bridge, config):
             path=urlparse(self.path).path
             try:
                 if path.startswith("/hermes/"): self.authenticate("gateway")
-                elif path=="/v1/jobs": self.authenticate("director")
+                elif path in {"/v1/jobs","/v1/context"}: self.authenticate("director")
                 elif path.startswith("/v1/runner/"): self.authenticate("runner")
                 else: self.authenticate("operator")
                 payload={}
@@ -353,15 +428,22 @@ def server(bridge, config):
                     if self.headers.get("X-Hermes-Session-Key")!=payload["session_id"]: raise BridgeError(400,"session binding missing")
                     result=bridge.create("hermes",self.headers.get("Idempotency-Key"),payload)
                 elif self.command=="POST" and path=="/v1/wake": result=bridge.create("paperclip",self.headers.get("Idempotency-Key"),payload)
+                elif self.command=="GET" and path=="/v1/context":
+                    from urllib.parse import parse_qs
+                    values=parse_qs(urlparse(self.path).query)
+                    if set(values)-{"offset"}:raise BridgeError(400,"context scope is fixed")
+                    result=bridge.context(int(values.get("offset",["0"])[0]))
                 elif self.command=="POST" and path=="/v1/jobs": result=bridge.propose_job(payload,config.get("templates",{}))
                 elif self.command=="GET" and path=="/v1/runner/jobs/next": result=bridge.next_job()
-                elif match:=re.fullmatch(r"/v1/runner/jobs/([a-z0-9][a-z0-9-]{2,40})(/(claim|publish|fence|fail))?",path):
+                elif match:=re.fullmatch(r"/v1/runner/jobs/([a-z0-9][a-z0-9-]{2,40})(/(claim|begin-publication|finish-publication|fence|fail))?",path):
                     if self.command=="POST" and match[3]=="fail": result=bridge.fail_job(match[1])
                     elif self.command=="POST" and match[3]=="claim": result=bridge.claim_job(match[1])
-                    elif self.command=="POST" and match[3]=="publish": result=bridge.publish(match[1],payload)
+                    elif self.command=="POST" and match[3]=="begin-publication": result=bridge.begin_publication(match[1],payload)
+                    elif self.command=="POST" and match[3]=="finish-publication": result=bridge.finish_publication(match[1],payload.get("permit"))
                     elif self.command=="GET" and match[3]=="fence": result=bridge.fence(match[1])
                     elif self.command=="GET" and match[3] is None: result=bridge.job(match[1])
                     else: raise BridgeError(404,"runner operation unavailable")
+                elif self.command=="POST" and (match:=re.fullmatch(r"/v1/jobs/([a-z0-9][a-z0-9-]{2,40})/recover-worker",path)): result=bridge.recover_job(match[1],payload)
                 elif self.command=="POST" and (match:=re.fullmatch(r"/v1/jobs/([a-z0-9][a-z0-9-]{2,40})/recover-pr",path)): result=bridge.recover_pr(match[1])
                 elif self.command=="POST" and path in {"/v1/pause","/v1/resume"}: result=bridge.pause(path.endswith("pause"))
                 elif match:=re.fullmatch(r"/(hermes/v1|v1)/runs/([A-Za-z0-9-]+)(/(stop|events|adopt))?",path):
@@ -381,7 +463,7 @@ def server(bridge, config):
                 elif self.command=="GET" and path=="/v1/status": result={"mode":"pr_only","scheduler":"paperclip","live_ready":False,"reason":"operator runtime acceptance required"}
                 else: raise BridgeError(404,"operation unavailable")
                 self.send_json(200,result)
-            except BridgeError as e: self.send_json(e.status,{"error":e.message})
+            except BridgeError as e: self.send_json(e.status,{"error":e.message,"uncertain":e.uncertain})
             except Exception: self.send_json(400,{"error":"invalid request"})
         do_POST=handle_request
         do_GET=handle_request
@@ -392,6 +474,6 @@ def main():
     config=json.loads(Path(args.config).read_text())
     upstream=lambda name: JsonHTTP(config[name]["url"],secret(config[name]["token_file"]),header=config[name].get("header","Authorization"))
     publisher=GitHubPublisher(upstream("github"),config["github"]["repository"]) if "github" in config else None
-    bridge=Bridge(config["database"],upstream("hermes"),upstream("paperclip"),config["director_id"],upstream("openhands") if "openhands" in config else None,publisher)
+    bridge=Bridge(config["database"],upstream("hermes"),upstream("paperclip"),config["director_id"],upstream("openhands") if "openhands" in config else None,publisher,upstream("webapp_context") if "webapp_context" in config else None)
     server(bridge,config).serve_forever()
 if __name__=="__main__": main()

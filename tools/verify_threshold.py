@@ -43,8 +43,7 @@ def rows(nm_id: int, actual: int) -> list[DailyMetrics]:
 
 
 def verify() -> None:
-    # The repository config deliberately remains unset; the AC uses a temporary config.
-    require(load_alert_threshold(CONFIG).applied is False, "packaged threshold.toml must remain unset")
+    require(load_alert_threshold(CONFIG).payload() == {"value": -30, "source": "docs/exec-plans/active/loop-pilot.txt: план Mike 2026-09-13, порог пилота", "date": "2026-09-13"}, "packaged threshold must match the approved pilot decision")
     with tempfile.TemporaryDirectory() as directory:
         config = Path(directory) / "threshold.toml"
         config.write_text(

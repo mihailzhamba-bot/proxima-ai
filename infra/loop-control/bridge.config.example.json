@@ -28,5 +28,9 @@
     "repository": "mihailzhamba-bot/proxima-ai"
   },
   "templates": {},
-  "disk_floor_bytes": 536870912
+  "disk_floor_bytes": 536870912,
+  "webapp_context": {
+    "url": "https://OPERATOR_PILOT_WEBAPP_ENDPOINT",
+    "token_file": "/run/secrets/webapp_context"
+  }
 }

@@ -1,4 +1,19 @@
-ARG HERMES_BASE
-FROM ${HERMES_BASE}
+# Dedicated runtime; deliberately does not inherit upstream root/s6 image.
+FROM python:3.12.12-slim-bookworm AS build
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates build-essential && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir uv==0.11.7
+COPY build/upstream/hermes /opt/hermes
+WORKDIR /opt/hermes
+RUN python -c "import json; assert json.load(open('.loop-source-pin.json'))['commit']=='939e45c91d751fadd94dcd1b873ac3cb44846213'"
+RUN uv sync --python /usr/local/bin/python3 --locked --no-dev --extra sms --extra mcp
+RUN .venv/bin/python -c "import sys,aiohttp; assert sys.version_info[:2]==(3,12); assert aiohttp.__version__=='3.14.3'"
+
+FROM python:3.12.12-slim-bookworm
+RUN groupadd -g 10000 hermes && useradd -u 10000 -g 10000 -d /var/lib/loop/hermes hermes && mkdir -p /var/lib/loop/hermes && chown 10000:10000 /var/lib/loop/hermes
+COPY --from=build /opt/hermes /opt/hermes
 COPY tools/loop/director_tool.py tools/loop/bridge.py /opt/loop/
-CMD ["hermes", "gateway", "run", "--no-supervise", "--external-supervisor"]
+ENV HOME=/var/lib/loop/hermes HERMES_HOME=/var/lib/loop/hermes PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH=/opt/hermes/.venv/bin:$PATH
+WORKDIR /opt/hermes
+USER 10000:10000
+ENTRYPOINT []
+CMD ["/opt/hermes/.venv/bin/hermes", "gateway", "run", "--external-supervisor"]

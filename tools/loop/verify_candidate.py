@@ -1,26 +1,74 @@
-"""Bake at /opt/loop/verify-candidate in Harper's trusted image (never bind from candidate)."""
+"""Trusted image producer: immutable source, real command execution, durable receipts."""
+from __future__ import annotations
+import argparse
+import hashlib
 import json
 import os
 import re
 import subprocess
-import sys
 from pathlib import Path
 
+class VerificationFailure(Exception):
+    def __init__(self,message,receipt):super().__init__(message);self.receipt=receipt
+
+def sanitize(text):
+    text=re.sub(r"(?i)(Bearer\s+)\S+",r"\1[redacted]",text)
+    text=re.sub(r"(?i)([a-z][a-z0-9+.-]*://[^\s:/]+:)[^\s@]+@",r"\1[redacted]@",text)
+    return re.sub(r"(?i)((?:api[_-]?key|token|password|secret)\s*[:=]\s*)[^\s,;]+",r"\1[redacted]",text)
+
+def command(argv,root,env):
+    return subprocess.run(argv,cwd=root,env=env,capture_output=True,text=True,timeout=5400,check=False)
+
+def source_manifest(root,sha,env,require_readonly=True,stage="verify"):
+    result=command(["git","-c","core.hooksPath=/dev/null","ls-tree","-rz","--full-tree",sha],root,env)
+    if result.returncode:raise ValueError("candidate tree unavailable")
+    entries={}
+    for record in result.stdout.split("\0"):
+        if not record:continue
+        metadata,name=record.split("\t",1);mode,kind,blob=metadata.split()
+        if kind!="blob" or name.startswith("/") or ".." in Path(name).parts:raise ValueError("unsupported candidate entry")
+        path=Path(root)/name
+        data=os.readlink(path).encode() if path.is_symlink() else path.read_bytes()
+        actual=hashlib.sha1(b"blob "+str(len(data)).encode()+b"\0"+data).hexdigest()
+        if actual!=blob:raise ValueError("candidate content differs from SHA: "+name)
+        if require_readonly and not (os.statvfs(path.parent if path.is_symlink() else path).f_flag & os.ST_RDONLY):
+            # Next's sole generated declaration is a separate build overlay; it
+            # was immutable during verify and never changes the original tree.
+            if not (stage=="build" and name=="services/webapp/next-env.d.ts"):raise ValueError("candidate input is writable: "+name)
+        entries[name]=blob
+    return hashlib.sha256(json.dumps(entries,sort_keys=True).encode()).hexdigest()
+
+def produce(root,sha,stage,require_readonly=True,env=None):
+    if not re.fullmatch(r"[0-9a-f]{40}",sha) or stage not in {"prepare","verify","build"}:raise ValueError("invalid verification request")
+    env={**os.environ,**(env or {}),"PUPPETEER_SKIP_DOWNLOAD":"1","PROXIMA_VERIFY_READONLY":"1","PYTHONDONTWRITEBYTECODE":"1","GIT_OPTIONAL_LOCKS":"0","GIT_CONFIG_GLOBAL":"/dev/null","GIT_CONFIG_SYSTEM":"/dev/null","UV_NO_SYNC":"1","NPM_CONFIG_AUDIT":"false","NPM_CONFIG_FUND":"false","NPM_CONFIG_LOGS_DIR":"/tmp/npm-logs"}
+    receipt={"sha":sha,"stage":stage,"status":"fail","checks":{},"logs":{},"manifest_sha256":None}
+    try:
+        receipt["manifest_sha256"]=source_manifest(root,sha,env,require_readonly,stage)
+        if stage=="prepare":
+            prepare_env={k:v for k,v in env.items() if k!="UV_NO_SYNC"}
+            for name,argv in (("npm",["npm","ci","--ignore-scripts"]),("uv",["uv","sync","--python","3.14","--project","services/control-plane","--extra","test","--locked"])):
+                result=command(argv,root,prepare_env)
+                receipt["logs"][name]=sanitize(result.stdout+result.stderr)
+                if result.returncode:raise ValueError("dependency preparation failed: "+name)
+            receipt["status"]="pass"
+            return receipt
+        argv=["make","verify"] if stage=="verify" else ["npm","--workspace","@proxima/webapp","run","build"]
+        result=command(argv,root,env)
+        receipt["logs"][stage]=sanitize(result.stdout+result.stderr)
+        if result.returncode:raise ValueError("nonzero "+stage)
+        if stage=="verify" and ("pg-roundtrip: PASS" not in result.stdout+result.stderr or re.search(r"pg-roundtrip: (SKIP|FAIL)",result.stdout+result.stderr)):raise ValueError("PostgreSQL gate incomplete")
+        # Same immutable source tree must still be present. Build's generated
+        # next-env overlay is checked by the runner against the unmounted original.
+        if stage=="verify" and source_manifest(root,sha,env,require_readonly,stage)!=receipt["manifest_sha256"]:raise ValueError("source changed during verification")
+        receipt["checks"]={stage:{"sha":sha,"status":"pass","skipped":0}};receipt["status"]="pass"
+        return receipt
+    except Exception as exc:
+        receipt["reason"]=sanitize(str(exc))
+        raise VerificationFailure("candidate verification failed",receipt) from None
+
 def main():
-    sha=sys.argv[1]
-    if not re.fullmatch(r"[0-9a-f]{40}",sha): raise SystemExit(2)
-    env={**os.environ,"PUPPETEER_SKIP_DOWNLOAD":"1","USER":"ubuntu"}
-    results={}
-    for name,cmd in [("verify",["make","verify"]),("build",["npm","--workspace","@proxima/webapp","run","build"])]:
-        process=subprocess.run(cmd,env=env,capture_output=True,text=True,timeout=5400)
-        log=process.stdout+process.stderr
-        Path("/tmp/loop-"+name+".log").write_text(log)
-        if process.returncode or (name=="verify" and "pg-roundtrip: PASS" not in log): raise SystemExit("check failed: "+name)
-        # Unit suites intentionally skip DB cases without their DSNs; the later
-        # pg-roundtrip must execute these cases. Its own skip gate is mandatory.
-        if name=="verify" and ("pg-roundtrip: SKIP" in log or "pg-roundtrip: FAIL" in log): raise SystemExit("DB checks incomplete")
-        results[name]={"sha":sha,"status":"pass","skipped":0}
-    actual=subprocess.run(["git","rev-parse","HEAD"],capture_output=True,text=True,check=True).stdout.strip()
-    if actual!=sha:raise SystemExit("candidate SHA changed")
-    print(json.dumps(results))
+    parser=argparse.ArgumentParser();parser.add_argument("sha");parser.add_argument("--stage",choices=["prepare","verify","build"],required=True);args=parser.parse_args()
+    try:result=produce(Path.cwd(),args.sha,args.stage)
+    except VerificationFailure as exc:print(json.dumps(exc.receipt));raise SystemExit(1)
+    print(json.dumps(result))
 if __name__=="__main__":main()
