@@ -7,7 +7,7 @@
 ## День 0: ручные шаги Mike (около часа)
 
 1. **NDA** - взаимная конфиденциальность на одну страницу, подпись до выдачи любого доступа.
-2. **GitHub** - collaborator в `mihailzhamba-bot/proxima-ai` с правом Write, не Admin. Проверить branch protection на `main`: запрещены прямой push и force-push.
+2. **GitHub** - collaborator в `mihailzhamba-bot/proxima-ai` с правом Write, не Admin; свой существующий аккаунт, включённая 2FA. Защита `main` - ruleset `main-protected` (GitHub Pro, D34): PR обязателен, одобрение владельца, зелёные `verify` и `images`, force-push запрещён, коллаборатор в bypass не входит. Правила ветки и PR - `CONTRIBUTING.md`, владельцы путей - `.github/CODEOWNERS`.
 3. **Jira** - добавить в проекты PA и PMM обычным участником. Задачи создаются только после approve таблиц синхронизации (`docs/state/JIRA-SYNC-BRIEF-2026-09-03.md`).
 4. **Кабинет WB** - доступ на просмотр. Боевые read-only ключи WB выданы Mike 02.09.2026 (PMM-58, D33): аналитик хранит их локально, сырые ответы не выкладывает (хартия §6.1).
 5. **Фикстуры** - передать копию **только** каталога `fixtures/wb-api/` по §6.3 хартии. Уровнем выше лежат файлы токенов, поэтому `~/signal-inputs/` целиком не копируется никогда.
