@@ -57,7 +57,8 @@ def main() -> None:
     except Exception:auth_shape=False
     checks["auth_mode"]=stat.S_ISREG(info.st_mode) and not auth.is_symlink() and info.st_uid==account.pw_uid and stat.S_IMODE(info.st_mode)==0o600 and auth_shape
     login=subprocess.run(["/usr/sbin/runuser","-u","loop-oh-agent","--","/usr/bin/env",*[f"{key}={value}" for key,value in version_env.items()],CODEX,"login","status"],capture_output=True,text=True,timeout=15)
-    checks["chatgpt_login"]=login.returncode==0 and login.stdout.strip()=="Logged in using ChatGPT" and not login.stderr.strip()
+    login_lines=[line for line in (login.stdout+"\n"+login.stderr).splitlines() if line];allowed_login=lambda line:line=="Logged in using ChatGPT" or line.startswith("WARNING: proceeding, even though we could not create PATH aliases:")
+    checks["chatgpt_login"]=login.returncode==0 and "Logged in using ChatGPT" in login_lines and all(allowed_login(line) for line in login_lines)
     server,thread,url,control=local_network_probe();checks["network_control"]=control
     try:
         command=[

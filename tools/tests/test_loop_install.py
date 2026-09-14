@@ -190,3 +190,9 @@ def test_codex_auth_requires_complete_chatgpt_token_set(tmp_path: Path) -> None:
     module=load();path=tmp_path/"auth.json";valid={"auth_mode":"chatgpt","OPENAI_API_KEY":None,"last_refresh":"2026-09-14T00:00:00Z","tokens":{name:name+"-"+"x"*32 for name in ["access_token","account_id","id_token","refresh_token"]}}
     path.write_text(json.dumps(valid));missing=[];module.validate_codex_auth(path,missing);assert missing==[]
     valid["tokens"].pop("refresh_token");path.write_text(json.dumps(valid));module.validate_codex_auth(path,missing);assert missing==[str(path)+":invalid-chatgpt-auth"]
+
+
+def test_codex_login_accepts_only_exact_status_and_known_path_warning() -> None:
+    module=load();warning="WARNING: proceeding, even though we could not create PATH aliases: Operation not permitted (os error 1)"
+    assert module.valid_codex_login(SimpleNamespace(returncode=0,stdout="",stderr=warning+"\nLogged in using ChatGPT\n"))
+    assert not module.valid_codex_login(SimpleNamespace(returncode=0,stdout="Logged in using ChatGPT\n",stderr="unexpected diagnostic\n"))

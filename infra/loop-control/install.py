@@ -293,7 +293,13 @@ def validate_codex_auth(path: Path,missing: list[str]) -> None:
 def verify_codex_login(errors: list[str]) -> None:
     environment={"PATH":"/opt/loop-openhands-agent/node_modules/.bin:/usr/local/bin:/usr/bin:/bin","HOME":"/srv/loop-worker/agent-home","CODEX_HOME":"/srv/loop-worker/codex-home","LANG":"C.UTF-8","LC_ALL":"C.UTF-8"}
     result=subprocess.run(["/usr/sbin/runuser","-u","loop-oh-agent","--","/usr/bin/env",*[f"{key}={value}" for key,value in environment.items()],"/opt/loop-openhands-agent/node_modules/.bin/codex","login","status"],capture_output=True,text=True,timeout=15)
-    if result.returncode or result.stdout.strip()!="Logged in using ChatGPT" or result.stderr.strip():errors.append("codex-chatgpt-login")
+    if not valid_codex_login(result):errors.append("codex-chatgpt-login")
+
+
+def valid_codex_login(result) -> bool:
+    lines=[line for line in (result.stdout+"\n"+result.stderr).splitlines() if line]
+    allowed=lambda line:line=="Logged in using ChatGPT" or line.startswith("WARNING: proceeding, even though we could not create PATH aliases:")
+    return result.returncode==0 and "Logged in using ChatGPT" in lines and all(allowed(line) for line in lines)
 
 
 def validate_worker_integrity(missing: list[str],config_path: Path = Path("/etc/loop-worker/templates.json"),manifest_path: Path = Path("/etc/loop-worker/source-integrity.json"),required_override: dict[Path,int] | None = None,prompt_owner: int = 0) -> None:
