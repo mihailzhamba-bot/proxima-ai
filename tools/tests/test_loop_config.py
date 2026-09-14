@@ -161,6 +161,7 @@ def test_dedicated_openhands_server_cannot_read_existing_proxima_state():
     assert "IPAddressDeny=any" in service and "IPAddressAllow=localhost" in service
     assert "NO_PROXY=localhost,127.0.0.1,::1" in service
     assert "NoNewPrivileges=yes" in service and "CapabilityBoundingSet=\n" in service
+    assert "ProtectProc=invisible" in service and "ProcSubset=pid" not in service and "RestrictNamespaces=yes" not in service
     config=json.loads((CONF/"openhands-agent.config.example.json").read_text())
     assert config["max_concurrent_runs"]==1
     assert config["enable_vscode"] is False and config["enable_vnc"] is False
