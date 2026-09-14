@@ -17,6 +17,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -420,6 +421,15 @@ def worker_api(method: str,path: str,key: str,body: dict | None = None) -> dict:
     with urllib.request.urlopen(request,timeout=10) as response:return json.load(response)
 
 
+def wait_worker_api(timeout: float = 30.0) -> None:
+    key=worker_session_key();deadline=time.monotonic()+timeout
+    while True:
+        try:worker_api("GET","/api/agent-profiles",key);return
+        except (urllib.error.URLError,ConnectionError,TimeoutError):
+            if time.monotonic()>=deadline:raise RuntimeError("dedicated Agent Server API did not become ready") from None
+            time.sleep(0.5)
+
+
 def ensure_worker_profile(*, create: bool) -> dict:
     key=worker_session_key();expected=json.loads((CONF/"openhands-profile.example.json").read_text());name=expected["name"]
     listing=worker_api("GET","/api/agent-profiles",key);previous=listing.get("active_agent_profile_id")
@@ -606,12 +616,13 @@ def main() -> None:
                 observed=[name for name in services if name!="loop-network-preflight.service" and run(["/usr/bin/systemctl","is-active","--quiet",name],check=False).returncode!=0]
                 if observed:raise RuntimeError("installed service failed runtime activation")
                 if args.role=="worker":
+                    wait_worker_api()
                     profile_rollback=ensure_worker_profile(create=True)
                     bind_worker_profile(profile_rollback,apply=True)
                     if run(["/usr/local/sbin/loop-worker-verify"],check=False).returncode!=0:raise RuntimeError("native worker boundary verification failed")
         elif args.role=="worker" and not drift and not missing and not errors:
             try:
-                state=ensure_worker_profile(create=False);bind_worker_profile(state,apply=False)
+                wait_worker_api();state=ensure_worker_profile(create=False);bind_worker_profile(state,apply=False)
                 if run(["/usr/local/sbin/loop-worker-verify"],check=False).returncode!=0:errors.append("native-worker-boundary")
             except Exception:errors.append("worker-profile")
     except Exception:

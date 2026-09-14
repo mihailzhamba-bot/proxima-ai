@@ -157,6 +157,7 @@ def test_dedicated_openhands_server_cannot_read_existing_proxima_state():
     assert "Requires=loop-openhands-directories.service" in service
     assert "BindReadOnlyPaths=/etc/loop-openhands-agent/config.toml:/srv/loop-worker/codex-home/config.toml" in service
     assert "/etc/loop-openhands-agent/server-config.private.json" in service
+    assert "-/var/lib/loop-worker-gateway" in service
     assert "IPAddressDeny=any" in service and "IPAddressAllow=localhost" in service
     assert "NO_PROXY=localhost,127.0.0.1,::1" in service
     assert "NoNewPrivileges=yes" in service and "CapabilityBoundingSet=\n" in service
