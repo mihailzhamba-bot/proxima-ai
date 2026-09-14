@@ -159,6 +159,7 @@ def test_dedicated_openhands_server_cannot_read_existing_proxima_state():
     assert "/etc/loop-openhands-agent/server-config.private.json" in service
     assert "-/var/lib/loop-worker-gateway" in service
     assert "IPAddressDeny=any" in service and "IPAddressAllow=localhost" in service
+    assert "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK" in service
     assert "NO_PROXY=localhost,127.0.0.1,::1" in service
     assert "NoNewPrivileges=yes" in service and "CapabilityBoundingSet=\n" in service
     assert "ProtectProc=invisible" in service and "ProcSubset=pid" not in service and "RestrictNamespaces=yes" not in service
