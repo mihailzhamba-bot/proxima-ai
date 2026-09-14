@@ -74,7 +74,7 @@ def required_path(config: dict, name: str) -> Path:
 
 def live_profile_identity(config: dict,base_url: str,session_key: str) -> tuple[str,int]:
     expected_id=config.get("profile_fedor");expected_revision=config.get("profile_fedor_revision")
-    if not isinstance(expected_id,str) or not re.fullmatch(r"[0-9a-f-]{36}",expected_id) or not isinstance(expected_revision,int) or expected_revision<1:
+    if not isinstance(expected_id,str) or not re.fullmatch(r"[0-9a-f-]{36}",expected_id) or not isinstance(expected_revision,int) or isinstance(expected_revision,bool) or expected_revision<0:
         raise SystemExit("dedicated Agent Profile binding is missing")
     request=urllib.request.Request(base_url+"/api/agent-profiles/loop-codex",headers={"X-Session-API-Key":session_key})
     try:

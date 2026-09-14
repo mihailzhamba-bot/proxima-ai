@@ -94,7 +94,7 @@ def test_worker_volume_requires_ext4_and_hard_mount_options() -> None:
 
 
 def test_fresh_worker_profile_is_created_activated_and_bound(tmp_path: Path,monkeypatch) -> None:
-    module=load();expected=json.loads((module.CONF/"openhands-profile.example.json").read_text());profile={**expected["profile"],"id":"11111111-1111-4111-8111-111111111111","name":"loop-codex","revision":1}
+    module=load();expected=json.loads((module.CONF/"openhands-profile.example.json").read_text());profile={**expected["profile"],"id":"11111111-1111-4111-8111-111111111111","name":"loop-codex","revision":0}
     state={"exists":False,"active":"old-profile"};calls=[]
     def fake_api(method,path,key,body=None):
         calls.append((method,path,body))
@@ -109,12 +109,12 @@ def test_fresh_worker_profile_is_created_activated_and_bound(tmp_path: Path,monk
         raise AssertionError((method,path,body))
     monkeypatch.setattr(module,"worker_session_key",lambda:"k"*48);monkeypatch.setattr(module,"worker_api",fake_api)
     result=module.ensure_worker_profile(create=True)
-    assert result["created"] is True and result["profile_id"]==profile["id"] and result["profile_revision"]==1
+    assert result["created"] is True and result["profile_id"]==profile["id"] and result["profile_revision"]==0
     config_path=tmp_path/"templates.json";config_path.write_text(json.dumps({"templates":{"kept":{"base_sha":"a"*40}}}));config_path.chmod(0o640)
     monkeypatch.setattr(module.grp,"getgrnam",lambda _name:SimpleNamespace(gr_gid=os.getgid()))
     monkeypatch.setattr(module.os,"chown",lambda *_args:None)
     module.bind_worker_profile(result,apply=True,path=config_path);bound=json.loads(config_path.read_text())
-    assert bound["templates"]=={"kept":{"base_sha":"a"*40,"profile_id":profile["id"],"profile_revision":1}} and bound["profile_fedor"]==profile["id"] and bound["profile_fedor_revision"]==1
+    assert bound["templates"]=={"kept":{"base_sha":"a"*40,"profile_id":profile["id"],"profile_revision":0}} and bound["profile_fedor"]==profile["id"] and bound["profile_fedor_revision"]==0
     assert any(method=="POST" and path.endswith("/activate") for method,path,_body in calls)
 
 

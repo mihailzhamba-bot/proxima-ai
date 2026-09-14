@@ -146,7 +146,7 @@ def request_config(template_name: str) -> dict:
     template=config.get("templates",{}).get(template_name)
     if not isinstance(template,dict) or not SHA1.fullmatch(str(template.get("base_sha",""))):raise ValueError("template not admitted")
     profile_id=config.get("profile_fedor");profile_revision=config.get("profile_fedor_revision")
-    if template.get("profile","fedor")!="fedor" or not isinstance(profile_id,str) or not re.fullmatch(r"[0-9a-f-]{36}",profile_id) or not isinstance(profile_revision,int) or profile_revision<1 or template.get("profile_id")!=profile_id or template.get("profile_revision")!=profile_revision:raise ValueError("template Agent Profile binding is invalid")
+    if template.get("profile","fedor")!="fedor" or not isinstance(profile_id,str) or not re.fullmatch(r"[0-9a-f-]{36}",profile_id) or not isinstance(profile_revision,int) or isinstance(profile_revision,bool) or profile_revision<0 or template.get("profile_id")!=profile_id or template.get("profile_revision")!=profile_revision:raise ValueError("template Agent Profile binding is invalid")
     prompt=Path(str(template.get("prompt_file","")))
     if prompt.parent!=Path(config["prompt_root"]):raise ValueError("unexpected trusted prompt path")
     required={str(DISPATCHER):PRIVILEGED_UID,str(COLLECTOR):PRIVILEGED_UID,str(ROOT_HELPER):PRIVILEGED_UID,str(SSH_HELPER):PRIVILEGED_UID,str(AGENT_LAUNCHER):PRIVILEGED_UID,str(ACP_WRAPPER):PRIVILEGED_UID,str(CODEX_CONFIG):PRIVILEGED_UID,str(VOLUME_HELPER):PRIVILEGED_UID,str(SOURCE/"tools/orchestrator/bad_dev_story.sh"):uid("loop-worker-runner"),str(SOURCE/"tools/orchestrator/lib.sh"):uid("loop-worker-runner")}

@@ -487,7 +487,7 @@ if [ -n "$SIMULATE_WORKER" ]; then
   STATUS="finished"; GATE_HOOK="simulated"
 else
 case "$PROFILE_NAME" in fedor) PROFILE="$PROFILE_FEDOR" ;; glm) PROFILE="$PROFILE_GLM" ;; esac
-echo "$BRIDGE_PROFILE_REVISION" | grep -Eq '^[1-9][0-9]*$' || fail $EX_INTEGRITY "bound Agent Profile revision is required"
+echo "$BRIDGE_PROFILE_REVISION" | grep -Eq '^(0|[1-9][0-9]*)$' || fail $EX_INTEGRITY "bound Agent Profile revision is required"
 # working_dir is the workspace ROOT, not the checkout inside it - same as
 # launch_worker.sh, and not an accident. The fedor profile is Codex over ACP;
 # started inside the checkout it loads the project .codex/config.toml, whose

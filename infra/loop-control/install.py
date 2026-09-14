@@ -447,7 +447,7 @@ def ensure_worker_profile(*, create: bool) -> dict:
         profile_id=profile.get("id")
         if not isinstance(profile_id,str) or not profile_id:raise RuntimeError("dedicated Agent Profile has no stable id")
         revision=profile.get("revision")
-        if not isinstance(revision,int) or revision<1:raise RuntimeError("dedicated Agent Profile has no revision")
+        if not isinstance(revision,int) or isinstance(revision,bool) or revision<0:raise RuntimeError("dedicated Agent Profile has no revision")
         state["profile_id"]=profile_id;state["profile_revision"]=revision
         if create and previous!=profile_id:worker_api("POST","/api/agent-profiles/"+urllib.parse.quote(profile_id,safe="")+"/activate",key)
         active=worker_api("GET","/api/agent-profiles",key).get("active_agent_profile_id")

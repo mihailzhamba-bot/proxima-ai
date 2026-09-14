@@ -42,7 +42,7 @@ def template_fingerprint(name,definition):
     profile=definition.get("profile","fedor");profile_id=definition.get("profile_id");profile_revision=definition.get("profile_revision")
     try:canonical_profile_id=str(uuid.UUID(profile_id))
     except (ValueError,TypeError,AttributeError):raise BridgeError(400,"job template needs stable Agent Profile identity") from None
-    if profile!="fedor" or canonical_profile_id!=profile_id or not isinstance(profile_revision,int) or isinstance(profile_revision,bool) or profile_revision<1:raise BridgeError(400,"job template needs stable Agent Profile identity")
+    if profile!="fedor" or canonical_profile_id!=profile_id or not isinstance(profile_revision,int) or isinstance(profile_revision,bool) or profile_revision<0:raise BridgeError(400,"job template needs stable Agent Profile identity")
     portable={key:definition.get(key) for key in ("base_sha","prompt_sha256","allowed_paths","contract_files","profile","profile_id","profile_revision")}
     for key in ("allowed_paths","contract_files"):
         if isinstance(portable[key],list):portable[key]=sorted(portable[key])
