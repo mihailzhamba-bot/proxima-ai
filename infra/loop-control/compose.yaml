@@ -8,7 +8,7 @@ x-logging: &bounded-logging
 services:
   postgres:
     image: ${LOOP_POSTGRES_IMAGE:?digest-pinned postgres16.6 image required}
-    restart: unless-stopped
+    restart: "no"
     mem_limit: 1g
     cpus: 0.5
     pids_limit: 128
@@ -33,7 +33,7 @@ services:
       postgres:
         condition: service_healthy
     image: ${LOOP_PAPERCLIP_IMAGE:?digest-pinned image required}
-    restart: unless-stopped
+    restart: "no"
     init: true
     mem_limit: 2g
     cpus: 1.5
@@ -53,7 +53,7 @@ services:
   hermes:
     logging: *bounded-logging
     image: ${LOOP_HERMES_IMAGE:?digest-pinned image required}
-    restart: unless-stopped
+    restart: "no"
     init: true
     read_only: true
     mem_limit: 2g
@@ -66,13 +66,19 @@ services:
       HERMES_HOME: /var/lib/loop/hermes
       API_SERVER_HOST: "0.0.0.0"
       API_SERVER_PORT: "8642"
+      HTTP_PROXY: http://172.30.240.1:18180
+      HTTPS_PROXY: http://172.30.240.1:18180
+      ALL_PROXY: http://172.30.240.1:18180
+      NO_PROXY: localhost,127.0.0.1,::1,bridge
     env_file: /etc/loop/director.env
     volumes: ["hermes:/var/lib/loop/hermes", "/etc/loop/hermes.yaml:/var/lib/loop/hermes/config.yaml:ro", "/etc/loop/secrets/hermes_bridge_director:/run/secrets/bridge_director:ro"]
-    networks: [control]
+    networks:
+      hermes_private:
+        ipv4_address: 172.30.240.2
   bridge:
     logging: *bounded-logging
     image: ${LOOP_BRIDGE_IMAGE:?digest-pinned image required}
-    restart: unless-stopped
+    restart: "no"
     init: true
     read_only: true
     mem_limit: 256m
@@ -81,13 +87,14 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
-    volumes: ["bridge:/var/lib/loop/bridge", "/etc/loop/bridge.json:/etc/loop/bridge.json:ro", "/etc/loop/secrets/bridge_operator:/run/secrets/bridge_operator:ro", "/etc/loop/secrets/bridge_gateway:/run/secrets/bridge_gateway:ro", "/etc/loop/secrets/bridge_director:/run/secrets/bridge_director:ro", "/etc/loop/secrets/bridge_runner:/run/secrets/bridge_runner:ro", "/etc/loop/secrets/hermes_api:/run/secrets/hermes_api:ro", "/etc/loop/secrets/paperclip_board:/run/secrets/paperclip_board:ro", "/etc/loop/secrets/openhands_api:/run/secrets/openhands_api:ro", "/etc/loop/secrets/github_pr:/run/secrets/github_pr:ro", "/etc/loop/secrets/webapp_context:/run/secrets/webapp_context:ro"]
-    networks: [control]
+    volumes: ["bridge:/var/lib/loop/bridge", "/etc/loop/bridge.json:/etc/loop/bridge.json:ro", "/etc/loop/openhands_relay.py:/opt/loop/openhands_relay.py:ro", "/etc/loop/secrets/bridge_operator:/run/secrets/bridge_operator:ro", "/etc/loop/secrets/bridge_gateway:/run/secrets/bridge_gateway:ro", "/etc/loop/secrets/bridge_director:/run/secrets/bridge_director:ro", "/etc/loop/secrets/bridge_runner:/run/secrets/bridge_runner:ro", "/etc/loop/secrets/hermes_api:/run/secrets/hermes_api:ro", "/etc/loop/secrets/paperclip_board:/run/secrets/paperclip_board:ro", "/etc/loop/secrets/openhands_api:/run/secrets/openhands_api:ro", "/etc/loop/secrets/github_pr:/run/secrets/github_pr:ro", "/etc/loop/secrets/webapp_context:/run/secrets/webapp_context:ro"]
+    networks: [control, hermes_private, openhands_private]
     ports: ["127.0.0.1:18770:18770"]
     command: ["python3", "/opt/loop/bridge.py", "--config", "/etc/loop/bridge.json"]
   telegram:
     image: ${LOOP_BRIDGE_IMAGE:?digest-pinned image required}
-    restart: unless-stopped
+    restart: "no"
+    profiles: [telegram]
     init: true
     read_only: true
     mem_limit: 128m
@@ -101,6 +108,12 @@ services:
     command: ["python3", "/opt/loop/telegram.py", "--config", "/etc/loop/telegram.json"]
 networks:
   control: {}
+  hermes_private:
+    external: true
+    name: loop-hermes-private
+  openhands_private:
+    external: true
+    name: loop-openhands-private
 volumes:
   postgres: {}
   telegram: {}

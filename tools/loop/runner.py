@@ -15,11 +15,11 @@ import uuid
 import sys
 from pathlib import Path
 try:
-    from .bridge import BridgeError, JsonHTTP, secret
+    from .bridge import BridgeError, JsonHTTP, secret, template_fingerprint
     from .verify_candidate import sanitize
     from .publication import process_identity, process_scope_running, terminate_gated_process, write_journal, recover_push
 except ImportError:
-    from bridge import BridgeError, JsonHTTP, secret
+    from bridge import BridgeError, JsonHTTP, secret, template_fingerprint
     from verify_candidate import sanitize
     from publication import process_identity, process_scope_running, terminate_gated_process, write_journal, recover_push
 
@@ -50,15 +50,19 @@ def prepare_mountpoints(checkout,directories,files,tracked_paths):
                 current.mkdir(mode=0o755,exist_ok=True)
 
 class DeliveryRunner:
-    def __init__(self, config, bridge, execute=None, identity_reader=process_identity, scope_reader=process_scope_running):
+    def __init__(self, config, bridge, execute=None, identity_reader=process_identity, scope_reader=process_scope_running, fetch_execute=None):
         self.config,self.bridge=config,bridge
         self.execute=execute or self._execute
         self.identity_reader=identity_reader
         self.scope_reader=scope_reader
+        self.fetch_execute=fetch_execute
         self.push_context=None
         self.stage_number=0
         self.evidence=None
-        self.env={"PATH":os.environ.get("PATH","/usr/bin:/bin"),"HOME":config["trusted_home"],"GIT_CONFIG_GLOBAL":"/dev/null","GIT_CONFIG_SYSTEM":"/dev/null","GIT_TERMINAL_PROMPT":"0","GIT_SSH_COMMAND":"ssh -oBatchMode=yes -oControlMaster=no -oControlPersist=no -oControlPath=none -oForwardAgent=no -oIdentitiesOnly=yes -oStrictHostKeyChecking=yes"}
+        publish_identity=Path(config.get("github_publish_identity_file",Path(config["trusted_home"])/".ssh/github_ed25519"));known_hosts=Path(config.get("known_hosts_file",Path(config["trusted_home"])/".ssh/known_hosts"))
+        if not publish_identity.is_absolute() or not known_hosts.is_absolute():raise ValueError("runner SSH trust paths must be absolute")
+        git_ssh=shlex.join(["ssh","-oBatchMode=yes","-oControlMaster=no","-oControlPersist=no","-oControlPath=none","-oForwardAgent=no","-oIdentitiesOnly=yes","-oStrictHostKeyChecking=yes","-oUserKnownHostsFile="+str(known_hosts),"-i",str(publish_identity)])
+        self.env={"PATH":os.environ.get("PATH","/usr/bin:/bin"),"HOME":config["trusted_home"],"GIT_CONFIG_GLOBAL":"/dev/null","GIT_CONFIG_SYSTEM":"/dev/null","GIT_CONFIG_NOSYSTEM":"1","GIT_TERMINAL_PROMPT":"0","GIT_NO_REPLACE_OBJECTS":"1","GIT_SSH_COMMAND":git_ssh}
     def _execute(self,argv,cwd=None):
         self.stage_number+=1
         process=None
@@ -117,6 +121,24 @@ class DeliveryRunner:
             error.process_stopped=stopped;error.returncode=result.returncode
             raise error
         return result.stdout
+    def fetch_bundle(self,argv,destination):
+        self.stage_number+=1
+        destination=Path(destination);temporary=destination.with_name(destination.name+"."+uuid.uuid4().hex+".tmp")
+        try:
+            if self.fetch_execute:
+                self.fetch_execute(argv,temporary)
+                result=subprocess.CompletedProcess(argv,0,b"",b"")
+            else:
+                with temporary.open("xb") as output:
+                    result=subprocess.run(argv,env=self.env,stdin=subprocess.DEVNULL,stdout=output,stderr=subprocess.PIPE,timeout=self.config.get("command_timeout",7200),check=False)
+            if result.returncode:
+                if self.evidence:
+                    log=sanitize((result.stderr or b"").decode(errors="replace") if isinstance(result.stderr,bytes) else result.stderr or "")
+                    (self.evidence/f"stage-{self.stage_number:02d}.log").write_text(log)
+                raise BridgeError(502,"trusted bundle fetch failed; no candidate accepted")
+            os.chmod(temporary,0o600);os.replace(temporary,destination)
+        finally:
+            if temporary.exists():temporary.unlink()
     def push(self,job_id,admitted,argv):
         publisher_id=str(uuid.uuid4());path=self.evidence/"publisher.json"
         journal={"job_id":job_id,"permit":admitted["permit"],"publisher_id":publisher_id,"sha":admitted["sha"],"state":"starting","parent_pid":os.getpid(),"parent_identity":self.identity_reader(os.getpid()),"child_pid":None,"child_identity":None,"exec_gate":"pipe-v1","exec_released":False}
@@ -146,25 +168,30 @@ class DeliveryRunner:
         job=self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/claim",{})
         template=self.config["templates"].get(job["template"])
         if not template: raise ValueError("template is not installed on Harper")
+        fingerprint=template_fingerprint(job["template"],template)
+        if job.get("template_fingerprint")!=fingerprint:raise BridgeError(409,"Harper template contract differs from Bridge")
         base=template["base_sha"]
         if not SHA.fullmatch(base): raise ValueError("template needs immutable base SHA")
         image=self.config["verification_image"]
         if not re.fullmatch(r"[A-Za-z0-9.:/_-]+@sha256:[a-f0-9]{64}",image): raise ValueError("verification image must be pinned by digest")
-        ssh=["ssh","-o","BatchMode=yes","-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=yes","-o","ForwardAgent=no","-i",self.config["worker_identity_file"],self.config["worker_host"]]
+        ssh=["ssh","-o","BatchMode=yes","-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=yes","-o","ForwardAgent=no","-o","UserKnownHostsFile="+self.config["known_hosts_file"],"-i",self.config["worker_identity_file"],self.config["worker_host"]]
         remote=shlex.join([self.config["worker_python"],self.config["worker_dispatcher"],"--config",self.config["worker_config"],"--template",job["template"],"--job",job_id])
         self.fence(job_id)
         receipt=json.loads(job["recovery_receipt"]) if job.get("recover_only") else json.loads(self.execute([*ssh,remote]))
         # Handoff receipt checks ancestry and paths; never treated as verification PASS.
         sha=receipt.get("head_sha","")
-        if receipt.get("ok") is not True or receipt.get("base_sha")!=base or not SHA.fullmatch(sha) or receipt.get("conversation_id")!=job["external_id"]: raise BridgeError(409,"OpenHands handoff integrity mismatch")
+        if receipt.get("ok") is not True or receipt.get("template")!=job["template"] or receipt.get("template_fingerprint")!=fingerprint or receipt.get("base_sha")!=base or not SHA.fullmatch(sha) or receipt.get("conversation_id")!=job["external_id"]: raise BridgeError(409,"OpenHands handoff integrity mismatch")
         if receipt.get("branch")!="feat/loop-"+job_id: raise BridgeError(409,"unexpected worker branch")
+        bundle_sha=receipt.get("bundle_sha256","")
+        if not re.fullmatch(r"[a-f0-9]{64}",bundle_sha):raise BridgeError(409,"worker bundle digest missing")
         self.fence(job_id)
         work=Path(tempfile.mkdtemp(prefix="loop-"+job_id+"-",dir=self.config["work_root"]))
         os.chmod(work,0o755)
         bundle=work/"candidate.bundle"
-        remote_bundle=self.config["worker_source"]+f"/logs/openhands-bridge/{job_id}/attempt-1/result.bundle"
-        scp=["scp","-o","BatchMode=yes","-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=yes","-o","ForwardAgent=no","-i",self.config["worker_identity_file"],self.config["worker_host"]+":"+shlex.quote(remote_bundle),str(bundle)]
-        self.execute(scp)
+        remote_fetch=shlex.join([self.config["worker_fetcher"],"--job",job_id])
+        self.fetch_bundle([*ssh,remote_fetch],bundle)
+        with bundle.open("rb") as stream:observed_bundle_sha=hashlib.file_digest(stream,"sha256").hexdigest()
+        if observed_bundle_sha!=bundle_sha:raise BridgeError(409,"worker bundle digest mismatch")
         checkout=work/"candidate"
         git=["git","-c","core.hooksPath=/dev/null","-c","protocol.file.allow=always"]
         self.execute([*git,"clone","--no-hardlinks","--no-checkout",self.config["source_repo"],str(checkout)])
@@ -176,6 +203,9 @@ class DeliveryRunner:
         allowed=template.get("allowed_paths",[])
         protected=re.compile(r"(^Makefile$|^tools/|^\.github/|(^|/)(package(-lock)?\.json|pyproject\.toml|uv\.lock)$|(^|/)[^/]*config[^/]*$|/tests/|^db/)")
         if not paths or any(protected.search(p) or not any(p==a or (a.endswith("/") and p.startswith(a)) for a in allowed) for p in paths): raise BridgeError(409,"candidate changes protected or unapproved paths")
+        history=json.loads(self.execute([sys.executable,"-I",self.config.get("history_gate","/opt/loop/history_gate.py"),str(checkout),base,sha,*[item for value in allowed for item in ("--allowed",value)]]))
+        if history.get("status")!="pass" or history.get("base_sha")!=base or history.get("head_sha")!=sha:raise BridgeError(409,"candidate history gate incomplete")
+        (self.evidence/"history-receipt.json").write_text(json.dumps(history,indent=2)+"\n")
         # The candidate tree (including verifier/control files and .git) is RO.
         # Only dependency/build caches are separate writable mounts.
         cache=work/"writable";cache.mkdir()
@@ -230,7 +260,10 @@ class DeliveryRunner:
         self.execute([*git,"init","--bare",str(publish)])
         self.execute([*git,"-C",str(publish),"fetch",str(bundle),f"refs/heads/feat/loop-{job_id}:refs/heads/feat/loop-{job_id}"])
         admitted=self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/begin-publication",report)
-        self.push(job_id,admitted,[*git,"-C",str(publish),"push",self.config["publish_remote"],f"refs/heads/feat/loop-{job_id}:refs/heads/feat/loop-{job_id}"])
+        permit=admitted.get("permit","")
+        expected_staging=f"refs/heads/loop-staging/{job_id}/{hashlib.sha256(permit.encode()).hexdigest()}" if isinstance(permit,str) else ""
+        if admitted.get("staging_ref")!=expected_staging:raise BridgeError(409,"Bridge returned invalid publication staging ref")
+        self.push(job_id,admitted,[*git,"-C",str(publish),"push",self.config["publish_remote"],f"refs/heads/feat/loop-{job_id}:{expected_staging}"])
         # Bridge holds its publication fence while checking GitHub's actual ref
         # and creating/recovering the PR. No merge/deploy path exists.
         return self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/finish-publication",{"permit":admitted["permit"]})

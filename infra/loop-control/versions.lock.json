@@ -14,6 +14,21 @@
     "source": "tools/loop/bridge.py",
     "python": "3.12"
   },
+  "openhands": {
+    "agent_server": "1.44.0",
+    "sdk": "1.44.0",
+    "tools": "1.44.0",
+    "workspace": "1.44.0",
+    "codex_acp": "1.1.7",
+    "codex_cli": "0.151.0",
+    "worker_model": "gpt-5.6-sol",
+    "python": "3.12"
+  },
+  "egress": {
+    "tinyproxy": "1.11.1",
+    "openssh_client": "9.6p1 Ubuntu-3ubuntu13.19",
+    "vpn_host": "153.56.134.240:65022"
+  },
   "images": {
     "paperclip": null,
     "hermes": null,
@@ -24,10 +39,11 @@
   "mode": "pr_only",
   "live_ready": false,
   "blocked_on": [
-    "new_control_vps_ip",
-    "dedicated_director_credentials",
-    "built_image_digests",
-    "runtime_acceptance"
+    "trusted_worker_security_acceptance",
+    "harper_runner_installation",
+    "dedicated_github_publication_credentials",
+    "telegram_credentials",
+    "ready_pr_end_to_end_acceptance"
   ],
   "postgres": {
     "version": "16.6",

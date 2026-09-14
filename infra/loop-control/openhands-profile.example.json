@@ -1,0 +1,14 @@
+{
+  "name": "loop-codex",
+  "profile": {
+    "agent_kind": "acp",
+    "acp_server": "codex",
+    "acp_command": "/opt/loop-openhands-agent/bin/codex-acp",
+    "acp_args": [],
+    "acp_model": "gpt-5.6-sol",
+    "acp_session_mode": "agent",
+    "acp_startup_timeout": 90.0,
+    "acp_prompt_timeout": 1800.0,
+    "mcp_server_refs": []
+  }
+}

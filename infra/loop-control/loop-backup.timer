@@ -1,0 +1,11 @@
+[Unit]
+Description=Run LOOP backup daily
+
+[Timer]
+OnCalendar=*-*-* 00:30:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+Unit=loop-backup.service
+
+[Install]
+WantedBy=timers.target

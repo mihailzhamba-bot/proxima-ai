@@ -1,0 +1,2 @@
+Cmnd_Alias LOOP_WORKER_GATEWAY = /opt/loop/worker_root.py dispatch --template * --job *, /opt/loop/worker_root.py fetch --job *
+loop-worker ALL=(root) NOPASSWD: LOOP_WORKER_GATEWAY

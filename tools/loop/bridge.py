@@ -25,11 +25,28 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler
 TERMINAL = {"completed", "failed", "error", "cancelled", "canceled", "stopped", "interrupted"}
 JOB_ID = re.compile(r"^[a-z0-9][a-z0-9-]{2,40}$")
 SAFE_ID = re.compile(r"^[A-Za-z0-9:_-]{1,160}$")
+PUBLICATION_PERMIT = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 class BridgeError(Exception):
     def __init__(self, status, message, uncertain=None, revoked=False):
         self.status, self.message = status, message
         self.revoked = revoked
         self.uncertain = status >= 500 if uncertain is None else uncertain
+
+def publication_staging_ref(job_id, permit):
+    if not isinstance(job_id,str) or not JOB_ID.fullmatch(job_id) or not isinstance(permit,str) or not PUBLICATION_PERMIT.fullmatch(permit):
+        raise BridgeError(400,"invalid publication staging identity")
+    return f"refs/heads/loop-staging/{job_id}/{hashlib.sha256(permit.encode()).hexdigest()}"
+
+def template_fingerprint(name,definition):
+    if not isinstance(name,str) or not isinstance(definition,dict):raise BridgeError(400,"invalid job template contract")
+    profile=definition.get("profile","fedor");profile_id=definition.get("profile_id");profile_revision=definition.get("profile_revision")
+    try:canonical_profile_id=str(uuid.UUID(profile_id))
+    except (ValueError,TypeError,AttributeError):raise BridgeError(400,"job template needs stable Agent Profile identity") from None
+    if profile!="fedor" or canonical_profile_id!=profile_id or not isinstance(profile_revision,int) or isinstance(profile_revision,bool) or profile_revision<1:raise BridgeError(400,"job template needs stable Agent Profile identity")
+    portable={key:definition.get(key) for key in ("base_sha","prompt_sha256","allowed_paths","contract_files","profile","profile_id","profile_revision")}
+    for key in ("allowed_paths","contract_files"):
+        if isinstance(portable[key],list):portable[key]=sorted(portable[key])
+    return hashlib.sha256(json.dumps({"name":name,"contract":portable},sort_keys=True,separators=(",",":")).encode()).hexdigest()
 
 def secret(path):
     p = Path(path)
@@ -79,6 +96,13 @@ class Bridge:
         self.database, self.hermes, self.paperclip, self.director_id, self.openhands = str(database), hermes, paperclip, director_id, openhands
         Path(database).parent.mkdir(parents=True, exist_ok=True)
         self.guard = threading.RLock()
+        # Remote publication is split into independently fenced mutations so a
+        # cancellation can revoke an attempt while read-only destination checks
+        # are blocked. Only one finisher may materialize a job at a time.
+        self.publication_gate = threading.RLock()
+        self.publication_finish_gate = threading.Lock()
+        self.cancel_request_guard = threading.Lock()
+        self.cancel_requests = set()
         with self.tx() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS operations (
@@ -98,9 +122,13 @@ class Bridge:
                     template TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'queued',
                     external_id TEXT, candidate_sha TEXT, verification TEXT, pr_url TEXT);
             """)
+            operation_columns={r[1] for r in db.execute("PRAGMA table_info(operations)")}
+            if "execution_stop_confirmed" not in operation_columns:
+                db.execute("ALTER TABLE operations ADD COLUMN execution_stop_confirmed INTEGER NOT NULL DEFAULT 0")
             columns={r[1] for r in db.execute("PRAGMA table_info(jobs)")}
             for name,definition in (("publication_permit","TEXT"),("publication_active","INTEGER NOT NULL DEFAULT 0"),("recovery_receipt","TEXT"),("push_outcome","TEXT"),("push_publisher_id","TEXT"),("push_process_stopped","INTEGER NOT NULL DEFAULT 0"),("push_receipt","TEXT"),("publication_settlement","TEXT")):
                 if name not in columns: db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
+            if "template_fingerprint" not in columns:db.execute("ALTER TABLE jobs ADD COLUMN template_fingerprint TEXT")
             db.execute("UPDATE jobs SET state='unknown' WHERE state='publishing'")
             # The local process cannot infer whether an interrupted create reached upstream.
             db.execute("UPDATE operations SET state='unknown',updated=? WHERE state='dispatching'", (time.time(),))
@@ -196,12 +224,25 @@ class Bridge:
         return self.reconcile(op_id)
     def cancel(self, op_id):
         # Fence and revoke queued/active jobs BEFORE any network call.
-        with self.tx() as db:
-            op = db.execute("SELECT * FROM operations WHERE id=?",(op_id,)).fetchone()
-            if not op: raise BridgeError(404,"run unavailable")
-            if op["state"] == "cancelled" and op["stop_confirmed"]: return {"run_id":op_id,"status":"cancelled"}
-            db.execute("UPDATE operations SET state='cancelling',generation=generation+1,updated=? WHERE id=? AND state!='cancelling'",(time.time(),op_id))
-            db.execute("UPDATE jobs SET state='cancelled' WHERE director_run=? AND state!='ready_pr'",(op_id,))
+        with self.cancel_request_guard: self.cancel_requests.add(op_id)
+        with self.publication_gate:
+            with self.tx() as db:
+                op = db.execute("SELECT * FROM operations WHERE id=?",(op_id,)).fetchone()
+                if not op:
+                    with self.cancel_request_guard: self.cancel_requests.discard(op_id)
+                    raise BridgeError(404,"run unavailable")
+                ready = db.execute("""
+                    SELECT 1 FROM jobs j JOIN operations d ON d.id=j.director_run
+                    WHERE j.state='ready_pr' AND (
+                        d.id=? OR (?='paperclip' AND d.kind='hermes' AND d.key=?)
+                    ) LIMIT 1
+                """,(op_id,op["kind"],op["external_id"])).fetchone()
+                if ready and op["state"]=="completed" and op["stop_confirmed"]:
+                    with self.cancel_request_guard:self.cancel_requests.discard(op_id)
+                    return {"run_id":op_id,"status":"completed","reason":"ready_pr_exists"}
+                if op["state"] == "cancelled" and op["stop_confirmed"]: return {"run_id":op_id,"status":"cancelled"}
+                db.execute("UPDATE operations SET state='cancelling',generation=generation+1,updated=? WHERE id=? AND state!='cancelling'",(time.time(),op_id))
+                db.execute("UPDATE jobs SET state='cancelled' WHERE director_run=? AND state!='ready_pr'",(op_id,))
         stop_ok = False
         if op["external_id"]:
             try:
@@ -216,10 +257,10 @@ class Bridge:
             if op["kind"] == "paperclip":
                 # Even a failed Paperclip cancellation cannot skip stopping Hermes.
                 with self.tx() as db: child = db.execute("SELECT id FROM operations WHERE kind='hermes' AND key=?",(op["external_id"],)).fetchone()
-                if child: stop_ok = self.cancel(child["id"])["status"] == "cancelled"
+                if child: stop_ok = self.cancel(child["id"])["status"] in {"cancelled","completed"}
                 # Without gateway binding, cancellation remains unconfirmed.
         with self.tx() as db:
-            if db.execute("SELECT 1 FROM jobs WHERE director_run=? AND publication_active=1",(op_id,)).fetchone(): stop_ok=False
+            publication_open = bool(db.execute("SELECT 1 FROM jobs WHERE director_run=? AND publication_active=1",(op_id,)).fetchone())
             jobs = db.execute("SELECT external_id FROM jobs WHERE director_run=? AND external_id IS NOT NULL",(op_id,)).fetchall()
         for job in jobs:
             try:
@@ -229,8 +270,21 @@ class Bridge:
                     observed=self.openhands.call("GET","/api/conversations/"+quote(job["external_id"],safe=""))
                     if observed.get("execution_status") not in {"paused","stopped","finished","error"}: stop_ok=False
             except BridgeError: stop_ok = False
-        with self.tx() as db: db.execute("UPDATE operations SET state=?,stop_confirmed=?,updated=? WHERE id=?",("cancelled" if stop_ok else "cancelling",int(stop_ok),time.time(),op_id))
-        return {"run_id":op_id,"status":"cancelled" if stop_ok else "cancelling"}
+        with self.tx() as db:
+            ready = db.execute("""
+                SELECT 1 FROM jobs j JOIN operations d ON d.id=j.director_run
+                WHERE j.state='ready_pr' AND (d.id=? OR (?='paperclip' AND d.kind='hermes' AND d.key=?)) LIMIT 1
+            """,(op_id,op["kind"],op["external_id"])).fetchone()
+            if stop_ok and ready:
+                final_state="completed"
+            elif stop_ok and not publication_open:
+                final_state="cancelled"
+            else:
+                final_state="cancelling"
+            db.execute("UPDATE operations SET state=?,stop_confirmed=?,execution_stop_confirmed=?,updated=? WHERE id=?",(final_state,int(final_state in {"cancelled","completed"}),int(stop_ok),time.time(),op_id))
+        result={"run_id":op_id,"status":final_state}
+        if ready:result["reason"]="ready_pr_exists"
+        return result
     def paperclip_events(self, op_id):
         op = self.get(op_id)
         if op["kind"] != "paperclip" or not op["external_id"]: raise BridgeError(409,"Paperclip identity unavailable")
@@ -250,14 +304,15 @@ class Bridge:
         if set(payload) != {"job_id","run_id","generation","template"}: raise BridgeError(400,"invalid job fields")
         job_id = payload["job_id"]
         if not isinstance(job_id,str) or not JOB_ID.fullmatch(job_id) or payload["template"] not in templates: raise BridgeError(400,"unknown job template")
+        fingerprint=template_fingerprint(payload["template"],templates[payload["template"]])
         with self.tx() as db:
             op = db.execute("SELECT state,generation FROM operations WHERE id=? AND kind='hermes'",(payload["run_id"],)).fetchone()
             if not op or op["state"] != "running" or op["generation"] != payload["generation"]: raise BridgeError(409,"Director attempt no longer owns the lease")
             if db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0] == "true": raise BridgeError(409,"dispatch paused")
             old = db.execute("SELECT * FROM jobs WHERE id=?",(job_id,)).fetchone()
             if old:
-                if (old["director_run"],old["generation"],old["template"]) != (payload["run_id"],payload["generation"],payload["template"]): raise BridgeError(409,"job key conflict")
-            else: db.execute("INSERT INTO jobs (id,director_run,generation,template) VALUES (?,?,?,?)",(job_id,payload["run_id"],payload["generation"],payload["template"]))
+                if (old["director_run"],old["generation"],old["template"],old["template_fingerprint"]) != (payload["run_id"],payload["generation"],payload["template"],fingerprint): raise BridgeError(409,"job key conflict")
+            else: db.execute("INSERT INTO jobs (id,director_run,generation,template,template_fingerprint) VALUES (?,?,?,?,?)",(job_id,payload["run_id"],payload["generation"],payload["template"],fingerprint))
         return {"job_id":job_id,"state":old["state"] if old else "queued"}
     def job(self, job_id):
         with self.tx() as db:
@@ -347,7 +402,7 @@ class Bridge:
             with self.tx() as db: db.execute("UPDATE jobs SET state='ready_pr',pr_url=?,publication_active=0 WHERE id=?",(url,job_id))
             return {"state":"ready_pr","pr_url":url}
     def begin_publication(self, job_id, report):
-        with self.guard:
+        with self.publication_gate,self.guard:
             job=self.fence(job_id)
             if job["publication_active"]: raise BridgeError(409,"publication already admitted; reconcile its receipt")
             if job["state"]!="dispatching": raise BridgeError(409,"job not awaiting verification")
@@ -356,23 +411,33 @@ class Bridge:
             if report.get("producer")!="harper" or set(report.get("checks",{}))!={"verify","build","review"} or any(v!={"sha":sha,"status":"pass","skipped":0} for v in report["checks"].values()): raise BridgeError(409,"independent exact-SHA checks required")
             permit=str(uuid.uuid4())
             with self.tx() as db: db.execute("UPDATE jobs SET state='publishing',candidate_sha=?,verification=?,publication_permit=?,publication_active=1,push_outcome='not_started',push_process_stopped=0 WHERE id=?",(sha,json.dumps(report),permit,job_id))
-            return {"permit":permit,"generation":job["generation"],"sha":sha}
+            return {"permit":permit,"generation":job["generation"],"sha":sha,"staging_ref":publication_staging_ref(job_id,permit)}
     def publication_job(self, job_id, permit):
         job=self.job(job_id)
         if not isinstance(permit,str) or not hmac.compare_digest(job["publication_permit"] or "",permit):raise BridgeError(403,"invalid publication permit")
         if not job["publication_active"]:raise BridgeError(409,"publication permit closed")
         return job
-    def start_push(self, job_id, payload):
-        with self.guard:
-            job=self.publication_job(job_id,payload.get("permit"))
+    def publication_window(self, job_id, permit, action):
+        """Run one publication mutation at the current durable generation."""
+        with self.publication_gate:
+            job=self.publication_job(job_id,permit)
+            with self.cancel_request_guard: cancelled=job["director_run"] in self.cancel_requests
+            if cancelled: raise BridgeError(409,"publication permit revoked",False,True)
             self.fence(job_id)
+            job=self.publication_job(job_id,permit)
+            with self.cancel_request_guard: cancelled=job["director_run"] in self.cancel_requests
+            if cancelled: raise BridgeError(409,"publication permit revoked",False,True)
+            return action(job)
+    def start_push(self, job_id, payload):
+        def start(job):
             publisher_id=payload.get("publisher_id")
             if not isinstance(publisher_id,str) or not SAFE_ID.fullmatch(publisher_id):raise BridgeError(400,"publisher identity required")
             if job["push_outcome"]!="not_started":raise BridgeError(409,"push already started; recover receipt instead")
             with self.tx() as db:db.execute("UPDATE jobs SET push_outcome='running',push_publisher_id=?,push_process_stopped=0 WHERE id=?",(publisher_id,job_id))
             return {"started":True}
+        return self.publication_window(job_id,payload.get("permit"),start)
     def record_push(self, job_id, payload):
-        with self.guard:
+        with self.publication_gate,self.guard:
             job=self.publication_job(job_id,payload.get("permit"))
             if not isinstance(payload.get("publisher_id"),str) or payload.get("publisher_id")!=job["push_publisher_id"]:raise BridgeError(403,"publisher identity mismatch")
             if payload.get("outcome") not in {"succeeded","failed","unknown"} or payload.get("process_stopped") is not True or not isinstance(payload.get("evidence_ref"),str) or not payload["evidence_ref"]:raise BridgeError(400,"stopped publisher receipt required")
@@ -383,7 +448,7 @@ class Bridge:
             return {"outcome":payload["outcome"],"process_stopped":True}
     def settle_publication(self, job_id, evidence_ref):
         # Operator-only settlement observes destinations; it creates/deletes nothing.
-        with self.guard:
+        with self.publication_gate:
             job=self.job(job_id)
             if not job["publication_active"] or not job["candidate_sha"]:raise BridgeError(409,"no active publication to settle")
             if job["push_outcome"]!="not_started" and not job["push_process_stopped"]:raise BridgeError(409,"publisher may still run; obtain stopped receipt from Harper")
@@ -391,29 +456,79 @@ class Bridge:
             if not self.publisher or not hasattr(self.publisher,"inspect"):raise BridgeError(503,"destination inspector unavailable")
             observed=self.publisher.inspect(job_id,job["candidate_sha"])
             settlement={"at":time.time(),"evidence_ref":evidence_ref,"push_outcome":job["push_outcome"],"destination":observed}
+            current=self.job(job_id)
+            if not current["publication_active"] or current["publication_permit"]!=job["publication_permit"]:raise BridgeError(409,"publication changed during settlement")
             with self.tx() as db:db.execute("UPDATE jobs SET state='settled',publication_active=0,publication_settlement=? WHERE id=?",(json.dumps(settlement),job_id))
             return {"state":"settled","destination":observed,"created_pr":False,"deleted_ref":False}
     def finish_publication(self, job_id, permit):
-        with self.guard:
+        with self.publication_finish_gate:
             job=self.job(job_id)
             if not isinstance(permit,str) or not hmac.compare_digest(job["publication_permit"] or "",permit): raise BridgeError(403,"invalid publication permit")
             if job["state"]=="ready_pr": return {"state":"ready_pr","pr_url":job["pr_url"]}
             if not job["publication_active"]: raise BridgeError(409,"publication permit closed")
             if job["push_outcome"]!="succeeded" or not job["push_process_stopped"]:raise BridgeError(409,"successful stopped push receipt required")
-            try: self.fence(job_id)
-            except BridgeError as exc:
-                if exc.status!=409 or not exc.revoked: raise
-                # The admitted push has returned, and this generation was revoked.
-                # No new PR request can now be issued by this attempt.
-                with self.tx() as db: db.execute("UPDATE jobs SET state='cancelled',publication_active=0 WHERE id=?",(job_id,))
-                return {"state":"cancelled","pr_url":None}
             if not self.publisher: raise BridgeError(503,"publisher not configured")
-            try: url=self.publisher(job_id,job["candidate_sha"])
+            url=None
+            try:
+                job=self.publication_window(job_id,permit,lambda current:current)
+                if hasattr(self.publisher,"prepare"):
+                    self.publisher.prepare(
+                        job_id,job["candidate_sha"],publication_staging_ref(job_id,permit),
+                        lambda mutation:self.publication_window(job_id,permit,lambda _job:mutation()),
+                    )
+                if hasattr(self.publisher,"lookup"):
+                    url=self.publisher.lookup(job_id,job["candidate_sha"])
+                else:
+                    url=None
+                if url is None and hasattr(self.publisher,"verify_final"):
+                    self.publisher.verify_final(job_id,job["candidate_sha"])
+                def create_and_commit(current):
+                    final_url=url if url is not None else (
+                        self.publisher.create(job_id,current["candidate_sha"])
+                        if hasattr(self.publisher,"create") else self.publisher(job_id,current["candidate_sha"])
+                    )
+                    try:
+                        if hasattr(self.publisher,"verify_final"):
+                            self.publisher.verify_final(job_id,current["candidate_sha"])
+                        if hasattr(self.publisher,"lookup"):
+                            confirmed=self.publisher.lookup(job_id,current["candidate_sha"])
+                            if confirmed!=final_url:raise BridgeError(502,"ready PR readback differs from creation receipt",True)
+                    except BridgeError:
+                        # A PR mutation may already exist. Any post-create
+                        # disagreement is an uncertain destination, never a
+                        # clean rejection that can be retried.
+                        raise BridgeError(502,"publication readback uncertain",True) from None
+                    with self.tx() as db:
+                        db.execute("UPDATE jobs SET state='ready_pr',pr_url=?,publication_active=0 WHERE id=?",(final_url,job_id))
+                    return {"state":"ready_pr","pr_url":final_url,"sha":current["candidate_sha"]}
+                return self.publication_window(job_id,permit,create_and_commit)
+            except BridgeError as exc:
+                if exc.status==409 and exc.revoked:
+                    if url is not None:
+                        # Read-only lookup proved the PR existed before this
+                        # cancelled attempt could issue another mutation. Keep
+                        # the external truth instead of claiming it was revoked.
+                        with self.publication_gate:
+                            if hasattr(self.publisher,"verify_final"):self.publisher.verify_final(job_id,job["candidate_sha"])
+                            confirmed=self.publisher.lookup(job_id,job["candidate_sha"])
+                            if confirmed!=url:raise BridgeError(502,"existing PR changed during cancellation",True)
+                            with self.tx() as db:
+                                db.execute("UPDATE jobs SET state='ready_pr',pr_url=?,publication_active=0 WHERE id=?",(url,job_id))
+                                director=db.execute("SELECT director_run FROM jobs WHERE id=?",(job_id,)).fetchone()[0]
+                                db.execute("UPDATE operations SET state='completed',stop_confirmed=1 WHERE id=? AND state='cancelling' AND execution_stop_confirmed=1",(director,))
+                                key=db.execute("SELECT key FROM operations WHERE id=?",(director,)).fetchone()[0]
+                                db.execute("UPDATE operations SET state='completed',stop_confirmed=1 WHERE kind='paperclip' AND external_id=? AND state='cancelling' AND execution_stop_confirmed=1",(key,))
+                        return {"state":"ready_pr","pr_url":url,"sha":job["candidate_sha"]}
+                    # The admitted push has returned, and this generation was revoked.
+                    # No new PR request can now be issued by this attempt.
+                    with self.tx() as db: db.execute("UPDATE jobs SET state='cancelled',publication_active=0 WHERE id=? AND state!='ready_pr'",(job_id,))
+                    return {"state":"cancelled","pr_url":None}
+                if not exc.uncertain:raise
+                with self.tx() as db: db.execute("UPDATE jobs SET state='unknown' WHERE id=?",(job_id,))
+                raise BridgeError(502,"publication receipt uncertain; active permit requires reconciliation") from None
             except Exception:
                 with self.tx() as db: db.execute("UPDATE jobs SET state='unknown' WHERE id=?",(job_id,))
                 raise BridgeError(502,"publication receipt uncertain; active permit requires reconciliation") from None
-            with self.tx() as db: db.execute("UPDATE jobs SET state='ready_pr',pr_url=?,publication_active=0 WHERE id=?",(url,job_id))
-            return {"state":"ready_pr","pr_url":url,"sha":job["candidate_sha"]}
 
 class GitHubPublisher:
     def __init__(self, client, repository, base="main"):
@@ -446,6 +561,37 @@ class GitHubPublisher:
         url=pr.get("html_url","")
         if not url.startswith("https://github.com/"+self.repository+"/pull/"): raise BridgeError(502,"invalid PR receipt")
         return url
+    def verify_final(self, job_id, sha):
+        branch="feat/loop-"+job_id
+        ref=self.client.call("GET",f"/repos/{self.repository}/git/ref/heads/{quote(branch,safe='/')}")
+        if ref.get("object",{}).get("sha")!=sha:raise BridgeError(409,"remote branch differs from verified SHA")
+        return True
+    def create(self, job_id, sha):
+        branch="feat/loop-"+job_id
+        pr=self.client.call("POST",f"/repos/{self.repository}/pulls",{"title":"LOOP: verified candidate "+job_id,"head":branch,"base":self.base,"body":"Candidate `"+sha+"` passed independent Harper verify, build and review. Stop at ready PR; merge and deployment require Mike.","draft":False})
+        if pr.get("head",{}).get("sha")!=sha or pr.get("base",{}).get("ref")!=self.base:raise BridgeError(502,"created PR differs from verified candidate",True)
+        url=pr.get("html_url","")
+        if not url.startswith("https://github.com/"+self.repository+"/pull/"): raise BridgeError(502,"invalid PR receipt")
+        return url
+    def prepare(self, job_id, sha, staging_ref, mutate):
+        expected_prefix=f"refs/heads/loop-staging/{job_id}/"
+        if not isinstance(staging_ref,str) or not staging_ref.startswith(expected_prefix) or not re.fullmatch(r"[0-9a-f]{64}",staging_ref.removeprefix(expected_prefix)):raise BridgeError(400,"invalid publication staging ref")
+        staging_branch=staging_ref.removeprefix("refs/heads/")
+        try: staging=self.client.call("GET",f"/repos/{self.repository}/git/ref/heads/{quote(staging_branch,safe='/')}")
+        except BridgeError as exc:
+            if exc.status==404 and not exc.uncertain:raise BridgeError(409,"verified staging ref is absent") from None
+            raise
+        if staging.get("object",{}).get("sha")!=sha:raise BridgeError(409,"staging ref differs from verified SHA")
+        branch="feat/loop-"+job_id
+        try: final=self.client.call("GET",f"/repos/{self.repository}/git/ref/heads/{quote(branch,safe='/')}")
+        except BridgeError as exc:
+            if exc.status!=404 or exc.uncertain:raise
+            final=mutate(lambda:self.client.call("POST",f"/repos/{self.repository}/git/refs",{"ref":"refs/heads/"+branch,"sha":sha}))
+        else:
+            if final.get("object",{}).get("sha")!=sha:
+                final=mutate(lambda:self.client.call("PATCH",f"/repos/{self.repository}/git/refs/heads/{quote(branch,safe='/')}",{"sha":sha,"force":False}))
+        if final.get("object",{}).get("sha")!=sha:raise BridgeError(502,"final ref update was not confirmed")
+        return {"branch":branch,"sha":sha}
     def __call__(self, job_id, sha):
         branch="feat/loop-"+job_id
         ref=self.client.call("GET",f"/repos/{self.repository}/git/ref/heads/{branch}")
@@ -455,7 +601,7 @@ class GitHubPublisher:
             pr=existing[0]
             if pr.get("head",{}).get("sha")!=sha or pr.get("base",{}).get("ref")!=self.base: raise BridgeError(409,"existing PR differs")
         else:
-            pr=self.client.call("POST",f"/repos/{self.repository}/pulls",{"title":"LOOP: verified candidate "+job_id,"head":branch,"base":self.base,"body":"Candidate `"+sha+"` passed independent Harper verify, build and review. Stop at ready PR; merge and deployment require Mike.","draft":False})
+            return self.create(job_id,sha)
         url=pr.get("html_url","")
         if not url.startswith("https://github.com/"+self.repository+"/pull/"): raise BridgeError(502,"invalid PR receipt")
         return url

@@ -1,12 +1,14 @@
 import json
 import sys
+import threading
 from pathlib import Path
+from urllib.parse import unquote
 import pytest
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 from tools.loop.bridge import Bridge,BridgeError,GitHubPublisher
 from tools.loop.publication import recover_push,write_journal
 from tools.loop.runner import DeliveryRunner
-from tools.tests.test_loop_bridge import setup,run,job
+from tools.tests.test_loop_bridge import TEMPLATE,setup,run,job
 from tools.tests.test_loop_runner import Client
 
 class GitHub:
@@ -18,6 +20,60 @@ class GitHub:
             if self.state=="absent":raise BridgeError(404,"missing",False)
             return {"object":{"sha":("b" if self.state=="different" else "a")*40}}
         return [{"head":{"sha":"a"*40},"base":{"ref":"main"},"html_url":"https://github.com/fixture/repo/pull/1","state":"open","merged_at":None}] if self.pr else []
+
+class MaterializingGitHub:
+    def __init__(self):self.refs={};self.prs=[];self.calls=[]
+    def call(self,method,path,payload=None):
+        self.calls.append((method,path,payload))
+        if method=="GET" and "/git/ref/" in path:
+            ref="refs/"+unquote(path.split("/git/ref/",1)[1])
+            if ref not in self.refs:raise BridgeError(404,"missing",False)
+            return {"ref":ref,"object":{"sha":self.refs[ref]}}
+        if method=="POST" and path.endswith("/git/refs"):
+            self.refs[payload["ref"]]=payload["sha"]
+            return {"ref":payload["ref"],"object":{"sha":payload["sha"]}}
+        if method=="PATCH" and "/git/refs/" in path:
+            ref="refs/"+unquote(path.split("/git/refs/",1)[1])
+            self.refs[ref]=payload["sha"]
+            return {"ref":ref,"object":{"sha":payload["sha"]}}
+        if method=="GET" and "/pulls?" in path:return list(self.prs)
+        if method=="POST" and path.endswith("/pulls"):
+            pr={"head":{"sha":self.refs["refs/heads/"+payload["head"]]},"base":{"ref":payload["base"]},"html_url":"https://github.com/fixture/repo/pull/7","state":"open","merged_at":None}
+            self.prs.append(pr);return pr
+        raise AssertionError((method,path,payload))
+
+class BlockingStagingGitHub(MaterializingGitHub):
+    def __init__(self):
+        super().__init__()
+        self.staging_read = threading.Event()
+        self.release_staging = threading.Event()
+    def call(self,method,path,payload=None):
+        if method=="GET" and "/git/ref/heads/loop-staging/" in path:
+            self.staging_read.set()
+            if not self.release_staging.wait(5):raise RuntimeError("test staging barrier timed out")
+        return super().call(method,path,payload)
+
+class BlockingPullLookupGitHub(MaterializingGitHub):
+    def __init__(self):
+        super().__init__();self.lookup_started=threading.Event();self.release_lookup=threading.Event()
+    def call(self,method,path,payload=None):
+        if method=="GET" and "/pulls?" in path:
+            self.lookup_started.set()
+            if not self.release_lookup.wait(5):raise RuntimeError("test pull lookup barrier timed out")
+        return super().call(method,path,payload)
+
+class MovingBranchGitHub(MaterializingGitHub):
+    def call(self,method,path,payload=None):
+        if method=="POST" and path.endswith("/pulls"):
+            self.refs["refs/heads/"+payload["head"]]="b"*40
+        return super().call(method,path,payload)
+
+class MovingAfterResponseGitHub(MaterializingGitHub):
+    def call(self,method,path,payload=None):
+        result=super().call(method,path,payload)
+        if method=="POST" and path.endswith("/pulls"):
+            self.refs["refs/heads/"+payload["head"]]="b"*40
+        return result
 
 def admitted(tmp_path,github=None):
     github=github or GitHub()
@@ -80,3 +136,169 @@ def test_real_failed_subprocess_is_journaled_before_recording_outcome(tmp_path):
     assert journal["state"]=="finished" and journal["child_pid"] is not None
     assert journal["receipt"]["returncode"]==7
     assert b.job("job-1")["push_process_stopped"]==1
+
+
+def test_bridge_materializes_final_ref_and_pr_only_from_exact_staging_sha(tmp_path):
+    github=MaterializingGitHub()
+    b,_,_,_,_,permit,_=admitted(tmp_path,github)
+    github.refs[permit["staging_ref"]]=permit["sha"]
+    b.start_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher"})
+    b.record_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher","outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":"fixture staging push"})
+    result=b.finish_publication("job-1",permit["permit"])
+    assert result["state"]=="ready_pr" and result["pr_url"].endswith("/7")
+    assert github.refs["refs/heads/feat/loop-job-1"]==permit["sha"]
+    assert any(method=="POST" and path.endswith("/git/refs") for method,path,_ in github.calls)
+    assert any(method=="POST" and path.endswith("/pulls") for method,path,_ in github.calls)
+
+
+def test_cancelled_staging_push_never_materializes_final_ref_or_pr(tmp_path):
+    github=MaterializingGitHub()
+    b,_,_,_,run_id,permit,_=admitted(tmp_path,github)
+    b.start_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher"})
+    assert b.cancel(run_id)["status"]=="cancelling"
+    github.refs[permit["staging_ref"]]=permit["sha"]
+    b.record_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher","outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":"fixture staging push"})
+    assert b.finish_publication("job-1",permit["permit"])["state"]=="cancelled"
+    assert "refs/heads/feat/loop-job-1" not in github.refs
+    assert github.prs==[]
+    assert github.calls==[]
+
+
+def test_cancel_during_staging_lookup_blocks_later_final_ref_and_pr(tmp_path):
+    github=BlockingStagingGitHub()
+    b,_,_,_,run_id,permit,_=admitted(tmp_path,github)
+    github.refs[permit["staging_ref"]]=permit["sha"]
+    b.start_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher"})
+    b.record_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher","outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":"fixture staging push"})
+    result={}
+    def finish():result.update(b.finish_publication("job-1",permit["permit"]))
+    thread=threading.Thread(target=finish)
+    thread.start()
+    assert github.staging_read.wait(2)
+    assert b.cancel(run_id)["status"]=="cancelling"
+    github.release_staging.set()
+    thread.join(5)
+    assert not thread.is_alive()
+    assert result=={"state":"cancelled","pr_url":None}
+    assert "refs/heads/feat/loop-job-1" not in github.refs
+    assert github.prs==[]
+    assert all(method=="GET" for method,_,_ in github.calls)
+
+
+def test_cancel_never_claims_to_revoke_an_existing_ready_pr(tmp_path):
+    github=MaterializingGitHub()
+    b,_,_,_,run_id,permit,_=admitted(tmp_path,github)
+    github.refs[permit["staging_ref"]]=permit["sha"]
+    b.start_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher"})
+    b.record_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher","outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":"fixture staging push"})
+    assert b.finish_publication("job-1",permit["permit"])["state"]=="ready_pr"
+    assert b.cancel(run_id)=={"run_id":run_id,"status":"completed","reason":"ready_pr_exists"}
+    assert b.job("job-1")["state"]=="ready_pr"
+
+
+def test_cancel_during_pr_lookup_blocks_later_pr_create(tmp_path):
+    github=BlockingPullLookupGitHub()
+    b,_,_,_,run_id,permit,_=admitted(tmp_path,github)
+    github.refs[permit["staging_ref"]]=permit["sha"]
+    github.refs["refs/heads/feat/loop-job-1"]=permit["sha"]
+    b.start_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher"})
+    b.record_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher","outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":"fixture staging push"})
+    result={}
+    thread=threading.Thread(target=lambda:result.update(b.finish_publication("job-1",permit["permit"])))
+    thread.start();assert github.lookup_started.wait(2)
+    assert b.cancel(run_id)["status"]=="cancelling"
+    github.release_lookup.set();thread.join(5)
+    assert result=={"state":"cancelled","pr_url":None}
+    assert github.prs==[]
+
+
+def test_cancel_during_lookup_preserves_an_exact_pr_that_already_exists(tmp_path):
+    github=BlockingPullLookupGitHub()
+    b,_,_,_,run_id,permit,_=admitted(tmp_path,github)
+    github.refs[permit["staging_ref"]]=permit["sha"]
+    github.refs["refs/heads/feat/loop-job-1"]=permit["sha"]
+    github.prs.append({"head":{"sha":permit["sha"]},"base":{"ref":"main"},"html_url":"https://github.com/fixture/repo/pull/7","state":"open","merged_at":None})
+    b.start_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher"})
+    b.record_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher","outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":"fixture staging push"})
+    result={}
+    thread=threading.Thread(target=lambda:result.update(b.finish_publication("job-1",permit["permit"])))
+    thread.start();assert github.lookup_started.wait(2)
+    assert b.cancel(run_id)["status"]=="cancelling"
+    github.release_lookup.set();thread.join(5)
+    assert result["state"]=="ready_pr"
+    assert b.job("job-1")["state"]=="ready_pr"
+    assert b.cancel(run_id)=={"run_id":run_id,"status":"completed","reason":"ready_pr_exists"}
+
+
+def test_settlement_serializes_against_finisher_and_late_push(tmp_path):
+    github=MaterializingGitHub()
+    b,_,_,_,_,permit,_=admitted(tmp_path,github)
+    github.refs[permit["staging_ref"]]=permit["sha"]
+    github.refs["refs/heads/feat/loop-job-1"]=permit["sha"]
+    result=b.settle_publication("job-1","operator confirmed no publisher ran")
+    assert result["state"]=="settled"
+    with pytest.raises(BridgeError,match="permit closed"):b.start_push("job-1",{"permit":permit["permit"],"publisher_id":"late"})
+    with pytest.raises(BridgeError,match="permit closed"):b.finish_publication("job-1",permit["permit"])
+    assert github.prs==[]
+
+
+def test_created_pr_must_report_the_exact_verified_head(tmp_path):
+    github=MovingBranchGitHub()
+    b,_,_,_,_,permit,_=admitted(tmp_path,github)
+    github.refs[permit["staging_ref"]]=permit["sha"]
+    b.start_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher"})
+    b.record_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher","outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":"fixture staging push"})
+    with pytest.raises(BridgeError,match="receipt uncertain"):b.finish_publication("job-1",permit["permit"])
+    assert b.job("job-1")["state"]=="unknown"
+    assert github.prs[0]["head"]["sha"]=="b"*40
+
+
+def test_created_pr_is_read_back_before_ready_state_is_recorded(tmp_path):
+    github=MovingAfterResponseGitHub()
+    b,_,_,_,_,permit,_=admitted(tmp_path,github)
+    github.refs[permit["staging_ref"]]=permit["sha"]
+    b.start_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher"})
+    b.record_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher","outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":"fixture staging push"})
+    with pytest.raises(BridgeError,match="receipt uncertain"):b.finish_publication("job-1",permit["permit"])
+    assert b.job("job-1")["state"]=="unknown"
+
+
+def test_cancel_after_ready_pr_stops_and_revokes_sibling_work(tmp_path):
+    github=MaterializingGitHub()
+    b,_,_,_,run_id,permit,_=admitted(tmp_path,github)
+    github.refs[permit["staging_ref"]]=permit["sha"]
+    b.start_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher"})
+    b.record_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher","outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":"fixture staging push"})
+    b.finish_publication("job-1",permit["permit"])
+    b.propose_job({"job_id":"job-2","run_id":run_id,"generation":1,"template":"fixture"},{"fixture":TEMPLATE})
+    b.claim_job("job-2")
+    report={"producer":"harper","sha":"c"*40,"checks":{name:{"sha":"c"*40,"status":"pass","skipped":0} for name in ["verify","build","review"]}}
+    second=b.begin_publication("job-2",report)
+    cancelled=b.cancel(run_id)
+    assert cancelled["status"] in {"cancelling","completed"}
+    assert cancelled["reason"]=="ready_pr_exists"
+    with pytest.raises(BridgeError):b.start_push("job-2",{"permit":second["permit"],"publisher_id":"publisher-2"})
+
+
+def test_wrong_staging_sha_never_changes_final_ref_or_creates_pr(tmp_path):
+    github=MaterializingGitHub()
+    b,_,_,_,_,permit,_=admitted(tmp_path,github)
+    github.refs[permit["staging_ref"]]="b"*40
+    b.start_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher"})
+    b.record_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher","outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":"fixture staging push"})
+    with pytest.raises(BridgeError,match="staging ref differs"):b.finish_publication("job-1",permit["permit"])
+    assert "refs/heads/feat/loop-job-1" not in github.refs
+    assert not any(method in {"POST","PATCH"} for method,_,_ in github.calls)
+    assert b.job("job-1")["state"]=="publishing"
+
+
+def test_bridge_updates_existing_final_ref_without_force_after_staging_check(tmp_path):
+    github=MaterializingGitHub()
+    b,_,_,_,_,permit,_=admitted(tmp_path,github)
+    github.refs[permit["staging_ref"]]=permit["sha"]
+    github.refs["refs/heads/feat/loop-job-1"]="b"*40
+    b.start_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher"})
+    b.record_push("job-1",{"permit":permit["permit"],"publisher_id":"publisher","outcome":"succeeded","process_stopped":True,"returncode":0,"evidence_ref":"fixture staging push"})
+    assert b.finish_publication("job-1",permit["permit"])["state"]=="ready_pr"
+    patches=[payload for method,path,payload in github.calls if method=="PATCH" and "/git/refs/" in path]
+    assert patches==[{"sha":permit["sha"],"force":False}]

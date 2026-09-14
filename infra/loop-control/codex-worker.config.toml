@@ -1,0 +1,29 @@
+default_permissions = "loop-worker"
+approval_policy = "never"
+
+[permissions.loop-worker]
+description = "LOOP workspace only; host reads and command network are denied."
+extends = ":workspace"
+
+[permissions.loop-worker.filesystem]
+glob_scan_max_depth = 8
+":root" = "deny"
+":minimal" = "read"
+"/opt/loop-openhands-agent/node_modules" = "read"
+":tmpdir" = "deny"
+":slash_tmp" = "deny"
+
+[permissions.loop-worker.filesystem.":workspace_roots"]
+"." = "write"
+"proxima-ai/.git" = "write"
+"**/.env" = "deny"
+"**/.env.*" = "deny"
+"**/*secret*" = "deny"
+"**/*token*" = "deny"
+
+[permissions.loop-worker.network]
+enabled = false
+
+[shell_environment_policy]
+inherit = "none"
+set = { PATH = "/usr/local/bin:/usr/bin:/bin", HOME = "/srv/loop-worker/workspaces", USER = "loop-oh-agent", LOGNAME = "loop-oh-agent", LANG = "C.UTF-8", LC_ALL = "C.UTF-8" }

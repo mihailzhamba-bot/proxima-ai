@@ -20,20 +20,23 @@ class Client:
         if path.endswith("/finish-publication"):return self.b.finish_publication(job,payload["permit"])
         return self.b.fence(job)
 
-def setup(tmp_path,fail_checks=False,changed="services/webapp/src/lib/rub.ts",cancel_before_publish=False):
+def setup(tmp_path,fail_checks=False,changed="services/webapp/src/lib/rub.ts",cancel_before_publish=False,cancel_after_start_push=False):
     published=[];remote=Remote();b=Bridge(tmp_path/"bridge.sqlite",remote,remote,"director",publisher=lambda job,sha:published.append(sha) or "https://github.com/fixture/repo/pull/1")
+    sha="a"*40;base="b"*40;template={"base_sha":base,"allowed_paths":["services/webapp/src/lib/"],"profile":"fedor","profile_id":"11111111-1111-4111-8111-111111111111","profile_revision":3}
     r=b.create("hermes","pc-run",{"input":"task","instructions":"scope","session_id":"session"})["run_id"]
-    b.propose_job({"job_id":"job-1","run_id":r,"generation":1,"template":"fixture"},{"fixture":{}})
-    sha="a"*40;base="b"*40
-    config={"trusted_home":str(tmp_path),"worker_identity_file":"/fixture/key","worker_host":"worker","worker_python":"python3","worker_dispatcher":"/opt/loop/worker_dispatch.py","worker_config":"/etc/loop/templates.json","worker_source":"/srv/loop/source","work_root":str(tmp_path),"source_repo":"/fixture/source","fixture_root":"/fixture/data","evidence_root":str(tmp_path/"evidence"),"verification_image":"fixture/verify@sha256:"+"1"*64,"reviewer_command":["/opt/reviewer"],"publish_remote":"git@fixture:repo","templates":{"fixture":{"base_sha":base,"allowed_paths":["services/webapp/src/lib/"]}}}
+    b.propose_job({"job_id":"job-1","run_id":r,"generation":1,"template":"fixture"},{"fixture":template})
+    bundle_bytes=b"fixture candidate bundle";bundle_sha=__import__("hashlib").sha256(bundle_bytes).hexdigest()
+    config={"trusted_home":str(tmp_path),"worker_identity_file":"/fixture/key","github_publish_identity_file":"/fixture/github-key","known_hosts_file":"/fixture/known-hosts","worker_host":"worker","worker_python":"python3","worker_dispatcher":"/opt/loop/worker_dispatch.py","worker_fetcher":"/opt/loop/worker_fetch","worker_config":"/etc/loop/templates.json","worker_source":"/srv/loop/source","work_root":str(tmp_path),"source_repo":"/fixture/source","fixture_root":"/fixture/data","evidence_root":str(tmp_path/"evidence"),"verification_image":"fixture/verify@sha256:"+"1"*64,"reviewer_command":["/opt/reviewer"],"publish_remote":"git@fixture:repo","templates":{"fixture":template}}
     calls=[]
     def execute(argv,cwd=None):
         calls.append(argv)
-        if argv[0]=="ssh":return json.dumps({"ok":True,"head_sha":sha,"base_sha":base,"conversation_id":b.job("job-1")["external_id"],"branch":"feat/loop-job-1","worker_says":"PASS"})
+        if argv[0]=="ssh":return json.dumps({"ok":True,"template":"fixture","template_fingerprint":b.job("job-1")["template_fingerprint"],"head_sha":sha,"base_sha":base,"conversation_id":b.job("job-1")["external_id"],"branch":"feat/loop-job-1","bundle_sha256":bundle_sha,"worker_says":"PASS"})
         if "clone" in argv:
             checkout=Path(argv[-1]);(checkout/"services/webapp").mkdir(parents=True);(checkout/"services/webapp/next-env.d.ts").write_text("fixture declaration")
         if "rev-parse" in argv:return sha+"\n"
         if "--name-only" in argv:return changed+"\n"
+        if len(argv)>2 and str(argv[2]).endswith("history_gate.py"):
+            return json.dumps({"status":"pass","base_sha":base,"head_sha":sha,"commits":1,"changed_paths":1,"scanned_blobs":1,"objects":3})
         if argv[0]=="docker":
             assert "--network" in argv and argv[argv.index("--network")+1]=="none"
             assert not any("docker.sock" in value for value in argv)
@@ -43,8 +46,12 @@ def setup(tmp_path,fail_checks=False,changed="services/webapp/src/lib/rub.ts",ca
             if cancel_before_publish:
                 with b.tx() as db:db.execute("UPDATE operations SET generation=2,state='cancelled' WHERE id=?",(r,))
             return json.dumps({"sha":sha,"status":"pass","skipped":0})
+        if argv[0]=="git" and "push" in argv and cancel_after_start_push:
+            b.cancel(r)
         return ""
-    return DeliveryRunner(config,Client(b),execute,identity_reader=lambda pid:"fixture-process"),b,calls,published
+    def fetch(argv,destination):
+        calls.append(argv);Path(destination).write_bytes(bundle_bytes)
+    return DeliveryRunner(config,Client(b),execute,identity_reader=lambda pid:"fixture-process",fetch_execute=fetch),b,calls,published
 
 def test_same_delivery_path_reaches_ready_pr_after_real_runner_receipts(tmp_path):
     runner,b,calls,published=setup(tmp_path)
@@ -52,6 +59,8 @@ def test_same_delivery_path_reaches_ready_pr_after_real_runner_receipts(tmp_path
     assert len(published)==1
     assert any(c[0]=="docker" for c in calls)
     assert any(c[0]=="/opt/reviewer" for c in calls)
+    assert any(c[0]=="ssh" and "/opt/loop/worker_fetch" in c[-1] for c in calls)
+    assert not any(c[0]=="scp" for c in calls)
     assert any("push" in c for c in calls)
     with pytest.raises(BridgeError):runner.run("job-1")
 
@@ -64,6 +73,20 @@ def test_cancelled_old_attempt_cannot_publish_late_success(tmp_path):
     runner,b,calls,published=setup(tmp_path,cancel_before_publish=True)
     with pytest.raises(BridgeError):runner.run("job-1")
     assert published==[];assert not any("push" in c for c in calls)
+
+def test_cancel_after_start_push_can_only_write_staging_ref(tmp_path):
+    runner,b,calls,published=setup(tmp_path,cancel_after_start_push=True)
+    assert runner.run("job-1")["state"]=="cancelled"
+    pushes=[args for args in calls if args[0]=="git" and "push" in args]
+    assert len(pushes)==1
+    source,destination=pushes[0][-1].split(":",1)
+    assert source=="refs/heads/feat/loop-job-1"
+    assert destination.startswith("refs/heads/loop-staging/job-1/")
+    assert len(destination.rsplit("/",1)[-1])==64
+    assert b.job("job-1")["publication_permit"] not in destination
+    assert destination!="refs/heads/feat/loop-job-1"
+    assert published==[]
+    assert b.job("job-1")["state"]=="cancelled"
 
 def test_candidate_cannot_rewrite_its_own_verifier(tmp_path):
     runner,b,calls,published=setup(tmp_path,changed="Makefile")

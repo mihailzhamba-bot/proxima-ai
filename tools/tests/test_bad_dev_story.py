@@ -8,19 +8,43 @@ sudo, without the OpenHands server and without touching /srv.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 import json
+import hashlib
 import os
+import shlex
 import shutil
 import subprocess
+import sys
+import threading
+import uuid
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "orchestrator" / "bad_dev_story.sh"
+WORKER_DISPATCH = ROOT / "tools" / "loop" / "worker_dispatch.py"
 COMMIT = "git -c user.email=w@w -c user.name=w commit -qm"
+PROFILE_ID = "11111111-1111-4111-8111-111111111111"
+PROFILE_REVISION = 3
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git required")
+
+
+@contextmanager
+def profile_server(*,revision: int = PROFILE_REVISION):
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path!="/api/agent-profiles/loop-codex" or self.headers.get("X-Session-API-Key")!="k"*48:
+                self.send_response(404);self.end_headers();return
+            raw=json.dumps({"name":"loop-codex","profile":{"id":PROFILE_ID,"revision":revision,"acp_command":"/opt/loop-openhands-agent/bin/codex-acp","acp_args":[],"acp_model":"gpt-5.6-sol","acp_session_mode":"agent","acp_startup_timeout":90.0,"acp_prompt_timeout":1800.0,"mcp_server_refs":[]}}).encode()
+            self.send_response(200);self.send_header("Content-Type","application/json");self.send_header("Content-Length",str(len(raw)));self.end_headers();self.wfile.write(raw)
+        def log_message(self,*_args):pass
+    server=ThreadingHTTPServer(("127.0.0.1",18002),Handler);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+    try:yield
+    finally:server.shutdown();server.server_close();thread.join(timeout=2)
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -56,11 +80,32 @@ while [ $# -gt 0 ]; do
     *) break ;;
   esac
 done
+if [ "$1" = "install" ]; then
+  shift
+  args=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -o|-g) shift 2 ;;
+      *) args+=("$1"); shift ;;
+    esac
+  done
+  exec install "${args[@]}"
+fi
+if [ "$1" = "chown" ]; then
+  exit 0
+fi
 exec "$@"
 """
 
 
-def run_bridge(sandbox: dict, run_id: str, simulate: str, *extra: str, privileged: bool = False) -> dict:
+def run_bridge(
+    sandbox: dict,
+    run_id: str,
+    simulate: str,
+    *extra: str,
+    privileged: bool = False,
+    env_overrides: dict[str, str] | None = None,
+) -> dict:
     env = dict(os.environ)
     if privileged:
         # exercise the real elevation code path, including its quoting
@@ -75,6 +120,7 @@ def run_bridge(sandbox: dict, run_id: str, simulate: str, *extra: str, privilege
         WORKSPACE_ROOT=str(sandbox["root"] / "ws"),
         REPO_ROOT=str(sandbox["source"]),
     )
+    env.update(env_overrides or {})
     result = subprocess.run(
         [
             str(SCRIPT),
@@ -97,15 +143,170 @@ def run_bridge(sandbox: dict, run_id: str, simulate: str, *extra: str, privilege
     return payload
 
 
+FAKE_CURL = r"""#!/usr/bin/env python3
+import json
+import os
+import sys
+from urllib.parse import urlsplit
+
+method = sys.argv[sys.argv.index("-X") + 1]
+request = urlsplit(sys.argv[-1])
+path = request.path
+body = {}
+if "-d" in sys.argv:
+    value=sys.argv[sys.argv.index("-d")+1]
+    if value.startswith("@"):
+        body=json.load(open(value[1:],encoding="utf-8"))
+if method == "GET" and path == "/api/conversations/count":
+    print("0")
+elif method == "POST" and path == "/api/conversations":
+    revision=int(os.environ.get("FAKE_LAUNCHED_REVISION",os.environ["BRIDGE_PROFILE_REVISION"]))
+    print(json.dumps({"id":body["conversation_id"],"launched_agent_profile":{"agent_profile_id":body["agent_profile_id"],"revision":revision}}))
+elif method == "POST" and path.endswith("/events"):
+    print(json.dumps({"success":True}))
+elif method == "GET" and path == "/api/conversations":
+    print(json.dumps([{"execution_status": "error"}]))
+elif method == "GET" and path.endswith("/agent_final_response"):
+    print(json.dumps({"response": ""}))
+elif method == "GET" and path.endswith("/events"):
+    print("[]")
+elif method == "GET" and path.startswith("/api/conversations/"):
+    print(json.dumps({"persistence_dir": os.environ["FAKE_PERSISTENCE_DIR"]}))
+else:
+    print("{}")
+"""
+
+
+def conversation_id(run_id: str, attempt: int = 1) -> str:
+    namespace = uuid.uuid5(uuid.NAMESPACE_URL, "https://proxima.local/bad-dev-story")
+    return str(uuid.uuid5(namespace, f"{run_id}/{attempt}"))
+
+
+def run_api_error(
+    sandbox: dict,
+    run_id: str,
+    persistence_dir: Path | str,
+    persistence_root: Path,
+    launched_revision: int | None = None,
+) -> dict:
+    fake_bin = sandbox["root"] / "fake-bin"
+    fake_bin.mkdir()
+    for name, content in {
+        "curl": FAKE_CURL,
+        "conductor": "#!/bin/bash\nprintf '{\"workers\":[]}\\n'\n",
+        "sleep": "#!/bin/bash\nexit 0\n",
+    }.items():
+        executable = fake_bin / name
+        executable.write_text(content, encoding="utf-8")
+        executable.chmod(0o755)
+    key_file = sandbox["root"] / "openhands-loop.env"
+    key_file.write_text("LOCAL_BACKEND_API_KEY=fixture-only\n", encoding="utf-8")
+    key_file.chmod(0o600)
+    env = dict(os.environ)
+    env.update(
+        BRIDGE_SUDO="",
+        BRIDGE_AGENT_USER="",
+        WORKSPACE_ROOT=str(sandbox["root"] / "api-ws"),
+        REPO_ROOT=str(sandbox["source"]),
+        OH_BASE="http://fixture.invalid",
+        OH_KEY_FILE=str(key_file),
+        OPENHANDS_PERSISTENCE_ROOT=str(persistence_root),
+        FAKE_PERSISTENCE_DIR=str(persistence_dir),
+        BRIDGE_PROFILE_REVISION=str(PROFILE_REVISION),
+        PATH=f"{fake_bin}:{env['PATH']}",
+    )
+    if launched_revision is not None:env["FAKE_LAUNCHED_REVISION"]=str(launched_revision)
+    result = subprocess.run(
+        [
+            str(SCRIPT),
+            "--run-id",
+            run_id,
+            "--branch",
+            "feat/smoke",
+            "--base-ref",
+            "feat/base-line",
+            "--prompt-file",
+            str(sandbox["prompt"]),
+            "--source-dir",
+            str(sandbox["source"]),
+            "--contract-file",
+            "AGENTS.md",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.stdout.strip(), result.stderr
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
 def test_happy_path_fetches_commits(sandbox: dict) -> None:
     payload = run_bridge(
         sandbox, "ok-run", f"echo hi > NEW.md && git add NEW.md && {COMMIT} 'feat: add NEW.md'"
     )
-    assert payload["exit_code"] == 0
+    assert payload["exit_code"] == 0, payload["problem"]
     assert payload["commits"] == 1
     assert payload["local_ref"] == "refs/openhands/ok-run/1/head"
     assert all(value in {"pass", "simulated"} for value in payload["gates"].values())
     assert git(sandbox["source"], "rev-parse", payload["local_ref"]) == payload["head_sha"]
+
+
+def test_approved_repo_cannot_shadow_privileged_python_stdlib(sandbox: dict) -> None:
+    marker=sandbox["root"]/"python-shadow-owned"
+    (sandbox["source"]/"json.py").write_text(f"from pathlib import Path\nPath({str(marker)!r}).touch()\nraise RuntimeError('shadow executed')\n",encoding="utf-8")
+    payload=run_bridge(sandbox,"isolated-python",f"echo ok > SAFE.md && git add SAFE.md && {COMMIT} 'test: isolated python'")
+    assert payload["exit_code"]==0,payload["problem"]
+    assert not marker.exists()
+
+
+def test_emit_treats_shell_and_python_syntax_as_workspace_data(sandbox: dict) -> None:
+    marker = sandbox["root"] / "emit-shell-owned"
+    hostile_root = sandbox["root"] / (
+        f'ws"$(touch {marker})__import__("pathlib").Path("owned").touch()'
+    )
+    payload = run_bridge(
+        sandbox,
+        "emit-data",
+        f"echo hi > NEW.md && git add NEW.md && {COMMIT} 'feat: data transport'",
+        env_overrides={"WORKSPACE_ROOT": str(hostile_root)},
+    )
+    expected = hostile_root / conversation_id("emit-data").replace("-", "")
+    assert payload["workspace"] == str(expected)
+    assert payload["exit_code"] == 0, payload["problem"]
+    assert not marker.exists()
+
+
+def test_api_persistence_path_cannot_inject_a_shell_command(sandbox: dict) -> None:
+    persistence_root = sandbox["root"] / "persistence"
+    persistence_root.mkdir()
+    marker = sandbox["root"] / "persistence-shell-owned"
+    hostile_path = f"{sandbox['root']}/outside'; touch {marker}; #"
+    payload = run_api_error(sandbox, "api-inject", hostile_path, persistence_root)
+    assert payload["exit_code"] == 4
+    assert not marker.exists()
+
+
+def test_conversation_profile_revision_is_verified_before_run(sandbox: dict) -> None:
+    persistence_root=sandbox["root"]/"profile-race-persistence";persistence_root.mkdir()
+    payload=run_api_error(sandbox,"profile-race",persistence_root,persistence_root,PROFILE_REVISION+1)
+    assert payload["exit_code"]!=0 and "Agent Profile differs" in payload["problem"]
+
+
+def test_trusted_persisted_error_is_read_as_data(sandbox: dict) -> None:
+    run_id = "api-event"
+    persistence_root = sandbox["root"] / "persistence"
+    event_dir = persistence_root / conversation_id(run_id) / "events"
+    event_dir.mkdir(parents=True)
+    marker = sandbox["root"] / "event-python-owned"
+    detail = f'quote " and newline\n__import__("pathlib").Path("{marker}").touch()'
+    (event_dir / "001.json").write_text(
+        json.dumps({"kind": "ErrorEvent", "code": "E_TEST", "detail": detail}),
+        encoding="utf-8",
+    )
+    payload = run_api_error(sandbox, run_id, event_dir.parent, persistence_root)
+    assert payload["exit_code"] == 4
+    assert "E_TEST: quote \" and newline" in payload["problem"]
+    assert not marker.exists()
 
 
 def test_sandbox_has_no_remote(sandbox: dict) -> None:
@@ -237,3 +438,212 @@ def test_contract_gate_passes_through_the_privileged_path(sandbox: dict) -> None
     assert payload["gates"]["contract_files"] == "pass", payload["problem"]
     assert payload["exit_code"] == 0
     assert payload["commits"] == 1
+
+
+def test_seed_bundle_excludes_unrelated_refs_and_objects(sandbox: dict) -> None:
+    source=sandbox["source"]
+    base=git(source,"rev-parse","HEAD")
+    original=git(source,"rev-parse","--abbrev-ref","HEAD")
+    git(source,"checkout","-qb","unrelated-secret")
+    (source/"SIDE.txt").write_text("ghp_"+"Z"*36+"\n",encoding="utf-8")
+    git(source,"add","SIDE.txt");git(source,"commit","-qm","side only")
+    side=git(source,"rev-parse","HEAD")
+    git(source,"checkout","-q",original)
+    assert git(source,"rev-parse","HEAD")==base
+    payload=run_bridge(sandbox,"scoped-seed",f"echo hi > NEW.md && git add NEW.md && {COMMIT} 'feat: scoped seed'","--keep-workspace")
+    assert payload["exit_code"]==0,payload["problem"]
+    probe=subprocess.run(["git","-C",payload["workspace"]+"/proxima-ai","cat-file","-e",side],capture_output=True)
+    assert probe.returncode!=0
+
+
+def test_external_collect_never_runs_git_after_model_terminal(sandbox: dict) -> None:
+    marker=sandbox["root"]/"runner-secret-context-executed"
+    command=(
+        f"echo hi > NEW.md && git add NEW.md && {COMMIT} 'feat: external collect' && "
+        f"git config core.fsmonitor 'touch {marker}'"
+    )
+    payload=run_bridge(sandbox,"external-collect",command,"--external-collect","--keep-workspace")
+    assert payload["exit_code"]==0,payload["problem"]
+    assert payload["gates"]["ancestry"]=="deferred-to-harper"
+    assert not marker.exists()
+
+
+def worker_dispatch_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
+    source = tmp_path / "worker-source"
+    script = source / "tools" / "orchestrator" / "bad_dev_story.sh"
+    script.parent.mkdir(parents=True)
+    (source / ".git").mkdir()
+    capture = tmp_path / "child-env.txt"
+    arguments = tmp_path / "child-arguments.txt"
+    script.write_text(
+        "#!/bin/bash\n"
+        f"/usr/bin/env > {shlex.quote(str(capture))}\n"
+        f"printf '%s\\n' \"$@\" > {shlex.quote(str(arguments))}\n",
+        encoding="utf-8",
+    )
+
+    runtime_home = tmp_path / "runtime-home"
+    workspace_root = tmp_path / "model-workspaces"
+    workspace_root.mkdir(parents=True)
+    os.chown(workspace_root,-1,os.getegid())
+    workspace_root.chmod(0o2770)
+    runtime_home.mkdir()
+    run_root = tmp_path / "runner-state"
+    run_root.mkdir()
+    (run_root/"tmp").mkdir()
+    persistence = tmp_path / "persistence"
+    persistence.mkdir()
+    key_file = tmp_path / "loop-openhands.env"
+    key_file.write_text("LOCAL_BACKEND_API_KEY="+"k"*48+"\n", encoding="utf-8")
+    key_file.chmod(0o600)
+    prompt = tmp_path / "trusted-prompt.txt"
+    prompt.write_text("trusted job\n", encoding="utf-8")
+    config = tmp_path / "worker-config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "source_repo": str(source),
+                "runtime_home": str(runtime_home),
+                "runtime_user": "loop-worker-runner",
+                "run_root": str(run_root),
+                "prompt_root": str(tmp_path),
+                "workspace_root": str(workspace_root),
+                "openhands_base_url": "http://127.0.0.1:18002",
+                "openhands_key_file": str(key_file),
+                "openhands_persistence_root": str(persistence),
+                "profile_fedor": PROFILE_ID,
+                "profile_fedor_revision": PROFILE_REVISION,
+                "lang": "C",
+                "templates": {
+                    "fixture": {
+                        "base_sha": "a" * 40,
+                        "prompt_file": str(prompt),
+                        "prompt_sha256": hashlib.sha256(prompt.read_bytes()).hexdigest(),
+                        "allowed_paths": ["services/webapp/src/lib/fixture.ts"],
+                        "profile": "fedor",
+                        "profile_id": PROFILE_ID,
+                        "profile_revision": PROFILE_REVISION,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return config, capture, key_file
+
+
+def test_worker_dispatch_uses_only_dedicated_runtime_environment(tmp_path: Path) -> None:
+    config, capture, key_file = worker_dispatch_fixture(tmp_path)
+    bash_env = tmp_path / "hostile-bash-env"
+    bash_marker = tmp_path / "inherited-bash-env-owned"
+    bash_env.write_text(f"touch {shlex.quote(str(bash_marker))}\n", encoding="utf-8")
+    env = dict(os.environ)
+    env.update(
+        OPENAI_API_KEY="shared-openai-must-not-leak",
+        LOCAL_BACKEND_API_KEY="shared-session-must-not-leak",
+        OH_KEY_FILE="/home/openhands-agent/.agent-canvas.env",
+        BRIDGE_SUDO_CMD="/tmp/shared-sudo-must-not-leak",
+        PYTHONPATH="/tmp/shared-pythonpath-must-not-leak",
+        BASH_ENV=str(bash_env),
+        GIT_CONFIG_GLOBAL="/tmp/shared-git-config-must-not-leak",
+    )
+    with profile_server():
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(WORKER_DISPATCH),
+                "--config",
+                str(config),
+                "--job",
+                "fixture-job",
+                "--template",
+                "fixture",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+    assert result.returncode == 0, result.stderr
+    child_env = dict(
+        line.split("=", 1) for line in capture.read_text(encoding="utf-8").splitlines()
+    )
+    assert child_env["OH_KEY_FILE"] == str(key_file)
+    assert child_env["BRIDGE_SUDO"] == ""
+    assert child_env["BRIDGE_AGENT_USER"] == ""
+    assert child_env["HOME"].endswith("runtime-home")
+    assert child_env["TMPDIR"].endswith("runner-state/tmp")
+    assert child_env["BRIDGE_TRUSTED_OUTPUT"] == "1"
+    assert child_env["GIT_CONFIG_GLOBAL"] == "/dev/null"
+    assert child_env["GIT_CONFIG_SYSTEM"] == "/dev/null"
+    assert child_env["GIT_CONFIG_NOSYSTEM"] == "1"
+    for forbidden in (
+        "OPENAI_API_KEY",
+        "LOCAL_BACKEND_API_KEY",
+        "BRIDGE_SUDO_CMD",
+        "PYTHONPATH",
+        "BASH_ENV",
+    ):
+        assert forbidden not in child_env
+    assert not bash_marker.exists()
+
+
+def test_worker_dispatch_rejects_changed_live_profile_revision(tmp_path: Path) -> None:
+    config,_,_=worker_dispatch_fixture(tmp_path)
+    with profile_server(revision=PROFILE_REVISION+1):
+        result=subprocess.run([sys.executable,str(WORKER_DISPATCH),"--config",str(config),"--job","fixture-job","--template","fixture"],capture_output=True,text=True)
+    assert result.returncode!=0 and "identity changed" in result.stderr
+
+
+def test_worker_dispatch_rejects_shared_agent_canvas_key(tmp_path: Path) -> None:
+    config, _, _ = worker_dispatch_fixture(tmp_path)
+    payload = json.loads(config.read_text(encoding="utf-8"))
+    payload["openhands_key_file"] = "/home/openhands-agent/.agent-canvas.env"
+    config.write_text(json.dumps(payload), encoding="utf-8")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(WORKER_DISPATCH),
+            "--config",
+            str(config),
+            "--job",
+            "fixture-job",
+            "--template",
+            "fixture",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "shared Agent Canvas env is forbidden" in result.stderr
+
+
+@pytest.mark.parametrize("url",[
+    "https://127.0.0.1:18002",
+    "http://135.106.186.210:18002",
+    "http://127.0.0.1:18000",
+    "http://user:secret@127.0.0.1:18002",
+])
+def test_worker_dispatch_rejects_non_dedicated_openhands_url(tmp_path: Path,url: str) -> None:
+    config, _, _ = worker_dispatch_fixture(tmp_path)
+    payload=json.loads(config.read_text(encoding="utf-8"))
+    payload["openhands_base_url"]=url
+    config.write_text(json.dumps(payload),encoding="utf-8")
+    result=subprocess.run([sys.executable,str(WORKER_DISPATCH),"--config",str(config),"--job","fixture-job","--template","fixture"],capture_output=True,text=True)
+    assert result.returncode != 0
+    assert "invalid openhands_base_url" in result.stderr
+
+
+def test_worker_dispatch_rejects_prompt_drift_and_empty_allowlist(tmp_path: Path) -> None:
+    config, _, _ = worker_dispatch_fixture(tmp_path)
+    payload=json.loads(config.read_text(encoding="utf-8"))
+    Path(payload["templates"]["fixture"]["prompt_file"]).write_text("changed after approval\n",encoding="utf-8")
+    config.write_text(json.dumps(payload),encoding="utf-8")
+    command=[sys.executable,str(WORKER_DISPATCH),"--config",str(config),"--job","fixture-job","--template","fixture"]
+    result=subprocess.run(command,capture_output=True,text=True)
+    assert result.returncode != 0 and "prompt hash differs" in result.stderr
+    prompt=Path(payload["templates"]["fixture"]["prompt_file"])
+    payload["templates"]["fixture"]["prompt_sha256"]=hashlib.sha256(prompt.read_bytes()).hexdigest()
+    payload["templates"]["fixture"]["allowed_paths"]=[]
+    config.write_text(json.dumps(payload),encoding="utf-8")
+    result=subprocess.run(command,capture_output=True,text=True)
+    assert result.returncode != 0 and "non-empty allowed_paths" in result.stderr

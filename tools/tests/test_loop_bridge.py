@@ -6,7 +6,10 @@ import pytest
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from tools.loop.bridge import Bridge, BridgeError, JsonHTTP, server
+from tools.loop.bridge import Bridge, BridgeError, JsonHTTP, server, template_fingerprint
+
+PROFILE_ID="11111111-1111-4111-8111-111111111111"
+TEMPLATE={"profile":"fedor","profile_id":PROFILE_ID,"profile_revision":3}
 
 class Remote:
     def __init__(self): self.calls=[]; self.status="running"; self.fail_create=False; self.fail_stop=False
@@ -39,7 +42,15 @@ def setup(tmp_path,publisher=None):
 def run(b,key="run-1"):
     return b.create("hermes",key,{"input":"fixture task","instructions":"fixture instructions","session_id":"fixture-session"})["run_id"]
 
-def job(b,r):return b.propose_job({"job_id":"job-1","run_id":r,"generation":1,"template":"fixture"},{"fixture":{}})
+def job(b,r):return b.propose_job({"job_id":"job-1","run_id":r,"generation":1,"template":"fixture"},{"fixture":TEMPLATE})
+
+
+def test_template_requires_stable_profile_identity_and_revision(tmp_path):
+    b,_,_,_=setup(tmp_path);r=run(b)
+    with pytest.raises(BridgeError,match="stable Agent Profile identity"):
+        b.propose_job({"job_id":"job-1","run_id":r,"generation":1,"template":"fixture"},{"fixture":{"profile":"fedor"}})
+    changed={**TEMPLATE,"profile_revision":TEMPLATE["profile_revision"]+1}
+    assert template_fingerprint("fixture",TEMPLATE)!=template_fingerprint("fixture",changed)
 
 def test_repeated_create_is_durable_and_payload_conflict_rejected(tmp_path):
     b,h,p,o=setup(tmp_path);r=run(b)
@@ -115,7 +126,7 @@ def test_http_identity_separates_gateway_director_and_runner(tmp_path):
     credentials={}
     for role in ["gateway","operator","director","runner"]:
         path=tmp_path/(role+".key");path.write_text("fixture-"+role);path.chmod(0o600);credentials[role]=str(path)
-    http=server(b,{"port":0,"credential_files":credentials,"templates":{"fixture":{}}})
+    http=server(b,{"port":0,"credential_files":credentials,"templates":{"fixture":TEMPLATE}})
     thread=threading.Thread(target=http.serve_forever,daemon=True);thread.start()
     url=f"http://127.0.0.1:{http.server_port}"
     try:
@@ -146,17 +157,20 @@ def test_paperclip_terminal_mapping(tmp_path,upstream,normalized):
 
 def test_restart_recovers_existing_pr_without_repeating_create(tmp_path):
     class Publisher:
+        def __init__(self):self.lookups=0
         def __call__(self,job,sha):raise OSError("lost receipt")
-        def lookup(self,job,sha):return "https://github.com/fixture/repo/pull/9"
-    b,h,p,o=setup(tmp_path,Publisher());r=run(b);job(b,r);b.claim_job("job-1")
+        def lookup(self,job,sha):
+            self.lookups+=1
+            return None if self.lookups==1 else "https://github.com/fixture/repo/pull/9"
+    publisher=Publisher();b,h,p,o=setup(tmp_path,publisher);r=run(b);job(b,r);b.claim_job("job-1")
     sha="a"*40;report={"producer":"harper","sha":sha,"checks":{name:{"sha":sha,"status":"pass","skipped":0} for name in ["verify","build","review"]}}
     with pytest.raises(BridgeError):publish_verified(b,"job-1",report)
-    b=Bridge(tmp_path/"bridge.sqlite",h,p,"fixture-director",o,Publisher())
+    b=Bridge(tmp_path/"bridge.sqlite",h,p,"fixture-director",o,publisher)
     assert b.recover_pr("job-1")["state"]=="ready_pr"
 
 def test_unrouteable_job_ids_are_rejected(tmp_path):
     b,_,_,_=setup(tmp_path);r=run(b)
-    with pytest.raises(BridgeError):b.propose_job({"job_id":"Colon:Job_1","run_id":r,"generation":1,"template":"fixture"},{"fixture":{}})
+    with pytest.raises(BridgeError):b.propose_job({"job_id":"Colon:Job_1","run_id":r,"generation":1,"template":"fixture"},{"fixture":TEMPLATE})
 
 
 def test_cancel_during_admitted_push_is_not_confirmed_and_late_finish_cannot_create_pr(tmp_path):

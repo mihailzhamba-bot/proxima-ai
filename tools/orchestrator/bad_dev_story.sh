@@ -15,6 +15,13 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib.sh"
 
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+BRIDGE_RUN_ROOT="${BRIDGE_RUN_ROOT:-$REPO_ROOT}"
+BRIDGE_RECEIPT_DIR="${BRIDGE_RECEIPT_DIR:-}"
+BRIDGE_TEMPLATE_NAME="${BRIDGE_TEMPLATE_NAME:-}"
+BRIDGE_TEMPLATE_FINGERPRINT="${BRIDGE_TEMPLATE_FINGERPRINT:-}"
+BRIDGE_PROFILE_REVISION="${BRIDGE_PROFILE_REVISION:-}"
+BRIDGE_SHARED_WORKSPACE="${BRIDGE_SHARED_WORKSPACE:-0}"
+BRIDGE_TRUSTED_OUTPUT="${BRIDGE_TRUSTED_OUTPUT:-0}"
 
 # Privilege seam. Production runs `sudo -n` and does sandbox git as the agent
 # user. Tests set BRIDGE_SUDO="" (run everything directly) or point
@@ -35,6 +42,7 @@ own_flags() {  # prints the install(1) ownership flags, empty when unprivileged
   [ -n "$SUDO_CMD" ] && [ -n "$AGENT_USER" ] && printf -- '-o %s -g %s' "$AGENT_USER" "$AGENT_USER"
 }
 OWNER_FLAGS="$(own_flags)"
+OPENHANDS_PERSISTENCE_ROOT="${OPENHANDS_PERSISTENCE_ROOT:-/srv/openhands/persistence}"
 
 # lib.sh's oh_key() reads the key file directly because the conductor's scripts
 # run as openhands-agent. This bridge runs as the invoking user, who cannot read
@@ -56,6 +64,7 @@ RUN_ID=""; BRANCH=""; BASE_REF=""; PROMPT_FILE=""; SOURCE_DIR=""
 PROFILE_NAME="fedor"; ATTEMPT=1; TIMEOUT=5400; SIMULATE_WORKER=""
 POLL_MIN=10; POLL_MAX=60; IDLE_CONFIRMATIONS=2; MAX_UNKNOWN=5
 MAX_ITERATIONS=500; TITLE_LLM_PROFILE="${BRIDGE_TITLE_LLM_PROFILE:-glm-5.3}"; PREFLIGHT_ONLY=0; KEEP_WORKSPACE=0
+EXTERNAL_COLLECT=0
 ALLOW_PATHS=""; CONTRACT_FILES=""
 DEFAULT_CONTRACT_FILES="AGENTS.md
 _bmad-output/planning-artifacts/epics.md
@@ -75,7 +84,7 @@ usage: bad_dev_story.sh --run-id <id> --branch <feat/...> --base-ref <ref>
                         --prompt-file <path> [--source-dir <repo|worktree>]
                         [--profile fedor|glm] [--attempt N] [--timeout SEC]
                         [--allow-path <repo-path>]... [--contract-file <path>]...
-                        [--keep-workspace] [--preflight-only]
+                        [--keep-workspace] [--preflight-only] [--external-collect]
                         [--simulate-worker <command>]   # offline: run <command> in the
                                                         # sandbox instead of dispatching
 USAGE
@@ -98,6 +107,7 @@ while [ $# -gt 0 ]; do
 "; shift 2 ;;
     --simulate-worker) SIMULATE_WORKER="${2:?}"; shift 2 ;;
     --keep-workspace) KEEP_WORKSPACE=1; shift ;;
+    --external-collect) EXTERNAL_COLLECT=1; shift ;;
     --preflight-only) PREFLIGHT_ONLY=1; shift ;;
     -h|--help) usage; exit $EX_OK ;;
     *) echo "unknown argument: $1" >&2; usage; exit $EX_USAGE ;;
@@ -114,28 +124,109 @@ note() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
 
 # Event history lives in the conversation's persistence dir, which is owned by
 # the agent user; the API returns nothing once a conversation dies during init.
+conversation_persistence_dir() {
+  oh_curl GET "/api/conversations/$1" 2>/dev/null \
+    | /usr/bin/python3 -I -c 'import json, sys
+try:
+    value = json.load(sys.stdin).get("persistence_dir")
+    print(value if isinstance(value, str) else "")
+except Exception:
+    print("")' 2>/dev/null
+}
+
+# The conversation API is not a trusted source of filesystem paths. Read event
+# files without a shell, only below the configured persistence root, and only
+# from the directory for the requested conversation. Symlinked files and
+# directories are rejected so a worker cannot make a privileged reader follow
+# them outside the event store.
+read_persisted_events() {
+  local persistence_dir="$1" conversation_id="$2"
+  priv /usr/bin/python3 -I - "$OPENHANDS_PERSISTENCE_ROOT" "$persistence_dir" "$conversation_id" <<'PY'
+import os
+import stat
+import sys
+from pathlib import Path
+
+root_raw, persistence_raw, conversation_id = sys.argv[1:4]
+directory_fd = None
+try:
+    root = Path(root_raw).resolve(strict=True)
+    candidate = Path(persistence_raw)
+    if not candidate.is_absolute() or ".." in candidate.parts:
+        raise ValueError("untrusted persistence path")
+    relative = candidate.relative_to(root)
+    conversation_names = {conversation_id, conversation_id.replace("-", "")}
+    if not conversation_names.intersection(relative.parts):
+        raise ValueError("conversation path mismatch")
+
+    directory_flags = (
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    directory_fd = os.open(root, directory_flags)
+    for component in (*relative.parts, "events"):
+        next_fd = os.open(component, directory_flags, dir_fd=directory_fd)
+        os.close(directory_fd)
+        directory_fd = next_fd
+except (OSError, RuntimeError, ValueError):
+    if directory_fd is not None:
+        os.close(directory_fd)
+    raise SystemExit(65)
+
+try:
+    total = 0
+    for name in sorted(os.listdir(directory_fd)):
+        if not name.endswith(".json") or "/" in name or name in {".", ".."}:
+            continue
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            file_fd = os.open(name, flags, dir_fd=directory_fd)
+        except OSError:
+            continue
+        try:
+            info = os.fstat(file_fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 16 * 1024 * 1024:
+                continue
+            total += info.st_size
+            if total > 64 * 1024 * 1024:
+                raise SystemExit(65)
+            chunks = []
+            while True:
+                chunk = os.read(file_fd, 1024 * 1024)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            data = b"".join(chunks)
+            sys.stdout.buffer.write(data)
+            if data and not data.endswith(b"\n"):
+                sys.stdout.buffer.write(b"\n")
+        finally:
+            os.close(file_fd)
+finally:
+    os.close(directory_fd)
+PY
+}
+
 dump_diagnostics() {
+  local pdir
   [ -n "$CID" ] || return 0
   agent_final_response "$CID" >"$RUN_DIR/final-response.md" 2>/dev/null
   oh_curl GET "/api/conversations/$CID/events" >"$RUN_DIR/events.json" 2>/dev/null
-  PDIR="$(oh_curl GET "/api/conversations/$CID" 2>/dev/null \
-    | python3 -c 'import json,sys
-try: print(json.load(sys.stdin).get("persistence_dir") or "")
-except Exception: print("")' 2>/dev/null)"
-  if [ -n "$PDIR" ]; then
-    priv sh -c "cat '$PDIR'/events/*.json 2>/dev/null" >"$RUN_DIR/persisted-events.json" 2>/dev/null
+  pdir="$(conversation_persistence_dir "$CID")"
+  if [ -n "$pdir" ]; then
+    read_persisted_events "$pdir" "$CID" >"$RUN_DIR/persisted-events.json" 2>/dev/null || :
   fi
   note "diagnostics in $RUN_DIR"
 }
 
 # first error the conversation recorded, for the failure message
 conversation_error() {
-  PDIR="$(oh_curl GET "/api/conversations/$1" 2>/dev/null \
-    | python3 -c 'import json,sys
-try: print(json.load(sys.stdin).get("persistence_dir") or "")
-except Exception: print("")' 2>/dev/null)"
-  [ -n "$PDIR" ] || return 0
-  priv sh -c "cat '$PDIR'/events/*.json 2>/dev/null" | python3 -c '
+  local pdir
+  pdir="$(conversation_persistence_dir "$1")"
+  [ -n "$pdir" ] || return 0
+  read_persisted_events "$pdir" "$1" | /usr/bin/python3 -I -c '
 import json, re, sys
 raw = sys.stdin.read()
 for blob in re.findall(r"\{.*?\}(?=\s*\{|\s*$)", raw, re.S) or [raw]:
@@ -148,34 +239,65 @@ for blob in re.findall(r"\{.*?\}(?=\s*\{|\s*$)", raw, re.S) or [raw]:
 
 emit() {  # emit <exit-code>
   local code="$1"
-  python3 - "$code" <<PY
-import json, sys
-print(json.dumps({
+  /usr/bin/python3 -I - "$code" "$RUN_ID" "$ATTEMPT" "$CID" "$BRANCH" "$BASE_SHA" \
+    "$HEAD_SHA" "$STATUS" "$COMMITS" "$LOCAL_REF" "$RESULT_BUNDLE" "$WS" \
+    "$GATE_BASE" "$GATE_CONTRACT" "$GATE_DIRTY" "$GATE_HOOK" "$GATE_ANCESTRY" \
+    "$GATE_PATHS" "$GATE_SECRETS" "$PROBLEM" "$ok" "$BRIDGE_TEMPLATE_NAME" "$BRIDGE_TEMPLATE_FINGERPRINT" "$BRIDGE_RECEIPT_DIR" <<'PY'
+import json, os, pathlib, sys, uuid
+(
+    code, run_id, attempt, conversation_id, branch, base_sha, head_sha,
+    status, commits, local_ref, bundle, workspace, gate_base,
+    gate_contract, gate_dirty, gate_hook, gate_ancestry, gate_paths,
+    gate_secrets, problem, ok, template, template_fingerprint, receipt_dir,
+) = sys.argv[1:]
+payload = {
     "tool": "bad_dev_story",
-    "run_id": "${RUN_ID}",
-    "attempt": ${ATTEMPT},
-    "conversation_id": "${CID}",
-    "branch": "${BRANCH}",
-    "base_sha": "${BASE_SHA}",
-    "head_sha": "${HEAD_SHA}",
-    "status": "${STATUS}",
-    "commits": ${COMMITS},
-    "local_ref": "${LOCAL_REF}",
-    "bundle": "${RESULT_BUNDLE}",
-    "workspace": "${WS}",
+    "run_id": run_id,
+    "template": template or None,
+    "template_fingerprint": template_fingerprint or None,
+    "attempt": int(attempt),
+    "conversation_id": conversation_id,
+    "branch": branch,
+    "base_sha": base_sha,
+    "head_sha": head_sha,
+    "status": status,
+    "commits": int(commits),
+    "local_ref": local_ref,
+    "bundle": bundle,
+    "workspace": workspace,
     "gates": {
-        "base_sha": "${GATE_BASE}",
-        "contract_files": "${GATE_CONTRACT}",
-        "sandbox_clean": "${GATE_DIRTY}",
-        "stop_hook": "${GATE_HOOK}",
-        "ancestry": "${GATE_ANCESTRY}",
-        "forbidden_paths": "${GATE_PATHS}",
-        "secret_scan": "${GATE_SECRETS}",
+        "base_sha": gate_base,
+        "contract_files": gate_contract,
+        "sandbox_clean": gate_dirty,
+        "stop_hook": gate_hook,
+        "ancestry": gate_ancestry,
+        "forbidden_paths": gate_paths,
+        "secret_scan": gate_secrets,
     },
-    "problem": ${json_problem},
-    "ok": ${ok},
-    "exit_code": int(sys.argv[1]),
-}, ensure_ascii=False))
+    "problem": problem or None,
+    "ok": ok == "True",
+    "exit_code": int(code),
+}
+encoded = json.dumps(payload, ensure_ascii=False)
+if receipt_dir:
+    root = pathlib.Path(receipt_dir)
+    if not root.is_absolute() or root.is_symlink():
+        raise SystemExit("invalid receipt directory")
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(root, 0o700)
+    target = root / (run_id + ".json")
+    temporary = root / (run_id + "." + uuid.uuid4().hex + ".tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        data = memoryview(encoded.encode())
+        while data:
+            written = os.write(descriptor, data)
+            data = data[written:]
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.replace(temporary, target)
+print(encoded)
 PY
   exit "$code"
 }
@@ -191,17 +313,15 @@ drop_ref() {
 fail() {  # fail <exit-code> <message>
   PROBLEM="$2"
   note "FAIL($1): $2"
-  json_problem="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$PROBLEM")"
   ok=False
   emit "$1"
 }
 
 done_ok() {
-  json_problem=None; ok=True
+  PROBLEM=""; ok=True
   emit $EX_OK
 }
 
-json_problem=None
 ok=False
 
 # ------------------------------------------------------------- 0. validation
@@ -217,11 +337,16 @@ case "$PROFILE_NAME" in fedor|glm) : ;; *) fail $EX_USAGE "profile must be fedor
 [ -n "$REPO_ROOT" ] || fail $EX_USAGE "not inside a git repository (set REPO_ROOT)"
 SOURCE_DIR="${SOURCE_DIR:-$REPO_ROOT}"
 [ -d "$SOURCE_DIR/.git" ] || fail $EX_USAGE "source dir is not a git checkout: $SOURCE_DIR"
+case "$BRIDGE_RUN_ROOT" in /*) : ;; *) fail $EX_USAGE "bridge run root must be absolute" ;; esac
+[ -d "$BRIDGE_RUN_ROOT" ] && [ ! -L "$BRIDGE_RUN_ROOT" ] && [ -w "$BRIDGE_RUN_ROOT" ] \
+  || fail $EX_USAGE "bridge run root is not a trusted writable directory"
 [ -n "$CONTRACT_FILES" ] || CONTRACT_FILES="$DEFAULT_CONTRACT_FILES
 "
 
-RUN_DIR="$REPO_ROOT/logs/openhands-bridge/$RUN_ID/attempt-$ATTEMPT"
+RUN_DIR="$BRIDGE_RUN_ROOT/logs/openhands-bridge/$RUN_ID/attempt-$ATTEMPT"
 mkdir -p "$RUN_DIR" || fail $EX_INFRA "cannot create run dir $RUN_DIR"
+[ "$BRIDGE_TRUSTED_OUTPUT" != "1" ] || chmod 700 "$RUN_DIR" \
+  || fail $EX_INFRA "cannot protect run dir $RUN_DIR"
 
 # ------------------------------------------------------------- 1. preflight
 note "preflight"
@@ -243,7 +368,7 @@ fi
 # conductor was stopped before collecting it, and that state never clears on its
 # own. Block only on workers that are still moving, and say so for the rest.
 if command -v conductor >/dev/null 2>&1; then
-  SLOTS="$(conductor status 2>/dev/null | python3 -c '
+  SLOTS="$(conductor status 2>/dev/null | /usr/bin/python3 -I -c '
 import json, re, sys
 try:
     workers = json.load(sys.stdin).get("workers") or []
@@ -276,11 +401,11 @@ fi
 [ "$PREFLIGHT_ONLY" = "1" ] && { STATUS="preflight-ok"; done_ok; }
 
 # ------------------------------------------------------------ 2. provision
-S() { git -C "$SOURCE_DIR" "$@"; }
+S() { git -c core.hooksPath=/dev/null -c safe.directory='*' -C "$SOURCE_DIR" "$@"; }
 BASE_SHA="$(S rev-parse --verify "${BASE_REF}^{commit}" 2>/dev/null)"
 [ -n "$BASE_SHA" ] || fail $EX_USAGE "cannot resolve base-ref '$BASE_REF' in $SOURCE_DIR"
 
-CID="$(python3 -c '
+CID="$(/usr/bin/python3 -I -c '
 import sys, uuid
 ns = uuid.uuid5(uuid.NAMESPACE_URL, "https://proxima.local/bad-dev-story")
 print(uuid.uuid5(ns, "%s/%s" % (sys.argv[1], sys.argv[2])))' "$RUN_ID" "$ATTEMPT")"
@@ -294,16 +419,26 @@ fi
 
 BASE_BUNDLE="$RUN_DIR/base.bundle"
 note "bundling $SOURCE_DIR at $BASE_SHA"
-S bundle create "$BASE_BUNDLE" --all >/dev/null 2>&1 \
-  || fail $EX_INFRA "git bundle create failed in $SOURCE_DIR"
+SEED_BRANCH="loop-seed-$RUN_ID-$ATTEMPT"
+SEED_REF="refs/heads/$SEED_BRANCH"
+S update-ref "$SEED_REF" "$BASE_SHA" "" >/dev/null 2>&1 \
+  || fail $EX_INFRA "cannot create isolated seed ref"
+if ! S bundle create "$BASE_BUNDLE" "$SEED_REF" >/dev/null 2>&1; then
+  S update-ref -d "$SEED_REF" >/dev/null 2>&1
+  fail $EX_INFRA "git bundle create failed in $SOURCE_DIR"
+fi
+S update-ref -d "$SEED_REF" >/dev/null 2>&1 \
+  || fail $EX_INFRA "cannot remove isolated seed ref"
 
-priv install -d -m 0755 $OWNER_FLAGS "$WS" "$WS/.bridge" \
+WS_DIR_MODE=0755; WS_FILE_MODE=0644
+if [ "$BRIDGE_SHARED_WORKSPACE" = "1" ]; then WS_DIR_MODE=2770; WS_FILE_MODE=0660; fi
+priv install -d -m "$WS_DIR_MODE" $OWNER_FLAGS "$WS" "$WS/.bridge" \
   || fail $EX_INFRA "cannot create workspace $WS"
-priv install -m 0644 $OWNER_FLAGS "$BASE_BUNDLE" "$WS/.bridge/base.bundle" \
+priv install -m "$WS_FILE_MODE" $OWNER_FLAGS "$BASE_BUNDLE" "$WS/.bridge/base.bundle" \
   || fail $EX_INFRA "cannot hand the base bundle to the sandbox"
 
-A() { as_agent git -C "$REPO_IN_WS" -c safe.directory='*' "$@"; }
-as_agent git -c safe.directory='*' clone -q "$WS/.bridge/base.bundle" "$REPO_IN_WS" \
+A() { as_agent git -c core.hooksPath=/dev/null -c safe.directory='*' -C "$REPO_IN_WS" "$@"; }
+as_agent git -c core.hooksPath=/dev/null -c safe.directory='*' clone -q "$WS/.bridge/base.bundle" "$REPO_IN_WS" \
   || fail $EX_INFRA "clone from bundle failed"
 priv rm -f "$WS/.bridge/base.bundle"
 
@@ -311,6 +446,7 @@ priv rm -f "$WS/.bridge/base.bundle"
 # cache the way it did in Story 1.1 attempt 1 - any network attempt fails loudly
 A remote remove origin >/dev/null 2>&1
 A checkout -q -b "$BRANCH" "$BASE_SHA" || fail $EX_INTEGRITY "cannot branch $BRANCH from $BASE_SHA in the sandbox"
+A branch -D "$SEED_BRANCH" >/dev/null 2>&1 || :
 A config user.name "OpenHands Worker" >/dev/null 2>&1
 A config user.email "openhands@proxima.local" >/dev/null 2>&1
 
@@ -321,6 +457,8 @@ GATE_BASE="pass"
 [ "$(A rev-parse --abbrev-ref HEAD)" = "$BRANCH" ] || fail $EX_INTEGRITY "sandbox is not on $BRANCH"
 [ -z "$(A status --porcelain 2>/dev/null)" ] || fail $EX_INTEGRITY "sandbox tree is not clean right after clone"
 [ -z "$(A remote 2>/dev/null)" ] || fail $EX_INTEGRITY "sandbox still has a git remote"
+EXTRA_REFS="$(A for-each-ref --format='%(refname)' | grep -v "^refs/heads/$BRANCH$" || :)"
+[ -z "$EXTRA_REFS" ] || fail $EX_INTEGRITY "sandbox seed exposed unrelated refs"
 
 MISMATCH=""
 OLDIFS="$IFS"; IFS='
@@ -339,6 +477,7 @@ note "provisioned $WS at $BASE_SHA, branch $BRANCH, 0 remotes, contracts match"
 
 PROMPT_SHA="$(sha256sum "$PROMPT_FILE" | cut -d' ' -f1)"
 cp "$PROMPT_FILE" "$RUN_DIR/prompt.md"
+chmod 600 "$RUN_DIR/prompt.md"
 
 # --------------------------------------------------------------- 4. dispatch
 if [ -n "$SIMULATE_WORKER" ]; then
@@ -348,6 +487,7 @@ if [ -n "$SIMULATE_WORKER" ]; then
   STATUS="finished"; GATE_HOOK="simulated"
 else
 case "$PROFILE_NAME" in fedor) PROFILE="$PROFILE_FEDOR" ;; glm) PROFILE="$PROFILE_GLM" ;; esac
+echo "$BRIDGE_PROFILE_REVISION" | grep -Eq '^[1-9][0-9]*$' || fail $EX_INTEGRITY "bound Agent Profile revision is required"
 # working_dir is the workspace ROOT, not the checkout inside it - same as
 # launch_worker.sh, and not an accident. The fedor profile is Codex over ACP;
 # started inside the checkout it loads the project .codex/config.toml, whose
@@ -355,34 +495,43 @@ case "$PROFILE_NAME" in fedor) PROFILE="$PROFILE_FEDOR" ;; glm) PROFILE="$PROFIL
 # exist in the agent user's ~/.codex (AGENTS.md, Known pitfalls, 27.08). From
 # the workspace root that file is out of scope. The dispatch prompt therefore
 # has to name the checkout subdirectory explicitly.
-PAYLOAD="$(mktemp)"; chmod 600 "$PAYLOAD"
-python3 - "$CID" "$WS" "$PROMPT_FILE" "$PROFILE" "$PAYLOAD" "$RUN_ID" "$ATTEMPT" "$MAX_ITERATIONS" "$TITLE_LLM_PROFILE" <<'PY'
+PAYLOAD="$(mktemp)"; MESSAGE_PAYLOAD="$(mktemp)"; RESPONSE="$(mktemp)"; chmod 600 "$PAYLOAD" "$MESSAGE_PAYLOAD" "$RESPONSE"
+/usr/bin/python3 -I - "$CID" "$WS" "$PROMPT_FILE" "$PROFILE" "$PAYLOAD" "$MESSAGE_PAYLOAD" "$RUN_ID" "$ATTEMPT" "$MAX_ITERATIONS" "$TITLE_LLM_PROFILE" "$EXTERNAL_COLLECT" <<'PY'
 import json, re, sys
-cid, ws, prompt, profile, out, run_id, attempt, max_iter, title_profile = sys.argv[1:10]
-json.dump({
+cid, ws, prompt, profile, out, message_out, run_id, attempt, max_iter, title_profile, external_collect = sys.argv[1:12]
+payload = {
     "conversation_id": cid,
     "workspace": {"kind": "LocalWorkspace", "working_dir": ws},
     "agent_profile_id": profile,
-    "initial_message": {
-        "role": "user",
-        "content": [{"type": "text", "text": open(prompt, encoding="utf-8").read()}],
-        "run": True,
-    },
     "max_iterations": int(max_iter),
     "stuck_detection": True,
     "confirmation_policy": {"kind": "NeverConfirm"},
     "tags": {"bridge": "baddevstory", "run": re.sub(r"[^a-z0-9]", "", run_id), "attempt": str(attempt)},
-    "autotitle": True,
+    "autotitle": external_collect != "1",
     # ACP profiles (Codex over ACP) carry no LLM of their own, so without an
     # explicit title profile the server falls back to OpenAI with no key and
     # logs "Missing credentials" on every dispatch. Titles go through the
     # GLM LLM profile that every worker conversation can reach.
-    "title_llm_profile": title_profile,
-}, open(out, "w", encoding="utf-8"), ensure_ascii=False)
+}
+if external_collect != "1":
+    payload["title_llm_profile"] = title_profile
+json.dump(payload, open(out, "w", encoding="utf-8"), ensure_ascii=False)
+message={"role":"user","content":[{"type":"text","text":open(prompt,encoding="utf-8").read()}],"run":True}
+json.dump(message,open(message_out,"w",encoding="utf-8"),ensure_ascii=False)
 PY
-RESP="$(oh_curl POST /api/conversations "$PAYLOAD")"
-rm -f "$PAYLOAD"
-echo "$RESP" | grep -q '"id"' || fail $EX_INFRA "conversation create failed: $(echo "$RESP" | head -c 200)"
+oh_curl POST /api/conversations "$PAYLOAD" >"$RESPONSE" || { rm -f "$PAYLOAD" "$MESSAGE_PAYLOAD" "$RESPONSE"; fail $EX_INFRA "conversation create transport failed"; }
+/usr/bin/python3 -I - "$CID" "$PROFILE" "$BRIDGE_PROFILE_REVISION" "$RESPONSE" <<'PY' || { rm -f "$PAYLOAD" "$MESSAGE_PAYLOAD" "$RESPONSE"; fail $EX_INTEGRITY "conversation launched Agent Profile differs from approved revision"; }
+import json,sys
+cid,profile,revision,path=sys.argv[1:5]
+data=json.load(open(path,encoding="utf-8"));launched=data.get("launched_agent_profile") or {}
+if data.get("id")!=cid or launched.get("agent_profile_id")!=profile or launched.get("revision")!=int(revision):raise SystemExit(1)
+PY
+oh_curl POST "/api/conversations/$CID/events" "$MESSAGE_PAYLOAD" >"$RESPONSE" || { rm -f "$PAYLOAD" "$MESSAGE_PAYLOAD" "$RESPONSE"; fail $EX_INFRA "conversation message transport failed"; }
+/usr/bin/python3 -I - "$RESPONSE" <<'PY' || { rm -f "$PAYLOAD" "$MESSAGE_PAYLOAD" "$RESPONSE"; fail $EX_INFRA "conversation message rejected"; }
+import json,sys
+if json.load(open(sys.argv[1],encoding="utf-8")).get("success") is not True:raise SystemExit(1)
+PY
+rm -f "$PAYLOAD" "$MESSAGE_PAYLOAD" "$RESPONSE"
 note "dispatched $CID (profile $PROFILE_NAME, prompt sha256 ${PROMPT_SHA})"
 
 sleep 5
@@ -445,6 +594,17 @@ else
 fi
 fi
 
+if [ "$EXTERNAL_COLLECT" = "1" ]; then
+  # From this point the workspace is model-controlled. This credential-bearing
+  # runner must never execute Git there; a separate no-network/no-secret UID
+  # creates raw transport bytes and Harper performs every trust gate.
+  GATE_DIRTY="deferred-to-harper"
+  GATE_ANCESTRY="deferred-to-harper"
+  GATE_PATHS="deferred-to-harper"
+  GATE_SECRETS="deferred-to-harper"
+  done_ok
+fi
+
 # ---------------------------------------------------------------- 6. collect
 DIRTY="$(A status --porcelain 2>/dev/null | grep -v '^??' | wc -l | tr -d ' ')"
 if [ "${DIRTY:-0}" != "0" ]; then
@@ -459,6 +619,7 @@ COMMITS="${COMMITS:-0}"
 [ "$COMMITS" != "0" ] || fail $EX_AGENT "worker produced no commits on $BRANCH above $BASE_SHA"
 
 SANDBOX_BUNDLE="$WS/.bridge/result.bundle"
+[ "$BRIDGE_TRUSTED_OUTPUT" != "1" ] || SANDBOX_BUNDLE="$RUN_DIR/result.bundle"
 # same `base..branch` form collect_branch.sh uses; that script itself cannot be
 # invoked here because it lives under /home/proxima-admin (0750) where
 # openhands-agent has no traverse rights
@@ -467,13 +628,19 @@ A bundle create "$SANDBOX_BUNDLE" "$BASE_SHA..$BRANCH" >/dev/null 2>&1 \
 A bundle verify "$SANDBOX_BUNDLE" >/dev/null 2>&1 \
   || fail $EX_INTEGRITY "bundle does not verify inside the sandbox"
 # freeze before copying: same uid could otherwise swap the file underneath us
-if [ -n "$SUDO_CMD" ]; then priv chown root:root "$SANDBOX_BUNDLE"; fi
-priv chmod 600 "$SANDBOX_BUNDLE"
-SANDBOX_SHA="$(priv sha256sum "$SANDBOX_BUNDLE" | cut -d' ' -f1)"
-RESULT_BUNDLE="$RUN_DIR/result.bundle"
-priv install -m 0600 -o "$(id -un)" -g "$(id -gn)" "$SANDBOX_BUNDLE" "$RESULT_BUNDLE" \
-  || fail $EX_INFRA "cannot copy the result bundle out of the sandbox"
-priv rm -f "$SANDBOX_BUNDLE"
+if [ "$BRIDGE_TRUSTED_OUTPUT" = "1" ]; then
+  RESULT_BUNDLE="$SANDBOX_BUNDLE"
+  chmod 600 "$RESULT_BUNDLE" || fail $EX_INFRA "cannot protect trusted result bundle"
+  SANDBOX_SHA="$(sha256sum "$RESULT_BUNDLE" | cut -d' ' -f1)"
+else
+  if [ -n "$SUDO_CMD" ]; then priv chown root:root "$SANDBOX_BUNDLE"; fi
+  priv chmod 600 "$SANDBOX_BUNDLE"
+  SANDBOX_SHA="$(priv sha256sum "$SANDBOX_BUNDLE" | cut -d' ' -f1)"
+  RESULT_BUNDLE="$RUN_DIR/result.bundle"
+  priv install -m 0600 -o "$(id -un)" -g "$(id -gn)" "$SANDBOX_BUNDLE" "$RESULT_BUNDLE" \
+    || fail $EX_INFRA "cannot copy the result bundle out of the sandbox"
+  priv rm -f "$SANDBOX_BUNDLE"
+fi
 [ "$(sha256sum "$RESULT_BUNDLE" | cut -d' ' -f1)" = "$SANDBOX_SHA" ] \
   || fail $EX_INTEGRITY "result bundle sha256 changed while crossing the boundary"
 
@@ -517,7 +684,7 @@ if [ -n "$VIOLATIONS" ]; then
 fi
 GATE_PATHS="pass"
 
-SECRET_HIT="$(REPO_ROOT="$REPO_ROOT" python3 - "$SOURCE_DIR" "$BASE_SHA" "$LOCAL_REF" <<'PY'
+SECRET_HIT="$(REPO_ROOT="$REPO_ROOT" /usr/bin/python3 -I - "$SOURCE_DIR" "$BASE_SHA" "$LOCAL_REF" <<'PY'
 import importlib.util, pathlib, subprocess, sys
 source_dir, base, ref = sys.argv[1:4]
 root = pathlib.Path(source_dir)

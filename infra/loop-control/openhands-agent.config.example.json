@@ -1,0 +1,16 @@
+{
+  "session_api_keys": [],
+  "secret_key": null,
+  "conversations_path": "/srv/loop-worker/agent-state/conversations",
+  "workspace_path": "/srv/loop-worker/workspaces",
+  "conversation_worktree_root": "/srv/loop-worker/worktrees",
+  "bash_events_dir": "/srv/loop-worker/agent-state/bash-events",
+  "enable_vscode": false,
+  "enable_vnc": false,
+  "preload_tools": false,
+  "max_concurrent_runs": 1,
+  "telemetry": {
+    "deployment_kind": "local",
+    "exporter": "none"
+  }
+}

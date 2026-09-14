@@ -18,7 +18,7 @@
     "token_file": "/run/secrets/paperclip_board"
   },
   "openhands": {
-    "url": "https://OPERATOR_PRIVATE_OPENHANDS_ENDPOINT",
+    "url": "http://127.0.0.1:18000",
     "token_file": "/run/secrets/openhands_api",
     "header": "X-Session-API-Key"
   },

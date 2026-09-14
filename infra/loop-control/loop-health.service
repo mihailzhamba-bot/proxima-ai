@@ -1,0 +1,19 @@
+[Unit]
+Description=LOOP health and disk check
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/loop-health
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/loop/health
+ReadOnlyPaths=/etc/loop/secrets /var/lib/loop/backups /var/run/docker.sock
+MemoryMax=96M
+CPUQuota=25%
+TasksMax=32
+TimeoutStartSec=30s
