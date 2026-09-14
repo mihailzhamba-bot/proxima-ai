@@ -146,6 +146,7 @@ def test_dedicated_openhands_server_cannot_read_existing_proxima_state():
     assert "User=loop-oh-agent" in service
     assert "127.0.0.1 --port 18002" in service
     assert "HOME=/srv/loop-worker/agent-home" in service
+    assert "/var/lib/loop-oh-agent" in service
     assert "CODEX_HOME=/srv/loop-worker/codex-home" in service
     assert "OH_PERSISTENCE_DIR=/srv/loop-worker/agent-state/openhands" in service
     assert "TMPDIR=/srv/loop-worker/agent-state/tmp" in service
