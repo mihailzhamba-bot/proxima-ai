@@ -198,3 +198,4 @@ def test_worker_gateway_sources_are_versioned_and_fail_closed():
     assert "AllowUsers loop-worker@135.106.211.64" in sshd
     assert "ForceCommand /opt/loop/worker_ssh.py" in sshd
     assert "DisableForwarding yes" in sshd and "PermitTTY no" in sshd
+    assert "PermitUserEnvironment" not in sshd
