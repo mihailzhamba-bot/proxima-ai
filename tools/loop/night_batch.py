@@ -8,6 +8,7 @@ operator_key_file, runner_key_file. Tasks contain key, job_id, template,
 template_fingerprint and optional existing_run_id. All paths must be absolute.
 Optional acceptance_command is a fixed argv of trusted absolute executable/helper
 paths and flags; it receives checkout, base, head, job_id before model review.
+Optional runtime_owner_uid (default 1000) is trusted only for work/evidence paths.
 Restart never repeats uncertain dispatch or model calls; halt needs manual review.
 """
 from __future__ import annotations
@@ -58,8 +59,11 @@ class HTTPError(BatchError):
 def checked(manifest):
     required = {*PATHS, 'tasks', 'template_bases', 'end_at', 'job_timeout_seconds',
                 'poll_seconds', 'disk_floor_bytes'}
-    if type(manifest) is not dict or set(manifest) - {'acceptance_command'} != required:
+    if type(manifest) is not dict or set(manifest) - {'acceptance_command', 'runtime_owner_uid'} != required:
         raise BatchError('invalid_manifest')
+    runtime_uid = manifest.get('runtime_owner_uid', 1000)
+    if type(runtime_uid) is not int or not 1 <= runtime_uid <= 2**31 - 1:
+        raise BatchError('invalid_runtime_owner')
     if 'acceptance_command' in manifest:
         command = manifest['acceptance_command']
         if (type(command) is not list or not 1 <= len(command) <= 8
@@ -101,10 +105,10 @@ def checked(manifest):
     return manifest
 
 
-def trusted_directory(path):
+def trusted_directory(path, allowed_owners=(0,)):
     for parent in [Path(path), *Path(path).parents]:
         info = parent.lstat()
-        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid not in allowed_owners or info.st_mode & 0o022:
             raise BatchError('untrusted_directory')
 
 
@@ -470,8 +474,9 @@ def main():
         manifest = checked(json_file(args.manifest))
         if os.geteuid() != 0:
             raise BatchError('root_operator_required')
-        for key in ('work_root', 'evidence_root', 'review_receipts'):
-            trusted_directory(manifest[key])
+        for key in ('work_root', 'evidence_root'):
+            trusted_directory(manifest[key], allowed_owners=(0, manifest.get('runtime_owner_uid', 1000)))
+        trusted_directory(manifest['review_receipts'])
         trusted_directory(Path(manifest['state_file']).parent)
         for key in ('glm_script', 'glm_config'):
             trusted_directory(Path(manifest[key]).parent)

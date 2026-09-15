@@ -3,6 +3,8 @@ import fcntl
 import os
 from pathlib import Path
 import sys
+import stat
+from types import SimpleNamespace
 
 import pytest
 
@@ -354,3 +356,35 @@ def test_truncated_saved_task_list_cannot_fake_completion(tmp_path):
         'manifest_sha256': batch.digest, 'tasks': []})
     with pytest.raises(driver.BatchError, match='invalid_saved_state'):
         execute(settings)
+
+
+@pytest.mark.parametrize('owner,mode,allowed,passes', [
+    (1000, stat.S_IFDIR | 0o700, (0, 1000), True),
+    (0, stat.S_IFDIR | 0o755, (0, 1000), True),
+    (1001, stat.S_IFDIR | 0o700, (0, 1000), False),
+    (1000, stat.S_IFDIR | 0o700, (0,), False),
+    (1000, stat.S_IFDIR | 0o777, (0, 1000), False),
+    (1000, stat.S_IFDIR | 0o770, (0, 1000), False),
+    (1000, stat.S_IFLNK | 0o777, (0, 1000), False),
+])
+def test_runtime_directory_owner_policy(monkeypatch, owner, mode, allowed, passes):
+    def info(path):
+        if path == Path('/srv/loop-runner/work'):
+            return SimpleNamespace(st_uid=owner, st_mode=mode)
+        return SimpleNamespace(st_uid=0, st_mode=stat.S_IFDIR | 0o755)
+    monkeypatch.setattr(Path, 'lstat', info)
+    if passes:
+        driver.trusted_directory('/srv/loop-runner/work', allowed_owners=allowed)
+    else:
+        with pytest.raises(driver.BatchError, match='untrusted_directory'):
+            driver.trusted_directory('/srv/loop-runner/work', allowed_owners=allowed)
+
+
+def test_runtime_uid_is_optional_and_bounded(tmp_path):
+    settings = manifest(tmp_path)
+    assert driver.checked(settings)
+    settings['runtime_owner_uid'] = 1000
+    assert driver.checked(settings)
+    settings['runtime_owner_uid'] = True
+    with pytest.raises(driver.BatchError, match='invalid_runtime_owner'):
+        driver.checked(settings)
