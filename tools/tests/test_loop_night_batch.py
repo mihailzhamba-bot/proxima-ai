@@ -474,3 +474,14 @@ def test_nonsecret_attestation_is_readable_but_state_stays_private(tmp_path):
     driver.atomic_json(state, {'status':'running'})
     assert stat.S_IMODE(receipt.stat().st_mode)==0o644
     assert stat.S_IMODE(state.stat().st_mode)==0o600
+
+
+def test_review_failure_keeps_only_sanitized_reason(tmp_path):
+    settings = manifest(tmp_path)
+    stage = driver.ReviewStage(settings, execute=lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=b'{"reason":"provider_unavailable","secret":"fixture-private"}'))
+    with pytest.raises(driver.BatchError, match='provider_unavailable'):
+        stage.review({'checkout':'/fixture','base_sha':'a'*40,'head_sha':'b'*40},1)
+    files=list((Path(settings['evidence_root'])/'model-review').glob('error-*.json'))
+    assert len(files)==1
+    assert json.loads(files[0].read_text())['reason']=='provider_unavailable'
+    assert 'fixture-private' not in files[0].read_text()

@@ -245,7 +245,18 @@ class ReviewStage:
             '--evidence-root', str(Path(self.manifest['evidence_root']) / 'model-review')],
             stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, check=False)
         if result.returncode or len(result.stdout) > 100_000:
-            raise BatchError('glm_review_blocked')
+            reason = 'glm_review_blocked'
+            try:
+                observed_reason = strict_json(result.stdout).get('reason') if len(result.stdout) <= 100_000 else None
+                if type(observed_reason) is str and re.fullmatch(r'[a-z_]{1,80}', observed_reason):
+                    reason = observed_reason
+            except Exception:
+                pass
+            directory = Path(self.manifest['evidence_root']) / 'model-review'
+            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            atomic_json(directory / ('error-' + observation['head_sha'] + '-' + str(time.time_ns()) + '.json'),
+                {'artifact_type': 'model-review-error', 'reason': reason, 'head_sha': observation['head_sha'], 'observed_at': time.time()})
+            raise BatchError(reason)
         value = strict_json(result.stdout)
         expected = {key: observation[key] for key in ('base_sha', 'head_sha', 'diff_sha256')}
         if value.get('status') != 'pass' or value.get('fingerprint') != expected:

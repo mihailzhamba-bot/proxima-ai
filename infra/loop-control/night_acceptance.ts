@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 const serialize = JSON.stringify.bind(JSON);
 const output = process.stdout.write.bind(process.stdout);
 const job = process.argv[2];
+const taskKind = job === "night-20260915-diagnosis-r2" ? "night-20260915-diagnosis" : job;
 const load = (name: string) => import(pathToFileURL(`/work/services/webapp/src/lib/${name}.ts`).href);
 async function evaluate() {
   const results: unknown[] = [];
@@ -20,7 +21,7 @@ async function evaluate() {
     results.push(observationReadiness({ ...task, orphaned: true }, now));
     results.push(observationReadiness({ ...task, status: "cancelled" }, now));
     results.push(observationReadiness(task, new Date("2026-09-17T12:00:00Z")));
-  } else if (job === "night-20260915-diagnosis") {
+  } else if (taskKind === "night-20260915-diagnosis") {
     const { diagnoseSignal } = await load("loop/diagnosis");
     const signal = { source_refs: ["fixture-source-exact"], detection_data: {} };
     for (const value of [NaN, Infinity, -Infinity, "UNKNOWN", "", "NaN", "1O", true, null]) {

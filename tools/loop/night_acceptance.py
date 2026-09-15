@@ -15,7 +15,7 @@ IMAGE = 'localhost:5000/loop-verification/producer@sha256:cf2053695d05fc3ee894de
 def command(checkout, base, head, job, name):
     if not all(re.fullmatch(r'[0-9a-f]{40}', value) for value in (base, head)):
         raise ValueError('invalid sha')
-    if job not in {'night-20260915-observation', 'night-20260915-diagnosis'} and not re.fullmatch(r'tg-[0-9a-f]{32}', job):
+    if job not in {'night-20260915-observation', 'night-20260915-diagnosis', 'night-20260915-diagnosis-r2'} and not re.fullmatch(r'tg-[0-9a-f]{32}', job):
         raise ValueError('unapproved job')
     checkout = Path(checkout)
     if checkout.is_symlink() or checkout.name != 'candidate' or checkout.parent.parent != Path('/srv/loop-runner/work'):
@@ -49,7 +49,7 @@ def validate_output(raw, job):
     elif job == 'night-20260915-observation':
         if len(results) != 16 or results[-1] is not None or not all(type(x) is str and x.strip() for x in results[:-1]):
             raise ValueError('observation assertions')
-    elif job == 'night-20260915-diagnosis':
+    elif job in ('night-20260915-diagnosis', 'night-20260915-diagnosis-r2'):
         if len(results) != 23 or any(type(x) is not dict for x in results): raise ValueError('diagnosis output')
         for i in [*range(9), *range(14,18), *range(19,23)]:
             if results[i].get('facts') != [] or not results[i].get('unknowns'): raise ValueError('unverified fact')

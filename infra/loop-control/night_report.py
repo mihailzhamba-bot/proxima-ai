@@ -107,7 +107,7 @@ def format_report(config, data, now=None, refresh_errors=0):
     queue = {"true": "на паузе", "false": "доступна"}.get(data["paused"], "статус неизвестен")
     age = max(0, int(now - data["snapshot_at"]))
     lines.extend(["Очередь " + queue + ". Источник: сохранённый Bridge, снимок " + str(age) + " сек. назад.",
-                  "Актуальность данных WB и готовность WB-сводки не подтверждены. Merge и deploy не выполнялись."])
+                  "Актуальность данных WB и готовность WB-сводки не подтверждены. Ночной режим сам не выполняет merge и deploy; эти решения остаются за Mike."])
     if refresh_errors:
         lines.append("Не удалось обновить " + str(refresh_errors) + " статусов; показаны сохранённые данные.")
     return "\n".join(lines)

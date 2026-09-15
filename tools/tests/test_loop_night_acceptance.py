@@ -24,3 +24,11 @@ def test_different_job_cannot_supply_a_pass_result():
 
 def test_candidate_location_cannot_escape_trusted_job_tree():
     with pytest.raises(ValueError):module().command('/tmp/candidate','a'*40,'b'*40,'night-20260915-observation','fixture')
+
+
+def test_fixed_diagnosis_retry_uses_the_same_independent_assertions():
+    job='night-20260915-diagnosis-r2';blank={'facts':[],'unknowns':['missing']}
+    results=[blank.copy() for _ in range(23)]
+    for index,value in [(9,0),(10,12),(11,'0.00'),(12,'12345678901234567890.12'),(13,'-30.00'),(18,12)]:
+        results[index]={'facts':[{'value':value,'date':'2024-02-29' if index==18 else '2026-09-15','sourceRefs':['fixture-source-exact']}],'unknowns':[]}
+    module().validate_output(json.dumps({'version':1,'job_id':job,'results':results}),job)
