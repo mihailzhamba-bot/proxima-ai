@@ -40,3 +40,10 @@ def test_cancelling_is_unconfirmed_and_watch_retries(tmp_path,monkeypatch):
     calls=[];monkeypatch.setattr(guard,'stop',lambda m:calls.append('retry'))
     guard.watch({'state_file':str(path),'end_at':1,'job_timeout_seconds':100})
     assert calls==['retry']
+
+def test_lost_dispatch_identity_is_not_confirmed_by_pause(tmp_path,monkeypatch):
+    path=tmp_path/'state.json';path.write_text(json.dumps({'status':'running','tasks':[{'phase':'dispatching','job_id':'fixture'}]}))
+    monkeypatch.setattr(guard,'BridgeClient',lambda _:lambda method,path,**kw:{'paused':True})
+    assert not guard.stop({'state_file':str(path),'tasks':[]})
+    receipt=json.loads((tmp_path/'stop-receipt.json').read_text())
+    assert any(x.get('reason')=='identity_unknown' for x in receipt['actions'])

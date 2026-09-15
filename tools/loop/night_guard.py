@@ -24,6 +24,17 @@ def stop(manifest):
     results = []
     paths = ['/v1/pause']
     for task in state.get('tasks', []):
+        if task.get('phase') in {'dispatching','monitoring','reviewing'} and not task.get('run_id'):
+            expected = next((item for item in manifest.get('tasks',[]) if item['job_id']==task.get('job_id')),None)
+            try:
+                job=api('GET','/v1/runner/jobs/'+task['job_id'],role='runner',timeout=5)
+                if not expected or job.get('template')!=expected['template'] or job.get('template_fingerprint')!=expected['template_fingerprint'] or not isinstance(job.get('parent_run_id'),str):
+                    raise ValueError('identity not verified')
+                import uuid
+                if str(uuid.UUID(job['parent_run_id']))!=job['parent_run_id']:raise ValueError('invalid parent')
+                task['run_id']=job['parent_run_id']
+                atomic_json(path,state)
+            except Exception:results.append({'path':'job-parent-lookup','ok':False,'reason':'identity_unknown'})
         if task.get('run_id') and task.get('phase') != 'ready_pr':
             paths.append('/v1/runs/'+task['run_id']+'/stop')
     for route in paths:
