@@ -188,6 +188,7 @@ def run_api_error(
     persistence_dir: Path | str,
     persistence_root: Path,
     launched_revision: int | None = None,
+    dedicated: bool = False,
 ) -> dict:
     fake_bin = sandbox["root"] / "fake-bin"
     fake_bin.mkdir()
@@ -197,7 +198,7 @@ def run_api_error(
         "sleep": "#!/bin/bash\nexit 0\n",
     }.items():
         executable = fake_bin / name
-        executable.write_text(content, encoding="utf-8")
+        executable.write_text("#!/bin/bash\nexit 1\n" if dedicated and name == "conductor" else content, encoding="utf-8")
         executable.chmod(0o755)
     key_file = sandbox["root"] / "openhands-loop.env"
     key_file.write_text("LOCAL_BACKEND_API_KEY=fixture-only\n", encoding="utf-8")
@@ -216,6 +217,7 @@ def run_api_error(
         PATH=f"{fake_bin}:{env['PATH']}",
     )
     if launched_revision is not None:env["FAKE_LAUNCHED_REVISION"]=str(launched_revision)
+    if dedicated:env["BRIDGE_TRUSTED_OUTPUT"]="1"
     result = subprocess.run(
         [
             str(SCRIPT),
@@ -231,6 +233,7 @@ def run_api_error(
             str(sandbox["source"]),
             "--contract-file",
             "AGENTS.md",
+            *(["--external-collect"] if dedicated else []),
         ],
         capture_output=True,
         text=True,
@@ -647,3 +650,10 @@ def test_worker_dispatch_rejects_prompt_drift_and_empty_allowlist(tmp_path: Path
     config.write_text(json.dumps(payload),encoding="utf-8")
     result=subprocess.run(command,capture_output=True,text=True)
     assert result.returncode != 0 and "non-empty allowed_paths" in result.stderr
+
+
+def test_isolated_dispatch_does_not_read_shared_conductor(sandbox: dict) -> None:
+    persistence=sandbox['root']/'persistence';persistence.mkdir()
+    result=run_api_error(sandbox,'isolated-conductor',persistence,persistence,dedicated=True)
+    assert result['exit_code']==4
+    assert 'conductor' not in result['problem']

@@ -360,6 +360,7 @@ fi
 
 # conductor guard: two orchestrators over one sprint-status would race
 if [ -z "$SIMULATE_WORKER" ]; then
+if [ "$EXTERNAL_COLLECT" != "1" ] || [ "$BRIDGE_TRUSTED_OUTPUT" != "1" ]; then
 if systemctl is-active --quiet codex-conductor.timer 2>/dev/null \
    || systemctl is-active --quiet proxima-conductor.timer 2>/dev/null; then
   fail $EX_HUMAN "conductor timer is active - stop it before running BAD (systemctl disable --now codex-conductor.timer)"
@@ -386,6 +387,7 @@ print("ok", ",".join(live) or "-", ",".join(done) or "-")' 2>/dev/null || echo "
   [ "$SLOT_OK" = "ok" ] || fail $EX_HUMAN "cannot read conductor status - resolve it before running BAD"
   [ "$SLOT_LIVE" = "-" ] || fail $EX_HUMAN "conductor workers still running: $SLOT_LIVE"
   [ "$SLOT_DONE" = "-" ] || note "conductor holds finished, uncollected work: $SLOT_DONE (not blocking; harvest it before re-enabling the timer)"
+fi
 fi
 COUNT_BODY="$(oh_curl GET /api/conversations/count 2>/dev/null)"
 case "$COUNT_BODY" in
