@@ -298,6 +298,20 @@ skipped=0, reviewer, reviewed_at_utc and evidence_ref. A missing receipt blocks 
 Native Hermes Telegram (15.09.2026)
 ===================================
 
+Local incoming voice: configure_local_stt.py --assets IMMUTABLE_ASSET_DIRECTORY
+adds offline faster-whisper STT to this same isolated Hermes only. Install Linux
+CPython 3.12 wheels at the versions pinned in local-stt.lock.json, place the
+model and model-manifest.json alongside python-deps, and verify transfer hashes
+before configuring. No compilation or runtime model download is required.
+The multilingual base model runs on CPU/int8; OMP_NUM_THREADS=2 and the existing
+container CPU/memory limits remain in force. The model unloads after 60 seconds
+idle. This config does not enable TTS, microphone capture, cloud STT, or the queue.
+Native STT enriches voice text after command dispatch; a spoken /loop_confirm
+does not become an owner control command. Validate through the real
+tools.transcription_tools.transcribe_audio(file_path, source='gateway'), then
+through a new owner voice message. Configuration/decoded audio are not proof of
+an intelligible transcript or a delivered Telegram answer.
+
 Native conversation uses the existing Hermes home/OAuth and separate Telegram
 session routing. Do not start tools/loop/telegram.py for the same bot: exactly
 one Telegram poller owns its updates. API-session MCP tools stay configured as

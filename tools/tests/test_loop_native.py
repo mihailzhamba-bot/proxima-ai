@@ -194,6 +194,16 @@ def test_native_chat_passes_through_but_slash_controls_never_reach_model():
     asyncio.run(exercise())
 
 
+def test_cached_voice_transcript_cannot_become_owner_confirmation():
+    plugin = NativePlugin(ACTOR)
+    voice = event('')
+    voice.message_type = 'voice'
+    voice._gateway_pending_stt_text = '/loop_confirm 11111111-1111-4111-8111-111111111111'
+    before = set(PENDING)
+    assert plugin.gate(voice, None) is None
+    assert PENDING == before
+
+
 def test_notification_claim_does_not_resend_after_restart(tmp_path):
     bridge, native, config, remote = setup(tmp_path)
     native.confirm(prepare(native))
