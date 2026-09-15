@@ -56,6 +56,7 @@ def test_dispatcher_uses_separate_uid_and_model_inaccessible_trusted_roots() -> 
     joined = " ".join(command)
     assert "User=loop-worker-runner" in joined
     assert "Group=loop-worker-shared" in joined
+    assert "SupplementaryGroups=loop-worker-runner" in joined
     assert "NoNewPrivileges=yes" in joined
     assert "IPAddressDeny=any" in joined and "IPAddressAllow=localhost" in joined
     assert str(worker_root.SOURCE) in joined
