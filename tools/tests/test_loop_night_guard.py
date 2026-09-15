@@ -1,0 +1,30 @@
+import importlib.util
+import json
+from pathlib import Path
+import sys
+
+ROOT=Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(ROOT/'tools/loop'))
+spec=importlib.util.spec_from_file_location('night_guard',ROOT/'tools/loop/night_guard.py')
+guard=importlib.util.module_from_spec(spec);spec.loader.exec_module(guard)
+
+def test_stop_fences_only_unfinished_runs_and_records_result(tmp_path,monkeypatch):
+    path=tmp_path/'state.json';path.write_text(json.dumps({'status':'running','tasks':[{'phase':'ready_pr','run_id':'done'},{'phase':'reviewing','run_id':'live'}]}))
+    calls=[]
+    monkeypatch.setattr(guard,'BridgeClient',lambda _:lambda method,path,**kwargs:calls.append(path))
+    assert guard.stop({'state_file':str(path)})
+    assert calls==['/v1/pause','/v1/runs/live/stop']
+    assert json.loads(path.read_text())['status']=='blocked'
+
+def test_stale_heartbeat_stops_service_and_pauses_even_if_service_dead(tmp_path,monkeypatch):
+    path=tmp_path/'state.json';path.write_text(json.dumps({'status':'running','updated_at':0,'tasks':[]}))
+    calls=[];monkeypatch.setattr(guard.time,'time',lambda:400)
+    monkeypatch.setattr(guard.subprocess,'run',lambda args,**kw:calls.append(args))
+    monkeypatch.setattr(guard,'stop',lambda m:calls.append('stop'))
+    guard.watch({'state_file':str(path),'end_at':500,'job_timeout_seconds':100})
+    assert calls==[['systemctl','stop','loop-night.service'],'stop']
+
+def test_completed_batch_watchdog_does_not_pause_later_work(tmp_path,monkeypatch):
+    path=tmp_path/'state.json';path.write_text(json.dumps({'status':'completed','updated_at':0}))
+    monkeypatch.setattr(guard,'stop',lambda _:(_ for _ in ()).throw(AssertionError('must not stop')))
+    guard.watch({'state_file':str(path),'end_at':1,'job_timeout_seconds':100})
