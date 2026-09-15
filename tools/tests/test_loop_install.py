@@ -246,6 +246,11 @@ def test_runner_runtime_accepts_only_complete_live_capabilities(tmp_path: Path,m
         return SimpleNamespace(returncode=0,stdout="",stderr="")
     monkeypatch.setattr(module.subprocess,"run",fake_run);monkeypatch.setattr(module.shutil,"disk_usage",lambda _path:SimpleNamespace(free=8*1024**3));monkeypatch.setattr(module.urllib.request,"urlopen",lambda *_args,**_kwargs:io.BytesIO(b'{"job_id":null}'))
     missing=[];module.runner_runtime_checks(config,missing);assert missing==[]
+    config["disk_floor_bytes"]=6*1024**3
+    monkeypatch.setattr(module.shutil,"disk_usage",lambda _path:SimpleNamespace(free=6*1024**3))
+    missing=[];module.runner_runtime_checks(config,missing);assert missing==[]
+    monkeypatch.setattr(module.shutil,"disk_usage",lambda _path:SimpleNamespace(free=6*1024**3-1))
+    missing=[];module.runner_runtime_checks(config,missing);assert missing==["runner-disk-reserve"]
     assert {argv[0] for argv in calls}=={"/usr/bin/docker","/usr/bin/ssh","/usr/bin/git"}
 
 

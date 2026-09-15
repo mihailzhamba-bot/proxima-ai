@@ -398,7 +398,8 @@ def runner_runtime_checks(config: dict,missing: list[str]) -> None:
     work_root=Path(str(config.get("work_root","")))
     try:free=shutil.disk_usage(work_root).free
     except OSError:free=0
-    if free<8*1024**3:missing.append("runner-disk-reserve")
+    floor=config.get("disk_floor_bytes",8*1024**3)
+    if type(floor) is not int or floor<6*1024**3 or free<floor:missing.append("runner-disk-reserve")
 
     token_path=Path(str(config.get("runner_token_file","")))
     try:
