@@ -26,6 +26,7 @@ class NativeControl:
         bridge.native_control = self
         bridge.require_parent_for_jobs = True
         self.config = config
+        bridge.approved_templates = config.get("templates", {})
         self.settings = config.get("native_telegram", {})
         self.lock = threading.RLock()
         with bridge.tx() as db:

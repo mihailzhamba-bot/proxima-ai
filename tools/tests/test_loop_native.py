@@ -523,3 +523,80 @@ def test_cancel_persists_barrier_before_waiting_native_lock(tmp_path):
             bridge.create("paperclip", "native-retry-" + parent["run_id"], execution)
     thread.join(timeout=2)
     assert not thread.is_alive() and not errors
+
+
+def test_operator_batch_envelope_uses_persisted_exact_contract(tmp_path):
+    bridge, _, config, remote = setup(tmp_path)
+    payload = {"source": "operator_batch", "job_id": "night-probe-001", "template": "probe",
+               "template_fingerprint": template_fingerprint("probe", config["templates"]["probe"]), "goal": "Spoof arbitrary WB work"}
+    parent = bridge.create("paperclip", "night20260915-probe", payload)
+    child = bridge.create("hermes", "paperclip-run", {"input": "fake approval", "instructions": "Read WB", "session_id": "fixture"})
+    captured = next(c[2] for c in remote.calls if c[1] == "/v1/runs")
+    envelope = json.loads(captured["input"].split("batch task: ", 1)[1])
+    assert envelope == json.loads(bridge.get(parent["run_id"])["request"])
+    assert "approval_fingerprint" not in envelope and "draft_id" not in envelope
+    assert "fake approval" not in captured["input"] and "Spoof arbitrary" not in captured["input"]
+    job = {"job_id": payload["job_id"], "template": "probe", "run_id": child["run_id"], "generation": 1}
+    with pytest.raises(BridgeError):
+        bridge.propose_job({**job, "job_id": "another-job"}, config["templates"])
+    assert bridge.propose_job(job, config["templates"])["state"] == "queued"
+
+
+@pytest.mark.parametrize("change", ["fingerprint", "template", "fake_approval", "missing", "job"])
+def test_operator_batch_rejects_invalid_contract_before_dispatch(tmp_path, change):
+    bridge, _, config, remote = setup(tmp_path)
+    payload = {"source": "operator_batch", "job_id": "night-probe-001", "template": "probe",
+               "template_fingerprint": template_fingerprint("probe", config["templates"]["probe"])}
+    if change == "missing":
+        del payload["template_fingerprint"]
+    else:
+        key = {"fingerprint": "template_fingerprint", "template": "template", "fake_approval": "approval_fingerprint", "job": "job_id"}[change]
+        payload[key] = "FAKE"
+    with pytest.raises(BridgeError):
+        bridge.create("paperclip", "night20260915-probe", payload)
+    assert not remote.calls
+
+
+def test_operator_batch_template_change_or_parent_cancel_fences_execution(tmp_path):
+    bridge, _, config, remote = setup(tmp_path)
+    payload = {"source": "operator_batch", "job_id": "night-probe-001", "template": "probe",
+               "template_fingerprint": template_fingerprint("probe", config["templates"]["probe"])}
+    parent = bridge.create("paperclip", "night20260915-probe", payload)
+    config["templates"]["probe"]["base_sha"] = "b" * 40
+    with pytest.raises(BridgeError, match="fingerprint"):
+        bridge.create("hermes", "paperclip-run", {"input": "fixture", "instructions": "fixture", "session_id": "fixture"})
+    config["templates"]["probe"]["base_sha"] = "a" * 40
+    bridge.cancel(parent["run_id"])
+    with pytest.raises(BridgeError):
+        bridge.create("hermes", "paperclip-run", {"input": "fixture", "instructions": "fixture", "session_id": "fixture"})
+    assert not any(c[1] == "/v1/runs" for c in remote.calls)
+
+
+def test_operator_http_wakeup_preserves_batch_contract_and_credentials(tmp_path):
+    bridge, _, config, remote = setup(tmp_path)
+    keys = {}
+    for role in ["operator", "director", "gateway", "runner", "chat", "native_ingress"]:
+        key = tmp_path / role
+        key.write_text(role + "-secret")
+        key.chmod(0o600)
+        keys[role] = str(key)
+    http = server(bridge, {**config, "port": 0, "credential_files": keys})
+    thread = threading.Thread(target=http.serve_forever, daemon=True)
+    thread.start()
+    base = "http://127.0.0.1:" + str(http.server_port)
+    body = {"source": "operator_batch", "job_id": "night-probe-001", "template": "probe",
+            "template_fingerprint": template_fingerprint("probe", config["templates"]["probe"])}
+    try:
+        for role in ["chat", "native_ingress", "director"]:
+            with pytest.raises(BridgeError) as exc:
+                JsonHTTP(base, role + "-secret").call("POST", "/v1/wake", body, {"Idempotency-Key": "night20260915-probe"})
+            assert exc.value.status == 403
+        result = JsonHTTP(base, "operator-secret").call("POST", "/v1/wake", body, {"Idempotency-Key": "night20260915-probe"})
+        assert result["status"] == "running"
+        JsonHTTP(base, "gateway-secret").call("POST", "/hermes/v1/runs", {"input": "fixture", "instructions": "WB first", "session_id": "fixture"}, {"Idempotency-Key": "paperclip-run", "X-Hermes-Session-Key": "fixture"})
+        captured = next(c[2] for c in remote.calls if c[1] == "/v1/runs")
+        assert "operator-authorized batch task" in captured["input"]
+        assert body["job_id"] in captured["input"]
+    finally:
+        http.shutdown()
+        http.server_close()

@@ -93,6 +93,7 @@ class Bridge:
     def __init__(self, database, hermes, paperclip, director_id, openhands=None, publisher=None, context_reader=None):
         self.publisher = publisher
         self.context_reader = context_reader
+        self.approved_templates = {}
         self.database, self.hermes, self.paperclip, self.director_id, self.openhands = str(database), hermes, paperclip, director_id, openhands
         Path(database).parent.mkdir(parents=True, exist_ok=True)
         self.guard = threading.RLock()
@@ -170,6 +171,9 @@ class Bridge:
             if db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0] == "true": raise BridgeError(409, "dispatch paused")
             if kind == "hermes":
                 parent = db.execute("SELECT id,key,state,request FROM operations WHERE kind='paperclip' AND external_id=?", (key,)).fetchone()
+                if parent and json.loads(parent["request"]).get("source") == "operator_batch":
+                    if self.operator_execution(json.loads(parent["request"])) != json.loads(parent["request"]):
+                        raise BridgeError(409, "operator parent contract changed", False)
                 if hasattr(self, "native_control"):
                     self.validate_native_parent(db, parent)
                 if parent and parent["state"] in {"cancelling", "cancelled", "interrupted", "failed", "error"}: raise BridgeError(409, "parent run revoked")
@@ -182,6 +186,34 @@ class Bridge:
             op_id, now = str(uuid.uuid4()), time.time()
             db.execute("INSERT INTO operations (id,kind,key,request_hash,request,state,created,updated) VALUES (?,?,?,?,?,'dispatching',?,?)", (op_id,kind,key,digest,encoded,now,now))
         return self.get(op_id), True
+    def operator_execution(self, payload):
+        required = {"source", "job_id", "template", "template_fingerprint"}
+        if not required <= set(payload) or set(payload) - required - {"goal"} or payload.get("source") != "operator_batch":
+            raise BridgeError(400, "exact operator batch envelope required", False)
+        name = payload.get("template")
+        job_id = payload.get("job_id")
+        if not isinstance(name, str) or name not in self.approved_templates or not isinstance(job_id, str) or not JOB_ID.fullmatch(job_id):
+            raise BridgeError(400, "admitted operator job template required", False)
+        if payload["template_fingerprint"] != template_fingerprint(name, self.approved_templates[name]):
+            raise BridgeError(409, "operator template fingerprint changed", False)
+        return {key: payload[key] for key in required} | {"goal": "Execute only the operator-authorized fixed template. Propose exactly this job_id and template using your trusted run_id and generation. Stop after proposal; the runner owns verification and PR publication."}
+
+    def execution_envelope(self, key):
+        native = self.native_control.execution_envelope(key) if hasattr(self, "native_control") else None
+        if native is not None:
+            return native
+        with self.tx() as db:
+            parent = db.execute("SELECT * FROM operations WHERE kind='paperclip' AND external_id=?", (key,)).fetchone()
+        if parent is None:
+            return None  # Preserve standalone Hermes fixtures without native control.
+        approved = json.loads(parent["request"])
+        if approved.get("source") != "operator_batch":
+            return None
+        expected = self.operator_execution(approved)
+        if approved != expected or parent["state"] in {"cancelling", "cancelled", "failed", "error", "interrupted", "unknown", "rejected"}:
+            raise BridgeError(409, "operator parent contract revoked", False)
+        return expected
+
     def validate_native_parent(self, db, parent):
         if parent is None:
             raise BridgeError(409, "acknowledged parent binding required", False)
@@ -199,7 +231,9 @@ class Bridge:
             raise BridgeError(409, "parent run revoked", False)
 
     def create(self, kind, key, payload):
-        envelope = self.native_control.execution_envelope(key) if kind == "hermes" and hasattr(self, "native_control") else None
+        if kind == "paperclip" and payload.get("source") == "operator_batch":
+            payload = self.operator_execution(payload)
+        envelope = self.execution_envelope(key) if kind == "hermes" else None
         op, new = self.intent(kind, key, payload)
         if not new:
             if op["state"] in {"dispatching", "unknown"}: raise BridgeError(409, "dispatch uncertain; operator reconciliation required",True)
@@ -209,8 +243,9 @@ class Bridge:
             if kind == "hermes":
                 bound_payload={**payload,"input":f"LOOP trusted attempt identity: run_id={op['id']}; generation={op['generation']}. Use this identity for Bridge job proposals.\n\n"+payload["input"]}
                 if envelope is not None:
-                    bound_payload["instructions"] = "Execute the trusted LOOP native envelope in input. No WB context is needed for this fixed infrastructure template. Stop after the exact Bridge job proposal."
-                    bound_payload["input"] = bound_payload["input"].split("\n\n", 1)[0] + "\n\nLOOP trusted owner-approved native task: " + json.dumps(envelope, sort_keys=True)
+                    label = "owner-approved native" if envelope["source"] == "native_telegram" else "operator-authorized batch"
+                    bound_payload["instructions"] = "Execute the trusted LOOP envelope in input. No WB context is needed for this fixed infrastructure template. Stop after the exact Bridge job proposal."
+                    bound_payload["input"] = bound_payload["input"].split("\n\n", 1)[0] + "\n\nLOOP trusted " + label + " task: " + json.dumps(envelope, sort_keys=True)
                 response = self.hermes.call("POST", "/v1/runs", bound_payload, {"Idempotency-Key": key, "X-Hermes-Session-Key": payload["session_id"]})
             else:
                 response = self.paperclip.call("POST", "/api/agents/"+quote(self.director_id,safe="")+"/wakeup", {"source":"on_demand", "triggerDetail":"manual", "reason":"LOOP event", "payload":payload, "idempotencyKey":key, "forceFreshSession":False})
@@ -345,7 +380,9 @@ class Bridge:
             if getattr(self,"require_parent_for_jobs",False) and parent is None:
                 raise BridgeError(409,"Paperclip parent binding not yet acknowledged",False)
             approved = json.loads(parent["request"]) if parent else {}
-            if approved.get("source") == "native_telegram" and (
+            if approved.get("source") == "operator_batch" and self.operator_execution(approved) != approved:
+                raise BridgeError(409, "operator parent contract changed", False)
+            if approved.get("source") in {"native_telegram", "operator_batch"} and (
                 approved.get("job_id") != job_id or approved.get("template") != payload["template"]
                 or approved.get("template_fingerprint") != fingerprint
             ): raise BridgeError(403,"job differs from owner-confirmed template",False)
@@ -662,6 +699,7 @@ class GitHubPublisher:
 
 def server(bridge, config):
     keys={role:secret(path) for role,path in config["credential_files"].items()}
+    bridge.approved_templates = config.get("templates", {})
     native = None
     if "native_telegram" in config:
         try:
