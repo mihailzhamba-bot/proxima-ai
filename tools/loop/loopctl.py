@@ -1,7 +1,10 @@
 """Operator CLI. Credentials are read from private files, never command arguments."""
 import argparse
 import json
+import sys
 from pathlib import Path
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
     from .bridge import JsonHTTP, secret, BridgeError
 except ImportError:

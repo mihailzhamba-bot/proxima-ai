@@ -1,5 +1,5 @@
 {
-  "bridge_url": "https://OPERATOR_PRIVATE_CONTROL_ENDPOINT",
+  "bridge_url": "http://127.0.0.1:18771",
   "runner_token_file": "/etc/loop/secrets/runner",
   "trusted_home": "/var/lib/loop-runner",
   "worker_host": "loop-worker@135.106.186.210",

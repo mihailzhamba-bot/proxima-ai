@@ -14,6 +14,10 @@ import time
 import uuid
 import sys
 from pathlib import Path
+if not __package__:
+    # -I deliberately omits the script directory; import only our explicitly
+    # installed sibling modules, never the candidate working directory.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
     from .bridge import BridgeError, JsonHTTP, secret, template_fingerprint
     from .verify_candidate import sanitize

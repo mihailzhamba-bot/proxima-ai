@@ -1,7 +1,9 @@
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -17,6 +19,14 @@ INSTALL=ROOT/"infra/loop-control/install.py"
 def load():
     spec=importlib.util.spec_from_file_location("loop_install",INSTALL)
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
+
+
+def unpack_verifier_probe(argv):
+    assert argv[:6]==["/usr/sbin/runuser","-u","verifier","--","/usr/bin/env","-i"]
+    program=next(index for index,value in enumerate(argv[6:],6) if value.startswith("/"))
+    environment=dict(value.split("=",1) for value in argv[6:program])
+    assert environment["PATH"]=="/usr/bin:/bin" and environment["HOME"]
+    return argv[program:],environment
 
 
 def test_installer_declares_all_three_roles_and_critical_runtime_files() -> None:
@@ -181,9 +191,62 @@ def test_runner_inputs_require_two_valid_keys_hosts_and_executable_reviewer(tmp_
         path=tmp_path/name;subprocess.run(["/usr/bin/ssh-keygen","-q","-t","ed25519","-N","","-f",str(path)],check=True);keys.append(path)
     known=tmp_path/"known_hosts";known.write_text("135.106.186.210 "+keys[0].with_suffix(".pub").read_text()+"github.com "+keys[1].with_suffix(".pub").read_text())
     reviewer=tmp_path/"reviewer";reviewer.write_text("#!/bin/sh\nexit 0\n");reviewer.chmod(0o755)
-    config={"worker_host":"loop-worker@135.106.186.210","publish_remote":"git@github.com:mihailzhamba-bot/proxima-ai.git","worker_identity_file":str(keys[0]),"github_publish_identity_file":str(keys[1]),"known_hosts_file":str(known),"reviewer_command":[str(reviewer)]}
+    template={"base_sha":"a"*40,"prompt_sha256":"b"*64,"allowed_paths":["services/webapp/"],"contract_files":[],"profile":"fedor","profile_id":"11111111-1111-4111-8111-111111111111","profile_revision":1}
+    config={"bridge_url":"http://127.0.0.1:18771","worker_host":"loop-worker@135.106.186.210","publish_remote":"git@github.com:mihailzhamba-bot/proxima-ai.git","worker_identity_file":str(keys[0]),"github_publish_identity_file":str(keys[1]),"known_hosts_file":str(known),"reviewer_command":[str(reviewer)],"templates":{"pilot":template}}
     missing=[];module.validate_runner_inputs(config,missing,trusted_uid=os.getuid());assert missing==[]
+    for allowed in [[],[".git"],["."]]:
+        bad={**config,"templates":{"pilot":{**template,"allowed_paths":allowed}}};missing=[];module.validate_runner_inputs(bad,missing,trusted_uid=os.getuid());assert "runner-template:pilot" in missing
     keys[0].write_text("");missing=[];module.validate_runner_inputs(config,missing,trusted_uid=os.getuid());assert str(keys[0])+":invalid-private-key" in missing
+
+
+def test_runner_placeholder_and_encrypted_identity_are_rejected(tmp_path: Path) -> None:
+    module=load();placeholder=json.loads((module.CONF/"runner.config.example.json").read_text());missing=[]
+    module.validate_runner_inputs(placeholder,missing,trusted_uid=os.getuid())
+    assert "runner-templates" in missing
+    encrypted=tmp_path/"encrypted";subprocess.run(["/usr/bin/ssh-keygen","-q","-t","ed25519","-N","passphrase","-f",str(encrypted)],check=True)
+    placeholder["worker_identity_file"]=str(encrypted);missing=[];module.validate_runner_inputs(placeholder,missing,trusted_uid=os.getuid())
+    assert str(encrypted)+":invalid-private-key" in missing
+
+
+def test_runner_runtime_requires_local_image_and_offline_inputs(tmp_path: Path,monkeypatch) -> None:
+    module=load();token=tmp_path/"runner-token";token.write_text("x"*48);image="127.0.0.1:5000/loop-verify@sha256:"+"a"*64
+    config={"verification_image":image,"work_root":str(tmp_path),"runner_token_file":str(token),"known_hosts_file":"/fixture/known_hosts","worker_identity_file":"/fixture/worker","worker_host":"loop-worker@135.106.186.210","github_publish_identity_file":"/fixture/github","source_repo":"/fixture/repo","publish_remote":"git@github.com:mihailzhamba-bot/proxima-ai.git","trusted_home":str(tmp_path)}
+    state={"daemon":True,"image":False,"offline":True}
+    def fake_run(argv,**_kwargs):
+        argv,_environment=unpack_verifier_probe(argv)
+        if argv[:2]==["/usr/bin/docker","info"]:return SimpleNamespace(returncode=0 if state["daemon"] else 1,stdout="",stderr="")
+        if argv[:3]==["/usr/bin/docker","image","inspect"]:return SimpleNamespace(returncode=0 if state["image"] else 1,stdout=json.dumps([image]) if state["image"] else "",stderr="")
+        if argv[:2]==["/usr/bin/docker","run"]:return SimpleNamespace(returncode=0 if state["offline"] else 1,stdout="",stderr="")
+        if argv[0]=="/usr/bin/ssh":return SimpleNamespace(returncode=1,stdout="",stderr="LOOP worker denied: FileNotFoundError\n")
+        if argv[0]=="/usr/bin/git":return SimpleNamespace(returncode=0,stdout="",stderr="")
+        raise AssertionError(argv)
+    monkeypatch.setattr(module.subprocess,"run",fake_run);monkeypatch.setattr(module.shutil,"disk_usage",lambda _path:SimpleNamespace(free=9*1024**3));monkeypatch.setattr(module.urllib.request,"urlopen",lambda *_args,**_kwargs:io.BytesIO(b'{"job_id":null}'))
+    state["daemon"]=False;missing=[];module.runner_runtime_checks(config,missing);assert missing==["docker-daemon"]
+    state["daemon"]=True
+    missing=[];module.runner_runtime_checks(config,missing);assert missing==["verification-image-local"]
+    state["image"]=True;state["offline"]=False;missing=[];module.runner_runtime_checks(config,missing);assert missing==["verification-image-offline-inputs"]
+
+
+def test_runner_runtime_accepts_only_complete_live_capabilities(tmp_path: Path,monkeypatch) -> None:
+    module=load();token=tmp_path/"runner-token";token.write_text("x"*48);image="127.0.0.1:5000/loop-verify@sha256:"+"a"*64
+    config={"verification_image":image,"work_root":str(tmp_path),"runner_token_file":str(token),"known_hosts_file":"/fixture/known_hosts","worker_identity_file":"/fixture/worker","worker_host":"loop-worker@135.106.186.210","github_publish_identity_file":"/fixture/github","source_repo":"/fixture/repo","publish_remote":"git@github.com:mihailzhamba-bot/proxima-ai.git","trusted_home":str(tmp_path)}
+    calls=[]
+    def fake_run(argv,**_kwargs):
+        argv,environment=unpack_verifier_probe(argv);calls.append(argv)
+        if argv[:3]==["/usr/bin/docker","image","inspect"]:return SimpleNamespace(returncode=0,stdout=json.dumps([image]),stderr="")
+        if argv[0]=="/usr/bin/ssh":
+            assert argv[1:3]==["-F","/dev/null"]
+            for option in ["-oIdentityAgent=none","-oGlobalKnownHostsFile=/dev/null","-oUpdateHostKeys=no","-oPasswordAuthentication=no","-oKbdInteractiveAuthentication=no","-oConnectTimeout=10"]:assert option in argv
+            return SimpleNamespace(returncode=1,stdout="",stderr="LOOP worker denied: ValueError\n")
+        if argv[0]=="/usr/bin/git":
+            assert argv[1:3]==["-c","core.hooksPath=/dev/null"] and "--dry-run" in argv
+            ssh=shlex.split(environment["GIT_SSH_COMMAND"]);assert ssh[:3]==["/usr/bin/ssh","-F","/dev/null"]
+            for option in ["-oIdentityAgent=none","-oGlobalKnownHostsFile=/dev/null","-oUpdateHostKeys=no","-oPasswordAuthentication=no","-oKbdInteractiveAuthentication=no","-oConnectTimeout=10"]:assert option in ssh
+            assert environment["GIT_CONFIG_GLOBAL"]=="/dev/null" and environment["GIT_CONFIG_SYSTEM"]=="/dev/null"
+        return SimpleNamespace(returncode=0,stdout="",stderr="")
+    monkeypatch.setattr(module.subprocess,"run",fake_run);monkeypatch.setattr(module.shutil,"disk_usage",lambda _path:SimpleNamespace(free=8*1024**3));monkeypatch.setattr(module.urllib.request,"urlopen",lambda *_args,**_kwargs:io.BytesIO(b'{"job_id":null}'))
+    missing=[];module.runner_runtime_checks(config,missing);assert missing==[]
+    assert {argv[0] for argv in calls}=={"/usr/bin/docker","/usr/bin/ssh","/usr/bin/git"}
 
 
 def test_codex_auth_requires_complete_chatgpt_token_set(tmp_path: Path) -> None:

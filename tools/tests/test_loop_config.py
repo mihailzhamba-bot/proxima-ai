@@ -203,3 +203,20 @@ def test_worker_gateway_sources_are_versioned_and_fail_closed():
     assert "ForceCommand /opt/loop/worker_ssh.py" in sshd
     assert "DisableForwarding yes" in sshd and "PermitTTY no" in sshd
     assert "PermitUserEnvironment" not in sshd
+
+
+def test_runner_tunnel_is_loopback_only_and_blocks_other_forwarding():
+    unit=(CONF/'loop-runner-bridge-tunnel.service').read_text()
+    sshd=(CONF/'96-loop-runner-tunnel-sshd.conf').read_text()
+    assert '-L 127.0.0.1:18771:127.0.0.1:18770' in unit
+    assert 'GlobalKnownHostsFile=/dev/null' in unit and 'IdentityAgent=none' in unit
+    assert 'Restart=always' in unit
+    assert sshd.index('Match User loop-runner-tunnel') < sshd.index('AllowUsers ')
+    assert 'PermitOpen 127.0.0.1:18770' in sshd and 'PermitListen none' in sshd
+    assert 'MaxSessions 0' in sshd and 'AllowTcpForwarding local' in sshd
+
+
+def test_runner_cli_imports_trusted_siblings_in_isolated_python(tmp_path):
+    hostile=tmp_path/'bridge.py';hostile.write_text('raise RuntimeError("untrusted cwd imported")')
+    result=subprocess.run([__import__('sys').executable,'-I',str(ROOT/'tools/loop/runner.py'),'--help'],cwd=tmp_path,capture_output=True,text=True)
+    assert result.returncode==0 and '--serve' in result.stdout

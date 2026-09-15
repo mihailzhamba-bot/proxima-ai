@@ -1,6 +1,7 @@
 [Unit]
 Description=LOOP trusted verification consumer on Harper
-After=network-online.target
+After=network-online.target loop-runner-bridge-tunnel.service
+Requires=loop-runner-bridge-tunnel.service
 Wants=network-online.target
 
 [Service]
@@ -9,6 +10,7 @@ User=verifier
 Group=verifier
 SupplementaryGroups=docker
 WorkingDirectory=/var/lib/loop-runner
+Environment=HOME=/var/lib/loop-runner
 ExecStart=/usr/bin/python3 -I /opt/loop/runner.py --config /etc/loop-runner/config.json --serve
 Restart=on-failure
 RestartSec=10

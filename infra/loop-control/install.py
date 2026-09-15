@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import pwd
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -21,6 +22,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -63,7 +65,9 @@ WORKER_FILES = {
     CONF / "loop-worker-sudoers": (Path("/etc/sudoers.d/loop-worker"), 0o440),
 }
 WORKER_UNITS = ["loop-worker-volume.service", "loop-openhands-directories.service", "loop-openhands-agent-server.service"]
+RUNNER_UNITS = ["loop-runner-bridge-tunnel.service", "loop-runner.service"]
 RUNNER_FILES = {
+    ROOT / "tools/loop/review_candidate.py": (Path("/opt/loop-review/review-candidate"), 0o755),
     ROOT / "tools/loop/runner.py": (Path("/opt/loop/runner.py"), 0o755),
     ROOT / "tools/loop/bridge.py": (Path("/opt/loop/bridge.py"), 0o644),
     ROOT / "tools/loop/publication.py": (Path("/opt/loop/publication.py"), 0o644),
@@ -146,7 +150,7 @@ def install_units(names: list[str], apply: bool, drift: list[str]) -> list[Path]
 
 def role_mapping(role: str) -> dict[Path,tuple[Path,int]]:
     files={"control":CONTROL_FILES,"worker":WORKER_FILES,"runner":RUNNER_FILES}[role].copy()
-    units={"control":CONTROL_UNITS,"worker":WORKER_UNITS,"runner":["loop-runner.service"]}[role]
+    units={"control":CONTROL_UNITS,"worker":WORKER_UNITS,"runner":RUNNER_UNITS}[role]
     files.update({CONF/name:(Path("/etc/systemd/system")/name,0o644) for name in units})
     if role=="worker":
         files[CONF/"worker.templates.example.json"]=(Path("/etc/loop-worker/templates.json"),0o640)
@@ -328,11 +332,13 @@ def validate_worker_integrity(missing: list[str],config_path: Path = Path("/etc/
 
 
 def validate_runner_inputs(config: dict,missing: list[str],trusted_uid: int = 0) -> None:
-    if config.get("worker_host")!="loop-worker@135.106.186.210" or config.get("publish_remote")!="git@github.com:mihailzhamba-bot/proxima-ai.git":missing.append("runner-endpoint-contract")
+    if config.get("bridge_url")!="http://127.0.0.1:18771" or config.get("worker_host")!="loop-worker@135.106.186.210" or config.get("publish_remote")!="git@github.com:mihailzhamba-bot/proxima-ai.git":missing.append("runner-endpoint-contract")
     public_keys=[]
     for name in ["worker_identity_file","github_publish_identity_file"]:
         path=Path(str(config.get(name,"")))
-        result=subprocess.run(["/usr/bin/ssh-keygen","-y","-f",str(path)],capture_output=True,text=True,timeout=10) if path.is_file() else None
+        # An empty passphrase is explicit: encrypted keys must never leave a
+        # headless systemd service looking ready while waiting for a prompt.
+        result=subprocess.run(["/usr/bin/ssh-keygen","-y","-P","","-f",str(path)],capture_output=True,text=True,timeout=10) if path.is_file() else None
         if result is None or result.returncode or not result.stdout.startswith("ssh-") or result.stderr.strip():missing.append(str(path)+":invalid-private-key")
         else:public_keys.append(result.stdout.strip())
     if len(public_keys)==2 and public_keys[0]==public_keys[1]:missing.append("runner-identities-must-be-distinct")
@@ -346,6 +352,76 @@ def validate_runner_inputs(config: dict,missing: list[str],trusted_uid: int = 0)
     except FileNotFoundError:missing.append("reviewer-executable")
     else:
         if not executable.is_absolute() or executable.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_uid!=trusted_uid or info.st_mode&0o022 or not info.st_mode&0o111:missing.append("reviewer-executable")
+
+    templates=config.get("templates")
+    if not isinstance(templates,dict) or not templates:
+        missing.append("runner-templates")
+    else:
+        for name,template in templates.items():
+            if not isinstance(template,dict):
+                missing.append("runner-template:"+str(name));continue
+            try:profile_id=str(uuid.UUID(template.get("profile_id")))
+            except (ValueError,TypeError,AttributeError):profile_id=""
+            allowed=template.get("allowed_paths");contracts=template.get("contract_files")
+            safe=lambda value:isinstance(value,str) and value and bool(Path(value).parts) and not value.startswith("/") and ".." not in Path(value).parts and Path(value).parts[0]!=".git" and "\x00" not in value
+            paths_valid=isinstance(allowed,list) and bool(allowed) and all(safe(value) for value in allowed) and len(set(allowed))==len(allowed)
+            contracts_valid=isinstance(contracts,list) and all(safe(value) for value in contracts) and len(set(contracts))==len(contracts)
+            if not isinstance(name,str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,63}",name) or not re.fullmatch(r"[0-9a-f]{40}",str(template.get("base_sha",""))) or not re.fullmatch(r"[0-9a-f]{64}",str(template.get("prompt_sha256",""))) or not paths_valid or not contracts_valid or template.get("profile","fedor")!="fedor" or profile_id!=template.get("profile_id") or not isinstance(template.get("profile_revision"),int) or isinstance(template.get("profile_revision"),bool) or template["profile_revision"]<0:
+                missing.append("runner-template:"+str(name))
+
+
+def runner_runtime_checks(config: dict,missing: list[str]) -> None:
+    """Prove Harper's external capabilities without mutating remote state."""
+    def verifier_command(argv: list[str],extra_environment: dict[str,str] | None = None) -> list[str]:
+        environment={"PATH":"/usr/bin:/bin","HOME":str(config.get("trusted_home","")),**(extra_environment or {})}
+        return ["/usr/sbin/runuser","-u","verifier","--","/usr/bin/env","-i",*[key+"="+value for key,value in environment.items()],*argv]
+    docker=verifier_command(["/usr/bin/docker"])
+    try:daemon=subprocess.run([*docker,"info"],capture_output=True,text=True,timeout=15)
+    except (FileNotFoundError,subprocess.TimeoutExpired):daemon=None
+    if daemon is None or daemon.returncode:missing.append("docker-daemon")
+    image=config.get("verification_image")
+    valid_image=isinstance(image,str) and re.fullmatch(r"[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}",image)
+    if not valid_image:
+        missing.append("verification-image-ref")
+    elif daemon is not None and daemon.returncode==0:
+        try:inspection=subprocess.run([*docker,"image","inspect","--format","{{json .RepoDigests}}",image],capture_output=True,text=True,timeout=15)
+        except (FileNotFoundError,subprocess.TimeoutExpired):inspection=None
+        try:repo_digests=json.loads(inspection.stdout) if inspection is not None and inspection.returncode==0 else []
+        except json.JSONDecodeError:repo_digests=[]
+        if not isinstance(repo_digests,list) or image not in repo_digests:
+            missing.append("verification-image-local")
+        else:
+            try:offline=subprocess.run([*docker,"run","--rm","--network","none","--entrypoint","/bin/sh",image,"-ceu","test -d /opt/offline/npm && test -d /opt/offline/uv"],capture_output=True,text=True,timeout=30)
+            except (FileNotFoundError,subprocess.TimeoutExpired):offline=None
+            if offline is None or offline.returncode:missing.append("verification-image-offline-inputs")
+
+    work_root=Path(str(config.get("work_root","")))
+    try:free=shutil.disk_usage(work_root).free
+    except OSError:free=0
+    if free<8*1024**3:missing.append("runner-disk-reserve")
+
+    token_path=Path(str(config.get("runner_token_file","")))
+    try:
+        token=token_path.read_text().strip()
+        if len(token)<32:raise ValueError
+        request=urllib.request.Request("http://127.0.0.1:18771/v1/runner/jobs/next",headers={"Authorization":"Bearer "+token})
+        with urllib.request.urlopen(request,timeout=10) as response:bridge=json.load(response)
+        if not isinstance(bridge,dict) or set(bridge)!={"job_id"}:raise ValueError
+    except Exception:missing.append("bridge-runner-auth")
+
+    known=str(config.get("known_hosts_file",""));worker_key=str(config.get("worker_identity_file",""));worker=str(config.get("worker_host",""))
+    ssh_options=["-F","/dev/null","-oBatchMode=yes","-oIdentityAgent=none","-oGlobalKnownHostsFile=/dev/null","-oUpdateHostKeys=no","-oPasswordAuthentication=no","-oKbdInteractiveAuthentication=no","-oConnectTimeout=10","-oControlMaster=no","-oControlPath=none","-oForwardAgent=no","-oIdentitiesOnly=yes","-oStrictHostKeyChecking=yes","-oUserKnownHostsFile="+known]
+    ssh=verifier_command(["/usr/bin/ssh",*ssh_options,"-i",worker_key,worker,"/opt/loop/worker_fetch","--job","installer-probe"])
+    try:worker_probe=subprocess.run(ssh,capture_output=True,text=True,timeout=15)
+    except (FileNotFoundError,subprocess.TimeoutExpired):worker_probe=None
+    if worker_probe is None or worker_probe.returncode==0 or worker_probe.stdout or not re.fullmatch(r"LOOP worker denied: [A-Za-z]+\n?",worker_probe.stderr):missing.append("worker-forced-ssh-auth")
+
+    git_key=str(config.get("github_publish_identity_file",""));source=str(config.get("source_repo",""));remote=str(config.get("publish_remote",""))
+    git_ssh=shlex.join(["/usr/bin/ssh",*ssh_options,"-i",git_key])
+    environment={"GIT_CONFIG_GLOBAL":"/dev/null","GIT_CONFIG_SYSTEM":"/dev/null","GIT_CONFIG_NOSYSTEM":"1","GIT_TERMINAL_PROMPT":"0","GIT_SSH_COMMAND":git_ssh}
+    try:github_probe=subprocess.run(verifier_command(["/usr/bin/git","-c","core.hooksPath=/dev/null","-C",source,"push","--dry-run",remote,"HEAD:refs/heads/loop-installer-auth-probe"],environment),capture_output=True,text=True,timeout=30)
+    except (FileNotFoundError,subprocess.TimeoutExpired):github_probe=None
+    if github_probe is None or github_probe.returncode:missing.append("github-publication-auth")
 
 
 WORKER_DIRECTORIES = [
@@ -556,18 +632,32 @@ def worker(apply: bool, drift: list[str], missing: list[str], errors: list[str])
 
 
 def runner(apply: bool, drift: list[str], missing: list[str], errors: list[str]) -> list[str]:
+    group("loop-runner-tunnel",apply)
+    user("loop-runner-tunnel","loop-runner-tunnel","/var/lib/loop-runner-tunnel",apply)
+    account_contract(["loop-runner-tunnel"])
     try:grp.getgrnam("docker")
     except KeyError:missing.append("group:docker")
     try:
         account=pwd.getpwnam("verifier")
-        if account.pw_uid!=1000 or grp.getgrgid(account.pw_gid).gr_name!="verifier" or account.pw_dir!="/var/lib/loop-runner" or account.pw_shell!="/usr/sbin/nologin":errors.append("verifier-account")
+        # Preserve Harper's existing verifier login. The unit sets its own HOME
+        # and ProtectHome blocks the historical home from the LOOP runtime.
+        if account.pw_uid!=1000 or grp.getgrgid(account.pw_gid).gr_name!="verifier" or (account.pw_dir,account.pw_shell) not in {("/var/lib/loop-runner","/usr/sbin/nologin"),("/home/verifier","/bin/bash")}:errors.append("verifier-account")
     except KeyError:
         if apply:
             group("verifier",True);run(["/usr/sbin/useradd","--uid","1000","--create-home","--home-dir","/var/lib/loop-runner","--shell","/usr/sbin/nologin","--gid","verifier","verifier"])
         else:missing.append("user:verifier")
     if apply and "group:docker" not in missing:run(["/usr/sbin/usermod","-a","-G","docker","verifier"])
     if "verifier-account" not in errors and "user:verifier" not in missing and "group:docker" not in missing:account_contract(["verifier"],{"verifier":{"docker"}})
-    install_map(RUNNER_FILES,apply,drift);units=install_units(["loop-runner.service"],apply,drift)
+    install_map(RUNNER_FILES,apply,drift);units=install_units(RUNNER_UNITS,apply,drift)
+    tunnel_missing=[]
+    private_file("/var/lib/loop-runner-tunnel/id_ed25519",0o600,tunnel_missing,"loop-runner-tunnel")
+    private_file("/etc/loop-runner-tunnel/known_hosts",0o644,tunnel_missing)
+    missing.extend(tunnel_missing)
+    if apply and not tunnel_missing and not errors:
+        verify_units(units,errors)
+        if not errors:
+            run(["/usr/bin/systemctl","daemon-reload"])
+            run(["/usr/bin/systemctl","enable","--now","loop-runner-bridge-tunnel.service"])
     if apply:
         verifier=pwd.getpwnam("verifier").pw_uid
         for path,mode in [(Path("/var/lib/loop-runner"),0o700),(Path("/srv/loop-runner"),0o700)]:
@@ -593,17 +683,18 @@ def runner(apply: bool, drift: list[str], missing: list[str], errors: list[str])
                 elif key=="known_hosts_file":private_file(value,0o644,missing,"verifier")
                 else:private_file(value,0o600,missing,"verifier")
             validate_runner_inputs(config,missing)
-    for path in ["/srv/loop-runner/source/proxima-ai/.git","/srv/loop-runner/fixtures/wb-api","/opt/offline/npm","/opt/offline/uv"]:
-        if not Path(path).exists():missing.append(path)
+            runner_runtime_checks(config,missing)
+    for path in ["/srv/loop-runner/source/proxima-ai/.git","/srv/loop-runner/fixtures/wb-api"]:
+        if not Path(path).is_dir():missing.append(path)
     if not missing:verify_units(units,errors)
-    return ["loop-runner.service"]
+    return RUNNER_UNITS
 
 
 def main() -> None:
     parser=argparse.ArgumentParser();parser.add_argument("--role",choices=["control","worker","runner"],required=True);mode=parser.add_mutually_exclusive_group(required=True);mode.add_argument("--check",action="store_true");mode.add_argument("--apply",action="store_true");args=parser.parse_args()
     if args.apply and os.geteuid()!=0:raise SystemExit("--apply requires root")
     validate_sources(args.role);drift=[];missing=[];errors=[];rollback=None
-    unit_names={"control":CONTROL_UNITS,"worker":WORKER_UNITS,"runner":["loop-runner.service"]}[args.role]
+    unit_names={"control":CONTROL_UNITS,"worker":WORKER_UNITS,"runner":RUNNER_UNITS}[args.role]
     if args.apply:rollback=(snapshot(role_mapping(args.role)),snapshot_units(unit_names))
     profile_rollback=None
     try:

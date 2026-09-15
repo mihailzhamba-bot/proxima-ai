@@ -277,3 +277,21 @@ category target остаётся unknown. Достижение цели не д�
 private ingress, membership, реальный маршрут Paperclip/Hermes/OpenHands/Harper/PR,
 отмена/restart и restore backup. Unit/DB/browser и component smoke не заменяют эту
 сквозную приёмку. Merge и production deploy остаются решением Mike.
+
+Harper: private Bridge connection (15.09.2026)
+Receiver on LOOP-control: loop-runner-tunnel, home /var/lib/loop-runner-tunnel,
+shell /usr/sbin/nologin. Install 96-loop-runner-tunnel-sshd.conf after comparing
+existing admin sshd -T output; run sshd -t before reload. authorized_keys restricts
+from=135.106.211.64, port-forwarding and permitopen=127.0.0.1:18770.
+Harper runs loop-runner-bridge-tunnel.service as a separate service account.
+Its key is /var/lib/loop-runner-tunnel/id_ed25519 (owner, 0600); pinned host keys
+are /etc/loop-runner-tunnel/known_hosts (root, 0644). Bridge URL is
+http://127.0.0.1:18771. Direct public Bridge access is not required.
+Existing verifier /home/verifier and /bin/bash are preserved; the LOOP unit sets
+HOME=/var/lib/loop-runner and ProtectHome=yes. Historical verification trees are
+not migrated or cleaned. Installer probes Docker, exact image offline caches,
+Bridge auth, worker forced SSH and GitHub dry-run push as verifier, not root.
+Manual review gate: /opt/loop-review/review-candidate requires a separate root-owned
+/etc/loop-review/receipts/<head-sha>.json with base_sha, sha, diff_sha256, status=pass,
+skipped=0, reviewer, reviewed_at_utc and evidence_ref. A missing receipt blocks PR;
+--wait-seconds can wait up to 1800 seconds for independent review of that candidate.
