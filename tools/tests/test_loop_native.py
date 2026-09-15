@@ -251,6 +251,9 @@ def test_plugin_registration_requires_no_running_event_loop(tmp_path, monkeypatc
     assert seen['hooks'][0][0] == 'pre_gateway_dispatch'
     assert {t['name'] for t in seen['tools']} == {'loop_get_status', 'loop_prepare_action'}
     assert len(seen['commands']) == 4
+    monkeypatch.setattr(NativePlugin, 'model_call', lambda self, name, args: json.dumps({'name': name}))
+    for tool in seen['tools']:
+        assert json.loads(tool['handler']({}, task_id='native-fixture'))['name'] == tool['name']
 
 
 def test_hermes_only_restart_exposes_uncertain_delivery_without_resending(tmp_path):

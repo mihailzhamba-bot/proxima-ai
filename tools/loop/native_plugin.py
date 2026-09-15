@@ -217,4 +217,4 @@ def register(ctx):
         name = tool["name"]
         ctx.register_tool(name=name, toolset="loop_chat",
                           schema={"name": name, "description": tool["description"], "parameters": tool["inputSchema"]},
-                          handler=lambda args, name=name: plugin.model_call(name, args))
+                          handler=lambda args, name=name, **_context: plugin.model_call(name, args))
