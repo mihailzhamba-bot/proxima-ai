@@ -112,11 +112,11 @@ def trusted_directory(path, allowed_owners=(0,)):
             raise BatchError('untrusted_directory')
 
 
-def atomic_json(path, value):
+def atomic_json(path, value, mode=0o600):
     path = Path(path)
     fd, temporary = tempfile.mkstemp(prefix=path.name + '.', dir=path.parent)
     try:
-        os.fchmod(fd, 0o600)
+        os.fchmod(fd, mode)
         with os.fdopen(fd, 'w') as output:
             json.dump(value, output, indent=2)
             output.flush(); os.fsync(output.fileno())
@@ -278,7 +278,9 @@ class ReviewStage:
             if json_file(path) != receipt:
                 raise BatchError('review_receipt_conflict')
             return
-        atomic_json(path, receipt)
+        # Public nonsecret attestation: the unprivileged verifier must read it.
+        # Ownership and all write permissions remain restricted to root.
+        atomic_json(path, receipt, mode=0o644)
 
 
 class Batch:

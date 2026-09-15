@@ -467,3 +467,10 @@ def test_disk_start_reserve_is_higher_than_inflight_floor(tmp_path):
     result, http, _, _ = execute(settings, disk=lambda _: int(2.5 * 1024**3))
     assert result['reason'] == 'disk_start_floor'
     assert not any(call[1] == '/v1/wake' for call in http.calls)
+
+def test_nonsecret_attestation_is_readable_but_state_stays_private(tmp_path):
+    receipt=tmp_path/'receipt.json';state=tmp_path/'state-private.json'
+    driver.atomic_json(receipt, {'status':'pass'},mode=0o644)
+    driver.atomic_json(state, {'status':'running'})
+    assert stat.S_IMODE(receipt.stat().st_mode)==0o644
+    assert stat.S_IMODE(state.stat().st_mode)==0o600
