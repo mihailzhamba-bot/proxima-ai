@@ -241,3 +241,33 @@ def test_transport_absolute_timeout(monkeypatch):
 def test_duplicate_json_keys_rejected():
     with pytest.raises(ValueError):
         reviewer.strict_json('{"status":"blocked","status":"pass"}')
+
+
+def test_gitlink_rejected_before_nested_fsmonitor_can_execute(candidate, tmp_path):
+    root, base, _head = candidate
+    sub = root / 'sub'; sub.mkdir()
+    run_git(sub, 'init', '-q')
+    run_git(sub, 'config', 'user.name', 'Fixture')
+    run_git(sub, 'config', 'user.email', 'fixture@example.invalid')
+    (sub / 'file.txt').write_text('fixture')
+    run_git(sub, 'add', 'file.txt'); run_git(sub, 'commit', '-qm', 'sub base')
+    (root / '.gitmodules').write_text('[submodule "sub"]\n path = sub\n url = ./sub\n')
+    run_git(root, 'add', 'sub', '.gitmodules'); run_git(root, 'commit', '-qm', 'tracked gitlink')
+    head = run_git(root, 'rev-parse', 'HEAD')
+    sentinel = tmp_path / 'submodule-executed'
+    script = tmp_path / 'nested-fsmonitor'
+    script.write_text('#!/bin/sh\ntouch "' + str(sentinel) + '"\n')
+    script.chmod(0o700)
+    run_git(sub, 'config', 'core.fsmonitor', str(script))
+    with pytest.raises(reviewer.ReviewError, match='submodules_not_allowed'):
+        perform((root, base, head), tmp_path)
+    assert not sentinel.exists()
+
+
+def test_json_escaped_key_redacted_after_decoding(candidate, tmp_path):
+    data = json.loads(response())
+    data['choices'][0]['message']['content'] = '{"status":"pass","findings":[],"summary":"\\u0066ixture-key"}'
+    result = perform(candidate, tmp_path, lambda *_: json.dumps(data).encode())
+    artifact = Path(result['evidence_path']).read_text()
+    assert 'fixture-key' not in artifact
+    assert json.loads(artifact)['verdict']['summary'] == '[redacted]'

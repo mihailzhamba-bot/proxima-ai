@@ -58,6 +58,16 @@ def strict_json(raw):
     return json.loads(raw, object_pairs_hook=unique)
 
 
+def redact_strings(value, key):
+    if isinstance(value, str):
+        return value.replace(key, '[redacted]')
+    if isinstance(value, list):
+        return [redact_strings(item, key) for item in value]
+    if isinstance(value, dict):
+        return {name: redact_strings(item, key) for name, item in value.items()}
+    return value
+
+
 def git(root, *args, limit=MAX_CONTEXT):
     # A regular temporary output file avoids unbounded PIPE buffering.
     with tempfile.TemporaryFile() as output:
@@ -99,6 +109,15 @@ def trusted_snapshot(checkout, base, head):
         (root / '.git/objects/info/alternates').write_text(str(common / 'objects') + '\n')
         git(root, 'config', 'core.worktree', str(checkout))
         git(root, 'update-ref', 'HEAD', head)
+        # status may recurse into a tracked submodule and load its local config,
+        # even when the outer repository has fsmonitor disabled. Reject every
+        # gitlink before constructing the index or calling any status helper.
+        for revision in dict.fromkeys([base, head]):
+            tree = git(root, 'ls-tree', '-r', '-z', revision, limit=4 * 1024**2)
+            if any(entry.split(b' ', 1)[0] == b'160000' for entry in tree.split(b'\0') if entry):
+                raise ReviewError('submodules_not_allowed')
+        git(root, 'config', 'submodule.recurse', 'false')
+        git(root, 'config', 'diff.ignoreSubmodules', 'all')
         git(root, 'read-tree', head)
         git(root, 'merge-base', '--is-ancestor', base, head)
         if git(root, 'status', '--porcelain', '--untracked-files=all').strip():
@@ -261,6 +280,7 @@ def review(config, checkout, base, head, evidence_root, send=transport, key_read
         # authorization value is redacted even if echoed by the provider.
         raw = raw.replace(key.encode(), b'[redacted]')
         verdict, usage = parse_response(raw)
+        verdict = redact_strings(verdict, key)
         if diff_digest(root, base, head) != digest:
             raise ReviewError('diff_changed')
         artifact = {'schema_version': 1, 'artifact_type': 'model-review-not-admission',
