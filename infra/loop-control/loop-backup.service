@@ -1,0 +1,24 @@
+[Unit]
+Description=LOOP encrypted component backup
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/loop-backup
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=yes
+PrivateTmp=yes
+RuntimeDirectory=loop-backup
+RuntimeDirectoryMode=0700
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/backups/loop /var/lib/loop/backups /run/loop-backup
+ReadOnlyPaths=/etc/loop /etc/loop-tunnel /etc/loop-proxy /etc/loop-openhands-tunnel /var/lib/loop-tunnel /var/lib/loop-openhands-tunnel /var/lib/docker/volumes /var/run/docker.sock
+MemoryMax=384M
+CPUQuota=50%
+TasksMax=64
+TimeoutStartSec=20min

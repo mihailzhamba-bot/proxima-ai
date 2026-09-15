@@ -1,0 +1,18 @@
+[Unit]
+Description=LOOP morning report through existing native notifier
+Wants=docker.service
+After=docker.service loop-control.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/sbin/loop-night-report
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/etc/loop/night-report.json /etc/loop/secrets/bridge_operator /var/run/docker.sock
+MemoryMax=128M
+TasksMax=32
+TimeoutStartSec=90s

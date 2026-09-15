@@ -1,0 +1,20 @@
+[Unit]
+Description=Dedicated LOOP control plane
+Requires=docker.service
+Wants=network-online.target loop-network-preflight.service
+After=docker.service network-online.target loop-network-preflight.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/loop-control
+EnvironmentFile=/etc/loop/images.env
+ExecStartPre=/usr/local/sbin/loop-network-preflight --ensure
+ExecStart=/usr/bin/docker compose --env-file /etc/loop/images.env -f /opt/loop-control/compose.yaml up --remove-orphans --abort-on-container-exit
+ExecStop=/usr/bin/docker compose --env-file /etc/loop/images.env -f /opt/loop-control/compose.yaml stop
+Restart=always
+RestartSec=10
+TimeoutStartSec=5min
+TimeoutStopSec=2min
+
+[Install]
+WantedBy=multi-user.target

@@ -2,8 +2,7 @@ import { boolean, pgSchema, text, timestamp } from "drizzle-orm/pg-core";
 
 /*
  * Таблицы Better Auth (email/password) в схеме webapp_auth.
- * Миграции webapp ведёт отдельно от M1-ледаря (services/webapp/drizzle/),
- * M1 data-plane (db/) не затрагивается. Additive-only (DEC B6).
+ * SQL: db/migrations/019_loop_queue.sql, additive-only. Membership выдаёт оператор.
  */
 
 export const webappAuthSchema = pgSchema("webapp_auth");
@@ -33,6 +32,7 @@ export const session = webappAuthSchema.table("session", {
 
 export const account = webappAuthSchema.table("account", {
   id: text("id").primaryKey(),
+  issuer: text("issuer").notNull(),
   accountId: text("account_id").notNull(),
   providerId: text("provider_id").notNull(),
   userId: text("user_id")

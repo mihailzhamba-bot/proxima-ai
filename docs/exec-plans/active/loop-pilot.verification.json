@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "checked_at_utc": "2026-09-13T18:56:13.220386+00:00",
+  "code_acceptance": "PASS",
+  "verified_code_commit": "1dfb971b09d873e47aa31e80c9b785bfbbf722b2",
+  "pull_request": "https://github.com/mihailzhamba-bot/proxima-ai/pull/140",
+  "baseline_commit": "6912a92c0ddb298e26d9b93c2b611b720254b56e",
+  "protected_producer": {
+    "prepare": "PASS",
+    "make_verify": "PASS",
+    "pg_roundtrip": "PASS",
+    "build": "PASS",
+    "agent_verify": "PASS",
+    "source_and_git_read_only": true,
+    "dependency_packages_read_only": true,
+    "network": "none",
+    "memory": "6g",
+    "cpus": 3,
+    "pids_limit": 512,
+    "verification_image": "localhost:5000/loop-verification/producer@sha256:62af26c9a13b98fef17fe84c5da729541725537cf65d97958d8c1345d7fa1f61",
+    "manifest_sha256": "5c0c5c627303603ee24f0068087c2d1165285c2012e308ee39615167028b4d9f",
+    "evidence_root": "/srv/loop-verification/20260913/readonly-final3",
+    "initial_pytest": {
+      "passed": 532,
+      "skipped_before_pg_roundtrip": 23
+    },
+    "native_publication_process_tests": {
+      "passed": 6,
+      "skipped": 0
+    }
+  },
+  "browser": {
+    "status": "PASS",
+    "checks": 41,
+    "screenshots": 9,
+    "source_commit": "d4855f5ca7ff39ff598bfcd0db54934f080e6d1e",
+    "webapp_tree_unchanged_in_verified_commit": true,
+    "synthetic_data": true,
+    "mode": "postgres",
+    "real_betterauth": true,
+    "coverage": [
+      "owner assignment",
+      "employee blocker and completion",
+      "observation horizon",
+      "tenant/session denial",
+      "idempotency",
+      "stale",
+      "light/dark/mobile/keyboard"
+    ],
+    "evidence_root": "/srv/loop-verification/20260913/candidate7-work/browser"
+  },
+  "component_images": {
+    "hermes": {
+      "build": "PASS",
+      "smoke": "PASS",
+      "source_commit": "618b0f31ae46134cc0498e049e4d2f12a17a4c1d",
+      "image_id": "sha256:d4bae8bf0914aa78cedb021d15cca42d45f164c1ea7119eb503f6e7370175f76",
+      "upstream_commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
+      "storage": "Harper local Docker store; registry delivery not accepted"
+    },
+    "paperclip": {
+      "build": "PASS",
+      "smoke": "PASS",
+      "source_commit": "d4855f5ca7ff39ff598bfcd0db54934f080e6d1e",
+      "image_id": "sha256:80e0bb5724b14ce70cdfe2012c615da36a650943a76257df0b03ebb4fa03d274",
+      "upstream_commit": "65ec059bde30d98c92165b24a30a540800dd1f6f",
+      "storage": "Harper local Docker store; registry delivery not accepted"
+    },
+    "bridge": {
+      "build": "PASS",
+      "smoke": "PASS",
+      "source_commit": "618b0f31ae46134cc0498e049e4d2f12a17a4c1d",
+      "image_id": "sha256:55c77001a628ce1cf2c3c5a1510dafe149d2b4414d7eb69c8ed0ca2a126b1372",
+      "upstream_commit": null,
+      "storage": "Harper local Docker store; registry delivery not accepted"
+    }
+  },
+  "component_boundary": [
+    "All model responses in Hermes smoke were local fixed fixtures; no provider authorization or model quality evaluated.",
+    "Actual Hermes YAML/MCP stdio and model-facing deferred catalog were checked; live Bridge/WB context calls were not performed.",
+    "Paperclip smoke used isolated new PostgreSQL16.6 with a restricted runtime role and synthetic auth secrets.",
+    "Fresh Paperclip database reported bootstrap_pending and missing-backup warning; neither onboarding nor restore/daily operation accepted.",
+    "No new LOOP VPS, production deployment, merge, WB write or live end-to-end management loop performed."
+  ],
+  "github_checks": [
+    {
+      "bucket": "pass",
+      "link": "https://github.com/mihailzhamba-bot/proxima-ai/actions/runs/34775569999/job/103772944299",
+      "name": "build-images",
+      "state": "SUCCESS"
+    },
+    {
+      "bucket": "pass",
+      "link": "https://github.com/mihailzhamba-bot/proxima-ai/actions/runs/34775570036/job/103772944405",
+      "name": "verify",
+      "state": "SUCCESS"
+    },
+    {
+      "bucket": "pass",
+      "link": "https://github.com/mihailzhamba-bot/proxima-ai/actions/runs/34775570036/job/103772944496",
+      "name": "systemd-verify",
+      "state": "SUCCESS"
+    },
+    {
+      "bucket": "pass",
+      "link": "https://github.com/mihailzhamba-bot/proxima-ai/actions/runs/34775569999/job/103772944400",
+      "name": "apply-migrations-in-container",
+      "state": "SUCCESS"
+    },
+    {
+      "bucket": "pass",
+      "link": "https://github.com/mihailzhamba-bot/proxima-ai/actions/runs/34775567709/job/103772937957",
+      "name": "systemd-verify",
+      "state": "SUCCESS"
+    },
+    {
+      "bucket": "pass",
+      "link": "https://github.com/mihailzhamba-bot/proxima-ai/actions/runs/34775567709/job/103772937888",
+      "name": "verify",
+      "state": "SUCCESS"
+    }
+  ],
+  "review": {
+    "status": "PASS",
+    "remaining_blockers": 0,
+    "scope": "independent product, control and blind reviews; bounded closure of publication, isolation, HTTP/context and packaging findings"
+  },
+  "live_ready": false,
+  "remaining_live_gates": [
+    "new dedicated LOOP-control VPS",
+    "separate provider/bot/service credentials",
+    "model selection",
+    "registry delivery and private ingress",
+    "pilot membership",
+    "real Paperclip/Hermes/OpenHands/Harper/PR roundtrip",
+    "restore and daily-operation acceptance"
+  ],
+  "actions_not_performed": [
+    "VPS purchase",
+    "installation on Simone",
+    "merge",
+    "production deploy",
+    "WB writes",
+    "live Telegram sends"
+  ]
+}

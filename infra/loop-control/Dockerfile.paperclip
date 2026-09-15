@@ -1,0 +1,19 @@
+FROM node:24.11.0-trixie-slim AS build
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git cargo rustc python3 make g++ && rm -rf /var/lib/apt/lists/*
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+COPY build/upstream/paperclip /app
+WORKDIR /app
+RUN node -e "if(require('./.loop-source-pin.json').commit!=='65ec059bde30d98c92165b24a30a540800dd1f6f')process.exit(1)"
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @paperclipai/ui build && pnpm --filter @paperclipai/plugin-sdk build
+ENV NODE_OPTIONS=--max-old-space-size=4096 PAPERCLIP_BUILD_COMMIT=65ec059bde30d98c92165b24a30a540800dd1f6f
+RUN pnpm --filter @paperclipai/server build
+
+FROM node:24.11.0-trixie-slim
+WORKDIR /app
+COPY --from=build /app /app
+RUN mkdir -p /paperclip/instances/default && chown -R node:node /paperclip
+ENV NODE_ENV=production HOME=/paperclip PAPERCLIP_HOME=/paperclip PAPERCLIP_CONFIG=/paperclip/instances/default/config.json PAPERCLIP_INSTANCE_ID=default HOST=0.0.0.0 PORT=3100 SERVE_UI=true PAPERCLIP_DEPLOYMENT_MODE=authenticated PAPERCLIP_DEPLOYMENT_EXPOSURE=private PAPERCLIP_BUILD_COMMIT=65ec059bde30d98c92165b24a30a540800dd1f6f
+USER 1000:1000
+ENTRYPOINT []
+CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]

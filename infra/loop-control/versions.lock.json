@@ -1,0 +1,53 @@
+{
+  "paperclip": {
+    "repository": "https://github.com/paperclipai/paperclip.git",
+    "commit": "65ec059bde30d98c92165b24a30a540800dd1f6f",
+    "node": "24.11.0",
+    "pnpm": "9.15.4"
+  },
+  "hermes": {
+    "repository": "https://github.com/NousResearch/hermes-agent.git",
+    "commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
+    "python": "3.12"
+  },
+  "bridge": {
+    "source": "tools/loop/bridge.py",
+    "python": "3.12"
+  },
+  "openhands": {
+    "agent_server": "1.44.0",
+    "sdk": "1.44.0",
+    "tools": "1.44.0",
+    "workspace": "1.44.0",
+    "codex_acp": "1.1.7",
+    "codex_cli": "0.151.0",
+    "worker_model": "gpt-5.6-sol",
+    "python": "3.12"
+  },
+  "egress": {
+    "tinyproxy": "1.11.1",
+    "openssh_client": "9.6p1 Ubuntu-3ubuntu13.19",
+    "vpn_host": "153.56.134.240:65022"
+  },
+  "images": {
+    "paperclip": null,
+    "hermes": null,
+    "bridge": null,
+    "verification": null,
+    "postgres": null
+  },
+  "mode": "pr_only",
+  "live_ready": false,
+  "blocked_on": [
+    "trusted_worker_security_acceptance",
+    "harper_runner_installation",
+    "dedicated_github_publication_credentials",
+    "telegram_credentials",
+    "ready_pr_end_to_end_acceptance"
+  ],
+  "postgres": {
+    "version": "16.6",
+    "database": "paperclip",
+    "role": "paperclip_runtime"
+  }
+}

@@ -1,5 +1,6 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { readFileSync } from "node:fs";
 import { authSchema } from "@/lib/db/schema.auth";
 
 /*
@@ -30,12 +31,22 @@ let dataDb: NodePgDatabase<Record<string, never>> | undefined;
 export function getAuthDb(): NodePgDatabase<typeof authSchema> {
   if (!authDb) {
     const pool = new Pool({
-      connectionString: requiredEnv("WEBAPP_AUTH_DATABASE_URI"),
+      connectionString: authUri(),
       max: 5,
     });
     authDb = drizzle(pool, { schema: authSchema });
   }
   return authDb;
+}
+
+function authUri(): string {
+  const path = process.env.WEBAPP_AUTH_DATABASE_URI_FILE;
+  if (!path) return requiredEnv("WEBAPP_AUTH_DATABASE_URI");
+  try {
+    const value = readFileSync(path, "utf8").trim();
+    if (!value) throw new Error();
+    return value;
+  } catch { throw new Error("webapp: WEBAPP_AUTH_DATABASE_URI_FILE unavailable"); }
 }
 
 /** Соединение чтения доменных данных (роль webapp_readonly, мутации запрещены на уровне роли). */

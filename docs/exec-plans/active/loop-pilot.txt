@@ -1,0 +1,135 @@
+---
+title: 'LOOP: отдельный управляющий VPS и очередь пилотного кабинета'
+type: feature
+created: 2026-09-13
+status: done
+acceptance_level: code_and_pr
+live_ready: false
+baseline_commit: 6912a92c0ddb298e26d9b93c2b611b720254b56e
+review_loop_iteration: 2
+---
+
+<frozen-after-approval reason="План Mike в чате 13.09.2026, поручение реализовать полностью">
+## Intent
+Построить LOOP по утверждённому плану: отдельный управляющий VPS, существующий WB-модуль, подтверждение решения Mike, задача сотруднику, отдельная проверка результата. База: main 6912a92c0ddb298e26d9b93c2b611b720254b56e.
+
+## Boundaries & Constraints
+Always: существующий сбор/PostgreSQL/SourceRef; медиана [D-14,D-1]; порог пилота -30 с источником решения и датой; реальные данные в рабочем режиме; BetterAuth проверяется на сервере; кабинет и исполнитель проверяются на каждой операции; повтор возвращает прежний результат; отмена блокирует публикацию; Paperclip единственный планировщик Director; готовый PR является конечным состоянием.
+Ask First: покупка VPS, merge, production deploy. IP нового VPS и отдельные credentials Director задаются оператором после создания; их отсутствие запрещает объявлять стенд работающим.
+Never: установка LOOP на Simone, копирование памяти/OAuth существующего Hermes, запись в WB, автоматический merge, тяжёлые сборки на управляющем VPS.
+
+## I/O & Edge-Case Matrix
+| Состояние | Действие | Результат |
+| Свежая аномалия | Mike подтверждает действие, сотрудника, срок, ожидаемый результат | Решение и задача фиксируются одной транзакцией |
+| Дубликат подтверждения | Повтор команды/ответ потерян | Возвращается та же задача |
+| Чужой кабинет/задача, неверная сессия | Чтение или изменение | Отказ без утечки данных |
+| Сотрудник выполнил действие | Подтверждение с evidence | Статус выполнения меняется, эффект ещё не доказан |
+| Данные stale/insufficient, отсутствует источник | Диагноз/сверка | Честная неопределённость, без неподтверждённых чисел |
+| Отмена/перезапуск управляющего запуска | Поздний ответ исполнителя | Старая попытка не публикуется |
+</frozen-after-approval>
+
+## Code Map
+- services/control-plane/src/proxima_control_plane/norm/median.py: существующий календарный расчёт, сохранить.
+- services/control-plane/src/proxima_control_plane/detector/: существующий детектор и threshold.toml.
+- services/webapp/src/lib/data/postgres-provider.ts: два чтения, stale gate; убрать fixture-редакцию из рабочего режима.
+- services/webapp/src/lib/auth.ts и src/lib/db/schema.auth.ts: настоящий BetterAuth, сессии в отдельной схеме.
+- services/webapp/src/app/(app)/layout.tsx: сейчас проверяет лишь cookie, заменить серверной сессией.
+- contracts/decision-record.schema.json: сохранить семантику решения; задача отдельным контрактом.
+- db/migrations/018_nm_daily.sql: последний immutable ledger; новая миграция additive-only.
+- tools/orchestrator/bad_dev_story.sh: существующий OpenHands handoff; готовые refs и внешняя проверка.
+- /Users/mikezhamba/Desktop/1LOOP_PAI/loop-kit: исходный пакет для сверки, не источник текущего runtime.
+
+## Tasks & Acceptance
+- [x] Контракты и БД: связанная задача, неизменяемое решение, события исполнения и наблюдения; атомарность, RLS, журнал запусков.
+- [x] Webapp: проверка сессии и membership, операции очереди, доступ сотрудника, /brief и /inbox в Warm Precision, причины неполноты.
+- [x] Диагноз: факты из детерминированных сигналов, гипотезы/альтернативы/неизвестные/проверка; неподтверждённые числа запрещены.
+- [x] LOOP-control: подготовленный пакет, закреплённые версии, изоляция, лимиты, persistent Bridge, официальный hermes_gateway, восстановление/отмена, OpenHands/Harper до PR.
+- [x] Проверки: meaningful unit/DB/API tests, полный verify и build на Harper, визуальная проверка light/dark/mobile/keyboard, независимый review, PR.
+
+Given валидная личная сессия сотрудника, when очередь запрошена, then доступны только его задачи.
+Given действие выполнено, when горизонт наблюдения ещё не прошёл, then восстановление продаж не заявляется.
+Given новый VPS не создан, when проверяется готовность, then пакет готовится и проверяется отдельно, live-статус остаётся недоступным.
+
+## Spec Change Log
+
+## Design Notes
+Сохраняем действующий дизайн, SQL-провайдер и денежную арифметику. Старую заморозку auth и неопределённый порог заменяет явный план Mike от 13.09.2026. Изменения из незамерженного PR #134 не считаются принятым AD. Авторизация разворачивается только с отдельно выданными membership, без самоназначения owner при регистрации.
+
+Уточнения разведки для реализации: collector_runs.kind закрыт, поэтому отдельный workflow run ledger без изменения старой CHECK. Решения сохраняют snapshot и не уничтожаются при удалении source_brief_run_id; связь становится orphaned. SQL auth пока отсутствует, schema.auth.ts только модель. tools/verify_migrations.py принимает tenant-only RLS; employee ownership можно строго проверять в серверном сервисе, либо узко расширить policy allowlist с negative tests. Текущий diagnosis adapter поддерживает только mock: рабочий первый диагноз должен быть основан на кодовых фактах, честных гипотезах и проверках; его нельзя назвать результатом LLM. Контракт diagnosis.draft.v1 не совпадает с canonical diagnosis, нужна явная граница.
+
+Paperclip pin: 65ec059bde30d98c92165b24a30a540800dd1f6f; Hermes pin: 939e45c91d751fadd94dcd1b873ac3cb44846213. hermes_gateway: POST /v1/runs {input,instructions,session_id}, Idempotency-Key и X-Hermes-Session-Key; GET /v1/runs/{id}; GET /v1/runs/{id}/events SSE; POST /v1/runs/{id}/stop. Hermes хранит idempotency 24h; незавершённый запуск после рестарта interrupted; SSE без replay. Bridge обязан хранить собственные состояния, не повторять неопределённый dispatch и явно останавливать gateway при отмене.
+
+Навигация для проверок: Harper root@135.106.211.64:22, IdentityFile /Users/mikezhamba/.ssh/id_ed25519_proxima_harness; SSH BatchMode, IdentitiesOnly, StrictHostKeyChecking, ForwardAgent=no. Корневой агент готовит отдельный verification checkout на Harper и запускает итоговые проверки; production сервисы не менять. Не создавать новые .md-файлы (правило Mike); существующие SPEC/архитектуру/пакет обновлять при необходимости, новые сопровождающие артефакты писать .txt/.yaml. Для UI применять ui-skills-root и better-accessibility, тексты humanizer-ru; сохранять Warm Precision из DESIGN.md. Не запускать повторно полный bmad-build: этот spec является его текущим implementation handoff.
+
+## Verification
+
+Код `1dfb971b09d873e47aa31e80c9b785bfbbf722b2` проверен 13.09.2026. Полный make verify с реальным PostgreSQL и build
+прошли на Harper: source/.git и package dependencies read-only, network none,
+лимиты6GiB/3CPU/512PIDs. Manifest до и после проверок совпал. Mermaid использует
+штатный puppeteer.ci.json внутри Docker; изоляция не ослаблена. scripts/agent/verify PASS.
+41 browser-check PASS с synthetic данными, настоящими BetterAuth/PostgreSQL;
+светлая/тёмная темы, mobile, keyboard, stale, повтор и чужой доступ проверены.
+Шесть native Linux publication regressions PASS; CI проверенного кода зелёный.
+Результаты и hashes: `loop-pilot.verification.json`. [PR #140](https://github.com/mihailzhamba-bot/proxima-ai/pull/140).
+
+## Review closure
+
+Независимые product/control/blind reviews завершены, известных blockers нет.
+Проверены неизвестные исходы HTTP/push, отмена и pause/resume, durable gated exec
+и session descendants, readonly context, личная сессия и атомарность решения/задачи.
+Четыре исторических WB verifier tests теперь мутируют tmp_path копии; исходные
+отрицательные проверки сохранены, fixture проверяет неизменность candidate bytes.
+Webapp и бизнес-код при этих исправлениях harness не менялись.
+
+## Граница приёмки
+
+Статус done относится к коду и PR. Компонентные smoke не подтверждают живой LOOP:
+нет нового VPS, отдельной авторизации моделей/бота, registry delivery и membership
+пилота. Сквозной Paperclip/Hermes/OpenHands/Harper/PR, restore и ежедневная работа
+принимаются отдельно. Simone исключён; merge и production deploy подтверждает Mike.
+
+## Suggested Review Order
+
+**Управление и публикация**
+
+- Единственный вход команд, durable состояние, права и запрет публикации отменённой попытки.
+  [bridge.py:75](../../../tools/loop/bridge.py#L75)
+
+- Harper проверяет неизменяемый кандидат до выдачи разрешения на push.
+  [runner.py:52](../../../tools/loop/runner.py#L52)
+
+- Восстановление требует доказать остановку всей session publisher.
+  [publication.py:50](../../../tools/loop/publication.py#L50)
+
+**Личный доступ, решение и задача**
+
+- Личная сессия проверяется сервером до чтения кабинета.
+  [access.ts:8](../../../services/webapp/src/lib/loop/access.ts#L8)
+
+- Транзакция связывает решение Mike, задачу, повторы и последующую сверку.
+  [service.ts:85](../../../services/webapp/src/lib/loop/service.ts#L85)
+
+- Добавочные таблицы и роли сохраняют историю решения.
+  [019_loop_queue.sql:7](../../../db/migrations/019_loop_queue.sql#L7)
+
+**Факты и интерфейс**
+
+- Числа поступают из сигнала; гипотеза и неизвестные явно отделены.
+  [diagnosis.ts:13](../../../services/webapp/src/lib/loop/diagnosis.ts#L13)
+
+- Mike подтверждает действие, сотрудника, срок и ожидаемый результат.
+  [queue.tsx:36](../../../services/webapp/src/components/loop/queue.tsx#L36)
+
+- Личная очередь ведёт к evidence и отдельной оценке эффекта.
+  [queue.tsx:85](../../../services/webapp/src/components/loop/queue.tsx#L85)
+
+**Проверки и установка**
+
+- Доверенный producer проверяет SHA, PostgreSQL и неизменность входа.
+  [verify_candidate.py:62](../../../tools/loop/verify_candidate.py#L62)
+
+- Реальный Linux subprocess проверяет сбой после смерти лидера.
+  [test_loop_push_gate.py:99](../../../tools/tests/test_loop_push_gate.py#L99)
+
+- Порядок установки, раздельные credentials и незакрытые live-гейты.
+  [OPERATIONS.txt:1](../../../infra/loop-control/OPERATIONS.txt#L1)

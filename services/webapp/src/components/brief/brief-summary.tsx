@@ -18,6 +18,7 @@ function timeLabel(isoMoment: string): string {
   return new Intl.DateTimeFormat("ru-RU", {
     day: "2-digit",
     month: "2-digit",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
     timeZone: "Europe/Moscow",
@@ -125,7 +126,7 @@ export function BriefSummaryBlock({ summary }: BriefSummaryBlockProps) {
 
   return (
     <section aria-label="Вчера против нормы" className="flex flex-col gap-2 border-t border-border pt-4">
-      {showNumbers && summary.briefDay !== null ? (
+      {summary.briefDay !== null ? (
         <h2 className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
           {dayLabel(summary.briefDay)}: вчера против нормы
         </h2>
@@ -150,9 +151,9 @@ export function BriefSummaryBlock({ summary }: BriefSummaryBlockProps) {
       ) : (
         <WarningLine>{numbersWarning(summary.status, summary.normProgress, dataStatus, summary.briefDay)}</WarningLine>
       )}
-      {dataStatus !== null && !dataStatus.stale ? (
+      {dataStatus !== null ? (
         <p className="text-xs text-muted-foreground">
-          Данные до {dayLabel(dataStatus.lastFullDay)}, обновлено {timeLabel(dataStatus.collectedAt)}
+          Данные до {dataStatus.lastFullDay ? `${dayLabel(dataStatus.lastFullDay)}.${dataStatus.lastFullDay.slice(0,4)}` : "дата неизвестна"}, обновлено {dataStatus.collectedAt && Number.isFinite(Date.parse(dataStatus.collectedAt)) ? `${timeLabel(dataStatus.collectedAt)} МСК` : "время неизвестно"}
         </p>
       ) : null}
     </section>

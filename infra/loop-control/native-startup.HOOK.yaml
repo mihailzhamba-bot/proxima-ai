@@ -1,0 +1,4 @@
+name: loop-native
+description: Start persistent LOOP result notifications after native adapters connect
+events:
+  - gateway:startup

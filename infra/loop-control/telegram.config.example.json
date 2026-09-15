@@ -1,0 +1,9 @@
+{
+  "database": "/var/lib/loop/telegram/ingress.sqlite",
+  "bridge_url": "http://bridge:18770",
+  "operator_token_file": "/run/secrets/bridge_operator",
+  "bot_token_file": "/run/secrets/telegram_bot",
+  "allowed_user_ids": [],
+  "allowed_chat_ids": [],
+  "webapp_url": null
+}

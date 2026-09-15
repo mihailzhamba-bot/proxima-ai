@@ -1,0 +1,24 @@
+{
+  "bridge_url": "http://127.0.0.1:18771",
+  "runner_token_file": "/etc/loop/secrets/runner",
+  "trusted_home": "/var/lib/loop-runner",
+  "worker_host": "loop-worker@135.106.186.210",
+  "worker_identity_file": "/etc/loop-runner/worker_ed25519",
+  "github_publish_identity_file": "/etc/loop-runner/github_ed25519",
+  "known_hosts_file": "/var/lib/loop-runner/.ssh/known_hosts",
+  "worker_python": "/usr/bin/python3",
+  "worker_dispatcher": "/opt/loop/worker_dispatch.py",
+  "worker_fetcher": "/opt/loop/worker_fetch",
+  "worker_config": "/etc/loop-worker/templates.json",
+  "history_gate": "/opt/loop/history_gate.py",
+  "source_repo": "/srv/loop-runner/source/proxima-ai",
+  "work_root": "/srv/loop-runner/work",
+  "evidence_root": "/srv/loop-runner/evidence",
+  "fixture_root": "/srv/loop-runner/fixtures/wb-api",
+  "verification_image": "OPERATOR_VERIFIED_IMAGE@sha256:OPERATOR_DIGEST",
+  "publish_remote": "git@github.com:mihailzhamba-bot/proxima-ai.git",
+  "reviewer_command": [
+    "/opt/loop-review/review-candidate"
+  ],
+  "templates": {}
+}

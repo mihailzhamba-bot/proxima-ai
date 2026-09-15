@@ -1,0 +1,7 @@
+{
+  "user_id": "REPLACE_WITH_MIKE_TELEGRAM_ID",
+  "chat_id": "REPLACE_WITH_THE_SAME_PRIVATE_CHAT_ID",
+  "bridge_url": "http://bridge:18770",
+  "chat_token_file": "/run/secrets/bridge_chat",
+  "ingress_token_file": "/run/secrets/bridge_native_ingress"
+}
