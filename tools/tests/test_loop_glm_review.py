@@ -271,3 +271,33 @@ def test_json_escaped_key_redacted_after_decoding(candidate, tmp_path):
     artifact = Path(result['evidence_path']).read_text()
     assert 'fixture-key' not in artifact
     assert json.loads(artifact)['verdict']['summary'] == '[redacted]'
+
+
+def test_identical_base_head_blob_only_charged_once(candidate, tmp_path):
+    captured = []
+    def send(payload, *_args):
+        captured.append(json.loads(payload['messages'][1]['content'])['context'])
+        return response()
+    # Repeated fixture AGENTS would exceed 70 bytes; unique content fits.
+    result = perform(candidate, tmp_path, send, config(max_context_bytes=70))
+    agents = [item for item in captured[0] if item['path'] == 'AGENTS.md']
+    assert len(agents) == 1
+    assert agents[0]['revisions'] == [candidate[1], candidate[2]]
+    assert agents[0]['revision'] == candidate[1]
+    assert len(agents[0]['blob_sha']) == 40
+    artifact = json.loads(Path(result['evidence_path']).read_text())
+    agent_refs = [item for item in artifact['context'] if item['path'] == 'AGENTS.md']
+    assert agent_refs[0]['revisions'] == [candidate[1], candidate[2]]
+
+
+def test_changed_context_keeps_both_exact_versions(candidate, tmp_path):
+    captured = []
+    def send(payload, *_args):
+        captured.extend(json.loads(payload['messages'][1]['content'])['context'])
+        return response()
+    perform(candidate, tmp_path, send)
+    versions = [item for item in captured if item['path'] == 'code.py']
+    assert len(versions) == 2
+    assert versions[0]['content'] == 'value = 1\n' and versions[0]['revisions'] == [candidate[1]]
+    assert versions[1]['content'] == 'value = 2\n' and versions[1]['revisions'] == [candidate[2]]
+    assert versions[0]['blob_sha'] != versions[1]['blob_sha']
