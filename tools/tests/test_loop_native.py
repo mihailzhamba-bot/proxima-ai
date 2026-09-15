@@ -479,3 +479,47 @@ def test_retry_supersedes_pending_old_notifications_but_keeps_journal(tmp_path):
     assert old not in {item["id"] for item in pending}
     with bridge.tx() as db:
         assert db.execute("SELECT state FROM native_notifications WHERE id=?", (old,)).fetchone()[0] == "superseded"
+
+
+def test_cancel_entire_retry_chain_before_old_parent_network_call(tmp_path):
+    bridge, native, config, remote, payload, parent, _ = completed_attempt(tmp_path)
+    retry = native.retry({"draft_id": payload["draft_id"], "failed_run_id": parent["run_id"]})
+    child = bridge.create("hermes", "retry-paperclip-run", {"input": "fixture", "instructions": "fixture", "session_id": "fixture"})
+    job_id = "tg-" + payload["draft_id"].replace("-", "")
+    bridge.propose_job({"job_id": job_id, "run_id": child["run_id"], "generation": 1, "template": "probe"}, config["templates"])
+    original = remote.call
+    observed = []
+    def call(method, path, body=None, headers=None):
+        if method == "POST" and path.endswith("/cancel"):
+            observed.append(bridge.get(child["run_id"])["state"])
+            assert bridge.job(job_id)["state"] == "cancelled"
+            with pytest.raises(BridgeError) as exc:
+                bridge.fence(job_id)
+            assert exc.value.revoked
+        return original(method, path, body, headers)
+    remote.call = call
+    native.stop({**ACTOR, "run_id": parent["run_id"]})
+    assert observed and observed[0] == "cancelling"
+
+
+def test_cancel_persists_barrier_before_waiting_native_lock(tmp_path):
+    bridge, native, _, _, payload, parent, _ = completed_attempt(tmp_path)
+    execution = native.approved_execution(native.get_draft(payload["draft_id"]))
+    errors = []
+    def stop():
+        try:
+            native.stop({**ACTOR, "run_id": parent["run_id"]})
+        except BaseException as exc:
+            errors.append(exc)
+    with native.lock:
+        thread = threading.Thread(target=stop)
+        thread.start()
+        deadline = time.monotonic() + 2
+        while native.get_draft(payload["draft_id"])["state"] != "cancelled" and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert native.get_draft(payload["draft_id"])["state"] == "cancelled"
+        assert thread.is_alive()
+        with pytest.raises(BridgeError, match="approval"):
+            bridge.create("paperclip", "native-retry-" + parent["run_id"], execution)
+    thread.join(timeout=2)
+    assert not thread.is_alive() and not errors

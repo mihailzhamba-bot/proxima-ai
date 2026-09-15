@@ -173,6 +173,10 @@ class Bridge:
                 if hasattr(self, "native_control"):
                     self.validate_native_parent(db, parent)
                 if parent and parent["state"] in {"cancelling", "cancelled", "interrupted", "failed", "error"}: raise BridgeError(409, "parent run revoked")
+            if kind == "paperclip" and payload.get("source") == "native_telegram" and hasattr(self, "native_control"):
+                row = db.execute("SELECT * FROM native_drafts WHERE id=?", (payload.get("draft_id"),)).fetchone()
+                if not row or self.native_control.approved_execution(dict(row)) != payload:
+                    raise BridgeError(409, "persisted owner approval unavailable", False)
             # One active management run; queued events remain owned by Paperclip.
             if kind == "hermes" and db.execute("SELECT 1 FROM operations WHERE kind='hermes' AND state IN ('dispatching','running','unknown','cancelling')").fetchone(): raise BridgeError(409, "Director lease busy or uncertain")
             op_id, now = str(uuid.uuid4()), time.time()
@@ -356,8 +360,20 @@ class Bridge:
             row=db.execute("SELECT j.*,o.generation AS current_generation,o.state AS director_state FROM jobs j JOIN operations o ON o.id=j.director_run WHERE j.id=?",(job_id,)).fetchone()
         if not row: raise BridgeError(404,"job unavailable")
         return dict(row)
+    def native_publication_fence(self, job):
+        if not hasattr(self, "native_control"):
+            return
+        with self.tx() as db:
+            parent = db.execute("SELECT p.request FROM operations h JOIN operations p ON p.kind='paperclip' AND p.external_id=h.key WHERE h.id=?", (job["director_run"],)).fetchone()
+            approved = json.loads(parent["request"]) if parent else {}
+            if approved.get("source") == "native_telegram":
+                draft = db.execute("SELECT state FROM native_drafts WHERE id=?", (approved.get("draft_id"),)).fetchone()
+                if not draft or draft["state"] == "cancelled":
+                    raise BridgeError(409, "native publication revoked", False, True)
+
     def fence(self, job_id):
         j=self.job(job_id)
+        self.native_publication_fence(j)
         self.reconcile(j["director_run"])
         j=self.job(job_id)
         op=self.get(j["director_run"])
@@ -374,6 +390,7 @@ class Bridge:
         if j["generation"]!=j["current_generation"] or j["director_state"] not in {"running","completed"} or j["state"] in {"cancelled","unknown"}: raise BridgeError(409,"publication fenced",revoked=j["generation"]!=j["current_generation"] or j["director_state"] in TERMINAL - {"completed"} or j["director_state"]=="cancelling")
         with self.tx() as db:
             if db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0]=="true": raise BridgeError(409,"publication paused")
+        self.native_publication_fence(j)
         return j
 
 

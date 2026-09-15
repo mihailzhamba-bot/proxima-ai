@@ -206,7 +206,7 @@ class NativeControl:
                                ("unknown" if exc.uncertain else "rejected", exc.message, draft["id"]))
                 raise
             with self.bridge.tx() as db:
-                db.execute("UPDATE native_drafts SET state='submitted',run_id=? WHERE id=?",
+                db.execute("UPDATE native_drafts SET state='submitted',run_id=? WHERE id=? AND state!='cancelled'",
                            (result["run_id"], draft["id"]))
             return result
 
@@ -291,31 +291,34 @@ class NativeControl:
             return result
 
     def cancel_run(self, run_id):
-        with self.lock:
-            op = self.bridge.get(run_id)
-            approved = json.loads(op["request"])
-            if op["kind"] == "paperclip" and approved.get("source") == "native_telegram":
-                draft = self.get_draft(approved.get("draft_id"))
-                with self.bridge.tx() as db:
-                    db.execute("UPDATE native_drafts SET state='cancelled' WHERE id=?", (draft["id"],))
-                targets = [run_id]
-                if draft["run_id"] and draft["run_id"] != run_id:
-                    targets.append(draft["run_id"])
-                # Include a durable retry whose acknowledgement was lost and
-                # therefore could not yet advance the confirmed draft pointer.
-                cursor = targets[-1]
-                while True:
-                    with self.bridge.tx() as db:
-                        pending = db.execute("SELECT id FROM operations WHERE kind='paperclip' AND key=?", ("native-retry-" + cursor,)).fetchone()
-                    if not pending or pending["id"] in targets:
-                        break
-                    cursor = pending["id"]
-                    targets.append(cursor)
-                result = None
-                for target in targets:
-                    result = self.bridge._cancel(target)
-                return result
+        op = self.bridge.get(run_id)
+        approved = json.loads(op["request"])
+        if op["kind"] != "paperclip" or approved.get("source") != "native_telegram":
             return self.bridge._cancel(run_id)
+        draft_id = approved.get("draft_id")
+        # Publish the durable cancellation barrier before waiting for native.lock
+        # or making any upstream request. A retry may currently hold that lock.
+        with self.bridge.tx() as db:
+            db.execute("UPDATE native_drafts SET state='cancelled' WHERE id=?", (draft_id,))
+            parents = [dict(r) for r in db.execute("SELECT * FROM operations WHERE kind='paperclip'")
+                       if json.loads(r["request"]).get("draft_id") == draft_id
+                       and json.loads(r["request"]).get("source") == "native_telegram"]
+            targets = [r["id"] for r in parents]
+            for parent in parents:
+                targets.extend(r["id"] for r in db.execute("SELECT id FROM operations WHERE kind='hermes' AND key=?", (parent["external_id"],)))
+            with self.bridge.cancel_request_guard:
+                self.bridge.cancel_requests.update(targets)
+            for target in targets:
+                db.execute("UPDATE operations SET state='cancelling',generation=generation+1,updated=? WHERE id=? AND state!='cancelling'", (time.time(), target))
+                db.execute("UPDATE jobs SET state='cancelled' WHERE director_run=? AND state!='ready_pr'", (target,))
+        with self.lock:
+            draft = self.get_draft(draft_id)
+            result = None
+            for parent in parents:
+                observed = self.bridge._cancel(parent["id"])
+                if parent["id"] == draft["run_id"] or result is None:
+                    result = observed
+            return result
 
     def stop(self, payload):
         self.owner(payload)
