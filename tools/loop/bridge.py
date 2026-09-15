@@ -681,7 +681,7 @@ def main():
     parser=argparse.ArgumentParser(); parser.add_argument("--config",required=True); args=parser.parse_args()
     config=json.loads(Path(args.config).read_text())
     upstream=lambda name: JsonHTTP(config[name]["url"],secret(config[name]["token_file"]),header=config[name].get("header","Authorization"))
-    publisher=GitHubPublisher(upstream("github"),config["github"]["repository"]) if "github" in config else None
+    publisher=GitHubPublisher(upstream("github"),config["github"]["repository"],base=config["github"].get("base","main")) if "github" in config else None
     bridge=Bridge(config["database"],upstream("hermes"),upstream("paperclip"),config["director_id"],upstream("openhands") if "openhands" in config else None,publisher,upstream("webapp_context") if "webapp_context" in config else None)
     server(bridge,config).serve_forever()
 if __name__=="__main__": main()
