@@ -4,6 +4,8 @@ import json
 import sys
 import threading
 import time
+import socket
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -264,3 +266,42 @@ def test_hermes_only_restart_exposes_uncertain_delivery_without_resending(tmp_pa
     assert native.status()['notification_deliveries']['delivery_unknown'] == 1
     with pytest.raises(BridgeError, match='already claimed'):
         native.notification_action(item['id'], 'claim', {})
+
+
+def test_script_entrypoint_preserves_native_error_identity(tmp_path):
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        port = sock.getsockname()[1]
+    key = tmp_path / 'key'
+    key.write_text('fixture-private-key')
+    key.chmod(0o600)
+    config = {
+        'port': port, 'database': str(tmp_path / 'script.sqlite'), 'director_id': 'fixture',
+        'credential_files': {role: str(key) for role in ['chat', 'native_ingress', 'operator', 'gateway', 'runner', 'director']},
+        'hermes': {'url': 'http://127.0.0.1:1', 'token_file': str(key)},
+        'paperclip': {'url': 'http://127.0.0.1:1', 'token_file': str(key)},
+        'native_telegram': {**ACTOR, 'templates': []}}
+    path = tmp_path / 'config.json'
+    path.write_text(json.dumps(config))
+    process = subprocess.Popen([sys.executable, str(Path(__file__).resolve().parents[1] / 'loop/bridge.py'), '--config', str(path)],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        client = JsonHTTP('http://127.0.0.1:' + str(port), 'fixture-private-key', timeout=2, trusted_bridge=True)
+        for _ in range(80):
+            try:
+                status = client.call('GET', '/v1/chat/status')
+                break
+            except BridgeError:
+                if process.poll() is not None:
+                    pytest.fail('Bridge script exited')
+                time.sleep(.025)
+        else:
+            pytest.fail('Bridge script did not return native status')
+        assert status['director_status'] == 'unknown'
+        with pytest.raises(BridgeError) as exc:
+            client.call('POST', '/v1/native/confirm', {**ACTOR, 'user_id': '9'})
+        assert exc.value.status == 403
+        assert exc.value.uncertain is False
+    finally:
+        process.terminate()
+        process.wait(timeout=5)

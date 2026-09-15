@@ -704,4 +704,9 @@ def main():
     publisher=GitHubPublisher(upstream("github"),config["github"]["repository"],base=config["github"].get("base","main")) if "github" in config else None
     bridge=Bridge(config["database"],upstream("hermes"),upstream("paperclip"),config["director_id"],upstream("openhands") if "openhands" in config else None,publisher,upstream("webapp_context") if "webapp_context" in config else None)
     server(bridge,config).serve_forever()
-if __name__=="__main__": main()
+if __name__=="__main__":
+    # Native extensions must share this process's BridgeError identity when
+    # launched as a script, not import a second copy under the module name.
+    import sys
+    sys.modules.setdefault("bridge",sys.modules[__name__])
+    main()
