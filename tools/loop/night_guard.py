@@ -17,6 +17,9 @@ def stop(manifest):
         state.update(status='blocked', reason='supervisor_stopped', updated_at=time.time())
         atomic_json(path, state)
         atomic_json(path.parent/'status.json', state)
+    receipt_path = path.parent/'stop-receipt.json'
+    previous = json_file(receipt_path) if receipt_path.exists() else {}
+    attempts = previous.get('attempts', 0) + 1
     api = BridgeClient(manifest)
     results = []
     paths = ['/v1/pause']
@@ -24,16 +27,32 @@ def stop(manifest):
         if task.get('run_id') and task.get('phase') != 'ready_pr':
             paths.append('/v1/runs/'+task['run_id']+'/stop')
     for route in paths:
-        try: api('POST', route, payload={}, timeout=5); results.append({'path':route, 'ok':True})
+        try:
+            response = api('POST', route, payload={}, timeout=5)
+            confirmed = response.get('paused') is True if route == '/v1/pause' else response.get('status') == 'cancelled'
+            results.append({'path':route, 'ok':confirmed})
         except Exception: results.append({'path':route, 'ok':False})
-    atomic_json(path.parent/'stop-receipt.json', {'observed_at':time.time(), 'actions':results})
-    return all(item['ok'] for item in results)
+    confirmed = all(item['ok'] for item in results)
+    receipt = {'observed_at':time.time(), 'attempts':attempts, 'confirmed':confirmed, 'actions':results}
+    if not confirmed and attempts >= 6:
+        # Stop the dedicated publisher on Harper even when Bridge is unreachable.
+        subprocess.run(['systemctl','stop','loop-runner.service'], timeout=25, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        observed = subprocess.run(['systemctl','is-active','loop-runner.service'],timeout=5,capture_output=True,text=True,check=False)
+        receipt['publisher_stopped'] = observed.stdout.strip() == 'inactive'
+        receipt['retry_exhausted'] = True
+    atomic_json(receipt_path, receipt)
+    return confirmed
 
 def watch(manifest):
     path = Path(manifest['state_file'])
     if not path.exists(): return
     state = json_file(path)
-    if state.get('status') != 'running': return
+    receipt_path=path.parent/'stop-receipt.json'
+    if state.get('status') in {'blocked','completed'}:
+        receipt=json_file(receipt_path) if receipt_path.exists() else {}
+        if receipt.get('confirmed') is not True and receipt.get('retry_exhausted') is not True:
+            stop(manifest)
+        return
     now = time.time()
     expired = now >= manifest['end_at'] or now - state.get('updated_at',0) > 300
     active = next((task for task in state.get('tasks', []) if task.get('phase') != 'ready_pr'), None)
