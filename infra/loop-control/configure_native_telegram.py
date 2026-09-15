@@ -147,7 +147,12 @@ def main():
     telegram['allowed_chats'] = [args.user_id] if args.user_id else []
     telegram['allow_from'] = [args.user_id] if args.user_id else []
     if args.user_id:
-        telegram.setdefault('channel_overrides', {})[args.user_id] = {'system_prompt': PROMPT}
+        prompt = PROMPT
+        manual = ROOT / 'docs/LOOP-manual-Mike.md'
+        if manual.exists():
+            from native_manual_context import with_manual
+            prompt = with_manual(prompt, manual.read_text())
+        telegram.setdefault('channel_overrides', {})[args.user_id] = {'system_prompt': prompt}
     write(ROOT / 'hermes.yaml', yaml.safe_dump(hermes, allow_unicode=True, sort_keys=False))
     write(ROOT / 'bridge.json', json.dumps(bridge, indent=2) + '\n', 0o600, 10001)
     write(ROOT / 'compose.yaml', yaml.safe_dump(compose, sort_keys=False))
