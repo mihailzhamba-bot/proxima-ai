@@ -63,6 +63,10 @@ def test_same_delivery_path_reaches_ready_pr_after_real_runner_receipts(tmp_path
     assert any(c[0]=="ssh" and "/opt/loop/worker_fetch" in c[-1] for c in calls)
     assert not any(c[0]=="scp" for c in calls)
     assert any("push" in c for c in calls)
+    publication_fetches=[c for c in calls if "fetch" in c and any(str(a).endswith("publish.git") for a in c)]
+    assert publication_fetches[0][-2:]==["/fixture/source","b"*40]
+    assert "--no-tags" in publication_fetches[0]
+    assert publication_fetches[1][-1]=="refs/heads/feat/loop-job-1:refs/heads/feat/loop-job-1"
     with pytest.raises(BridgeError):runner.run("job-1")
 
 def test_worker_pass_never_overrides_failed_independent_checks(tmp_path):

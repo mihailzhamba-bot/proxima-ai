@@ -276,6 +276,8 @@ class DeliveryRunner:
         # Publish from a new bare repository never mounted in the candidate sandbox.
         publish=work/"publish.git"
         self.execute([*git,"init","--bare",str(publish)])
+        # Worker bundles contain base..head and require the trusted base objects.
+        self.execute([*git,"-C",str(publish),"fetch","--no-tags",self.config["source_repo"],base])
         self.execute([*git,"-C",str(publish),"fetch",str(bundle),f"refs/heads/feat/loop-{job_id}:refs/heads/feat/loop-{job_id}"])
         admitted=self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/begin-publication",report)
         permit=admitted.get("permit","")
