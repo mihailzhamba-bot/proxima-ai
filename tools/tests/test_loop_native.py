@@ -1,5 +1,6 @@
 """Owner confirmation is a native Telegram event, never model-generated text."""
 import asyncio
+import hashlib
 import json
 import sys
 import threading
@@ -600,3 +601,41 @@ def test_operator_http_wakeup_preserves_batch_contract_and_credentials(tmp_path)
     finally:
         http.shutdown()
         http.server_close()
+
+
+@pytest.mark.parametrize("delivery", ["delivered", "delivery_unknown", "sending", "pending"])
+def test_legacy_notification_receipt_migration_never_creates_resend(tmp_path, delivery):
+    bridge, native, config, _, payload, parent, _ = completed_attempt(tmp_path)
+    legacy_id = hashlib.sha256(json.dumps([payload["draft_id"], None, "completed", None]).encode()).hexdigest()
+    with bridge.tx() as db:
+        db.execute("ALTER TABLE native_notifications DROP COLUMN run_id")
+        db.execute("INSERT INTO native_notifications(id,text,state,created) VALUES(?,?,?,?)",
+                   (legacy_id, "LOOP: completed.\nЗапуск: " + parent["run_id"], delivery, time.time()))
+    restored = NativeControl(bridge, config)
+    pending = restored.notifications()["pending"]
+    assert [item["id"] for item in pending] == ([legacy_id] if delivery == "pending" else [])
+    with bridge.tx() as db:
+        receipts = db.execute("SELECT id,state,run_id FROM native_notifications").fetchall()
+    assert len(receipts) == 1
+    assert receipts[0]["state"] == ("delivery_unknown" if delivery == "sending" else delivery)
+    assert receipts[0]["run_id"] == parent["run_id"]
+
+
+@pytest.mark.parametrize("delivery", ["delivered", "delivery_unknown"])
+def test_legacy_receipt_does_not_suppress_same_event_on_new_retry(tmp_path, delivery):
+    bridge, native, config, _, payload, parent, _ = completed_attempt(tmp_path)
+    legacy_id = hashlib.sha256(json.dumps([payload["draft_id"], None, "completed", None]).encode()).hexdigest()
+    with bridge.tx() as db:
+        db.execute("ALTER TABLE native_notifications DROP COLUMN run_id")
+        db.execute("INSERT INTO native_notifications(id,text,state,created) VALUES(?,?,?,?)",
+                   (legacy_id, "LOOP: completed.\nЗапуск: " + parent["run_id"], delivery, time.time()))
+    restored = NativeControl(bridge, config)
+    assert restored.notifications()["pending"] == []
+    retry = restored.retry({"draft_id": payload["draft_id"], "failed_run_id": parent["run_id"]})
+    with bridge.tx() as db:
+        db.execute("UPDATE operations SET state='completed' WHERE id=?", (retry["run_id"],))
+    pending = restored.notifications()["pending"]
+    assert len(pending) == 1 and pending[0]["id"] != legacy_id
+    with bridge.tx() as db:
+        assert db.execute("SELECT state FROM native_notifications WHERE id=?", (legacy_id,)).fetchone()[0] == delivery
+        assert db.execute("SELECT run_id FROM native_notifications WHERE id=?", (pending[0]["id"],)).fetchone()[0] == retry["run_id"]

@@ -48,6 +48,16 @@ class NativeControl:
                 db.execute("ALTER TABLE native_notifications ADD COLUMN run_id TEXT")
             if "claimed_at" not in notification_columns:
                 db.execute("ALTER TABLE native_notifications ADD COLUMN claimed_at REAL")
+            # Legacy receipts embed their original parent in trusted generated
+            # text. Backfill ownership without changing delivery state or IDs.
+            for receipt in db.execute("SELECT id,text FROM native_notifications WHERE run_id IS NULL").fetchall():
+                match = re.search(r"(?:^|\n)Запуск: ([a-f0-9-]{36})(?:\n|$)", receipt["text"])
+                if match:
+                    try:
+                        run_id = str(uuid.UUID(match[1]))
+                    except ValueError:
+                        continue
+                    db.execute("UPDATE native_notifications SET run_id=? WHERE id=? AND run_id IS NULL", (run_id, receipt["id"]))
 
     def owner(self, payload):
         user = str(self.settings.get("user_id", ""))
@@ -337,7 +347,7 @@ class NativeControl:
             db.execute("""UPDATE native_notifications SET state='superseded'
                 WHERE state='pending' AND run_id IS NOT NULL AND run_id NOT IN
                 (SELECT run_id FROM native_drafts WHERE run_id IS NOT NULL)""")
-            rows = db.execute("""SELECT n.id AS draft_id,p.id AS run_id,p.state AS run_state,
+            rows = db.execute("""SELECT n.id AS draft_id,p.id AS run_id,p.key AS parent_key,p.state AS run_state,
                 j.id AS job_id,j.state AS job_state,j.pr_url FROM native_drafts n
                 JOIN operations p ON p.kind='paperclip' AND p.id=n.run_id
                 LEFT JOIN operations h ON h.kind='hermes' AND h.key=p.external_id
@@ -347,6 +357,16 @@ class NativeControl:
                 state = row["job_state"] or row["run_state"]
                 identity = json.dumps([row["draft_id"], row["run_id"], row["job_id"], state, row["pr_url"]])
                 notification_id = hashlib.sha256(identity.encode()).hexdigest()
+                legacy_identity = json.dumps([row["draft_id"], row["job_id"], state, row["pr_url"]])
+                legacy_id = hashlib.sha256(legacy_identity.encode()).hexdigest()
+                legacy = db.execute("SELECT run_id FROM native_notifications WHERE id=?", (legacy_id,)).fetchone()
+                if legacy and (legacy["run_id"] == row["run_id"] or (
+                    legacy["run_id"] is None and row["parent_key"] == "native-telegram-" + row["draft_id"]
+                )):
+                    # A receipt, including delivery_unknown, is never a resend
+                    # request. Preserve the original journal identity/state.
+                    db.execute("UPDATE native_notifications SET run_id=? WHERE id=? AND run_id IS NULL", (row["run_id"], legacy_id))
+                    continue
                 text = f"LOOP: {state}.\nЗапуск: {row['run_id']}"
                 if row["job_id"]:
                     text += f"\nЗадача: {row['job_id']}"
