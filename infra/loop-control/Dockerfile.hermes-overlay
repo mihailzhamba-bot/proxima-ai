@@ -11,7 +11,7 @@ RUN .venv/bin/python -c "import sys,aiohttp; assert sys.version_info[:2]==(3,12)
 FROM python:3.12.12-slim-bookworm
 RUN groupadd -g 10000 hermes && useradd -u 10000 -g 10000 -d /var/lib/loop/hermes hermes && mkdir -p /var/lib/loop/hermes && chown 10000:10000 /var/lib/loop/hermes
 COPY --from=build /opt/hermes /opt/hermes
-COPY tools/loop/director_tool.py tools/loop/bridge.py /opt/loop/
+COPY tools/loop/director_tool.py tools/loop/bridge.py tools/loop/chat_tool.py /opt/loop/
 ENV HOME=/var/lib/loop/hermes HERMES_HOME=/var/lib/loop/hermes PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH=/opt/hermes/.venv/bin:$PATH
 WORKDIR /opt/hermes
 USER 10000:10000

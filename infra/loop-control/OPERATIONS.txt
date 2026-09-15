@@ -295,3 +295,67 @@ Manual review gate: /opt/loop-review/review-candidate requires a separate root-o
 /etc/loop-review/receipts/<head-sha>.json with base_sha, sha, diff_sha256, status=pass,
 skipped=0, reviewer, reviewed_at_utc and evidence_ref. A missing receipt blocks PR;
 --wait-seconds can wait up to 1800 seconds for independent review of that candidate.
+Native Hermes Telegram (15.09.2026)
+===================================
+
+Native conversation uses the existing Hermes home/OAuth and separate Telegram
+session routing. Do not start tools/loop/telegram.py for the same bot: exactly
+one Telegram poller owns its updates. API-session MCP tools stay configured as
+before; Telegram uses [loop_chat, no_mcp]. The no_mcp sentinel is mandatory to
+prevent global MCP servers from being appended to the chat tool surface.
+
+Runtime extension:
+- tools/loop/native_plugin.py is a read-only Hermes user plugin (loop-chat).
+- native_startup.py is a native gateway:startup hook. Plugin register() must be
+  synchronous and cannot assume an asyncio loop; notifier starts via the pinned
+  gateway _spawn_supervised coroutine factory after adapters connect.
+- Native tools are loop_get_status and loop_prepare_action. They hold only the
+  chat credential. Trusted Telegram pre-dispatch handles /loop_status,
+  /loop_review DRAFT_ID, /loop_confirm DRAFT_ID, /loop_stop RUN_ID with a separate
+  ingress credential; sender AND private chat must match the configured owner.
+- Model drafts never launch work. The trusted preview includes the actual fixed
+  edit, expected result, base SHA and paths. Confirm requires a nonce-bound
+  successful Telegram message receipt; preview expires after 15 minutes.
+- Confirmed requests enter Paperclip. Bridge fences job_id/template/fingerprint
+  against the owner confirmation and requires an acknowledged Paperclip parent.
+  An unknown dispatch is reconciled, never blindly resubmitted.
+
+Bridge API additions (all private; no public listener):
+chat credential: GET /v1/chat/status, POST /v1/chat/drafts {template}.
+native_ingress credential: POST /v1/native/preview, /preview-receipt, /confirm,
+/stop; GET /v1/native/notifications; POST notifications/{id}/claim or /settle.
+Native mutations validate user_id/chat_id/chat_type from the trusted ingress;
+these fields are never accepted from model tool arguments. Notifications are
+claimed durably before delivery. A lost acknowledgement is delivery_unknown,
+not an automatic resend; /loop_status remains the recovery view.
+
+Install on the existing dedicated control host only:
+python3 infra/loop-control/configure_native_telegram.py --source CHECKOUT
+This prepares a disabled-owner configuration and private rollback snapshot.
+Activation additionally requires --user-id NUMERIC_ID --token-file PRIVATE_FILE.
+The bot token must come from a new dedicated bot and a mode-0600 file. It is read
+by native_gateway.py at process startup, never placed in Docker environment
+inspection, command arguments, source, logs, or conversation text.
+
+The installer preserves existing Compose limits/networks, Hermes API config and
+model login. It installs read-only runtime overlays on the pinned images and
+does not restart or change queue/Director pause. Validate Docker Compose, then
+explicitly recreate only bridge and hermes (use --force-recreate because
+replacing a bind-mounted file does not update the old container inode).
+After changes to loop-egress PermitOpen, reconnect the SSH tunnel for the new
+key restrictions to take effect. Permit only api.telegram.org:443 in addition
+to the previously admitted model destinations; retain the private network.
+
+Rollback: use /var/backups/loop-native/TIMESTAMP/configuration.tar.gz and its
+receipt hash; restore the previous Compose/hermes/Bridge config and prior
+overlay files, then recreate the same two services. SQLite snapshots accompany
+the config backup, but do not restore an older DB over newer jobs merely to
+roll back code. Newly created inactive files can remain in place. VPN SSH config
+has its own /var/backups/loop-egress/telegram-TIMESTAMP snapshot; restore only
+the dedicated LOOP account restrictions and validate sshd before reload.
+
+Acceptance levels are distinct: code tests; installed plugin/role/network
+smoke; a real owner Telegram conversation across restart; a confirmed task to
+PR with its native result notification. Missing bot/owner credentials block
+the last two. A healthy process or Telegram getMe response does not prove a
+successful user conversation. Do not enable work merely to enable chat.

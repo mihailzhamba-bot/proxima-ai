@@ -306,8 +306,16 @@ class Bridge:
         if not isinstance(job_id,str) or not JOB_ID.fullmatch(job_id) or payload["template"] not in templates: raise BridgeError(400,"unknown job template")
         fingerprint=template_fingerprint(payload["template"],templates[payload["template"]])
         with self.tx() as db:
-            op = db.execute("SELECT state,generation FROM operations WHERE id=? AND kind='hermes'",(payload["run_id"],)).fetchone()
+            op = db.execute("SELECT state,generation,key FROM operations WHERE id=? AND kind='hermes'",(payload["run_id"],)).fetchone()
             if not op or op["state"] != "running" or op["generation"] != payload["generation"]: raise BridgeError(409,"Director attempt no longer owns the lease")
+            parent = db.execute("SELECT request FROM operations WHERE kind='paperclip' AND external_id=?",(op["key"],)).fetchone()
+            if getattr(self,"require_parent_for_jobs",False) and parent is None:
+                raise BridgeError(409,"Paperclip parent binding not yet acknowledged",False)
+            approved = json.loads(parent["request"]) if parent else {}
+            if approved.get("source") == "native_telegram" and (
+                approved.get("job_id") != job_id or approved.get("template") != payload["template"]
+                or approved.get("template_fingerprint") != fingerprint
+            ): raise BridgeError(403,"job differs from owner-confirmed template",False)
             if db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0] == "true": raise BridgeError(409,"dispatch paused")
             old = db.execute("SELECT * FROM jobs WHERE id=?",(job_id,)).fetchone()
             if old:
@@ -608,16 +616,25 @@ class GitHubPublisher:
 
 def server(bridge, config):
     keys={role:secret(path) for role,path in config["credential_files"].items()}
+    native = None
+    if "native_telegram" in config:
+        try:
+            from .native_control import NativeControl
+        except ImportError:
+            from native_control import NativeControl
+        native = NativeControl(bridge, config)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args): pass
         def send_json(self,status,value):
             encoded=json.dumps(value).encode(); self.send_response(status); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(encoded))); self.end_headers(); self.wfile.write(encoded)
         def authenticate(self,role):
-            if not hmac.compare_digest(self.headers.get("Authorization",""),"Bearer "+keys[role]): raise BridgeError(403,"access denied")
+            if role not in keys or not hmac.compare_digest(self.headers.get("Authorization",""),"Bearer "+keys[role]): raise BridgeError(403,"access denied")
         def handle_request(self):
             path=urlparse(self.path).path
             try:
                 if path.startswith("/hermes/"): self.authenticate("gateway")
+                elif path.startswith("/v1/chat/"): self.authenticate("chat")
+                elif path.startswith("/v1/native/"): self.authenticate("native_ingress")
                 elif path in {"/v1/jobs","/v1/context"}: self.authenticate("director")
                 elif path.startswith("/v1/runner/"): self.authenticate("runner")
                 else: self.authenticate("operator")
@@ -627,7 +644,10 @@ def server(bridge, config):
                     if length<0 or length>100000: raise BridgeError(413,"payload too large")
                     payload=json.loads(self.rfile.read(length) or b"{}")
                     if not isinstance(payload,dict): raise BridgeError(400,"object required")
-                if self.command=="GET" and path=="/hermes/health": result=bridge.hermes.call("GET","/health")
+                if path.startswith(("/v1/chat/", "/v1/native/")):
+                    if native is None: raise BridgeError(503,"native chat not configured",False)
+                    result=native.route(self.command,path,payload)
+                elif self.command=="GET" and path=="/hermes/health": result=bridge.hermes.call("GET","/health")
                 elif self.command=="POST" and path=="/hermes/v1/runs":
                     if set(payload)-{"input","instructions","session_id"} or not all(isinstance(payload.get(k),str) and payload[k] for k in ("input","instructions","session_id")): raise BridgeError(400,"invalid gateway request")
                     if self.headers.get("X-Hermes-Session-Key")!=payload["session_id"]: raise BridgeError(400,"session binding missing")

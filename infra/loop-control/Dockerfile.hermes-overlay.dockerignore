@@ -17,4 +17,5 @@ build/upstream/hermes/**/__pycache__/**
 !tools/
 !tools/loop/
 !tools/loop/bridge.py
+!tools/loop/chat_tool.py
 !tools/loop/director_tool.py

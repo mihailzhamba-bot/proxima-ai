@@ -1,0 +1,5 @@
+name: loop-chat
+version: 1.0.0
+description: Native owner-only Telegram conversation and confirmed LOOP controls
+provides_hooks:
+  - pre_gateway_dispatch

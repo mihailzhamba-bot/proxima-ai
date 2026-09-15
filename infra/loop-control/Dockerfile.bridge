@@ -1,5 +1,5 @@
 FROM python:3.12.12-slim-bookworm
 RUN useradd --uid 10001 --create-home loop && mkdir -p /var/lib/loop/bridge /var/lib/loop/telegram && chown -R loop:loop /var/lib/loop
-COPY tools/loop/bridge.py tools/loop/telegram.py /opt/loop/
+COPY tools/loop/bridge.py tools/loop/telegram.py tools/loop/native_control.py /opt/loop/
 USER 10001:10001
 CMD ["python3", "/opt/loop/bridge.py", "--config", "/etc/loop/bridge.json"]

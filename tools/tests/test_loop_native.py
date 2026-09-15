@@ -1,0 +1,266 @@
+"""Owner confirmation is a native Telegram event, never model-generated text."""
+import asyncio
+import json
+import sys
+import threading
+import time
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from tools.loop.bridge import Bridge, BridgeError, JsonHTTP, server, template_fingerprint
+from tools.loop.native_control import NativeControl
+from tools.loop.native_plugin import NativePlugin, PENDING, authorized, register
+
+TEMPLATE = {"profile": "fedor", "profile_id": "11111111-1111-4111-8111-111111111111",
+            "profile_revision": 0, "base_sha": "a" * 40, "allowed_paths": ["probe.ts"]}
+ACTOR = {"user_id": "12345", "chat_id": "12345", "chat_type": "dm"}
+
+
+class Remote:
+    def __init__(self):
+        self.calls = []
+        self.offline = False
+    def call(self, method, path, payload=None, headers=None):
+        self.calls.append((method, path, payload))
+        if method == "POST" and self.offline:
+            raise BridgeError(502, "lost response", True)
+        if path.endswith("wakeup"):
+            return {"id": "paperclip-run"}
+        if path == "/v1/runs":
+            return {"id": "hermes-run"}
+        return {"status": "idle"}
+
+
+def setup(tmp_path):
+    remote = Remote()
+    bridge = Bridge(tmp_path / "bridge.sqlite", remote, remote, "director")
+    config = {"native_telegram": {**ACTOR, "templates": ["probe"], "descriptions": {"probe": {
+        "description": "Add the fixed test marker", "expected_result": "One-file PR"}}}, "templates": {"probe": dict(TEMPLATE)}}
+    native = NativeControl(bridge, config)
+    return bridge, native, config, remote
+
+
+def prepare(native):
+    draft = native.draft({"template": "probe"})
+    payload = {**ACTOR, "draft_id": draft["draft_id"]}
+    preview = native.preview(payload)
+    native.preview_receipt({**payload, "preview_nonce": preview["preview_nonce"], "message_id": "42"})
+    return payload
+
+
+def test_discussion_draft_preview_do_not_dispatch_and_require_owner(tmp_path):
+    bridge, native, _, remote = setup(tmp_path)
+    draft = native.draft({"template": "probe"})
+    payload = {**ACTOR, "draft_id": draft["draft_id"]}
+    with pytest.raises(BridgeError, match="loop_review"):
+        native.confirm(payload)
+    for update in [{"user_id": "9"}, {"chat_id": "9"}, {"chat_type": "group"}]:
+        with pytest.raises(BridgeError, match="owner"):
+            native.preview({**payload, **update})
+    native.preview(payload)
+    assert remote.calls == []
+    with bridge.tx() as db:
+        assert db.execute("SELECT count(*) FROM operations").fetchone()[0] == 0
+
+
+def test_confirmation_durable_duplicate_and_exact_template_binding(tmp_path):
+    bridge, native, config, remote = setup(tmp_path)
+    payload = prepare(native)
+    first = native.confirm(payload)
+    restored = NativeControl(bridge, config)
+    assert restored.confirm(payload)["run_id"] == first["run_id"]
+    assert len([c for c in remote.calls if c[1].endswith("wakeup")]) == 1
+    child = bridge.create("hermes", "paperclip-run", {"input": "fixture", "instructions": "fixture", "session_id": "fixture"})
+    job = {"job_id": "tg-" + payload["draft_id"].replace("-", ""), "run_id": child["run_id"], "generation": 1, "template": "probe"}
+    with pytest.raises(BridgeError, match="owner-confirmed"):
+        bridge.propose_job({**job, "job_id": "another-job"}, config["templates"])
+    assert bridge.propose_job(job, config["templates"])["state"] == "queued"
+
+
+def test_unknown_parent_cannot_propose_before_wakeup_ack(tmp_path):
+    bridge, native, config, remote = setup(tmp_path)
+    child = bridge.create("hermes", "unacknowledged-parent", {"input": "fixture", "instructions": "fixture", "session_id": "fixture"})
+    with pytest.raises(BridgeError, match="parent binding"):
+        bridge.propose_job({"job_id": "unapproved-job", "run_id": child["run_id"], "generation": 1, "template": "probe"}, config["templates"])
+
+
+def test_undelivered_or_superseded_preview_cannot_authorize(tmp_path):
+    bridge, native, config, remote = setup(tmp_path)
+    draft = native.draft({"template": "probe"})
+    payload = {**ACTOR, "draft_id": draft["draft_id"]}
+    first = native.preview(payload)
+    with pytest.raises(BridgeError, match="loop_review"):
+        native.confirm(payload)
+    native.preview(payload)
+    with pytest.raises(BridgeError, match="superseded"):
+        native.preview_receipt({**payload, "preview_nonce": first["preview_nonce"], "message_id": "42"})
+    assert remote.calls == []
+
+
+@pytest.mark.parametrize("change", ["pause", "expire", "template"])
+def test_pause_expiry_and_changed_template_never_launch(tmp_path, change):
+    bridge, native, config, remote = setup(tmp_path)
+    payload = prepare(native)
+    if change == "pause":
+        bridge.pause(True)
+    elif change == "expire":
+        with bridge.tx() as db:
+            db.execute("UPDATE native_drafts SET created=?", (time.time() - 1000,))
+    else:
+        config["templates"]["probe"]["base_sha"] = "b" * 40
+    with pytest.raises(BridgeError):
+        native.confirm(payload)
+    assert not any(c[0] == "POST" for c in remote.calls)
+
+
+def test_unknown_dispatch_and_restart_never_retry_upstream(tmp_path):
+    bridge, native, config, remote = setup(tmp_path)
+    payload = prepare(native)
+    remote.offline = True
+    with pytest.raises(BridgeError):
+        native.confirm(payload)
+    assert NativeControl(bridge, config).confirm(payload)["status"] == "unknown"
+    assert len([c for c in remote.calls if c[0] == "POST"]) == 1
+
+
+def test_crash_before_intent_requires_reconciliation(tmp_path):
+    bridge, native, config, remote = setup(tmp_path)
+    payload = prepare(native)
+    with bridge.tx() as db:
+        db.execute("UPDATE native_drafts SET state='dispatching'")
+    with pytest.raises(BridgeError, match="unknown"):
+        NativeControl(bridge, config).confirm(payload)
+    assert remote.calls == []
+
+
+def test_http_model_credential_cannot_confirm_stop_or_wake(tmp_path):
+    bridge, native, config, _ = setup(tmp_path)
+    keys = {}
+    for role in ["operator", "director", "gateway", "runner", "chat", "native_ingress"]:
+        p = tmp_path / role
+        p.write_text(role + "-secret")
+        p.chmod(0o600)
+        keys[role] = str(p)
+    http = server(bridge, {**config, "port": 0, "credential_files": keys})
+    thread = threading.Thread(target=http.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client = JsonHTTP("http://127.0.0.1:" + str(http.server_port), "chat-secret", trusted_bridge=True)
+        assert "queue_paused" in client.call("GET", "/v1/chat/status")
+        for path in ["/v1/native/confirm", "/v1/native/stop", "/v1/wake", "/v1/jobs"]:
+            with pytest.raises(BridgeError) as exc:
+                client.call("POST", path, ACTOR)
+            assert exc.value.status == 403
+    finally:
+        http.shutdown()
+        http.server_close()
+
+
+def event(text="hello", **changes):
+    source = SimpleNamespace(platform="telegram", chat_type="dm", user_id="12345", chat_id="12345", is_bot=False)
+    evt = SimpleNamespace(source=source, text=text, allow_gateway_control=True, internal=False)
+    for key, val in changes.items():
+        setattr(source if hasattr(source, key) else evt, key, val)
+    return evt
+
+
+@pytest.mark.parametrize("changes", [{"user_id": "9"}, {"chat_id": "9"}, {"chat_type": "group"},
+                                    {"is_bot": True}, {"internal": True}, {"allow_gateway_control": False}])
+def test_native_event_provenance_fails_closed(changes):
+    plugin = NativePlugin(ACTOR)
+    evt = event("/loop_confirm fake", **changes)
+    assert not authorized(evt, ACTOR)
+    assert plugin.gate(evt, None)["action"] == "skip"
+
+
+def test_native_chat_passes_through_but_slash_controls_never_reach_model():
+    async def exercise():
+        plugin = NativePlugin(ACTOR)
+        seen = []
+        async def handle(gateway, source, command, args, actor):
+            seen.append((command, args, actor))
+        plugin.handle = handle
+        assert plugin.gate(event("Discuss the goal"), None) is None
+        for command in ["/loop_confirm abc", "/tools", "/cron", "/model", "/plugins", "/unknown"]:
+            assert plugin.gate(event(command), None)["action"] == "skip"
+        if PENDING:
+            await asyncio.gather(*list(PENDING))
+        assert seen[0] == ("loop_confirm", "abc", ACTOR)
+    asyncio.run(exercise())
+
+
+def test_notification_claim_does_not_resend_after_restart(tmp_path):
+    bridge, native, config, remote = setup(tmp_path)
+    native.confirm(prepare(native))
+    item = native.notifications()["pending"][0]
+    native.notification_action(item["id"], "claim", {})
+    restored = NativeControl(bridge, config)
+    assert restored.notifications()["pending"] == []
+    assert restored.notifications()["delivery_unknown"] == 1
+
+
+@pytest.mark.parametrize("success", [True, False, "exception"])
+def test_native_preview_requires_successful_telegram_delivery_receipt(tmp_path, success):
+    bridge, native, config, remote = setup(tmp_path)
+    draft = native.draft({"template": "probe"})
+    payload = {**ACTOR, "draft_id": draft["draft_id"]}
+    class Client:
+        def call(self, method, path, body=None):
+            return native.route(method, path, body or {})
+    class Adapter:
+        async def send(self, chat_id, text):
+            if success == "exception":
+                raise OSError("fixture transport failure")
+            return SimpleNamespace(success=success, message_id="42" if success else None)
+    plugin = NativePlugin(ACTOR)
+    plugin.client = lambda role: Client()
+    gateway = SimpleNamespace(_adapter_for_source=lambda source: Adapter())
+    asyncio.run(plugin.handle(gateway, event().source, "loop_review", draft["draft_id"], ACTOR))
+    if success is True:
+        assert native.confirm(payload)["run_id"]
+    else:
+        with pytest.raises(BridgeError, match="loop_review"):
+            native.confirm(payload)
+        assert remote.calls == []
+
+
+def test_changed_human_description_invalidates_approval(tmp_path):
+    bridge, native, config, remote = setup(tmp_path)
+    payload = prepare(native)
+    config["native_telegram"]["descriptions"]["probe"]["description"] = "A different edit"
+    with pytest.raises(BridgeError, match="template changed"):
+        native.confirm(payload)
+    assert remote.calls == []
+
+
+def test_plugin_registration_requires_no_running_event_loop(tmp_path, monkeypatch):
+    path = tmp_path / 'config.json'
+    path.write_text(json.dumps(ACTOR))
+    monkeypatch.setenv('LOOP_NATIVE_CONFIG', str(path))
+    seen = {"hooks": [], "tools": [], "commands": []}
+    ctx = SimpleNamespace(
+        register_hook=lambda *a, **kw: seen['hooks'].append(a),
+        register_tool=lambda **kw: seen['tools'].append(kw),
+        register_command=lambda *a, **kw: seen['commands'].append(a))
+    register(ctx)
+    assert seen['hooks'][0][0] == 'pre_gateway_dispatch'
+    assert {t['name'] for t in seen['tools']} == {'loop_get_status', 'loop_prepare_action'}
+    assert len(seen['commands']) == 4
+
+
+def test_hermes_only_restart_exposes_uncertain_delivery_without_resending(tmp_path):
+    bridge, native, config, remote = setup(tmp_path)
+    native.confirm(prepare(native))
+    item = native.notifications()['pending'][0]
+    native.notification_action(item['id'], 'claim', {})
+    assert native.status()['notification_deliveries']['sending'] == 1
+    # Bridge remains alive; only the notifier disappeared after claim.
+    with bridge.tx() as db:
+        db.execute('UPDATE native_notifications SET claimed_at=?', (time.time() - 121,))
+    assert native.notifications()['pending'] == []
+    assert native.status()['notification_deliveries']['delivery_unknown'] == 1
+    with pytest.raises(BridgeError, match='already claimed'):
+        native.notification_action(item['id'], 'claim', {})
