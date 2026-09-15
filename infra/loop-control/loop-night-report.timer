@@ -1,0 +1,10 @@
+[Unit]
+Description=LOOP morning report at 08:00 Moscow
+
+[Timer]
+OnCalendar=2026-09-16 08:00:00 Europe/Moscow
+Persistent=true
+Unit=loop-night-report.service
+
+[Install]
+WantedBy=timers.target
