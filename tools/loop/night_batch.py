@@ -451,6 +451,9 @@ class Batch:
                                     self.stage.admit(reviewed)
                                     self.state['reviews'][observed['head_sha']] = {'phase': 'completed', 'reviewed': reviewed}
                                     current.update(phase='monitoring', reviewed=reviewed); self.save()
+                        current['observed_run_status'] = run_status
+                        current['observed_job_status'] = job.get('state') if job else 'absent'
+                        self.save()
                         self.sleep(min(self.manifest['poll_seconds'], max(0, self.manifest['end_at'] - self.clock())))
                 self.state['status'] = 'completed'; self.save()
                 # Finite approved queue exhausted: prevent unrelated later wakeups.

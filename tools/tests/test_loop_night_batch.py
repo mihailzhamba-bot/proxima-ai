@@ -388,3 +388,20 @@ def test_runtime_uid_is_optional_and_bounded(tmp_path):
     settings['runtime_owner_uid'] = True
     with pytest.raises(driver.BatchError, match='invalid_runtime_owner'):
         driver.checked(settings)
+
+
+def test_poll_heartbeat_updates_during_long_monitoring(tmp_path):
+    settings = manifest(tmp_path)
+    clock = Clock()
+    http = HTTP(settings, nojob=True)
+    snapshots = []
+    def sleep(duration):
+        snapshots.append(json.loads(Path(settings['state_file']).read_text()))
+        clock.sleep(duration)
+    result = driver.Batch(settings, http, Stage(), clock, sleep,
+                         disk_free=lambda _: 10 * 1024**3).run()
+    assert result['reason'] == 'job_timeout'
+    assert len(snapshots) == 12
+    assert [saved['updated_at'] for saved in snapshots] == list(range(1000, 1120, 10))
+    assert all(saved['tasks'][0]['observed_run_status'] == 'running' for saved in snapshots)
+    assert all(saved['tasks'][0]['observed_job_status'] == 'absent' for saved in snapshots)
