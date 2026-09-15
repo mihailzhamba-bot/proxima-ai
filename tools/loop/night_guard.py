@@ -45,9 +45,14 @@ def stop(manifest):
         except Exception: results.append({'path':route, 'ok':False})
     confirmed = all(item['ok'] for item in results)
     receipt = {'observed_at':time.time(), 'attempts':attempts, 'confirmed':confirmed, 'actions':results}
+    if confirmed and len(paths) > 1:
+        # A cancelled model job can leave the local receipt reader waiting.
+        # The queue is confirmed paused and publications fenced before restart.
+        restarted = subprocess.run(['systemctl','restart','loop-runner.service'],timeout=10,check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        receipt['cancelled_wait_released'] = restarted.returncode == 0
     if not confirmed and attempts >= 6:
         # Stop the dedicated publisher on Harper even when Bridge is unreachable.
-        subprocess.run(['systemctl','stop','loop-runner.service'], timeout=25, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(['systemctl','stop','loop-runner.service'], timeout=10, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         observed = subprocess.run(['systemctl','is-active','loop-runner.service'],timeout=5,capture_output=True,text=True,check=False)
         receipt['publisher_stopped'] = observed.stdout.strip() == 'inactive'
         receipt['retry_exhausted'] = True
@@ -72,7 +77,9 @@ def watch(manifest):
     if expired:
         subprocess.run(['systemctl','stop','loop-night.service'], timeout=30, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # Also covers a dead service whose ExecStopPost did not run.
-        stop(manifest)
+        receipt=json_file(receipt_path) if receipt_path.exists() else {}
+        if receipt.get('confirmed') is not True:
+            stop(manifest)
 
 if __name__ == '__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--manifest',required=True);parser.add_argument('--stop',action='store_true');args=parser.parse_args()

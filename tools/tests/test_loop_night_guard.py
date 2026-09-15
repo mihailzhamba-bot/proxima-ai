@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tools/loop'))
@@ -14,6 +15,7 @@ def test_stop_fences_only_unfinished_runs_and_records_result(tmp_path,monkeypatc
     def call(method,path,**kwargs):
         calls.append(path);return {'paused':True} if path=='/v1/pause' else {'status':'cancelled'}
     monkeypatch.setattr(guard,'BridgeClient',lambda _:call)
+    monkeypatch.setattr(guard.subprocess,'run',lambda *args,**kwargs:SimpleNamespace(returncode=0,stdout='active\n'))
     assert guard.stop({'state_file':str(path)})
     assert calls==['/v1/pause','/v1/runs/live/stop']
     assert json.loads(path.read_text())['status']=='blocked'
