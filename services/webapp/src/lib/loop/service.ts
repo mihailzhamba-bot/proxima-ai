@@ -64,8 +64,11 @@ function decimalCents(value: string): bigint {
 export function observationReadiness(task: Pick<TaskItem, "status" | "completed_at" | "horizon_days" | "orphaned">, now: Date): string | null {
   if (task.orphaned) return "Исходный прогон удалён. Snapshot сохранён, сравнение не подтверждено.";
   if (task.status !== "completed" || !task.completed_at) return "Выполнение ещё не подтверждено.";
-  const until = Date.parse(task.completed_at) + task.horizon_days * 86_400_000;
-  if (now.getTime() < until) return "Срок наблюдения после выполнения ещё не прошёл.";
+  const completedAt = Date.parse(task.completed_at), nowAt = now.getTime();
+  if (!Number.isFinite(completedAt) || !Number.isFinite(nowAt) || !Number.isInteger(task.horizon_days) || task.horizon_days < 1 || task.horizon_days > 365) return "Не удалось определить срок наблюдения. Проверьте дату выполнения и горизонт.";
+  const until = completedAt + task.horizon_days * 86_400_000;
+  if (!Number.isFinite(until)) return "Не удалось определить срок наблюдения. Проверьте дату выполнения и горизонт.";
+  if (nowAt < until) return "Срок наблюдения после выполнения ещё не прошёл.";
   return null;
 }
 
