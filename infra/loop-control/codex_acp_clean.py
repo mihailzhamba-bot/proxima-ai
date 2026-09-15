@@ -56,6 +56,8 @@ def permission_contract() -> dict[str, object]:
     """Return the complete session-layer contract; project config cannot override it."""
 
     return {
+        "model": "gpt-5.6-sol",
+        "model_reasoning_effort": "medium",
         "default_permissions": PERMISSION_PROFILE,
         "approval_policy": "never",
         "permissions": {
@@ -153,6 +155,13 @@ def rewrite_app_server_message(message: object) -> dict[str, object]:
     rewritten = dict(message)
     if method == POLICY_METHOD:
         params = dict(_policy_params(message))
+        params.update(model="gpt-5.6-sol", effort="medium", serviceTier=None)
+        if isinstance(params.get("collaborationMode"), dict):
+            mode = dict(params["collaborationMode"])
+            settings = dict(mode.get("settings") or {})
+            settings.update(model="gpt-5.6-sol", reasoning_effort="medium")
+            mode["settings"] = settings
+            params["collaborationMode"] = mode
         params.pop("sandboxPolicy", None)
         if "permissionProfile" in params:
             # The pinned 0.151.0 TurnStartParams schema does not accept this
@@ -168,6 +177,8 @@ def rewrite_app_server_message(message: object) -> dict[str, object]:
         if "permissionProfile" in params or "sandboxPolicy" in params:
             raise ProtocolViolation("unsupported thread policy override")
         params["config"]=session_contract(params.get("cwd"))
+        params["model"] = "gpt-5.6-sol"
+        params["serviceTier"] = None
         rewritten["params"] = params
         return rewritten
 

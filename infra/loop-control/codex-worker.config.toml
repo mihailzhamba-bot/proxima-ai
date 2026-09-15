@@ -1,5 +1,7 @@
 default_permissions = "loop-worker"
 approval_policy = "never"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
 
 [permissions.loop-worker]
 description = "LOOP workspace only; host reads and command network are denied."

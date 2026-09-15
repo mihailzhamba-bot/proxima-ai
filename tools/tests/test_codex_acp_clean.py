@@ -72,7 +72,24 @@ def test_turn_start_without_override_still_uses_configured_default() -> None:
         "params": {"threadId": "thread-2", "input": []},
     }
 
-    assert json.loads(codex_acp_clean.rewrite_app_server_line(encoded(message))) == message
+    result = json.loads(codex_acp_clean.rewrite_app_server_line(encoded(message)))
+    assert result["params"] == {**message["params"], "model": "gpt-5.6-sol", "effort": "medium", "serviceTier": None}
+
+
+def test_turn_cannot_override_approved_model_or_reasoning_budget() -> None:
+    result = codex_acp_clean.rewrite_app_server_message({
+        "method": "turn/start", "params": {
+            "model": "expensive-unapproved", "effort": "xhigh", "serviceTier": "fast",
+            "collaborationMode": {"mode": "default", "settings": {
+                "model": "expensive-unapproved", "reasoning_effort": "xhigh",
+                "developer_instructions": None,
+            }},
+        },
+    })["params"]
+    assert (result["model"], result["effort"], result["serviceTier"]) == ("gpt-5.6-sol", "medium", None)
+    assert result["collaborationMode"]["settings"] == {
+        "model": "gpt-5.6-sol", "reasoning_effort": "medium", "developer_instructions": None,
+    }
 
 
 @pytest.mark.parametrize(
