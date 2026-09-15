@@ -459,3 +459,11 @@ def test_ready_pr_requires_this_batch_recorded_review(tmp_path):
     result, _, _, _ = execute(settings, http, stage)
     assert result['reason'] == 'ready_pr_without_batch_review'
     assert not stage.calls and not stage.admissions
+
+
+def test_disk_start_reserve_is_higher_than_inflight_floor(tmp_path):
+    settings = manifest(tmp_path)
+    settings['disk_floor_bytes'] = 2 * 1024**3
+    result, http, _, _ = execute(settings, disk=lambda _: int(2.5 * 1024**3))
+    assert result['reason'] == 'disk_start_floor'
+    assert not any(call[1] == '/v1/wake' for call in http.calls)

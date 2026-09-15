@@ -2,7 +2,7 @@
 """Root operator finite PR-only batch; Paperclip remains the only scheduler.
 
 --manifest JSON requires tasks (1..4), template_bases, end_at (epoch seconds),
-job_timeout_seconds (1..2700), poll_seconds (10..30), disk_floor_bytes (>=3 GiB),
+job_timeout_seconds (1..2700), poll_seconds (10..30), disk_floor_bytes (>=2 GiB),
 state_file, evidence_root, work_root, glm_config, glm_script, review_receipts,
 operator_key_file, runner_key_file. Tasks contain key, job_id, template,
 template_fingerprint and optional existing_run_id. All paths must be absolute.
@@ -97,7 +97,7 @@ def checked(manifest):
         if type(manifest[key]) is not str or not Path(manifest[key]).is_absolute():
             raise BatchError('invalid_path')
     for key, minimum, maximum in [('job_timeout_seconds', 1, 2700), ('poll_seconds', 10, 30),
-                                 ('disk_floor_bytes', 3 * 1024**3, 1024**5)]:
+                                 ('disk_floor_bytes', 2 * 1024**3, 1024**5)]:
         if type(manifest[key]) is not int or not minimum <= manifest[key] <= maximum:
             raise BatchError('invalid_limits')
     if type(manifest['end_at']) not in (int, float) or not 0 < manifest['end_at'] < 10**11:
@@ -358,6 +358,8 @@ class Batch:
                         if self.disk_free(self.manifest['work_root']) < self.manifest['disk_floor_bytes']:
                             return self.halt('disk_floor', current)
                         if current['phase'] == 'pending':
+                            if self.disk_free(self.manifest['work_root']) < max(3 * 1024**3, self.manifest['disk_floor_bytes']):
+                                return self.halt('disk_start_floor', current)
                             current['started_at'] = now
                             if task.get('existing_run_id'):
                                 current['run_id'] = task['existing_run_id']

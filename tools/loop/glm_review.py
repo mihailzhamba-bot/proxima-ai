@@ -72,6 +72,7 @@ def git(root, *args, limit=MAX_CONTEXT):
     # A regular temporary output file avoids unbounded PIPE buffering.
     with tempfile.TemporaryFile() as output:
         process = subprocess.Popen(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null',
+            '-c', 'safe.directory=' + str(Path(root).resolve()),
             '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false',
             '-C', str(root), *args], env=ENV, stdin=subprocess.DEVNULL,
             stdout=output, stderr=subprocess.DEVNULL)
