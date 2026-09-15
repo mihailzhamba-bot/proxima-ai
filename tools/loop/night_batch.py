@@ -393,10 +393,14 @@ class Batch:
                                     return self.halt('completed_without_job', current)
                         else:
                             current.pop('no_job_since', None)
+                            if job.get('parent_run_id') != current['run_id']:
+                                return self.halt('job_parent_run_mismatch', current)
                             if job.get('template') != task['template'] or job.get('template_fingerprint') != task['template_fingerprint']:
                                 return self.halt('job_scope_mismatch', current)
                             status = job.get('state')
                             if status == 'ready_pr':
+                                if not current.get('reviewed'):
+                                    return self.halt('ready_pr_without_batch_review', current)
                                 if (not isinstance(job.get('pr_url'), str) or not job['pr_url'].startswith('https://')
                                     or not SHA.fullmatch(str(job.get('candidate_sha', '')))):
                                     return self.halt('ready_pr_evidence_missing', current)
@@ -444,6 +448,7 @@ class Batch:
                                     fresh_job = self.request('GET', '/v1/runner/jobs/' + task['job_id'], role='runner')
                                     if (fresh_run.get('status', fresh_run.get('state')) not in ('running', 'completed')
                                         or fresh_job.get('state') not in ('dispatching', 'publishing')
+                                        or fresh_job.get('parent_run_id') != current['run_id']
                                         or fresh_job.get('template_fingerprint') != task['template_fingerprint']):
                                         return self.halt('review_attempt_revoked', current)
                                     if self.clock() >= min(self.manifest['end_at'], current['started_at'] + self.manifest['job_timeout_seconds']):

@@ -56,6 +56,7 @@ class HTTP:
     def __init__(self, settings, stage=None, run_status='running', job_state='dispatching', nojob=False):
         self.settings, self.stage, self.run_status, self.job_state, self.nojob = settings, stage, run_status, job_state, nojob
         self.calls = []
+        self.parent_run_id = None
     def __call__(self, method, path, **kwargs):
         self.calls.append((method, path, kwargs))
         if path == '/v1/wake':
@@ -68,10 +69,13 @@ class HTTP:
             assert kwargs['role'] == 'runner'
             if self.nojob:
                 raise driver.HTTPError(404)
-            state = 'ready_pr' if self.stage and self.stage.admissions else self.job_state
+            index = int(path.rsplit('-', 1)[1])
+            state = 'ready_pr' if self.stage and len(self.stage.admissions) > index else self.job_state
             return {'state': state, 'template': 'night-template', 'template_fingerprint': 'd' * 64,
+                    'parent_run_id': self.parent_run_id,
                     'pr_url': 'https://github.com/fixture/pull/1', 'candidate_sha': 'b' * 40}
         if path.startswith('/v1/runs/'):
+            self.parent_run_id = path.rsplit('/', 1)[1]
             return {'status': self.run_status}
         raise AssertionError(path)
 
@@ -89,7 +93,7 @@ def test_review_then_ready_pr_then_next_task(tmp_path):
     result, http, stage, _ = execute(settings)
     assert result['status'] == 'completed'
     assert all(task['phase'] == 'ready_pr' for task in result['tasks'])
-    assert len(stage.calls) == 1  # fixture second task already has existing ready PR
+    assert len(stage.calls) == 1  # exact SHA review reused across both fixture tasks
     wake = [call for call in http.calls if call[1] == '/v1/wake']
     assert len(wake) == 2
     assert http.calls[-1][1] == '/v1/pause'
@@ -405,3 +409,53 @@ def test_poll_heartbeat_updates_during_long_monitoring(tmp_path):
     assert [saved['updated_at'] for saved in snapshots] == list(range(1000, 1120, 10))
     assert all(saved['tasks'][0]['observed_run_status'] == 'running' for saved in snapshots)
     assert all(saved['tasks'][0]['observed_job_status'] == 'absent' for saved in snapshots)
+
+
+@pytest.mark.parametrize('parent', [None, 'different-parent-run'])
+def test_colliding_job_parent_blocks_before_model(tmp_path, parent):
+    settings = manifest(tmp_path)
+    stage = Stage(); http = HTTP(settings, stage)
+    def call(method, path, **kwargs):
+        value = http(method, path, **kwargs)
+        if path.startswith('/v1/runner/jobs/'):
+            value['parent_run_id'] = parent
+        return value
+    result, _, _, _ = execute(settings, call, stage)
+    assert result['reason'] == 'job_parent_run_mismatch'
+    assert not stage.calls and not stage.admissions
+
+
+def test_adopted_run_cannot_attach_other_parent_job(tmp_path):
+    settings = manifest(tmp_path)
+    settings['tasks'][0]['existing_run_id'] = 'adopted-parent-run'
+    stage = Stage(); http = HTTP(settings, stage)
+    def call(method, path, **kwargs):
+        value = http(method, path, **kwargs)
+        if path.startswith('/v1/runner/jobs/'):
+            value['parent_run_id'] = 'other-parent-run'
+        return value
+    result, _, _, _ = execute(settings, call, stage)
+    assert result['reason'] == 'job_parent_run_mismatch'
+    assert not stage.calls
+    assert not any(path == '/v1/wake' for _method, path, _kwargs in http.calls)
+
+
+def test_fresh_job_lineage_checked_before_admission(tmp_path):
+    settings = manifest(tmp_path)
+    stage = Stage(); http = HTTP(settings, stage)
+    def call(method, path, **kwargs):
+        value = http(method, path, **kwargs)
+        if path.startswith('/v1/runner/jobs/') and stage.calls:
+            value['parent_run_id'] = 'wrong-fresh-parent'
+        return value
+    result, _, _, _ = execute(settings, call, stage)
+    assert result['reason'] == 'review_attempt_revoked'
+    assert len(stage.calls) == 1 and not stage.admissions
+
+
+def test_ready_pr_requires_this_batch_recorded_review(tmp_path):
+    settings = manifest(tmp_path)
+    stage = Stage(); http = HTTP(settings, job_state='ready_pr')
+    result, _, _, _ = execute(settings, http, stage)
+    assert result['reason'] == 'ready_pr_without_batch_review'
+    assert not stage.calls and not stage.admissions
