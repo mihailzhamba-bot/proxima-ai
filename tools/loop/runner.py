@@ -29,6 +29,18 @@ except ImportError:
 
 ID=re.compile(r"^[a-z0-9][a-z0-9-]{2,40}$")
 SHA=re.compile(r"^[a-f0-9]{40}$")
+def restore_tracked_modes(checkout, records):
+    root=Path(checkout).resolve()
+    for record in records.split("\0"):
+        if not record:continue
+        metadata,name=record.split("\t",1);mode,kind,_blob=metadata.split()
+        path=root/name
+        if kind!="blob" or Path(name).is_absolute() or ".." in Path(name).parts:raise ValueError("invalid tracked mode entry")
+        if path.parent.resolve()!=path.parent:raise ValueError("symlinked tracked parent")
+        if mode=="120000" and path.is_symlink():continue
+        if path.is_symlink() or not path.is_file() or mode not in {"100644","100755"}:raise ValueError("invalid tracked file mode")
+        path.chmod(0o755 if mode=="100755" else 0o644)
+
 def prepare_mountpoints(checkout,directories,files,tracked_paths):
     root=Path(checkout)
     if root.is_symlink() or not root.is_dir():raise ValueError("invalid checkout root")
@@ -210,6 +222,8 @@ class DeliveryRunner:
         history=json.loads(self.execute([sys.executable,"-I",self.config.get("history_gate","/opt/loop/history_gate.py"),str(checkout),base,sha,*[item for value in allowed for item in ("--allowed",value)]]))
         if history.get("status")!="pass" or history.get("base_sha")!=base or history.get("head_sha")!=sha:raise BridgeError(409,"candidate history gate incomplete")
         (self.evidence/"history-receipt.json").write_text(json.dumps(history,indent=2)+"\n")
+        modes=self.execute([*git,"-C",str(checkout),"ls-tree","-r","-z",sha])
+        restore_tracked_modes(checkout,modes)
         # The candidate tree (including verifier/control files and .git) is RO.
         # Only dependency/build caches are separate writable mounts.
         cache=work/"writable";cache.mkdir()

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 from tools.loop.bridge import Bridge, BridgeError
-from tools.loop.runner import DeliveryRunner,prepare_mountpoints
+from tools.loop.runner import DeliveryRunner,prepare_mountpoints,restore_tracked_modes
 
 class Remote:
     def call(self,method,path,payload=None,headers=None):return {"id":"remote-run","status":"running"}
@@ -35,6 +35,7 @@ def setup(tmp_path,fail_checks=False,changed="services/webapp/src/lib/rub.ts",ca
             checkout=Path(argv[-1]);(checkout/"services/webapp").mkdir(parents=True);(checkout/"services/webapp/next-env.d.ts").write_text("fixture declaration")
         if "rev-parse" in argv:return sha+"\n"
         if "--name-only" in argv:return changed+"\n"
+        if "ls-tree" in argv:return "100644 blob "+"a"*40+"\tservices/webapp/next-env.d.ts\0"
         if len(argv)>2 and str(argv[2]).endswith("history_gate.py"):
             return json.dumps({"status":"pass","base_sha":base,"head_sha":sha,"commits":1,"changed_paths":1,"scanned_blobs":1,"objects":3})
         if argv[0]=="docker":
@@ -138,3 +139,13 @@ def test_vite_overlays_are_bounded_and_created_only_after_prepare(tmp_path):
                 suffix=":/work/"+dependency+"/"+name+":rw"
                 assert any(arg.endswith(suffix) for arg in stages[stage])
                 assert not any(arg.endswith(suffix) for arg in stages["prepare"])
+
+
+def test_checkout_exec_modes_are_restored_without_changing_bytes(tmp_path):
+    script=tmp_path/'script';script.write_text('fixture');script.chmod(0o700)
+    restore_tracked_modes(tmp_path,'100755 blob '+'a'*40+'\tscript\0')
+    assert script.stat().st_mode & 0o777 == 0o755
+    assert script.read_text()=='fixture'
+    target=tmp_path/'outside';target.mkdir();(target/'file').write_text('preserve')
+    (tmp_path/'redirect').symlink_to(target,target_is_directory=True)
+    with pytest.raises(ValueError):restore_tracked_modes(tmp_path,'100644 blob '+'a'*40+'\tredirect/file\0')

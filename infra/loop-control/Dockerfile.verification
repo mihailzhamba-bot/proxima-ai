@@ -1,3 +1,7 @@
 ARG VERIFICATION_BASE
 FROM ${VERIFICATION_BASE}
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-client \
+    && test -x /usr/local/bin/python3.14 \
+    && ln -sf /usr/local/bin/python3.14 /usr/bin/python3
 COPY tools/loop/verify_candidate.py /opt/loop/verify_candidate.py

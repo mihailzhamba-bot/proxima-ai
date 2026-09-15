@@ -391,7 +391,7 @@ def runner_runtime_checks(config: dict,missing: list[str]) -> None:
         if not isinstance(repo_digests,list) or image not in repo_digests:
             missing.append("verification-image-local")
         else:
-            try:offline=subprocess.run([*docker,"run","--rm","--network","none","--entrypoint","/bin/sh",image,"-ceu","test -d /opt/offline/npm && test -d /opt/offline/uv"],capture_output=True,text=True,timeout=30)
+            try:offline=subprocess.run([*docker,"run","--rm","--network","none","--entrypoint","/bin/sh",image,"-ceu","test -d /opt/offline/npm && test -d /opt/offline/uv && test -x /usr/bin/python3 && test -x /usr/bin/ssh-keygen"],capture_output=True,text=True,timeout=30)
             except (FileNotFoundError,subprocess.TimeoutExpired):offline=None
             if offline is None or offline.returncode:missing.append("verification-image-offline-inputs")
 
