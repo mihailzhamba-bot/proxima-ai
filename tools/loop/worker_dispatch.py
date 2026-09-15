@@ -238,9 +238,9 @@ def main() -> None:
         "--attempt",
         "1",
         "--timeout",
-        "5400",
+        "1800",
         "--max-iterations",
-        "100",
+        "30",
         "--keep-workspace",
         "--external-collect",
     ]
