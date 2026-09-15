@@ -394,7 +394,7 @@ class Bridge:
         return {"job_id":job_id,"state":old["state"] if old else "queued"}
     def job(self, job_id):
         with self.tx() as db:
-            row=db.execute("SELECT j.*,o.generation AS current_generation,o.state AS director_state FROM jobs j JOIN operations o ON o.id=j.director_run WHERE j.id=?",(job_id,)).fetchone()
+            row=db.execute("SELECT j.*,o.generation AS current_generation,o.state AS director_state,p.id AS parent_run_id FROM jobs j JOIN operations o ON o.id=j.director_run LEFT JOIN operations p ON p.kind='paperclip' AND p.external_id=o.key WHERE j.id=?",(job_id,)).fetchone()
         if not row: raise BridgeError(404,"job unavailable")
         return dict(row)
     def native_publication_fence(self, job):

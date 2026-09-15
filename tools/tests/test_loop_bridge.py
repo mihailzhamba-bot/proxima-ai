@@ -235,3 +235,29 @@ def test_publication_pause_preserves_permit_for_finish_after_resume(tmp_path):
     b.pause(False)
     assert b.finish_publication("job-1",permit)["state"]=="ready_pr"
     assert len(published)==1
+
+
+def test_job_parent_binding_is_persisted_bridge_parent_not_remote_or_other_job(tmp_path):
+    b, _, _, _ = setup(tmp_path)
+    parents = []
+    for index in (1, 2):
+        parent = b.create("paperclip", "wake-" + str(index), {})["run_id"]
+        external = "paperclip-external-" + str(index)
+        with b.tx() as db:
+            db.execute("UPDATE operations SET external_id=? WHERE id=?", (external, parent))
+        director = run(b, external)
+        job_id = "job-" + str(index)
+        b.propose_job({"job_id": job_id, "run_id": director, "generation": 1, "template": "fixture"}, {"fixture": TEMPLATE})
+        with b.tx() as db:
+            db.execute("UPDATE operations SET state='completed' WHERE id=?", (director,))
+        parents.append(parent)
+    assert b.job("job-1")["parent_run_id"] == parents[0]
+    assert b.job("job-2")["parent_run_id"] == parents[1]
+    assert b.job("job-1")["parent_run_id"] != b.job("job-2")["parent_run_id"]
+
+
+def test_standalone_job_without_persisted_parent_reports_null_binding(tmp_path):
+    b, _, _, _ = setup(tmp_path)
+    director = run(b, "unbound-remote-parent")
+    job(b, director)
+    assert b.job("job-1")["parent_run_id"] is None
