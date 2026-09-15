@@ -6,6 +6,10 @@ COPY build/upstream/hermes /opt/hermes
 WORKDIR /opt/hermes
 RUN python -c "import json; assert json.load(open('.loop-source-pin.json'))['commit']=='939e45c91d751fadd94dcd1b873ac3cb44846213'"
 RUN uv sync --python /usr/local/bin/python3 --locked --no-dev --extra sms --extra mcp
+# Native Telegram is lazy-installed upstream, which is unavailable in our
+# read-only runtime/private egress. Pin the wheel already recorded in uv.lock.
+RUN uv pip install --python .venv/bin/python --no-deps "https://files.pythonhosted.org/packages/60/7c/ed7d4dd94280bd434173cae9f7a7aedaaab9af128ae4f494423a5687c820/python_telegram_bot-22.8-py3-none-any.whl#sha256=42373918097f1b837cc4e717d588c19ea79651497ec712bb5b0c76e5e63c50e1"
+RUN .venv/bin/python -c "import telegram; from telegram.ext import Application; assert telegram.__version__ == '22.8'"
 RUN .venv/bin/python -c "import sys,aiohttp; assert sys.version_info[:2]==(3,12); assert aiohttp.__version__=='3.14.3'"
 
 FROM python:3.12.12-slim-bookworm
