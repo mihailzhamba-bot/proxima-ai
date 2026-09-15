@@ -84,9 +84,9 @@ def test_confirmation_durable_duplicate_and_exact_template_binding(tmp_path):
 
 def test_unknown_parent_cannot_propose_before_wakeup_ack(tmp_path):
     bridge, native, config, remote = setup(tmp_path)
-    child = bridge.create("hermes", "unacknowledged-parent", {"input": "fixture", "instructions": "fixture", "session_id": "fixture"})
     with pytest.raises(BridgeError, match="parent binding"):
-        bridge.propose_job({"job_id": "unapproved-job", "run_id": child["run_id"], "generation": 1, "template": "probe"}, config["templates"])
+        bridge.create("hermes", "unacknowledged-parent", {"input": "fixture", "instructions": "fixture", "session_id": "fixture"})
+    assert not any(c[1] == "/v1/runs" for c in remote.calls)
 
 
 def test_undelivered_or_superseded_preview_cannot_authorize(tmp_path):
@@ -152,7 +152,7 @@ def test_http_model_credential_cannot_confirm_stop_or_wake(tmp_path):
     try:
         client = JsonHTTP("http://127.0.0.1:" + str(http.server_port), "chat-secret", trusted_bridge=True)
         assert "queue_paused" in client.call("GET", "/v1/chat/status")
-        for path in ["/v1/native/confirm", "/v1/native/stop", "/v1/wake", "/v1/jobs"]:
+        for path in ["/v1/native/confirm", "/v1/native/stop", "/v1/wake", "/v1/jobs", "/v1/native-recovery/retry"]:
             with pytest.raises(BridgeError) as exc:
                 client.call("POST", path, ACTOR)
             assert exc.value.status == 403
@@ -318,3 +318,164 @@ def test_script_entrypoint_preserves_native_error_identity(tmp_path):
     finally:
         process.terminate()
         process.wait(timeout=5)
+
+
+def completed_attempt(tmp_path):
+    bridge, native, config, remote = setup(tmp_path)
+    payload = prepare(native)
+    parent = native.confirm(payload)
+    child = bridge.create("hermes", "paperclip-run", {"input": "spoofed task", "instructions": "Read WB first", "session_id": "fixture"})
+    with bridge.tx() as db:
+        db.execute("UPDATE operations SET state='completed'")
+    original_call = remote.call
+    def call(method, path, body=None, headers=None):
+        if method == "GET" and (path.startswith("/api/heartbeat-runs/") or path.startswith("/v1/runs/")):
+            remote.calls.append((method, path, body))
+            return {"status": "completed"}
+        if path.endswith("wakeup"):
+            result = original_call(method, path, body, headers)
+            return {"id": "retry-paperclip-run"}
+        return original_call(method, path, body, headers)
+    remote.call = call
+    return bridge, native, config, remote, payload, parent, child
+
+
+def test_captured_native_input_is_persisted_envelope(tmp_path):
+    bridge, native, _, remote, payload, _, child = completed_attempt(tmp_path)
+    body = next(c[2] for c in remote.calls if c[1] == "/v1/runs")
+    envelope = json.loads(body["input"].split("native task: ", 1)[1])
+    assert envelope == native.approved_execution(native.get_draft(payload["draft_id"]))
+    assert child["run_id"] in body["input"]
+    assert "spoofed task" not in body["input"]
+    assert "Read WB first" not in body["instructions"]
+
+
+@pytest.mark.parametrize("change", ["fingerprint", "job_id", "approval", "missing"])
+def test_spoofed_parent_envelope_never_executes(tmp_path, change):
+    bridge, native, _, remote = setup(tmp_path)
+    payload = prepare(native)
+    parent = native.confirm(payload)
+    with bridge.tx() as db:
+        request = json.loads(db.execute("SELECT request FROM operations WHERE id=?", (parent["run_id"],)).fetchone()[0])
+        if change == "missing":
+            request = {}
+        else:
+            request[{"fingerprint": "template_fingerprint", "job_id": "job_id", "approval": "approval_fingerprint"}[change]] = "spoof"
+        db.execute("UPDATE operations SET request=? WHERE id=?", (json.dumps(request), parent["run_id"]))
+    with pytest.raises(BridgeError, match="owner-approved|envelope missing"):
+        bridge.create("hermes", "paperclip-run", {"input": "fixture", "instructions": "fixture", "session_id": "fixture"})
+    assert not any(c[1] == "/v1/runs" for c in remote.calls)
+
+
+def test_completed_no_job_retry_is_durable_and_follows_pointer(tmp_path):
+    bridge, native, _, remote, payload, parent, child = completed_attempt(tmp_path)
+    retry = {"draft_id": payload["draft_id"], "failed_run_id": parent["run_id"]}
+    result = native.retry(retry)
+    assert result["run_id"] != parent["run_id"]
+    assert native.retry(retry)["run_id"] == result["run_id"]
+    assert native.confirm(payload)["run_id"] == result["run_id"]
+    assert len([c for c in remote.calls if c[1].endswith("wakeup")]) == 2
+    assert bridge.get(parent["run_id"])["state"] == "completed"
+    native.notifications()
+    with bridge.tx() as db:
+        texts = [r[0] for r in db.execute("SELECT text FROM native_notifications")]
+    assert any(result["run_id"] in t for t in texts)
+    native.stop({**ACTOR, "run_id": parent["run_id"]})
+    assert bridge.get(result["run_id"])["state"] == "cancelling"
+    with pytest.raises(BridgeError, match="approval"):
+        native.retry(retry)
+    with pytest.raises(BridgeError, match="approval"):
+        bridge.create("hermes", "retry-paperclip-run", {"input": "fixture", "instructions": "fixture", "session_id": "fixture"})
+
+
+def test_retry_lost_response_never_dispatches_twice(tmp_path):
+    bridge, native, config, remote, payload, parent, _ = completed_attempt(tmp_path)
+    retry = {"draft_id": payload["draft_id"], "failed_run_id": parent["run_id"]}
+    remote.offline = True
+    with pytest.raises(BridgeError):
+        native.retry(retry)
+    with pytest.raises(BridgeError) as exc:
+        NativeControl(bridge, config).retry(retry)
+    assert exc.value.uncertain
+    assert len([c for c in remote.calls if c[1].endswith("wakeup")]) == 2
+
+
+@pytest.mark.parametrize("blocker", ["job", "cancelled", "unknown", "fresh_running", "changed"])
+def test_retry_rejects_unsafe_attempts(tmp_path, blocker):
+    bridge, native, config, remote, payload, parent, child = completed_attempt(tmp_path)
+    if blocker == "job":
+        with bridge.tx() as db:
+            db.execute("INSERT INTO jobs(id,director_run,generation,template) VALUES(?,?,1,'probe')", ("other-job", child["run_id"]))
+    elif blocker in {"cancelled", "unknown"}:
+        with bridge.tx() as db:
+            db.execute("UPDATE operations SET state=? WHERE id=?", (blocker, parent["run_id"]))
+    elif blocker == "changed":
+        config["templates"]["probe"]["base_sha"] = "b" * 40
+    else:
+        original = remote.call
+        remote.call = lambda method, path, body=None, headers=None: {"status": "running"} if method == "GET" else original(method, path, body, headers)
+    with pytest.raises(BridgeError):
+        native.retry({"draft_id": payload["draft_id"], "failed_run_id": parent["run_id"]})
+    assert len([c for c in remote.calls if c[1].endswith("wakeup")]) == 1
+
+
+def test_parent_ack_wait_does_not_hold_database_lock(tmp_path):
+    bridge, native, _, remote = setup(tmp_path)
+    payload = prepare(native)
+    parent = native.confirm(payload)
+    with bridge.tx() as db:
+        db.execute("UPDATE operations SET external_id=NULL WHERE id=?", (parent["run_id"],))
+    def acknowledge():
+        time.sleep(.05)
+        with bridge.tx() as db:
+            db.execute("UPDATE operations SET external_id='paperclip-run' WHERE id=?", (parent["run_id"],))
+    thread = threading.Thread(target=acknowledge)
+    thread.start()
+    result = bridge.create("hermes", "paperclip-run", {"input": "fixture", "instructions": "fixture", "session_id": "fixture"})
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+    assert result["status"] == "running"
+
+
+def test_missing_owner_approval_never_executes(tmp_path):
+    bridge, native, _, remote = setup(tmp_path)
+    payload = prepare(native)
+    native.confirm(payload)
+    with bridge.tx() as db:
+        db.execute("UPDATE native_drafts SET preview_message=NULL")
+    with pytest.raises(BridgeError, match="approval"):
+        bridge.create("hermes", "paperclip-run", {"input": "owner approved", "instructions": "fixture", "session_id": "fixture"})
+    assert not any(c[1] == "/v1/runs" for c in remote.calls)
+
+
+def test_cancel_old_parent_revokes_current_retry_child_and_proposals(tmp_path):
+    bridge, native, config, remote, payload, parent, _ = completed_attempt(tmp_path)
+    retry = native.retry({"draft_id": payload["draft_id"], "failed_run_id": parent["run_id"]})
+    child = bridge.create("hermes", "retry-paperclip-run", {"input": "fixture", "instructions": "fixture", "session_id": "fixture"})
+    native.stop({**ACTOR, "run_id": parent["run_id"]})
+    assert bridge.get(child["run_id"])["state"] == "cancelled"
+    assert bridge.get(retry["run_id"])["state"] == "cancelled"
+    with pytest.raises(BridgeError):
+        bridge.propose_job({"job_id": "tg-" + payload["draft_id"].replace("-", ""), "run_id": child["run_id"], "generation": 1, "template": "probe"}, config["templates"])
+
+
+def test_cancel_fences_retry_intent_with_lost_ack(tmp_path):
+    bridge, native, _, remote, payload, parent, _ = completed_attempt(tmp_path)
+    remote.offline = True
+    with pytest.raises(BridgeError):
+        native.retry({"draft_id": payload["draft_id"], "failed_run_id": parent["run_id"]})
+    with bridge.tx() as db:
+        intent = db.execute("SELECT id FROM operations WHERE key=?", ("native-retry-" + parent["run_id"],)).fetchone()[0]
+    native.stop({**ACTOR, "run_id": parent["run_id"]})
+    assert bridge.get(intent)["state"] == "cancelling"
+    assert native.get_draft(payload["draft_id"])["state"] == "cancelled"
+
+
+def test_retry_supersedes_pending_old_notifications_but_keeps_journal(tmp_path):
+    bridge, native, _, _, payload, parent, _ = completed_attempt(tmp_path)
+    old = native.notifications()["pending"][0]["id"]
+    retry = native.retry({"draft_id": payload["draft_id"], "failed_run_id": parent["run_id"]})
+    pending = native.notifications()["pending"]
+    assert old not in {item["id"] for item in pending}
+    with bridge.tx() as db:
+        assert db.execute("SELECT state FROM native_notifications WHERE id=?", (old,)).fetchone()[0] == "superseded"

@@ -169,14 +169,33 @@ class Bridge:
                 return dict(old), False
             if db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0] == "true": raise BridgeError(409, "dispatch paused")
             if kind == "hermes":
-                parent = db.execute("SELECT state FROM operations WHERE kind='paperclip' AND external_id=?", (key,)).fetchone()
+                parent = db.execute("SELECT id,key,state,request FROM operations WHERE kind='paperclip' AND external_id=?", (key,)).fetchone()
+                if hasattr(self, "native_control"):
+                    self.validate_native_parent(db, parent)
                 if parent and parent["state"] in {"cancelling", "cancelled", "interrupted", "failed", "error"}: raise BridgeError(409, "parent run revoked")
             # One active management run; queued events remain owned by Paperclip.
             if kind == "hermes" and db.execute("SELECT 1 FROM operations WHERE kind='hermes' AND state IN ('dispatching','running','unknown','cancelling')").fetchone(): raise BridgeError(409, "Director lease busy or uncertain")
             op_id, now = str(uuid.uuid4()), time.time()
             db.execute("INSERT INTO operations (id,kind,key,request_hash,request,state,created,updated) VALUES (?,?,?,?,?,'dispatching',?,?)", (op_id,kind,key,digest,encoded,now,now))
         return self.get(op_id), True
+    def validate_native_parent(self, db, parent):
+        if parent is None:
+            raise BridgeError(409, "acknowledged parent binding required", False)
+        approved = json.loads(parent["request"])
+        if approved.get("source") != "native_telegram":
+            if parent["key"].startswith(("native-telegram-", "native-retry-")):
+                raise BridgeError(409, "persisted native envelope missing", False)
+            return
+        row = db.execute("SELECT * FROM native_drafts WHERE id=?", (approved.get("draft_id"),)).fetchone()
+        if not row or self.native_control.approved_execution(dict(row)) != approved:
+            raise BridgeError(409, "persisted owner-approved parent required", False)
+        if row["run_id"] and row["run_id"] != parent["id"] and parent["key"] != "native-retry-" + row["run_id"]:
+            raise BridgeError(409, "native attempt superseded", False)
+        if parent["state"] in {"cancelling", "cancelled", "failed", "error", "interrupted", "unknown", "rejected"}:
+            raise BridgeError(409, "parent run revoked", False)
+
     def create(self, kind, key, payload):
+        envelope = self.native_control.execution_envelope(key) if kind == "hermes" and hasattr(self, "native_control") else None
         op, new = self.intent(kind, key, payload)
         if not new:
             if op["state"] in {"dispatching", "unknown"}: raise BridgeError(409, "dispatch uncertain; operator reconciliation required",True)
@@ -185,6 +204,9 @@ class Bridge:
         try:
             if kind == "hermes":
                 bound_payload={**payload,"input":f"LOOP trusted attempt identity: run_id={op['id']}; generation={op['generation']}. Use this identity for Bridge job proposals.\n\n"+payload["input"]}
+                if envelope is not None:
+                    bound_payload["instructions"] = "Execute the trusted LOOP native envelope in input. No WB context is needed for this fixed infrastructure template. Stop after the exact Bridge job proposal."
+                    bound_payload["input"] = bound_payload["input"].split("\n\n", 1)[0] + "\n\nLOOP trusted owner-approved native task: " + json.dumps(envelope, sort_keys=True)
                 response = self.hermes.call("POST", "/v1/runs", bound_payload, {"Idempotency-Key": key, "X-Hermes-Session-Key": payload["session_id"]})
             else:
                 response = self.paperclip.call("POST", "/api/agents/"+quote(self.director_id,safe="")+"/wakeup", {"source":"on_demand", "triggerDetail":"manual", "reason":"LOOP event", "payload":payload, "idempotencyKey":key, "forceFreshSession":False})
@@ -223,6 +245,11 @@ class Bridge:
             db.execute("UPDATE operations SET external_id=? WHERE id=? AND external_id IS NULL AND state IN ('unknown','cancelling')",(external_id,op_id))
         return self.reconcile(op_id)
     def cancel(self, op_id):
+        if hasattr(self, "native_control"):
+            return self.native_control.cancel_run(op_id)
+        return self._cancel(op_id)
+
+    def _cancel(self, op_id):
         # Fence and revoke queued/active jobs BEFORE any network call.
         with self.cancel_request_guard: self.cancel_requests.add(op_id)
         with self.publication_gate:
@@ -308,7 +335,9 @@ class Bridge:
         with self.tx() as db:
             op = db.execute("SELECT state,generation,key FROM operations WHERE id=? AND kind='hermes'",(payload["run_id"],)).fetchone()
             if not op or op["state"] != "running" or op["generation"] != payload["generation"]: raise BridgeError(409,"Director attempt no longer owns the lease")
-            parent = db.execute("SELECT request FROM operations WHERE kind='paperclip' AND external_id=?",(op["key"],)).fetchone()
+            parent = db.execute("SELECT id,key,state,request FROM operations WHERE kind='paperclip' AND external_id=?",(op["key"],)).fetchone()
+            if hasattr(self, "native_control"):
+                self.validate_native_parent(db, parent)
             if getattr(self,"require_parent_for_jobs",False) and parent is None:
                 raise BridgeError(409,"Paperclip parent binding not yet acknowledged",False)
             approved = json.loads(parent["request"]) if parent else {}
@@ -644,7 +673,7 @@ def server(bridge, config):
                     if length<0 or length>100000: raise BridgeError(413,"payload too large")
                     payload=json.loads(self.rfile.read(length) or b"{}")
                     if not isinstance(payload,dict): raise BridgeError(400,"object required")
-                if path.startswith(("/v1/chat/", "/v1/native/")):
+                if path.startswith(("/v1/chat/", "/v1/native/", "/v1/native-recovery/")):
                     if native is None: raise BridgeError(503,"native chat not configured",False)
                     result=native.route(self.command,path,payload)
                 elif self.command=="GET" and path=="/hermes/health": result=bridge.hermes.call("GET","/health")

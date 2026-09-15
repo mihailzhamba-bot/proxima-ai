@@ -23,6 +23,7 @@ except ImportError:
 class NativeControl:
     def __init__(self, bridge, config):
         self.bridge = bridge
+        bridge.native_control = self
         bridge.require_parent_for_jobs = True
         self.config = config
         self.settings = config.get("native_telegram", {})
@@ -42,6 +43,8 @@ class NativeControl:
                 if column not in columns:
                     db.execute(f"ALTER TABLE native_drafts ADD COLUMN {column} TEXT")
             notification_columns = {r[1] for r in db.execute("PRAGMA table_info(native_notifications)")}
+            if "run_id" not in notification_columns:
+                db.execute("ALTER TABLE native_notifications ADD COLUMN run_id TEXT")
             if "claimed_at" not in notification_columns:
                 db.execute("ALTER TABLE native_notifications ADD COLUMN claimed_at REAL")
 
@@ -176,6 +179,8 @@ class NativeControl:
             # Read existing intent before expiry/config checks: a repeat is a lookup.
             with self.bridge.tx() as db:
                 op = db.execute("SELECT id,state FROM operations WHERE kind='paperclip' AND key=?", (key,)).fetchone()
+            if draft["run_id"]:
+                op = self.bridge.get(draft["run_id"])
             if op:
                 return {"run_id": op["id"], "status": op["state"], "duplicate": True}
             if draft["state"] != "draft":
@@ -205,6 +210,113 @@ class NativeControl:
                            (result["run_id"], draft["id"]))
             return result
 
+    def approved_execution(self, draft):
+        if draft["state"] not in {"dispatching", "submitted"} or not draft["previewed"] or not draft["preview_message"]:
+            raise BridgeError(409, "persisted owner approval unavailable", False)
+        self.owner({"user_id": draft["user_id"], "chat_id": draft["chat_id"], "chat_type": "dm"})
+        if draft["template"] not in self.templates() or self.contract(draft["template"])["fingerprint"] != draft["fingerprint"]:
+            raise BridgeError(409, "template changed; request a new draft", False)
+        return {"source": "native_telegram", "draft_id": draft["id"],
+                "job_id": "tg-" + draft["id"].replace("-", ""), "template": draft["template"],
+                "template_fingerprint": self.contract(draft["template"])["template_fingerprint"],
+                "approval_fingerprint": draft["fingerprint"],
+                "goal": "Execute only the owner-confirmed fixed template. Propose exactly this job_id and template using your trusted run_id and generation. Stop after proposal; the runner owns verification and PR publication."}
+
+    def execution_envelope(self, key):
+        # Paperclip may invoke its gateway before the wakeup acknowledgement is
+        # persisted. Wait outside SQLite/native locks; never execute unbound work.
+        deadline = time.monotonic() + 1
+        while True:
+            with self.bridge.tx() as db:
+                parent = db.execute("SELECT * FROM operations WHERE kind='paperclip' AND external_id=?", (key,)).fetchone()
+            if parent:
+                break
+            if time.monotonic() >= deadline:
+                raise BridgeError(409, "acknowledged parent binding required", False)
+            time.sleep(.025)
+        approved = json.loads(parent["request"])
+        if approved.get("source") != "native_telegram":
+            if parent["key"].startswith(("native-telegram-", "native-retry-")):
+                raise BridgeError(409, "persisted native envelope missing", False)
+            return None
+        draft = self.get_draft(approved.get("draft_id"))
+        expected = self.approved_execution(draft)
+        if approved != expected or parent["state"] in {"cancelled", "cancelling", "failed", "error", "interrupted", "unknown", "rejected"}:
+            raise BridgeError(409, "persisted owner-approved parent required", False)
+        if draft["run_id"] and draft["run_id"] != parent["id"] and parent["key"] != "native-retry-" + draft["run_id"]:
+            raise BridgeError(409, "native attempt superseded", False)
+        return expected
+
+    def retry(self, payload):
+        if set(payload) != {"draft_id", "failed_run_id"}:
+            raise BridgeError(400, "draft_id and failed_run_id required", False)
+        with self.lock:
+            draft = self.get_draft(payload["draft_id"])
+            execution = self.approved_execution(draft)
+            failed = self.bridge.get(payload["failed_run_id"])
+            if failed["kind"] != "paperclip" or json.loads(failed["request"]) != execution:
+                raise BridgeError(409, "failed run does not match approval", False)
+            if draft["run_id"] != failed["id"]:
+                current = self.bridge.get(draft["run_id"])
+                return {"run_id": current["id"], "status": current["state"], "duplicate": True}
+            key = "native-retry-" + failed["id"]
+            with self.bridge.tx() as db:
+                existing = db.execute("SELECT * FROM operations WHERE kind='paperclip' AND key=?", (key,)).fetchone()
+            if existing:
+                # Durable uncertain intent is a lookup, never another upstream POST.
+                if existing["state"] in {"dispatching", "unknown"} or not existing["external_id"]:
+                    raise BridgeError(409, "retry dispatch uncertain; operator reconciliation required", True)
+                if existing["state"] == "rejected":
+                    raise BridgeError(409, "retry rejected; operator reconciliation required", False)
+                result = {"run_id": existing["id"], "status": existing["state"], "duplicate": True}
+            else:
+                if failed["state"] != "completed" or not failed["external_id"]:
+                    raise BridgeError(409, "only completed attempts may retry", False)
+                with self.bridge.tx() as db:
+                    child = db.execute("SELECT * FROM operations WHERE kind='hermes' AND key=?", (failed["external_id"],)).fetchone()
+                    jobs = db.execute("SELECT 1 FROM jobs WHERE id=? OR director_run IN (SELECT id FROM operations WHERE kind='hermes' AND key=?)", (execution["job_id"], failed["external_id"])).fetchone()
+                if jobs or not child or child["state"] != "completed" or not child["external_id"]:
+                    raise BridgeError(409, "completed child and zero jobs required", False)
+                if self.bridge.reconcile(failed["id"])["status"] != "completed" or self.bridge.reconcile(child["id"])["status"] != "completed":
+                    raise BridgeError(409, "fresh terminal completion required", False)
+                # Reserve a retry under the Bridge guard, fencing late proposals
+                # from the completed child before creating the durable parent intent.
+                with self.bridge.tx() as db:
+                    if db.execute("SELECT 1 FROM jobs WHERE id=? OR director_run=?", (execution["job_id"], child["id"])).fetchone():
+                        raise BridgeError(409, "attempt produced a job", False)
+                    db.execute("UPDATE operations SET generation=generation+1 WHERE id=?", (child["id"],))
+                result = self.bridge.create("paperclip", key, execution)
+            with self.bridge.tx() as db:
+                db.execute("UPDATE native_drafts SET run_id=? WHERE id=?", (result["run_id"], draft["id"]))
+            return result
+
+    def cancel_run(self, run_id):
+        with self.lock:
+            op = self.bridge.get(run_id)
+            approved = json.loads(op["request"])
+            if op["kind"] == "paperclip" and approved.get("source") == "native_telegram":
+                draft = self.get_draft(approved.get("draft_id"))
+                with self.bridge.tx() as db:
+                    db.execute("UPDATE native_drafts SET state='cancelled' WHERE id=?", (draft["id"],))
+                targets = [run_id]
+                if draft["run_id"] and draft["run_id"] != run_id:
+                    targets.append(draft["run_id"])
+                # Include a durable retry whose acknowledgement was lost and
+                # therefore could not yet advance the confirmed draft pointer.
+                cursor = targets[-1]
+                while True:
+                    with self.bridge.tx() as db:
+                        pending = db.execute("SELECT id FROM operations WHERE kind='paperclip' AND key=?", ("native-retry-" + cursor,)).fetchone()
+                    if not pending or pending["id"] in targets:
+                        break
+                    cursor = pending["id"]
+                    targets.append(cursor)
+                result = None
+                for target in targets:
+                    result = self.bridge._cancel(target)
+                return result
+            return self.bridge._cancel(run_id)
+
     def stop(self, payload):
         self.owner(payload)
         run_id = payload.get("run_id")
@@ -218,15 +330,18 @@ class NativeControl:
     def notifications(self):
         with self.bridge.tx() as db:
             self.expire_delivery_claims(db)
+            db.execute("""UPDATE native_notifications SET state='superseded'
+                WHERE state='pending' AND run_id IS NOT NULL AND run_id NOT IN
+                (SELECT run_id FROM native_drafts WHERE run_id IS NOT NULL)""")
             rows = db.execute("""SELECT n.id AS draft_id,p.id AS run_id,p.state AS run_state,
                 j.id AS job_id,j.state AS job_state,j.pr_url FROM native_drafts n
-                JOIN operations p ON p.kind='paperclip' AND p.key='native-telegram-' || n.id
+                JOIN operations p ON p.kind='paperclip' AND p.id=n.run_id
                 LEFT JOIN operations h ON h.kind='hermes' AND h.key=p.external_id
                 LEFT JOIN jobs j ON j.director_run=h.id
                 ORDER BY n.created DESC LIMIT 30""").fetchall()
             for row in rows:
                 state = row["job_state"] or row["run_state"]
-                identity = json.dumps([row["draft_id"], row["job_id"], state, row["pr_url"]])
+                identity = json.dumps([row["draft_id"], row["run_id"], row["job_id"], state, row["pr_url"]])
                 notification_id = hashlib.sha256(identity.encode()).hexdigest()
                 text = f"LOOP: {state}.\nЗапуск: {row['run_id']}"
                 if row["job_id"]:
@@ -235,8 +350,8 @@ class NativeControl:
                     text += "\nГотов PR на ваше рассмотрение:\n" + row["pr_url"] + "\nMerge и production deploy не выполнялись."
                 else:
                     text += "\nГотовность PR ещё не подтверждена. /loop_status"
-                db.execute("INSERT OR IGNORE INTO native_notifications(id,text,created) VALUES(?,?,?)",
-                           (notification_id, text, time.time()))
+                db.execute("INSERT OR IGNORE INTO native_notifications(id,text,created,run_id) VALUES(?,?,?,?)",
+                           (notification_id, text, time.time(), row["run_id"]))
             return {"pending": [dict(r) for r in db.execute(
                 "SELECT id FROM native_notifications WHERE state='pending' ORDER BY created LIMIT 10")],
                 "delivery_unknown": db.execute("SELECT count(*) FROM native_notifications WHERE state='delivery_unknown'").fetchone()[0]}
@@ -275,6 +390,8 @@ class NativeControl:
             return self.preview_receipt(payload)
         if method == "POST" and path == "/v1/native/confirm":
             return self.confirm(payload)
+        if method == "POST" and path == "/v1/native-recovery/retry":
+            return self.retry(payload)
         if method == "POST" and path == "/v1/native/stop":
             return self.stop(payload)
         if method == "GET" and path == "/v1/native/notifications":
