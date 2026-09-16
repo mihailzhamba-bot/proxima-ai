@@ -1,0 +1,12 @@
+[Unit]
+Description=Run one LOOP GLM research job every five minutes
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=5min
+AccuracySec=10s
+Persistent=false
+Unit=loop-work-program.service
+
+[Install]
+WantedBy=timers.target
