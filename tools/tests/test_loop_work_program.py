@@ -15,6 +15,13 @@ def git(root, *args):
                                    stderr=subprocess.DEVNULL).decode().strip()
 
 
+@pytest.fixture(autouse=True)
+def allow_pytest_tmp_ancestors(monkeypatch):
+    original = program._validate_ancestor_chain
+    monkeypatch.setattr(program, '_validate_ancestor_chain', lambda *_args, **_kwargs: None)
+    return original
+
+
 @pytest.fixture
 def setup(tmp_path):
     repo = tmp_path / 'repo'
@@ -52,9 +59,11 @@ def allowed(**_kwargs):
     return {'allowed': True, 'reason': 'off_peak', 'resume_at': None}
 
 
-def run(config, send, now=None, tariff=allowed, offpeak=lambda **_: None):
-    return program.run_once(config, send=send, key_reader=lambda _: 'fixture-key',
-                            now=now or datetime(2026, 9, 13, tzinfo=timezone.utc),
+def run(config, send, now=None, tariff=allowed, offpeak=lambda **_: None,
+        key_reader=lambda _: 'fixture-key', clock=None):
+    observed = now or datetime(2026, 9, 13, tzinfo=timezone.utc)
+    return program.run_once(config, send=send, key_reader=key_reader,
+                            now=observed, clock=clock or (lambda: observed),
                             tariff_check=tariff, offpeak_check=offpeak)
 
 
@@ -145,6 +154,45 @@ def test_intent_is_fsynced_before_transport_and_unknown_never_retries(setup):
     assert 'raw secret' not in (state / 'state.json').read_text()
 
 
+def test_transport_tariff_deferral_is_known_unsent_and_retries(setup):
+    config, _repo, state, _evidence = setup
+    config['tasks'] = config['tasks'][:1]
+    calls = []
+    def send(*_args):
+        calls.append(1)
+        if len(calls) == 1:
+            raise program.TariffDeferred('weekday_peak', 12345)
+        return response()
+    first = run(config, send)
+    assert first['status'] == 'waiting_window'
+    assert first['resume_at'] == 12345
+    events = [json.loads(line) for line in (state / 'journal.jsonl').read_text().splitlines()]
+    assert [event['event'] for event in events] == ['intent', 'deferred']
+    second = run(config, send)
+    assert second['status'] == 'idle' and second['reason'] == 'task_completed'
+    assert calls == [1, 1]
+
+
+def test_quota_day_reserved_after_key_read_crosses_midnight(setup):
+    config, _repo, _state, _evidence = setup
+    config['max_calls_per_day'] = 1
+    before = datetime(2026, 9, 15, 15, 59, 59, tzinfo=timezone.utc)
+    after = datetime(2026, 9, 15, 16, 0, 1, tzinfo=timezone.utc)
+    current = [before]
+    calls = []
+    def key_reader(_path):
+        current[0] = after
+        return 'fixture-key'
+    first = run(config, lambda *args: calls.append(args) or response(),
+                now=before, key_reader=key_reader, clock=lambda: current[0])
+    assert first['reason'] == 'task_completed'
+    second = run(config, lambda *args: calls.append(args) or response(),
+                 now=after, key_reader=key_reader, clock=lambda: current[0])
+    assert second['reason'] == 'daily_quota_exhausted'
+    assert second['local_day'] == '2026-09-16'
+    assert len(calls) == 1
+
+
 def test_daily_quota_counts_intents(setup):
     config, _repo, _state, _evidence = setup
     config['max_calls_per_day'] = 1
@@ -215,6 +263,77 @@ def test_observe_reports_actual_window_and_stale_running(setup):
     status = program.observe(config, tariff_check=allowed)
     assert status['status'] == 'unknown'
     assert status['reason'] == 'interrupted_or_inflight_intent'
+
+
+def test_rejects_writable_and_symlink_ancestor_chains(tmp_path,
+                                                        allow_pytest_tmp_ancestors,
+                                                        monkeypatch):
+    original = allow_pytest_tmp_ancestors
+    unsafe = tmp_path / 'unsafe'
+    unsafe.mkdir(mode=0o700)
+    unsafe.chmod(0o777)
+    state = unsafe / 'state'
+    state.mkdir(mode=0o700)
+    with pytest.raises(program.ProgramError):
+        original(state, 'untrusted_state_root', include_leaf=True)
+
+    safe = tmp_path / 'safe'
+    safe.mkdir(mode=0o700)
+    child = safe / 'child'
+    child.mkdir(mode=0o700)
+    link = tmp_path / 'link'
+    link.symlink_to(safe, target_is_directory=True)
+    with pytest.raises(program.ProgramError):
+        original(link / 'child', 'untrusted_state_root', include_leaf=True)
+
+    config_path = unsafe / 'work-program.json'
+    config_path.write_text('{}')
+    config_path.chmod(0o600)
+    monkeypatch.setattr(program, '_validate_ancestor_chain', original)
+    with pytest.raises(program.ProgramError, match='untrusted_config_ancestor'):
+        program.load_config(config_path)
+
+
+def test_promisor_remote_helper_never_executes(setup, tmp_path):
+    config, repo, _state, _evidence = setup
+    missing = '1' * 40
+    tree = subprocess.check_output(
+        ['git', '-C', str(repo), 'mktree', '--missing'],
+        input=('100644 blob ' + missing + chr(9) + 'facts.txt' + chr(10)).encode()).decode().strip()
+    commit = subprocess.check_output(
+        ['git', '-C', str(repo), 'commit-tree', tree, '-m', 'missing blob'],
+        stderr=subprocess.DEVNULL).decode().strip()
+    subprocess.check_call(['git', '-C', str(repo), 'update-ref', 'HEAD', commit])
+    sentinel = tmp_path / 'remote-helper-executed'
+    helper = tmp_path / 'helper.sh'
+    helper.write_text('#!/bin/sh' + chr(10) + f'touch "{sentinel}"' + chr(10)
+                      + 'exit 1' + chr(10))
+    helper.chmod(0o700)
+    subprocess.run([str(helper)], check=False)
+    assert sentinel.exists()
+    sentinel.unlink()
+    git(repo, 'config', 'core.repositoryformatversion', '1')
+    git(repo, 'config', 'extensions.partialClone', 'origin')
+    git(repo, 'config', 'remote.origin.promisor', 'true')
+    git(repo, 'config', 'remote.origin.url', f'ext::{helper}')
+    git(repo, 'config', 'protocol.ext.allow', 'always')
+    config['tasks'] = config['tasks'][:1]
+    with pytest.raises(program.ProgramError):
+        program.collect_context(config, config['tasks'][0])
+    assert not sentinel.exists()
+
+
+def test_bounded_state_and_journal_reads(setup):
+    config, _repo, state, _evidence = setup
+    (state / 'state.json').write_bytes(b'x' * (program.MAX_STATE_BYTES + 1))
+    (state / 'state.json').chmod(0o600)
+    with pytest.raises(program.ProgramError, match='state_too_large'):
+        program.read_state(state)
+    (state / 'state.json').unlink()
+    (state / 'journal.jsonl').write_bytes(b'x' * (program.MAX_JOURNAL_LINE + 1) + b'\\n')
+    (state / 'journal.jsonl').chmod(0o600)
+    with pytest.raises(program.ProgramError, match='journal_line_too_large'):
+        program.read_journal(state)
 
 
 def test_systemd_units_are_bounded_and_timer_has_no_catchup():

@@ -12,7 +12,9 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
+import tempfile
 import time
 
 if not __package__:
@@ -32,6 +34,11 @@ MAX_PROMPT = 8_000
 MAX_ITEMS = 50
 MAX_ITEM_LENGTH = 4_000
 REQUEST_SECONDS = 120
+MAX_CONFIG_BYTES = 2_000_000
+MAX_STATE_BYTES = 65_536
+MAX_JOURNAL_BYTES = 16_000_000
+MAX_JOURNAL_EVENTS = 100_000
+MAX_JOURNAL_LINE = 16_384
 ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}')
 SAFE_PATH = re.compile(r'[A-Za-z0-9_./ -]+')
 SECRET = re.compile(r'(?i)(secret|credential|token|private|(?:^|[.])env(?:$|[.])|[.]pem$|[.]key$)')
@@ -93,8 +100,28 @@ def validate_config(config):
     return config
 
 
+def _validate_ancestor_chain(path, reason, include_leaf=True):
+    path = Path(path)
+    if not path.is_absolute():
+        raise ProgramError(reason)
+    target = path if include_leaf else path.parent
+    current = Path('/')
+    try:
+        for part in target.parts[1:]:
+            current = current / part
+            info = current.lstat()
+            if (stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode)
+                    or info.st_uid != 0 or info.st_mode & 0o022):
+                raise ProgramError(reason)
+    except ProgramError:
+        raise
+    except Exception:
+        raise ProgramError(reason) from None
+
+
 def _trusted_regular(path, mode=0o600):
     try:
+        _validate_ancestor_chain(path, 'untrusted_config_ancestor', include_leaf=False)
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
         info = os.fstat(fd)
         if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
@@ -112,7 +139,12 @@ def load_config(path):
     fd = _trusted_regular(path)
     try:
         with os.fdopen(fd, encoding='utf-8', errors='strict') as handle:
-            data = strict_json(handle.read())
+            if os.fstat(handle.fileno()).st_size > MAX_CONFIG_BYTES:
+                raise ProgramError('config_too_large')
+            raw = handle.read(MAX_CONFIG_BYTES + 1)
+        if len(raw.encode('utf-8')) > MAX_CONFIG_BYTES:
+            raise ProgramError('config_too_large')
+        data = strict_json(raw)
     except ProgramError:
         raise
     except Exception:
@@ -123,11 +155,12 @@ def load_config(path):
 def _secure_dir(path, reason):
     try:
         path = Path(path)
+        _validate_ancestor_chain(path, reason, include_leaf=True)
         info = path.lstat()
         if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 0
                 or info.st_mode & 0o022):
             raise ProgramError(reason)
-        return path.resolve(strict=True)
+        return path
     except ProgramError:
         raise
     except Exception:
@@ -203,9 +236,14 @@ def read_state(root):
         return None
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-        _check_owned_file(fd, 'untrusted_state_file')
         with os.fdopen(fd, encoding='utf-8', errors='strict') as handle:
-            value = strict_json(handle.read())
+            _check_owned_file(handle.fileno(), 'untrusted_state_file')
+            if os.fstat(handle.fileno()).st_size > MAX_STATE_BYTES:
+                raise ProgramError('state_too_large')
+            raw = handle.read(MAX_STATE_BYTES + 1)
+        if len(raw.encode('utf-8')) > MAX_STATE_BYTES:
+            raise ProgramError('state_too_large')
+        value = strict_json(raw)
         if type(value) is not dict or type(value.get('status')) is not str:
             raise ValueError()
         return value
@@ -228,7 +266,7 @@ def append_journal(root, event):
         fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         _check_owned_file(fd, 'untrusted_journal_file')
         data = canonical(event) + b'\n'
-        if len(data) > 16_384:
+        if len(data) > MAX_JOURNAL_LINE:
             raise ProgramError('journal_event_too_large')
         _write_all(fd, data)
         os.fsync(fd)
@@ -251,10 +289,23 @@ def read_journal(root):
         return []
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-        _check_owned_file(fd, 'untrusted_journal_file')
+        events = []
         with os.fdopen(fd, encoding='utf-8', errors='strict') as handle:
-            events = [strict_json(line) for line in handle if line.strip()]
-        if any(type(item) is not dict or item.get('event') not in ('intent', 'complete', 'unknown')
+            _check_owned_file(handle.fileno(), 'untrusted_journal_file')
+            if os.fstat(handle.fileno()).st_size > MAX_JOURNAL_BYTES:
+                raise ProgramError('journal_too_large')
+            while True:
+                line = handle.readline(MAX_JOURNAL_LINE + 1)
+                if not line:
+                    break
+                if len(line.encode('utf-8')) > MAX_JOURNAL_LINE or not line.endswith('\n'):
+                    raise ProgramError('journal_line_too_large')
+                if line.strip():
+                    events.append(strict_json(line))
+                    if len(events) > MAX_JOURNAL_EVENTS:
+                        raise ProgramError('journal_too_many_events')
+        if any(type(item) is not dict
+               or item.get('event') not in ('intent', 'complete', 'unknown', 'deferred')
                or type(item.get('key')) is not str for item in events):
             raise ValueError()
         return events
@@ -264,16 +315,40 @@ def read_journal(root):
         raise ProgramError('journal_corrupt') from None
 
 
-def _git(repo, *args, limit=MAX_CONTEXT_BYTES):
+def _git_command(repo, *args, limit=MAX_CONTEXT_BYTES):
+    environment = dict(glm_review.ENV)
+    environment['GIT_NO_LAZY_FETCH'] = '1'
+    command = ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null',
+               '-c', 'safe.directory=' + str(Path(repo).resolve()),
+               '-c', 'protocol.allow=never', '-c', 'core.fsmonitor=false',
+               '-c', 'core.untrackedCache=false', '-C', str(repo), *args]
     try:
-        return glm_review.git(repo, *args, limit=limit)
+        with tempfile.TemporaryFile() as output:
+            process = subprocess.Popen(command, env=environment, stdin=subprocess.DEVNULL,
+                                       stdout=output, stderr=subprocess.DEVNULL)
+            deadline = time.monotonic() + 30
+            while process.poll() is None:
+                if output.tell() > limit or time.monotonic() >= deadline:
+                    process.kill(); process.wait()
+                    raise ProgramError('git_output_or_time_limit')
+                time.sleep(0.01)
+            if process.returncode:
+                raise ProgramError('git_scope_invalid')
+            output.seek(0)
+            data = output.read(limit + 1)
+            if len(data) > limit:
+                raise ProgramError('git_output_or_time_limit')
+            return data
+    except ProgramError:
+        raise
     except Exception:
         raise ProgramError('git_scope_invalid') from None
 
 
-def collect_context(config, task):
+@contextmanager
+def trusted_git_snapshot(source_repo):
     try:
-        supplied = Path(config['source_repo'])
+        supplied = Path(source_repo)
         if supplied.is_symlink():
             raise ProgramError('source_repo_symlink')
         repo = supplied.resolve(strict=True)
@@ -283,44 +358,67 @@ def collect_context(config, task):
         raise
     except Exception:
         raise ProgramError('source_repo_invalid') from None
-    head = _git(repo, 'rev-parse', 'HEAD', limit=128).decode('ascii').strip()
+    head = _git_command(repo, 'rev-parse', '--verify', 'HEAD^{commit}',
+                        limit=128).decode('ascii').strip()
     if not glm_review.SHA.fullmatch(head):
         raise ProgramError('invalid_source_head')
-    remaining = MAX_CONTEXT_BYTES
-    records = []
-    for path in task['paths']:
-        raw = _git(repo, 'ls-tree', '-z', head, '--', path, limit=4096)
-        entries = [entry for entry in raw.split(b'\0') if entry]
-        if len(entries) != 1:
-            raise ProgramError('context_path_not_file')
-        try:
-            meta, actual = entries[0].split(b'\t', 1)
-            mode, kind, oid = meta.decode('ascii').split(' ')
-            actual_path = actual.decode('utf-8', errors='strict')
-        except Exception:
-            raise ProgramError('invalid_tree_entry') from None
-        if actual_path != path or kind != 'blob' or mode not in ('100644', '100755'):
-            raise ProgramError('context_not_regular_blob')
-        size_raw = _git(repo, 'cat-file', '-s', oid, limit=64)
-        try:
-            size = int(size_raw)
-        except Exception:
-            raise ProgramError('invalid_blob_size') from None
-        if size < 0 or size > remaining:
-            raise ProgramError('context_too_large')
-        data = _git(repo, 'cat-file', 'blob', oid, limit=remaining)
-        if len(data) != size:
-            raise ProgramError('blob_size_changed')
-        try:
-            content = data.decode('utf-8', errors='strict')
-        except UnicodeDecodeError:
-            raise ProgramError('context_not_utf8') from None
-        remaining -= size
-        records.append({'path': path, 'blob_sha': oid,
-                        'sha256': hashlib.sha256(data).hexdigest(),
-                        'bytes': size, 'content': content})
-    if _git(repo, 'rev-parse', 'HEAD', limit=128).decode('ascii').strip() != head:
-        raise ProgramError('source_changed')
+    common_text = _git_command(repo, 'rev-parse', '--git-common-dir',
+                               limit=4096).decode('utf-8', errors='strict').strip()
+    if not common_text or '\n' in common_text or '\r' in common_text:
+        raise ProgramError('invalid_object_path')
+    common = Path(common_text)
+    common = (repo / common).resolve(strict=True) if not common.is_absolute() else common.resolve(strict=True)
+    objects = (common / 'objects').resolve(strict=True)
+    if not objects.is_dir():
+        raise ProgramError('invalid_object_path')
+    with tempfile.TemporaryDirectory(prefix='loop-work-git-') as name:
+        isolated = Path(name)
+        _git_command(isolated, 'init', '--quiet', limit=4096)
+        alternates = isolated / '.git/objects/info/alternates'
+        alternates.write_text(str(objects) + '\n')
+        _git_command(isolated, 'update-ref', 'HEAD', head, limit=4096)
+        yield isolated, head
+        current = _git_command(repo, 'rev-parse', '--verify', 'HEAD^{commit}',
+                               limit=128).decode('ascii').strip()
+        if current != head:
+            raise ProgramError('source_changed')
+
+
+def collect_context(config, task):
+    with trusted_git_snapshot(config['source_repo']) as (repo, head):
+        remaining = MAX_CONTEXT_BYTES
+        records = []
+        for path in task['paths']:
+            raw = _git_command(repo, 'ls-tree', '-z', head, '--', path, limit=4096)
+            entries = [entry for entry in raw.split(b'\0') if entry]
+            if len(entries) != 1:
+                raise ProgramError('context_path_not_file')
+            try:
+                meta, actual = entries[0].split(b'\t', 1)
+                mode, kind, oid = meta.decode('ascii').split(' ')
+                actual_path = actual.decode('utf-8', errors='strict')
+            except Exception:
+                raise ProgramError('invalid_tree_entry') from None
+            if actual_path != path or kind != 'blob' or mode not in ('100644', '100755'):
+                raise ProgramError('context_not_regular_blob')
+            size_raw = _git_command(repo, 'cat-file', '-s', oid, limit=64)
+            try:
+                size = int(size_raw)
+            except Exception:
+                raise ProgramError('invalid_blob_size') from None
+            if size < 0 or size > remaining:
+                raise ProgramError('context_too_large')
+            data = _git_command(repo, 'cat-file', 'blob', oid, limit=remaining)
+            if len(data) != size:
+                raise ProgramError('blob_size_changed')
+            try:
+                content = data.decode('utf-8', errors='strict')
+            except UnicodeDecodeError:
+                raise ProgramError('context_not_utf8') from None
+            remaining -= size
+            records.append({'path': path, 'blob_sha': oid,
+                            'sha256': hashlib.sha256(data).hexdigest(),
+                            'bytes': size, 'content': content})
     identity = {'task_id': task['id'], 'prompt': task['prompt'], 'paths': task['paths'],
                 'context': [{key: item[key] for key in ('path', 'blob_sha', 'sha256', 'bytes')}
                             for item in records]}
@@ -390,8 +488,16 @@ def _event_index(events):
 
 
 def _intent_count(events, local_day):
-    return sum(event.get('event') == 'intent' and event.get('local_day') == local_day
-               for event in events)
+    reservations = []
+    open_by_key = {}
+    for event in events:
+        key = event['key']
+        if event['event'] == 'intent':
+            reservations.append({'local_day': event.get('local_day'), 'counted': True})
+            open_by_key.setdefault(key, []).append(len(reservations) - 1)
+        elif event['event'] == 'deferred' and open_by_key.get(key):
+            reservations[open_by_key[key].pop()]['counted'] = False
+    return sum(item['counted'] and item['local_day'] == local_day for item in reservations)
 
 
 def _safe_reason(error):
@@ -401,7 +507,9 @@ def _safe_reason(error):
         return error.reason
     if isinstance(error, glm_review.ReviewError):
         known = {'request_timeout', 'response_too_large', 'provider_rejected',
-                 'provider_unavailable', 'absolute_timeout_unavailable'}
+                 'provider_unavailable', 'absolute_timeout_unavailable',
+                 'key_unavailable', 'untrusted_key_directory',
+                 'untrusted_key_file', 'invalid_key'}
         return str(error) if str(error) in known else 'provider_failure'
     return 'provider_failure'
 
@@ -428,9 +536,10 @@ def _write_artifact(evidence_root, artifact):
 
 
 def run_once(config, *, now=None, send=None, key_reader=None,
-             tariff_check=None, offpeak_check=None):
+             tariff_check=None, offpeak_check=None, clock=None):
     config = validate_config(config)
-    now = now or datetime.now(timezone.utc)
+    clock = clock or (lambda: datetime.now(timezone.utc))
+    now = now or clock()
     if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
         raise ProgramError('timezone_invalid')
     send = send or glm_review.transport
@@ -472,13 +581,8 @@ def run_once(config, *, now=None, send=None, key_reader=None,
             if unresolved:
                 return save_state(state_root, 'unknown', 'unresolved_intent', enabled=True)
             return save_state(state_root, 'idle', 'no_model_work', enabled=True)
-        local_day = now.astimezone(TARIFF_TIMEZONE).date().isoformat()
-        if _intent_count(events, local_day) >= config['max_calls_per_day']:
-            return save_state(state_root, 'idle', 'daily_quota_exhausted', enabled=True,
-                              local_day=local_day)
         task, source_sha, content_hash, context, key = selected
         payload = build_payload(task, source_sha, content_hash, context)
-        key_value = key_reader(config['key_file'])
         try:
             offpeak_check(request_seconds=REQUEST_SECONDS)
         except TariffDeferred as error:
@@ -486,10 +590,30 @@ def run_once(config, *, now=None, send=None, key_reader=None,
                               resume_at=error.resume_at)
         except Exception:
             return save_state(state_root, 'blocked', 'tariff_preflight_failed', enabled=True)
+        try:
+            key_value = key_reader(config['key_file'])
+        except Exception as error:
+            return save_state(state_root, 'blocked', _safe_reason(error), enabled=True)
+        try:
+            offpeak_check(request_seconds=REQUEST_SECONDS)
+        except TariffDeferred as error:
+            return save_state(state_root, 'waiting_window', error.reason, enabled=True,
+                              resume_at=error.resume_at)
+        except Exception:
+            return save_state(state_root, 'blocked', 'tariff_preflight_failed', enabled=True)
+        reservation_now = clock()
+        if (not isinstance(reservation_now, datetime) or reservation_now.tzinfo is None
+                or reservation_now.utcoffset() is None):
+            return save_state(state_root, 'blocked', 'timezone_invalid', enabled=True)
+        local_day = reservation_now.astimezone(TARIFF_TIMEZONE).date().isoformat()
+        if _intent_count(events, local_day) >= config['max_calls_per_day']:
+            return save_state(state_root, 'idle', 'daily_quota_exhausted', enabled=True,
+                              local_day=local_day)
+        created_at = reservation_now.astimezone(timezone.utc).isoformat()
         intent = {'schema_version': 1, 'event': 'intent', 'key': key,
                   'task_id': task['id'], 'content_hash': content_hash,
                   'source_sha': source_sha, 'local_day': local_day,
-                  'created_at_utc': datetime.now(timezone.utc).isoformat()}
+                  'created_at_utc': created_at}
         append_journal(state_root, intent)
         save_state(state_root, 'running', 'model_request_intent_persisted', enabled=True,
                    task_id=task['id'], content_hash=content_hash)
@@ -515,6 +639,14 @@ def run_once(config, *, now=None, send=None, key_reader=None,
             return save_state(state_root, 'idle', 'task_completed', enabled=True,
                               task_id=task['id'], content_hash=content_hash,
                               evidence_path=str(artifact_path))
+        except TariffDeferred as error:
+            append_journal(state_root, {'schema_version': 1, 'event': 'deferred',
+                           'key': key, 'task_id': task['id'], 'reason': error.reason,
+                           'resume_at': error.resume_at,
+                           'created_at_utc': datetime.now(timezone.utc).isoformat()})
+            return save_state(state_root, 'waiting_window', error.reason, enabled=True,
+                              resume_at=error.resume_at, task_id=task['id'],
+                              content_hash=content_hash)
         except BaseException as error:
             reason = _safe_reason(error)
             append_journal(state_root, {'schema_version': 1, 'event': 'unknown',
