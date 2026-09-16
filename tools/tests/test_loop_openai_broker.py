@@ -128,24 +128,14 @@ def test_capacity_one_returns_retry_after_without_second_call():
     release.set(); first.join(timeout=2); server.shutdown(); server.server_close(); thread.join(timeout=2)
 
 
-class FakeStdin(io.BytesIO):
-    def close(self):
-        self.captured = self.getvalue()
-        super().close()
-
-
-class BrokenStdin:
-    def write(self, _value): raise BrokenPipeError("private raw detail")
-    def close(self): pass
-
-
 class FakeProcess:
     def __init__(self, argv, *, stdin, stdout, stderr, close_fds, output=b"", status=0, polls=0):
         self.argv = argv; self.stdout = stdout; self.stderr = stderr
-        self.stdin = FakeStdin(); self.status = status; self.polls = polls
+        position = stdin.tell(); stdin.seek(0); self.stdin_data = stdin.read(); stdin.seek(position)
+        self.status = status; self.polls = polls
         self.terminated = False; self.killed = False
         stdout.write(output); stdout.flush()
-        assert stdin == broker.subprocess.PIPE and stderr == broker.subprocess.DEVNULL and close_fds is True
+        assert stdin != broker.subprocess.PIPE and stderr == broker.subprocess.DEVNULL and close_fds is True
 
     def poll(self):
         if self.polls:
@@ -156,6 +146,18 @@ class FakeProcess:
     def terminate(self): self.terminated = True
     def kill(self): self.killed = True
     def wait(self, timeout): return self.status
+
+
+class Clock:
+    def __init__(self): self.value = 0
+    def __call__(self): return self.value
+
+
+class SlowInput(io.BytesIO):
+    def __init__(self, clock): super().__init__(); self.clock = clock
+    def write(self, value):
+        self.clock.value += broker.PROCESS_TIMEOUT_SECONDS * 8
+        return super().write(value)
 
 
 def cli_output(model="gpt-5.6-sol"):
@@ -169,18 +171,20 @@ def test_fake_subprocess_uses_fixed_argv_stdin_and_normalizes_output():
         process = FakeProcess(*args, **kwargs, output=cli_output()); made.append(process); return process
     result = broker.run_cli({**valid_request(), "reasoning_effort": "medium"}, popen_factory=factory)
     assert made[0].argv == broker.DOCKER_ARGV
-    assert json.loads(made[0].stdin.captured)["prompt"] == "Do the bounded task."
+    assert json.loads(made[0].stdin_data)["prompt"] == "Do the bounded task."
     assert set(result) == {"ok", "response", "model", "provider", "usage"}
 
 
-def test_fake_subprocess_killed_when_stdin_write_fails():
-    made = []
+def test_stdin_tempfile_write_is_inside_absolute_deadline_and_never_spawns():
+    clock = Clock(); made = []
     def factory(*args, **kwargs):
-        process = FakeProcess(*args, **kwargs, polls=5); process.stdin = BrokenStdin()
-        made.append(process); return process
-    with pytest.raises(broker.InferenceError, match="launch_failed") as caught:
-        broker.run_cli({**valid_request(), "reasoning_effort": "medium"}, popen_factory=factory)
-    assert made[0].terminated and "private raw detail" not in str(caught.value)
+        made.append((args, kwargs))
+        raise AssertionError("process must not spawn after expired input setup")
+    with pytest.raises(broker.InferenceError, match="timeout"):
+        broker.run_cli({**valid_request(), "reasoning_effort": "medium"},
+                       popen_factory=factory, monotonic=clock,
+                       stdin_factory=lambda: SlowInput(clock))
+    assert made == []
 
 
 def test_fake_subprocess_killed_on_stdout_limit():
@@ -194,12 +198,13 @@ def test_fake_subprocess_killed_on_stdout_limit():
 
 
 def test_fake_subprocess_killed_on_absolute_timeout():
-    made = []; clock = iter([0, 0, 126])
+    made = []; clock = Clock()
     def factory(*args, **kwargs):
         process = FakeProcess(*args, **kwargs, polls=5); made.append(process); return process
+    def advance(_seconds): clock.value = broker.PROCESS_TIMEOUT_SECONDS + 1
     with pytest.raises(broker.InferenceError, match="timeout"):
         broker.run_cli({**valid_request(), "reasoning_effort": "medium"}, popen_factory=factory,
-                       monotonic=lambda: next(clock), sleeper=lambda _: None)
+                       monotonic=clock, sleeper=advance)
     assert made[0].terminated
 
 

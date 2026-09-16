@@ -217,38 +217,53 @@ def _stop_process(process: Any) -> None:
 
 def run_cli(payload: dict[str, str], *, popen_factory: Callable[..., Any] = subprocess.Popen,
             monotonic: Callable[[], float] = time.monotonic,
-            sleeper: Callable[[float], None] = time.sleep) -> dict[str, Any]:
+            sleeper: Callable[[float], None] = time.sleep,
+            stdin_factory: Callable[[], Any] = tempfile.TemporaryFile) -> dict[str, Any]:
+    deadline = monotonic() + PROCESS_TIMEOUT_SECONDS
     encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    with tempfile.TemporaryFile() as stdout_file:
+    if len(encoded) > MAX_REQUEST_BYTES:
+        raise InferenceError("input_limit")
+    try:
+        stdin_file = stdin_factory()
+    except Exception:
+        raise InferenceError("launch_failed") from None
+    with stdin_file, tempfile.TemporaryFile() as stdout_file:
+        try:
+            stdin_file.write(encoded)
+            stdin_file.flush()
+            stdin_file.seek(0)
+        except Exception:
+            if monotonic() >= deadline:
+                raise InferenceError("timeout") from None
+            raise InferenceError("launch_failed") from None
+        if monotonic() >= deadline:
+            raise InferenceError("timeout")
         process = None
         try:
-            process = popen_factory(DOCKER_ARGV, stdin=subprocess.PIPE, stdout=stdout_file,
+            process = popen_factory(DOCKER_ARGV, stdin=stdin_file, stdout=stdout_file,
                                     stderr=subprocess.DEVNULL, close_fds=True)
-            if process.stdin is None:
-                raise InferenceError("launch_failed")
-            process.stdin.write(encoded)
-            process.stdin.close()
         except Exception:
-            if process is not None:
-                _stop_process(process)
+            if monotonic() >= deadline:
+                raise InferenceError("timeout") from None
             raise InferenceError("launch_failed") from None
-        deadline = monotonic() + PROCESS_TIMEOUT_SECONDS
         try:
             while True:
+                if monotonic() >= deadline:
+                    raise InferenceError("timeout")
                 size = os.fstat(stdout_file.fileno()).st_size
                 if size > MAX_STDOUT_BYTES:
                     raise InferenceError("output_limit")
                 status = process.poll()
                 if status is not None:
                     break
-                if monotonic() >= deadline:
-                    raise InferenceError("timeout")
                 sleeper(0.05)
         except InferenceError:
             _stop_process(process)
             raise
         if status != 0:
             raise InferenceError("request_failed")
+        if monotonic() >= deadline:
+            raise InferenceError("timeout")
         if os.fstat(stdout_file.fileno()).st_size > MAX_STDOUT_BYTES:
             raise InferenceError("output_limit")
         stdout_file.seek(0)
@@ -257,6 +272,8 @@ def run_cli(payload: dict[str, str], *, popen_factory: Callable[..., Any] = subp
         value = strict_json(raw)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
         raise InferenceError("invalid_output") from None
+    if monotonic() >= deadline:
+        raise InferenceError("timeout")
     return validate_cli_response(value, payload["model"])
 
 
