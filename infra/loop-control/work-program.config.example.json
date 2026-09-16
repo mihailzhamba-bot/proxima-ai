@@ -41,6 +41,22 @@
         "services/webapp/src/lib/loop/service.ts"
       ],
       "prompt": "Read-only adversarial review of tenant and assignee authorization, decision/task atomicity, repeated confirmation and blocker/completion evidence. Cite concrete reachable defects only. Return Russian JSON summary/findings/next_steps."
+    },
+    {
+      "id": "readiness-test-design",
+      "complexity": "small",
+      "paths": [
+        "services/webapp/src/lib/loop/context.ts"
+      ],
+      "prompt": "Design exactly three highest-value fixture tests for current WB readiness contract. Name inputs, expected current behavior and proposed expected behavior; distinguish unsupported assumptions. Do not repeat a general audit. At most 350 words total. Russian JSON summary/findings/next_steps."
+    },
+    {
+      "id": "queue-idempotency-test-design",
+      "complexity": "small",
+      "paths": [
+        "services/webapp/src/lib/loop/service.ts"
+      ],
+      "prompt": "Design exactly three independent deterministic tests for task confirmation/completion idempotency under concurrent duplicate requests. Focus only repeat/existing-task behavior; do not audit all authorization or calendar paths. Cite current function names. At most 350 words total. Russian JSON summary/findings/next_steps."
     }
   ],
   "provider_policy": "adaptive",
