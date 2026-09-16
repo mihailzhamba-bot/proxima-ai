@@ -1,0 +1,78 @@
+---
+title: 'Причина неготовности сводки в контексте Director'
+type: 'bugfix'
+created: '2026-09-16'
+status: 'ready-for-dev'
+review_loop_iteration: 0
+context: []
+baseline_commit: 'd5334f24d74a88e08d5492cbe3cb439829232df4'
+---
+
+<frozen-after-approval reason="Исходный план Mike и SPEC CAP-4; продолжение уже разрешённой разработки">
+
+## Intent
+
+Проблема: readPilotContext скрывает штатные insufficient и blocked вместе с payload. Director получает одинаковые brief:null и общую строку reason для неполной нормы, отсутствующей сводки и других причин. Теряются день сводки и фактический прогресс календарного окна. Это противоречит видимости пропущенных дней в SPEC CAP-4.
+
+Подход: добавить объект readiness с ограниченными метаданными из уже прочитанных строк. Неготовый brief по-прежнему null. Полный payload и прежние поля ответа для готовой сводки сохраняются. Существующее наблюдение эффекта по свежему дню после горизонта не менять.
+
+## Boundaries & Constraints
+
+Всегда: изменить только services/webapp/src/lib/loop/context.ts. Использовать существующие status и brief, не добавлять SQL-запросов. Сохранить READ ONLY, set_config кабинета, авторизацию, пагинацию, сотрудников и content_boundary. Вы не один в репозитории: чужие правки не отменять. Все числа копировать из norm, не рассчитывать и не выдумывать.
+
+Разрешено обычное инженерное решение в этом объёме; merge и production deploy требуют Mike.
+
+Запрещено: менять service.ts, auth, миграции, тесты, зависимости, конфигурацию, сборщик, формулу нормы, правило дня эффекта. Не менять существующее условие fresh и прежнее поле reason. Не публиковать ветку самостоятельно.
+
+Новый readiness имеет ровно поля:
+- ready: существующее значение fresh.
+- reason_code: null для fresh; иначе первый подходящий код по приоритету: data_status_missing (нет status), data_stale (stale не false), brief_missing (нет brief), day_mismatch (brief_day не last_full_day), norm_insufficient (status insufficient), brief_blocked (status blocked), brief_not_ready (другой не-ok статус), source_refs_missing (ok без источников).
+- brief_status: ok, insufficient, blocked из строки brief; иначе null.
+- brief_day: строка YYYY-MM-DD из brief.brief_day; при отсутствии или неверном формате null.
+- norm_progress: только sample_days и window_days из brief.payload.norm, если оба целые числа, 0 <= sample_days <= window_days <= 366 и window_days > 0; иначе null. Не подставлять 14 при отсутствии значения.
+
+## I/O & Edge-Case Matrix
+
+| Сценарий | Вход | Ожидается |
+|---|---|---|
+| Готово | fresh status, ok, совпадающий день, SourceRef | ready true; reason_code null; brief сохранён целиком |
+| Неполная норма | тот же день, insufficient, norm 9/14 | brief null; norm_insufficient; brief_day и 9/14 видны |
+| Заблокировано | тот же день, blocked, norm null | brief null; brief_blocked; norm_progress null |
+| Нет сводки | status свежий, brief отсутствует | brief_missing; brief_status/day/progress null |
+| Нет статуса | status отсутствует | data_status_missing; brief скрыт |
+| Устарело | stale true, существующий brief | data_stale; brief скрыт; день метаданных сохранён |
+| Другой день | свежий status, brief_day отличается | day_mismatch; brief скрыт |
+| Нет источников | status свежий, ok того же дня, source_refs [] | source_refs_missing; brief скрыт |
+| Неверный прогресс | строки, отрицательное, sample>window или отсутствующее norm | norm_progress null; никаких выдуманных чисел |
+| Приоритет | stale и insufficient одновременно | data_stale; brief_status insufficient сохранён |
+| Изоляция | другой tenant/offset | существующая валидация, транзакция и привязка tenant сохранены |
+
+</frozen-after-approval>
+
+## Code Map
+
+- services/webapp/src/lib/loop/context.ts: readPilotContext; существующий fresh на строке 21 и return на строке 29. Только этот файл разрешён для изменения.
+- services/webapp/src/lib/loop/service.ts: QueuePool и QueueError, только чтение.
+- services/control-plane/src/proxima_control_plane/brief/builder.py: insufficient_day пишет payload.norm.sample_days/window_days; blocked_day пишет norm:null. Только чтение.
+- services/control-plane/src/proxima_control_plane/brief/assembler.py: штатные состояния формируются существующим кодом. Только чтение.
+- db/migrations/015_brief_daily.sql: три допустимых статуса и brief_current; только чтение.
+- _bmad-output/specs/spec-wb-morning-brief/SPEC.md: CAP-4 требует сохранять видимость неполного окна; LOOP pilot требует скрывать неподтверждённые показатели.
+- services/webapp/src/tests/loop-context-route.test.ts: существующие проверки кабинета/авторизации; только чтение.
+
+## Tasks & Acceptance
+
+Execution:
+- [ ] Добавить readiness в readPilotContext, не меняя прежние поля и запросы.
+- [ ] Проверить diff: единственный изменённый файл context.ts.
+- [ ] Создать ровно один commit. Commit: fix(loop): expose brief readiness metadata. Не делать push.
+
+Acceptance:
+- Given неполная синтетическая норма 9/14, when Director читает контекст, then payload скрыт, а статус, день и прогресс доступны.
+- Given blocked/missing/stale/day mismatch, when контекст читается, then причины различимы без неподтверждённых метрик.
+- Given готовая сводка, when контекст читается, then прежний brief, reason, queue и tenant-поведение сохранены.
+
+## Spec Change Log
+
+## Verification
+
+Harper запускает полный make verify и build, отдельные доверенные проверки всех строк матрицы на точном candidate SHA и независимое модельное ревью. Исполнитель не меняет проверки и не объявляет результат готовым PR самостоятельно.
