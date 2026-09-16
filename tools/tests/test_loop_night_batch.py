@@ -485,3 +485,45 @@ def test_review_failure_keeps_only_sanitized_reason(tmp_path):
     assert len(files)==1
     assert json.loads(files[0].read_text())['reason']=='provider_unavailable'
     assert 'fixture-private' not in files[0].read_text()
+
+
+@pytest.mark.parametrize('model,provider,accepted', [
+    ('glm-5.3-flash', 'z.ai', True),
+    ('gpt5.6terra', 'openai-codex', True),
+    ('gpt5.6sol', 'openai-codex', False),
+    ('glm-5.3-flash', None, False),
+])
+def test_review_stage_router_identity_allowlist(tmp_path, monkeypatch,
+                                                model, provider, accepted):
+    settings = manifest(tmp_path)
+    evidence = Path(settings['evidence_root']) / 'model-review'
+    evidence.mkdir(parents=True)
+    receipts = Path(settings['review_receipts'])
+    receipts.mkdir()
+    artifact = evidence / 'review.json'
+    scope = {'base_sha': 'a' * 40, 'head_sha': 'b' * 40,
+             'diff_sha256': 'c' * 64}
+    payload = {'artifact_type': 'model-review-not-admission',
+        'review_complete': True, **scope, 'model': model,
+        'reviewed_at_utc': 'fixture-date',
+        'verdict': {'status': 'pass', 'findings': []}}
+    if provider is not None:
+        payload['provider'] = provider
+    driver.atomic_json(artifact, payload)
+    class Result:
+        returncode = 0
+        stdout = json.dumps({'status': 'pass', 'fingerprint': scope,
+                             'evidence_path': str(artifact)}).encode()
+    monkeypatch.setattr(driver, 'fingerprint', lambda *_: scope)
+    monkeypatch.setattr(driver, 'trusted_directory', lambda *_args, **_kwargs: None)
+    stage = driver.ReviewStage(settings, execute=lambda *_args, **_kwargs: Result())
+    observation = {'checkout': '/fixture', **scope}
+    if not accepted:
+        with pytest.raises(driver.BatchError, match='glm_artifact_invalid'):
+            stage.review(observation, 120)
+        return
+    reviewed = stage.review(observation, 120)
+    assert reviewed['model'] == model and reviewed['provider'] == provider
+    stage.admit(reviewed)
+    receipt = json.loads((receipts / ('b' * 40 + '.json')).read_text())
+    assert receipt['reviewer'] == model

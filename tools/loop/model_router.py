@@ -33,6 +33,17 @@ class RouterError(ValueError):
     """Fixed nonsecret provider-routing failure reason."""
 
 
+def strict_json(raw):
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise RouterError('duplicate_json_key')
+            value[key] = item
+        return value
+    return json.loads(raw, object_pairs_hook=unique)
+
+
 class RouterDeferred(RuntimeError):
     """A known retry-safe provider rejection with no ambiguous model result."""
 
@@ -41,6 +52,10 @@ class RouterDeferred(RuntimeError):
         self.reason = reason
         self.resume_at = int(resume_at)
         self.route = dict(route)
+
+    def as_dict(self):
+        return {'reason': self.reason, 'resume_at': self.resume_at,
+                'provider_route': self.route}
 
 
 def validate_provider_config(config):
@@ -142,7 +157,7 @@ def _normalized(model, provider, response, usage):
 
 def normalize_glm(raw):
     try:
-        value = json.loads(raw)
+        value = strict_json(raw)
         if type(value) is not dict or value.get('model') != GLM_MODEL:
             raise ValueError()
         value = dict(value)
@@ -213,7 +228,7 @@ def broker_transport(system, prompt, route, url, token, timeout, *,
             raise RouterError('openai_broker_unavailable') from None
         if len(raw) > MAX_RESPONSE:
             raise RouterError('broker_response_too_large')
-        value = json.loads(raw)
+        value = strict_json(raw)
         allowed = {'ok', 'response', 'model', 'provider', 'usage', 'completed'}
         if (type(value) is not dict or not {'ok', 'response', 'model', 'provider', 'usage'} <= set(value)
                 or set(value) - allowed or value['ok'] is not True
@@ -256,8 +271,11 @@ def routed_transport(payload, glm_key, timeout, config, purpose,
         glm_send = transport
     try:
         return normalize_glm(glm_send(payload, glm_key, timeout))
-    except urllib.error.HTTPError as error:
-        if error.code != 429 or config.get('provider_policy', 'glm_only') != 'adaptive':
+    except Exception as error:
+        policy = config.get('provider_policy', 'glm_only')
+        rate_limited = isinstance(error, urllib.error.HTTPError) and error.code == 429
+        tariff_deferred = error.__class__.__name__ == 'TariffDeferred'
+        if policy != 'adaptive' or not (rate_limited or tariff_deferred):
             raise
         fallback = select_route(config, purpose, complexity, now=now,
                                 glm_rate_limited=True, tariff_check=tariff_check)

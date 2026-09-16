@@ -152,3 +152,32 @@ def test_identity_allowlist_separates_review_from_research():
     assert not router.identity_allowed('gpt5.6sol', 'openai-codex', 'review')
     assert router.identity_allowed('gpt5.6sol', 'openai-codex', 'research')
     assert not router.identity_allowed('gpt-5.5', 'openai-codex', 'research')
+
+
+def test_tariff_boundary_deferral_falls_back_in_adaptive_mode():
+    class TariffDeferred(RuntimeError):
+        pass
+    def glm(*_):
+        raise TariffDeferred('boundary')
+    value = {'ok': True, 'response': '{}', 'model': 'gpt5.6sol',
+             'provider': 'openai-codex', 'usage': None}
+    payload = {'messages': [{'role': 'system', 'content': 's'},
+                            {'role': 'user', 'content': 'p'}]}
+    raw = router.routed_transport(payload, 'glm-key', 120, config(), 'research',
+        glm_send=glm, openai_token='openai-key', opener=Opener(value),
+        tariff_check=offpeak)
+    assert json.loads(raw)['provider'] == 'openai-codex'
+
+
+def test_broker_duplicate_json_keys_fail_closed():
+    class DuplicateOpener:
+        def open(self, *_args, **_kwargs):
+            return Response.__new__(Response)
+    response = Response.__new__(Response)
+    response.value = (b'{"ok":true,"ok":true,"response":"{}",'
+                      b'"model":"gpt5.6sol","provider":"openai-codex","usage":null}')
+    opener = DuplicateOpener()
+    opener.open = lambda *_args, **_kwargs: response
+    with pytest.raises(router.RouterError):
+        router.broker_transport('s', 'p', route(),
+            'http://127.0.0.1:18772/v1/infer', 'key', 120, opener=opener)

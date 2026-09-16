@@ -347,3 +347,104 @@ def test_systemd_units_are_bounded_and_timer_has_no_catchup():
     assert 'OnBootSec=30s' in timer
     assert 'OnUnitActiveSec=5min' in timer
     assert 'Persistent=false' in timer
+
+
+def adaptive_config(base, complexity='standard'):
+    value = dict(base)
+    value['provider_policy'] = 'adaptive'
+    value['openai_url'] = 'http://127.0.0.1:18772/v1/infer'
+    value['openai_token_file'] = '/etc/loop/secrets/openai_broker'
+    value['tasks'] = [dict(value['tasks'][0], complexity=complexity)]
+    return value
+
+
+def routed_research_response(model='gpt5.6sol', usage=None):
+    data = json.loads(response())
+    data['model'] = model
+    data['provider'] = 'openai-codex'
+    data['usage'] = usage
+    return json.dumps(data).encode()
+
+
+def test_adaptive_peak_runs_openai_and_persists_route(setup, monkeypatch):
+    base, _repo, state, _evidence = setup
+    settings = adaptive_config(base)
+    calls = []
+    monkeypatch.setattr(program.model_router, 'read_broker_token',
+                        lambda _path: 'openai-fixture')
+    def routed(payload, glm_key, timeout, config, purpose, complexity, **kwargs):
+        calls.append((purpose, complexity, kwargs))
+        data = json.loads(routed_research_response())
+        verdict = json.loads(data['choices'][0]['message']['content'])
+        verdict['summary'] = 'openai-fixture'
+        data['choices'][0]['message']['content'] = json.dumps(verdict)
+        return json.dumps(data).encode()
+    monkeypatch.setattr(program.model_router, 'routed_transport', routed)
+    result = program.run_once(settings, now=datetime(2026, 9, 16, 7,
+        tzinfo=timezone.utc), clock=lambda: datetime(2026, 9, 16, 7,
+        tzinfo=timezone.utc), tariff_check=lambda **_: {
+            'allowed': False, 'reason': 'weekday_peak', 'resume_at': 99},
+        offpeak_check=lambda **_: pytest.fail('adaptive peak must not GLM defer'),
+        key_reader=lambda _: 'glm-fixture')
+    assert result['status'] == 'idle' and result['reason'] == 'task_completed'
+    artifact = json.loads(Path(result['evidence_path']).read_text())
+    assert artifact['model'] == 'gpt5.6sol'
+    assert artifact['provider'] == 'openai-codex'
+    assert artifact['usage'] is None
+    assert artifact['verdict']['summary'] == '[redacted]'
+    intent = json.loads((state / 'journal.jsonl').read_text().splitlines()[0])
+    assert intent['provider_route']['model'] == 'gpt5.6sol'
+    assert calls[0][0:2] == ('research', 'standard')
+
+
+def test_adaptive_broker_busy_is_deferred_then_retryable(setup, monkeypatch):
+    base, _repo, state, _evidence = setup
+    settings = adaptive_config(base, 'small')
+    route = {'provider': 'openai-codex', 'model': 'gpt5.6luna',
+             'reasoning_effort': 'low', 'reason': 'glm_peak'}
+    current = [datetime(2026, 9, 16, 7, tzinfo=timezone.utc)]
+    resume_at = int(current[0].timestamp()) + 15
+    calls = []
+    monkeypatch.setattr(program.model_router, 'read_broker_token',
+                        lambda _path: 'openai-fixture')
+    def routed(*_args, **_kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise program.model_router.RouterDeferred(
+                'openai_broker_busy', resume_at, route)
+        return routed_research_response('gpt5.6luna')
+    monkeypatch.setattr(program.model_router, 'routed_transport', routed)
+    def invoke():
+        return program.run_once(settings, now=current[0], clock=lambda: current[0],
+            tariff_check=lambda **_: {'allowed': False, 'reason': 'weekday_peak',
+                                      'resume_at': int(current[0].timestamp()) + 100},
+            key_reader=lambda _: 'glm-fixture')
+    first = invoke()
+    assert first['status'] == 'waiting_window'
+    assert first['reason'] == 'openai_broker_busy' and first['resume_at'] == resume_at
+    assert invoke()['status'] == 'waiting_window'
+    assert calls == [1]
+    current[0] = datetime.fromtimestamp(resume_at + 1, tz=timezone.utc)
+    second = invoke()
+    assert second['reason'] == 'task_completed' and calls == [1, 1]
+    events = [json.loads(line)['event']
+              for line in (state / 'journal.jsonl').read_text().splitlines()]
+    assert events == ['intent', 'deferred', 'intent', 'complete']
+
+
+def test_adaptive_peak_observe_reports_enabled(setup):
+    base, *_ = setup
+    settings = adaptive_config(base)
+    status = program.observe(settings, now=datetime(2026, 9, 16, 7,
+        tzinfo=timezone.utc), tariff_check=lambda **_: {
+            'allowed': False, 'reason': 'weekday_peak', 'resume_at': 999})
+    assert status['status'] == 'enabled'
+
+
+def test_extended_daily_limit_is_bounded(setup):
+    settings, *_ = setup
+    settings['max_calls_per_day'] = 96
+    assert program.validate_config(settings)
+    settings['max_calls_per_day'] = 97
+    with pytest.raises(program.ProgramError, match='invalid_daily_limit'):
+        program.validate_config(settings)

@@ -68,6 +68,7 @@ def test_pass_records_exact_fingerprint_no_admission(candidate, tmp_path):
     assert artifact['base_sha'] == candidate[1]
     assert artifact['diff_sha256'] == result['fingerprint']['diff_sha256']
     assert artifact['artifact_type'] == 'model-review-not-admission'
+    assert artifact['model'] == reviewer.MODEL and artifact['provider'] == 'z.ai'
     assert 'skipped' not in artifact and 'status' not in artifact
     assert Path(result['evidence_path']).stat().st_mode & 0o777 == 0o600
     assert len(calls) == 1
@@ -400,8 +401,9 @@ def test_production_review_peak_blocks_before_key_reader(candidate, tmp_path, mo
     assert key_reads == []
 
 
-def test_main_peak_defers_before_config_or_credentials(monkeypatch, capsys, tmp_path):
-    config_path = tmp_path / 'must-not-be-read.json'
+def test_main_peak_defers_for_legacy_glm_only(monkeypatch, capsys, tmp_path):
+    config_path = tmp_path / 'glm-only.json'
+    config_path.write_text(json.dumps(config()))
     monkeypatch.setattr(sys, 'argv', ['glm_review.py', '--config', str(config_path),
         '--checkout', str(tmp_path), '--base', '0' * 40, '--head', '1' * 40,
         '--evidence-root', str(tmp_path / 'evidence')])
@@ -411,4 +413,43 @@ def test_main_peak_defers_before_config_or_credentials(monkeypatch, capsys, tmp_
     assert reviewer.main() == 75
     assert json.loads(capsys.readouterr().out) == {
         'status': 'deferred', 'reason': 'weekday_peak', 'resume_at': 1_800_000_000}
-    assert not config_path.exists()
+    assert config_path.exists()
+
+
+def test_adaptive_review_uses_peak_openai_and_persists_actual_identity(
+        candidate, tmp_path, monkeypatch):
+    settings = config(provider_policy='adaptive',
+        openai_url='http://127.0.0.1:18772/v1/infer',
+        openai_token_file='/fixture/openai')
+    monkeypatch.setattr(reviewer, 'require_offpeak',
+                        lambda *_: pytest.fail('adaptive must not tariff-defer'))
+    monkeypatch.setattr(reviewer.model_router, 'read_broker_token',
+                        lambda _path: 'openai-fixture')
+    calls = []
+    def routed(payload, glm_key, timeout, route_config, purpose, **kwargs):
+        calls.append((payload, glm_key, timeout, route_config, purpose, kwargs))
+        data = json.loads(response())
+        data['model'] = 'gpt5.6terra'
+        data['provider'] = 'openai-codex'
+        data['usage'] = None
+        verdict = json.loads(data['choices'][0]['message']['content'])
+        verdict['summary'] = 'openai-fixture'
+        data['choices'][0]['message']['content'] = json.dumps(verdict)
+        return json.dumps(data).encode()
+    monkeypatch.setattr(reviewer.model_router, 'routed_transport', routed)
+    result = reviewer.review(settings, *candidate, tmp_path / 'evidence',
+                             key_reader=lambda _: 'glm-fixture')
+    artifact = json.loads(Path(result['evidence_path']).read_text())
+    assert artifact['model'] == 'gpt5.6terra'
+    assert artifact['provider'] == 'openai-codex'
+    assert artifact['usage'] is None
+    assert artifact['verdict']['summary'] == '[redacted]'
+    assert len(calls) == 1 and calls[0][4] == 'review'
+
+
+def test_review_parser_rejects_research_model_for_review():
+    data = json.loads(response())
+    data['model'] = 'gpt5.6sol'
+    data['provider'] = 'openai-codex'
+    with pytest.raises(reviewer.ReviewError, match='invalid_or_incomplete'):
+        reviewer.parse_response(json.dumps(data).encode())

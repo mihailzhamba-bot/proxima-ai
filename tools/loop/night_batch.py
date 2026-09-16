@@ -34,8 +34,10 @@ if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
     from .glm_review import NoRedirect, read_key, strict_json, trusted_snapshot, git, diff_digest
+    from . import model_router
 except ImportError:
     from glm_review import NoRedirect, read_key, strict_json, trusted_snapshot, git, diff_digest
+    import model_router
 
 BRIDGE = 'http://127.0.0.1:18771'
 ID = re.compile(r'[a-z0-9][a-z0-9-]{2,40}')
@@ -263,16 +265,22 @@ class ReviewStage:
             raise BatchError('glm_scope_mismatch')
         path = Path(value['evidence_path'])
         path.resolve().relative_to((Path(self.manifest['evidence_root']) / 'model-review').resolve())
+        info = path.lstat()
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+            raise BatchError('glm_artifact_invalid')
         artifact = json_file(path)
         if (artifact.get('artifact_type') != 'model-review-not-admission' or artifact.get('review_complete') is not True
             or {key: artifact.get(key) for key in expected} != expected
-            or artifact.get('model') != 'glm-5.3-flash'
+            or not model_router.identity_allowed(
+                artifact.get('model'), artifact.get('provider'), 'review')
             or artifact.get('verdict', {}).get('status') != 'pass'
             or artifact['verdict'].get('findings') != []):
             raise BatchError('glm_artifact_invalid')
         if fingerprint(observation['checkout'], observation['base_sha'], observation['head_sha']) != expected:
             raise BatchError('candidate_changed')
         return {'evidence_ref': str(path), 'model': artifact['model'],
+                'provider': artifact['provider'],
                 'reviewed_at_utc': artifact['reviewed_at_utc'], **expected}
 
     def admit(self, reviewed):
