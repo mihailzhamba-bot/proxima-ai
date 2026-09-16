@@ -149,6 +149,7 @@ EXPECTED = {
     'brief-blocked': (False, 'brief_blocked', 'blocked',
                       '2026-09-15', None, False),
     'brief-missing': (False, 'brief_missing', None, None, None, False),
+    'stale-brief-missing': (False, 'data_stale', None, None, None, False),
     'status-missing': (False, 'data_status_missing', 'ok',
                        '2026-09-15', _norm(14, 14), False),
     'stale-priority': (False, 'data_stale', 'insufficient',
@@ -258,7 +259,8 @@ def _validate_case(case):
     elif (type(status) is not dict
             or status.get('last_full_day') not in {'2026-09-15', '2026-09-16'}
             or status.get('collected_at') != '2026-09-16T04:00:00Z'
-            or status.get('stale') is not (name == 'stale-priority')):
+            or status.get('stale') is not (
+                name in {'stale-priority', 'stale-brief-missing'})):
         raise ValueError('status context changed')
 
 

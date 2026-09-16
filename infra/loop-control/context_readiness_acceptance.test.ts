@@ -47,6 +47,7 @@ const scenarios: Scenario[] = [
   { name: "brief-blocked", status: status(), brief: brief("blocked",
       "2026-09-15", { source_refs: [], norm: null }) },
   { name: "brief-missing", status: status(), brief: null },
+  { name: "stale-brief-missing", status: status(true), brief: null },
   { name: "status-missing", status: null, brief: brief("ok") },
   { name: "stale-priority", status: status(true), brief: brief("insufficient",
       "2026-09-15", { source_refs: [], norm: { sample_days: 9, window_days: 14 } }) },

@@ -38,7 +38,7 @@ def result_for(name, expected):
     status = None if name == 'status-missing' else {
         'last_full_day': '2026-09-16' if tenant == 'tenant-b' else '2026-09-15',
         'collected_at': '2026-09-16T04:00:00Z',
-        'stale': name == 'stale-priority',
+        'stale': name in {'stale-priority', 'stale-brief-missing'},
     }
     brief = None
     if keep_brief:
@@ -137,6 +137,16 @@ def test_matrix_and_tenant_trace_fail_closed(mutation, message):
     payload = valid_payload()
     mutation(payload)
     with pytest.raises(ValueError, match=message):
+        m.validate_output(json.dumps(payload), m.JOB)
+
+
+def test_stale_missing_brief_priority_rejects_brief_missing():
+    m = module()
+    payload = valid_payload()
+    case = next(item for item in payload['cases']
+                if item['name'] == 'stale-brief-missing')
+    case['result']['readiness']['reason_code'] = 'brief_missing'
+    with pytest.raises(ValueError, match='readiness matrix mismatch'):
         m.validate_output(json.dumps(payload), m.JOB)
 
 
