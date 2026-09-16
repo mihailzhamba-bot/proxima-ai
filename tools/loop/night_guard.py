@@ -10,13 +10,41 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from night_batch import BridgeClient, atomic_json, checked, json_file
 
+COMPLETED_QUEUE_STATES = {
+    True: 'paused_after_finite_batch',
+    False: 'available_for_admitted_batch',
+}
+
+
+def normal_completion(state, manifest):
+    if type(state) is not dict or state.get('status') != 'completed':
+        return False
+    pause_policy = manifest.get('pause_on_completion', True)
+    if type(pause_policy) is not bool:
+        return False
+    if state.get('queue_state') != COMPLETED_QUEUE_STATES[pause_policy]:
+        return False
+    tasks = state.get('tasks')
+    if (type(tasks) is not list or not tasks
+            or any(type(task) is not dict
+                   or task.get('phase') != 'ready_pr'
+                   or not isinstance(task.get('key'), str)
+                   or not isinstance(task.get('job_id'), str)
+                   for task in tasks)):
+        return False
+    admitted = manifest.get('tasks')
+    if type(admitted) is list:
+        expected = [(task.get('key'), task.get('job_id')) for task in admitted]
+        observed = [(task.get('key'), task.get('job_id')) for task in tasks]
+        if observed != expected:
+            return False
+    return True
+
+
 def stop(manifest):
     path = Path(manifest['state_file'])
     state = json_file(path) if path.exists() else {}
-    normal_completion = (state.get('status') == 'completed'
-        and type(state.get('tasks')) is list
-        and all(task.get('phase') == 'ready_pr' for task in state['tasks']))
-    if normal_completion:
+    if normal_completion(state, manifest):
         atomic_json(path.parent/'stop-receipt.json', {
             'observed_at': time.time(), 'attempts': 0, 'confirmed': True,
             'normal_completion': True, 'actions': []})
@@ -73,9 +101,7 @@ def watch(manifest):
     state = json_file(path)
     receipt_path=path.parent/'stop-receipt.json'
     if state.get('status') == 'completed':
-        normal_completion = (type(state.get('tasks')) is list
-            and all(task.get('phase') == 'ready_pr' for task in state['tasks']))
-        if normal_completion:
+        if normal_completion(state, manifest):
             # Normal completion is terminal for this finite manifest.
             return
         stop(manifest)
