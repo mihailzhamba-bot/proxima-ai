@@ -1,5 +1,5 @@
 [Unit]
-Description=Run one LOOP GLM research job every five minutes
+Description=Run one adaptive LOOP research job every five minutes
 
 [Timer]
 OnBootSec=30s

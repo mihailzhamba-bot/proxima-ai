@@ -16,8 +16,10 @@ from urllib.parse import quote
 
 try:
     from .bridge import BridgeError, template_fingerprint
+    from .work_program_status import decode_projection
 except ImportError:
     from bridge import BridgeError, template_fingerprint
+    from work_program_status import decode_projection
 
 
 class NativeControl:
@@ -96,18 +98,25 @@ class NativeControl:
                 FROM operations WHERE kind='paperclip' ORDER BY created DESC LIMIT 10""")]
             deliveries = {r["state"]: r["count"] for r in db.execute(
                 "SELECT state,count(*) AS count FROM native_notifications GROUP BY state")}
+            projection = db.execute("SELECT CASE WHEN length(value)<=4096 THEN value ELSE NULL END FROM settings WHERE key='work_program_status'").fetchone()
         director = "unknown"
         try:
             agent = self.bridge.paperclip.call("GET", "/api/agents/" + quote(self.bridge.director_id, safe=""))
             director = agent.get("status", "unknown")
         except BridgeError:
             pass
-        return {"mode": "pr_only", "queue_paused": paused, "director_status": director,
+        review_mode = self.settings.get("review_mode", "independent_operator_receipt_required")
+        if not isinstance(review_mode, str) or review_mode not in {"independent_operator_receipt_required", "independent_model_receipt_required"}:
+            review_mode = "unknown"
+        result = {"mode": "pr_only", "queue_paused": paused, "director_status": director,
                 "observed_at": time.time(), "runs": runs, "jobs": jobs,
                 "templates": list(self.templates()), "job_status_source": "persistent_bridge_state",
                 "daily_wb_accepted": False,
                 "notification_deliveries": deliveries,
-                "review_mode": "independent_operator_receipt_required"}
+                "review_mode": review_mode}
+        if projection is not None:
+            result["work_program"] = decode_projection(projection[0])
+        return result
 
     def draft(self, payload):
         if set(payload) != {"template"} or payload.get("template") not in self.templates():

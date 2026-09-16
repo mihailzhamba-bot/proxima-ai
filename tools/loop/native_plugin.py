@@ -7,6 +7,7 @@ itself because Hermes calls that hook before its own authorization.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 import json
 import os
 import re
@@ -47,19 +48,61 @@ def owner_payload(event):
             "chat_type": value(event.source.chat_type)}
 
 
+def status_time(value):
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            raise ValueError()
+        return parsed.astimezone(timezone(timedelta(hours=3))).strftime("%d.%m %H:%M МСК")
+    except Exception:
+        return "время не подтверждено"
+
+
 def status_text(result):
     paused = "на паузе" if result["queue_paused"] else "принимает задания"
-    lines = [f"Очередь LOOP: {paused}. Director: {result['director_status']}.",
-             "Результат разработки - PR. Независимое ревью пока требует оператора."]
+    lines = [f"Разработка: {paused}. Director: {result['director_status']}."]
+    work = result.get("work_program")
+    if not isinstance(work, dict) or work.get("status") == "unavailable":
+        lines.append("Исследования: статус пока недоступен.")
+    elif not work.get("fresh"):
+        lines.append("Исследования: сведения устарели. Обновление: "
+                     + status_time(work.get("source_updated_at_utc")) + ".")
+    else:
+        descriptions = {"enabled": "готовы к запуску по расписанию",
+            "running": "результат запроса ещё не подтверждён",
+            "waiting_window": "ожидают доступного окна",
+            "unknown": "исход запроса неизвестен",
+            "blocked": "приостановлены", "idle": "очередь свободна"}
+        reasons = {"config_disabled": "отключены в настройках",
+            "daily_quota_exhausted": "дневной лимит исчерпан",
+            "no_model_work": "ждут изменений в источниках",
+            "task_completed": "последнее задание завершено",
+            "openai_broker_busy": "ждут освобождения модели"}
+        label = reasons.get(work.get("reason"), descriptions.get(work.get("status"), "статус не подтверждён"))
+        lines.append("Исследования: " + label + "."
+                     + (f" Задание: {work['task_id']}." if work.get("task_id") else ""))
+        lines.append("Обновление исследований: " + status_time(work.get("source_updated_at_utc")) + ".")
+    last = work.get("last_result") if isinstance(work, dict) else None
+    if last:
+        provider = {"openai-codex": "OpenAI", "z.ai": "Z.ai"}.get(last.get("provider"), "неизвестный provider")
+        lines.append(f"Последний результат исследований: {last['task_id']}, "
+                     f"{provider} / {last['model']}, {status_time(last.get('completed_at_utc'))}.")
+    review = result.get("review_mode", "independent_operator_receipt_required")
+    if review == "independent_model_receipt_required":
+        lines.append("Ревью: независимая модель; допуск по проверенному результату.")
+    elif review == "independent_operator_receipt_required":
+        lines.append("Ревью: требуется подтверждение независимого оператора.")
+    else:
+        lines.append("Режим независимого ревью не подтверждён.")
     jobs = result.get("jobs", [])[:5]
     if not jobs:
-        lines.append("Сохранённых задач пока нет.")
+        lines.append("Сохранённых задач разработки пока нет.")
     for job in jobs:
         lines.append(f"{job['id']}: {job['state']}" + (f"\n{job['pr_url']}" if job.get("pr_url") else ""))
-    lines.append("Это сохранённые состояния задач; ежедневный WB-пилот ещё не принят.")
+    lines.append("Результат разработки - PR. Ежедневный WB-пилот ещё не принят.")
     deliveries = result.get("notification_deliveries", {})
     if deliveries.get("delivery_unknown"):
-        lines.append(f"Есть уведомления с неподтверждённой доставкой: {deliveries['delivery_unknown']}. Результаты задач проверяйте по статусам выше.")
+        lines.append(f"Уведомлений с неподтверждённой доставкой: {deliveries['delivery_unknown']}.")
     return "\n".join(lines)
 
 
