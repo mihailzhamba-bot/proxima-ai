@@ -1,6 +1,7 @@
 import http.client
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import threading
@@ -253,10 +254,12 @@ def test_private_config_and_token_require_0600_nonsymlink_chain(tmp_path):
     token = secrets / "openai_broker"; token.write_text(TOKEN + "\n"); token.chmod(0o600)
     config = anchor / "openai-broker.json"
     config.write_text(json.dumps({"token_file": str(token)})); config.chmod(0o600)
-    assert broker.load_token(config, anchor=anchor) == TOKEN
+    assert broker.load_token(
+        config, expected_uid=os.getuid(), anchor=anchor) == TOKEN
     token.chmod(0o644)
     with pytest.raises(broker.BrokerConfigError):
-        broker.load_token(config, anchor=anchor)
+        broker.load_token(
+            config, expected_uid=os.getuid(), anchor=anchor)
 
 
 def test_systemd_unit_is_root_bounded_and_read_only():

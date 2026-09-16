@@ -1,6 +1,8 @@
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+import os
+import stat
 import subprocess
 import sys
 
@@ -23,11 +25,26 @@ def allow_pytest_tmp_ancestors(monkeypatch):
 
 
 @pytest.fixture
-def setup(tmp_path):
+def setup(tmp_path, monkeypatch):
     repo = tmp_path / 'repo'
     state = tmp_path / 'state'
     evidence = tmp_path / 'evidence'
     repo.mkdir(); state.mkdir(mode=0o700); evidence.mkdir(mode=0o700)
+    fixture_uid = os.getuid()
+    def fixture_secure_dir(path, reason):
+        path = Path(path)
+        info = path.lstat()
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != fixture_uid
+                or info.st_mode & 0o022):
+            raise program.ProgramError(reason)
+        return path
+    def fixture_owned_file(fd, reason):
+        info = os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != fixture_uid
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+            raise program.ProgramError(reason)
+    monkeypatch.setattr(program, '_secure_dir', fixture_secure_dir)
+    monkeypatch.setattr(program, '_check_owned_file', fixture_owned_file)
     git(repo, 'init', '-q')
     git(repo, 'config', 'user.name', 'Fixture')
     git(repo, 'config', 'user.email', 'fixture@example.invalid')

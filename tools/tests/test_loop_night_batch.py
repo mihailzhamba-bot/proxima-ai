@@ -518,12 +518,21 @@ def test_review_stage_router_identity_allowlist(tmp_path, monkeypatch,
             'reason': 'fixture'}
         payload['actual_request_sha256'] = 'e' * 64
     driver.atomic_json(artifact, payload)
+    original_lstat = Path.lstat
+    def fixture_artifact_lstat(candidate):
+        info = original_lstat(candidate)
+        if candidate == artifact:
+            return SimpleNamespace(st_mode=info.st_mode, st_uid=0,
+                                   st_nlink=info.st_nlink)
+        return info
+    monkeypatch.setattr(Path, 'lstat', fixture_artifact_lstat)
     class Result:
         returncode = 0
         stdout = json.dumps({'status': 'pass', 'fingerprint': scope,
                              'evidence_path': str(artifact)}).encode()
     monkeypatch.setattr(driver, 'fingerprint', lambda *_: scope)
     monkeypatch.setattr(driver, 'trusted_directory', lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(driver.os, 'geteuid', lambda: 0)
     stage = driver.ReviewStage(settings, execute=lambda *_args, **_kwargs: Result())
     observation = {'checkout': '/fixture', **scope}
     if not accepted:
