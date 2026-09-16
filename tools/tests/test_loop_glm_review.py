@@ -228,6 +228,7 @@ def test_base_must_be_ancestor(candidate, tmp_path):
 
 
 def test_transport_absolute_timeout(monkeypatch):
+    monkeypatch.setattr(reviewer, 'require_offpeak', lambda *_: None)
     class SlowOpener:
         def open(self, *_args, **_kwargs):
             time.sleep(1)
@@ -301,3 +302,73 @@ def test_changed_context_keeps_both_exact_versions(candidate, tmp_path):
     assert versions[0]['content'] == 'value = 1\n' and versions[0]['revisions'] == [candidate[1]]
     assert versions[1]['content'] == 'value = 2\n' and versions[1]['revisions'] == [candidate[2]]
     assert versions[0]['blob_sha'] != versions[1]['blob_sha']
+
+
+
+def test_transport_tariff_guard_blocks_before_http(monkeypatch):
+    calls = []
+    class Opener:
+        def open(self, *_args, **_kwargs):
+            calls.append('http')
+            raise AssertionError('HTTP must not run')
+    monkeypatch.setattr(reviewer.urllib.request, 'build_opener', lambda *_: Opener())
+    def defer(_timeout):
+        raise reviewer.TariffDeferred('weekday_peak', 1_800_000_000)
+    monkeypatch.setattr(reviewer, 'require_offpeak', defer)
+    with pytest.raises(reviewer.TariffDeferred, match='weekday_peak'):
+        reviewer.transport({}, 'fixture-key', 120)
+    assert calls == []
+
+
+@pytest.mark.parametrize('budget', [True, 0, 121])
+def test_transport_rejects_invalid_request_budget_before_http(monkeypatch, budget):
+    calls = []
+    class Opener:
+        def open(self, *_args, **_kwargs):
+            calls.append('http')
+    monkeypatch.setattr(reviewer.urllib.request, 'build_opener', lambda *_: Opener())
+    with pytest.raises(ValueError, match='invalid_request_seconds'):
+        reviewer.transport({}, 'fixture-key', budget)
+    assert calls == []
+
+
+def test_production_retry_rechecks_tariff_before_each_http(candidate, tmp_path, monkeypatch):
+    checks = []
+    opens = []
+    monkeypatch.setattr(reviewer, 'require_offpeak', lambda seconds=120: checks.append(seconds))
+    class RejectingOpener:
+        def open(self, *_args, **_kwargs):
+            opens.append('http')
+            raise urllib.error.HTTPError(reviewer.ENDPOINT, 429, 'retry', {}, None)
+    monkeypatch.setattr(reviewer.urllib.request, 'build_opener', lambda *_: RejectingOpener())
+    with pytest.raises(reviewer.ReviewError, match='provider_rejected'):
+        reviewer.review(config(), *candidate, tmp_path / 'evidence',
+                        key_reader=lambda _: 'fixture-key')
+    assert len(opens) == 2
+    assert len(checks) == 3
+    assert all(0 < seconds <= 120 for seconds in checks)
+
+
+def test_production_review_peak_blocks_before_key_reader(candidate, tmp_path, monkeypatch):
+    key_reads = []
+    def defer(_timeout):
+        raise reviewer.TariffDeferred('weekday_peak', 1_800_000_000)
+    monkeypatch.setattr(reviewer, 'require_offpeak', defer)
+    with pytest.raises(reviewer.TariffDeferred, match='weekday_peak'):
+        reviewer.review(config(), *candidate, tmp_path / 'evidence',
+                        key_reader=lambda _: key_reads.append('key'))
+    assert key_reads == []
+
+
+def test_main_peak_defers_before_config_or_credentials(monkeypatch, capsys, tmp_path):
+    config_path = tmp_path / 'must-not-be-read.json'
+    monkeypatch.setattr(sys, 'argv', ['glm_review.py', '--config', str(config_path),
+        '--checkout', str(tmp_path), '--base', '0' * 40, '--head', '1' * 40,
+        '--evidence-root', str(tmp_path / 'evidence')])
+    monkeypatch.setattr(reviewer, 'require_offpeak',
+        lambda *_: (_ for _ in ()).throw(
+            reviewer.TariffDeferred('weekday_peak', 1_800_000_000)))
+    assert reviewer.main() == 75
+    assert json.loads(capsys.readouterr().out) == {
+        'status': 'deferred', 'reason': 'weekday_peak', 'resume_at': 1_800_000_000}
+    assert not config_path.exists()

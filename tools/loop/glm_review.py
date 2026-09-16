@@ -31,6 +31,10 @@ try:
     from .review_candidate import diff_digest
 except ImportError:
     from review_candidate import diff_digest
+try:
+    from .glm_tariff import DEFERRED_EXIT, TariffDeferred, require_offpeak
+except ImportError:
+    from glm_tariff import DEFERRED_EXIT, TariffDeferred, require_offpeak
 
 ENDPOINT = 'https://api.z.ai/api/coding/paas/v4/chat/completions'
 MODEL = 'glm-5.3-flash'
@@ -194,6 +198,9 @@ def transport(payload, key, timeout):
     previous = signal.signal(signal.SIGALRM, expired)
     signal.setitimer(signal.ITIMER_REAL, timeout)
     try:
+        # Re-evaluate immediately before every HTTP attempt. review() calls
+        # transport once per retry, so a peak boundary cannot be crossed.
+        require_offpeak(timeout)
         with opener.open(request, timeout=timeout) as response:
             data = response.read(MAX_RESPONSE + 1)
             if len(data) > MAX_RESPONSE:
@@ -239,6 +246,10 @@ def parse_response(raw):
 
 def review(config, checkout, base, head, evidence_root, send=transport, key_reader=read_key):
     config_checked(config)
+    # The production transport is guarded before any credential is read.
+    # Injected test transports stay deterministic and never spend network.
+    if send is transport:
+        require_offpeak(config.get('timeout_seconds', 120))
     with trusted_snapshot(checkout, base, head) as root:
         diff = git(root, 'diff', '--no-ext-diff', '--no-textconv', '--binary', base, head, '--', limit=config.get('max_diff_bytes', MAX_DIFF))
         digest = diff_digest(root, base, head)
@@ -321,8 +332,15 @@ def main():
     parser.add_argument('--evidence-root', type=Path, required=True)
     args = parser.parse_args()
     try:
+        # Conservative preflight: do not read config or credentials while the
+        # longest supported request cannot safely finish before peak.
+        require_offpeak()
         config = strict_json(args.config.read_text())
         result = review(config, args.checkout, args.base, args.head, args.evidence_root)
+    except TariffDeferred as error:
+        result = {'status': 'deferred', **error.as_dict()}
+        print(json.dumps(result))
+        return DEFERRED_EXIT
     except Exception as error:
         result = {'status': 'blocked', 'reason': str(error) if isinstance(error, ReviewError) else 'review_failed'}
     print(json.dumps(result))
