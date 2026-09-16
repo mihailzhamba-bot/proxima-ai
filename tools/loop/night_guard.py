@@ -13,6 +13,14 @@ from night_batch import BridgeClient, atomic_json, checked, json_file
 def stop(manifest):
     path = Path(manifest['state_file'])
     state = json_file(path) if path.exists() else {}
+    normal_completion = (state.get('status') == 'completed'
+        and type(state.get('tasks')) is list
+        and all(task.get('phase') == 'ready_pr' for task in state['tasks']))
+    if normal_completion:
+        atomic_json(path.parent/'stop-receipt.json', {
+            'observed_at': time.time(), 'attempts': 0, 'confirmed': True,
+            'normal_completion': True, 'actions': []})
+        return True
     if state.get('status') == 'running':
         state.update(status='blocked', reason='supervisor_stopped', updated_at=time.time())
         atomic_json(path, state)
@@ -64,7 +72,15 @@ def watch(manifest):
     if not path.exists(): return
     state = json_file(path)
     receipt_path=path.parent/'stop-receipt.json'
-    if state.get('status') in {'blocked','completed'}:
+    if state.get('status') == 'completed':
+        normal_completion = (type(state.get('tasks')) is list
+            and all(task.get('phase') == 'ready_pr' for task in state['tasks']))
+        if normal_completion:
+            # Normal completion is terminal for this finite manifest.
+            return
+        stop(manifest)
+        return
+    if state.get('status') == 'blocked':
         receipt=json_file(receipt_path) if receipt_path.exists() else {}
         if receipt.get('confirmed') is not True and receipt.get('retry_exhausted') is not True:
             stop(manifest)

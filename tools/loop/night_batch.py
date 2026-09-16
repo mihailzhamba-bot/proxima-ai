@@ -76,8 +76,12 @@ class HTTPError(BatchError):
 def checked(manifest):
     required = {*PATHS, 'tasks', 'template_bases', 'end_at', 'job_timeout_seconds',
                 'poll_seconds', 'disk_floor_bytes'}
-    if type(manifest) is not dict or set(manifest) - {'acceptance_command', 'runtime_owner_uid'} != required:
+    if (type(manifest) is not dict
+            or set(manifest) - {'acceptance_command', 'runtime_owner_uid',
+                                'pause_on_completion'} != required):
         raise BatchError('invalid_manifest')
+    if type(manifest.get('pause_on_completion', True)) is not bool:
+        raise BatchError('invalid_pause_on_completion')
     runtime_uid = manifest.get('runtime_owner_uid', 1000)
     if type(runtime_uid) is not int or not 1 <= runtime_uid <= 2**31 - 1:
         raise BatchError('invalid_runtime_owner')
@@ -567,12 +571,36 @@ class Batch:
                         current['observed_job_status'] = job.get('state') if job else 'absent'
                         self.save()
                         self.sleep(min(self.manifest['poll_seconds'], max(0, self.manifest['end_at'] - self.clock())))
-                self.state['status'] = 'completed'; self.save()
-                # Finite approved queue exhausted: prevent unrelated later wakeups.
-                try:
-                    self.call('POST', '/v1/pause', payload={}, timeout=5)
-                except Exception:
-                    self.state['status'] = 'blocked'; self.state['reason'] = 'final_pause_unconfirmed'; self.save()
+                self.state['reason'] = 'finite_admitted_batch_completed'
+                self.state['automatic_job_admission'] = False
+                self.state['next_action'] = 'await_new_admitted_batch_manifest'
+                if self.manifest.get('pause_on_completion', True):
+                    # Remain nonterminal until the default pause is confirmed.
+                    # A crash here makes ExecStopPost fail closed.
+                    self.state['status'] = 'running'
+                    self.state['queue_state'] = 'pause_pending'
+                    self.save()
+                    # Default finite-batch policy prevents unrelated later wakeups.
+                    try:
+                        paused = self.call('POST', '/v1/pause', payload={}, timeout=5)
+                        if (paused.get('paused') is not True
+                                and paused.get('status') not in ('paused', 'stopped')):
+                            raise BatchError('final_pause_unconfirmed')
+                    except Exception:
+                        self.state['status'] = 'blocked'
+                        self.state['reason'] = 'final_pause_unconfirmed'
+                        self.state['queue_state'] = 'pause_unconfirmed'
+                        self.save()
+                    else:
+                        self.state['status'] = 'completed'
+                        self.state['queue_state'] = 'paused_after_finite_batch'
+                        self.save()
+                else:
+                    # The finite manifest is exhausted. A distinct admitted
+                    # manifest is still required before this operator wakes work.
+                    self.state['status'] = 'completed'
+                    self.state['queue_state'] = 'available_for_admitted_batch'
+                    self.save()
                 return self.state
             except Exception as error:
                 reason = str(error) if isinstance(error, BatchError) else 'batch_operation_failed'

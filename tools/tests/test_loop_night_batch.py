@@ -639,3 +639,44 @@ def test_ambiguous_review_failure_still_halts_without_retry(tmp_path):
     assert result['reason'] == 'batch_operation_failed'
     assert len(stage.calls) == 1 and not stage.admissions
     assert len([call for call in http.calls if call[1] == '/v1/wake']) == 1
+
+
+def test_pause_on_completion_false_leaves_queue_for_next_admitted_batch(tmp_path):
+    settings = manifest(tmp_path, 2)
+    settings['pause_on_completion'] = False
+    result, http, _stage, _clock = execute(settings)
+    assert result['status'] == 'completed'
+    assert result['reason'] == 'finite_admitted_batch_completed'
+    assert result['queue_state'] == 'available_for_admitted_batch'
+    assert result['next_action'] == 'await_new_admitted_batch_manifest'
+    assert result['automatic_job_admission'] is False
+    assert len([call for call in http.calls if call[1] == '/v1/wake']) == 2
+    assert not any(call[1] == '/v1/pause' for call in http.calls)
+
+
+def test_pause_on_completion_defaults_true_and_is_strict_bool(tmp_path):
+    settings = manifest(tmp_path)
+    result, http, _stage, _clock = execute(settings)
+    assert result['queue_state'] == 'paused_after_finite_batch'
+    assert any(call[1] == '/v1/pause' for call in http.calls)
+    invalid_root = tmp_path / 'invalid'
+    invalid_root.mkdir()
+    settings = manifest(invalid_root)
+    settings['pause_on_completion'] = 0
+    with pytest.raises(driver.BatchError, match='invalid_pause_on_completion'):
+        driver.checked(settings)
+
+
+def test_default_completion_is_not_terminal_until_pause_confirmed(tmp_path):
+    settings = manifest(tmp_path)
+    stage = Stage()
+    http = HTTP(settings, stage)
+    original = http.__call__
+    def unconfirmed(method, path, **kwargs):
+        if path == '/v1/pause':
+            return {}
+        return original(method, path, **kwargs)
+    result, _http, _stage, _clock = execute(settings, unconfirmed, stage)
+    assert result['status'] == 'blocked'
+    assert result['reason'] == 'final_pause_unconfirmed'
+    assert result['queue_state'] == 'pause_unconfirmed'

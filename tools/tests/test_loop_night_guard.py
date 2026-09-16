@@ -29,8 +29,8 @@ def test_stale_heartbeat_stops_service_and_pauses_even_if_service_dead(tmp_path,
     assert calls==[['systemctl','stop','loop-night.service'],'stop']
 
 def test_completed_batch_watchdog_does_not_pause_later_work(tmp_path,monkeypatch):
-    path=tmp_path/'state.json';path.write_text(json.dumps({'status':'completed','updated_at':0}))
-    (tmp_path/'stop-receipt.json').write_text(json.dumps({'confirmed':True}))
+    path=tmp_path/'state.json';path.write_text(json.dumps({'status':'completed','updated_at':0,
+        'tasks':[{'phase':'ready_pr','run_id':'done'}]}))
     monkeypatch.setattr(guard,'stop',lambda _:(_ for _ in ()).throw(AssertionError('must not stop')))
     guard.watch({'state_file':str(path),'end_at':1,'job_timeout_seconds':100})
 
@@ -49,3 +49,26 @@ def test_lost_dispatch_identity_is_not_confirmed_by_pause(tmp_path,monkeypatch):
     assert not guard.stop({'state_file':str(path),'tasks':[]})
     receipt=json.loads((tmp_path/'stop-receipt.json').read_text())
     assert any(x.get('reason')=='identity_unknown' for x in receipt['actions'])
+
+
+def test_exec_stoppost_is_noop_for_normal_completed_batch(tmp_path,monkeypatch):
+    path=tmp_path/'state.json'
+    path.write_text(json.dumps({'status':'completed',
+        'tasks':[{'phase':'ready_pr','run_id':'done'}]}))
+    monkeypatch.setattr(guard,'BridgeClient',
+        lambda _:(_ for _ in ()).throw(AssertionError('must not contact Bridge')))
+    assert guard.stop({'state_file':str(path)})
+    receipt=json.loads((tmp_path/'stop-receipt.json').read_text())
+    assert receipt['confirmed'] is True
+    assert receipt['normal_completion'] is True
+    assert receipt['actions']==[]
+
+
+def test_malformed_completed_batch_still_fails_closed(tmp_path,monkeypatch):
+    path=tmp_path/'state.json'
+    path.write_text(json.dumps({'status':'completed',
+        'tasks':[{'phase':'monitoring','run_id':'live'}]}))
+    calls=[]
+    monkeypatch.setattr(guard,'stop',lambda manifest:calls.append('stop'))
+    guard.watch({'state_file':str(path),'end_at':500,'job_timeout_seconds':100})
+    assert calls==['stop']
