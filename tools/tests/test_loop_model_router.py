@@ -190,3 +190,68 @@ def test_router_models_are_canonical_broker_allowlist_subset():
     selected = {model for model, _effort in router.OPENAI_MODELS.values()}
     assert selected == {'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra'}
     assert selected <= openai_no_tools.MODELS
+
+
+def test_broker_utf8_wire_is_not_ascii_tripled():
+    prompt = 'я' * 50_000  # exactly 100 KB UTF-8 before small JSON overhead
+    value = {'ok': True, 'response': '{}', 'model': 'gpt-5.6-sol',
+             'provider': 'openai-codex', 'usage': None}
+    opener = Opener(value)
+    raw = router.broker_transport('система', prompt,
+        route('gpt-5.6-sol', 'medium'),
+        'http://127.0.0.1:18772/v1/infer', 'key', 120, opener=opener)
+    wire = opener.requests[0].data
+    assert len(wire) < router.MAX_BROKER_REQUEST
+    assert b'\\u' not in wire
+    normalized = json.loads(raw)
+    assert normalized['actual_request_sha256']
+    assert normalized['provider_route']['model'] == 'gpt-5.6-sol'
+
+
+def test_broker_wire_limit_blocks_before_http():
+    calls = []
+    class Never:
+        def open(self, *_args, **_kwargs):
+            calls.append(1)
+    with pytest.raises(router.RouterError, match='broker_request_too_large'):
+        router.broker_transport('s', 'я' * 80_000,
+            route('gpt-5.6-sol', 'medium'),
+            'http://127.0.0.1:18772/v1/infer', 'key', 120, opener=Never())
+    assert calls == []
+
+
+def test_fallback_uses_only_remaining_deadline():
+    moments = iter([0, 0, 100])
+    received = []
+    class TimedOpener(Opener):
+        def open(self, request, **kwargs):
+            received.append(kwargs['timeout'])
+            return super().open(request, **kwargs)
+    value = {'ok': True, 'response': '{}', 'model': 'gpt-5.6-sol',
+             'provider': 'openai-codex', 'usage': None}
+    def glm(*_args):
+        raise urllib.error.HTTPError('fixture', 429, 'rate', {}, None)
+    payload = {'messages': [{'role': 'system', 'content': 's'},
+                            {'role': 'user', 'content': 'p'}]}
+    router.routed_transport(payload, 'glm', 120, config(), 'research',
+        glm_send=glm, openai_token='openai', opener=TimedOpener(value),
+        tariff_check=offpeak, monotonic=lambda: next(moments))
+    assert received == [20]
+
+
+def test_expired_deadline_never_starts_fallback():
+    moments = iter([0, 0, 121])
+    broker_calls = []
+    routes = []
+    def glm(*_args):
+        raise urllib.error.HTTPError('fixture', 429, 'rate', {}, None)
+    payload = {'messages': [{'role': 'system', 'content': 's'},
+                            {'role': 'user', 'content': 'p'}]}
+    with pytest.raises(router.RouterError, match='router_timeout'):
+        router.routed_transport(payload, 'glm', 120, config(), 'research',
+            glm_send=glm, openai_token='openai',
+            opener=type('Never', (), {'open': lambda *_a, **_k: broker_calls.append(1)})(),
+            tariff_check=offpeak, monotonic=lambda: next(moments),
+            on_route=lambda selected: routes.append(selected['provider']))
+    assert routes == ['z.ai']
+    assert broker_calls == []

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -30,6 +31,7 @@ BROKER_URLS = {'http://127.0.0.1:18772/v1/infer',
                'http://127.0.0.1:18773/v1/infer'}
 POLICIES = {'glm_only', 'adaptive'}
 MAX_RESPONSE = 100_000
+MAX_BROKER_REQUEST = 160_000
 MAX_TIMEOUT = 125
 BROKER_COOLDOWN = 15
 
@@ -130,6 +132,21 @@ def identity_allowed(model, provider, purpose):
                      if key[0] == 'research'}
 
 
+def response_route_allowed(route, model, provider, purpose):
+    if type(route) is not dict or set(route) != {
+            'provider', 'model', 'reasoning_effort', 'reason'}:
+        return False
+    if (route['model'], route['provider']) != (model, provider):
+        return False
+    if provider == GLM_PROVIDER:
+        return model == GLM_MODEL and route['reasoning_effort'] is None
+    expected = {(selected_model, effort) for (route_purpose, _complexity),
+                (selected_model, effort) in OPENAI_MODELS.items()
+                if route_purpose == purpose}
+    return (provider == OPENAI_PROVIDER
+            and (model, route['reasoning_effort']) in expected)
+
+
 def read_broker_token(path):
     try:
         try:
@@ -156,20 +173,23 @@ def _usage(value):
     return value
 
 
-def _normalized(model, provider, response, usage):
+def _normalized(model, provider, response, usage, route, request_sha256):
     return json.dumps({'model': model, 'provider': provider,
+        'provider_route': route, 'actual_request_sha256': request_sha256,
         'choices': [{'finish_reason': 'stop',
                      'message': {'role': 'assistant', 'content': response}}],
         'usage': usage}, ensure_ascii=False).encode('utf-8')
 
 
-def normalize_glm(raw):
+def normalize_glm(raw, route, request_sha256):
     try:
         value = strict_json(raw)
         if type(value) is not dict or value.get('model') != GLM_MODEL:
             raise ValueError()
         value = dict(value)
         value['provider'] = GLM_PROVIDER
+        value['provider_route'] = route
+        value['actual_request_sha256'] = request_sha256
         return json.dumps(value, ensure_ascii=False).encode('utf-8')
     except Exception:
         raise RouterError('invalid_glm_response') from None
@@ -189,6 +209,23 @@ def _messages(payload):
         raise RouterError('invalid_router_payload') from None
 
 
+def broker_request_wire(system, prompt, route):
+    if type(system) is not str or type(prompt) is not str:
+        raise RouterError('invalid_router_payload')
+    body = {'prompt': prompt, 'system': system, 'model': route['model'],
+            'reasoning_effort': route['reasoning_effort']}
+    wire = json.dumps(body, ensure_ascii=False,
+                      separators=(',', ':')).encode('utf-8')
+    if len(wire) > MAX_BROKER_REQUEST:
+        raise RouterError('broker_request_too_large')
+    return wire
+
+
+def validate_broker_payload(payload, route):
+    system, prompt = _messages(payload)
+    return hashlib.sha256(broker_request_wire(system, prompt, route)).hexdigest()
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise RouterError('broker_redirect_refused')
@@ -206,9 +243,9 @@ def broker_transport(system, prompt, route, url, token, timeout, *,
         raise RouterError('invalid_broker_timeout')
     if type(token) is not str or not token or any(char.isspace() for char in token):
         raise RouterError('invalid_openai_token')
-    body = {'prompt': prompt, 'system': system, 'model': route['model'],
-            'reasoning_effort': route['reasoning_effort']}
-    request = urllib.request.Request(url, data=json.dumps(body).encode('utf-8'),
+    wire = broker_request_wire(system, prompt, route)
+    request_sha256 = hashlib.sha256(wire).hexdigest()
+    request = urllib.request.Request(url, data=wire,
         headers={'Content-Type': 'application/json',
                  'Authorization': 'Bearer ' + token}, method='POST')
     opener = opener or urllib.request.build_opener(
@@ -247,7 +284,8 @@ def broker_transport(system, prompt, route, url, token, timeout, *,
                 or not 1 <= len(value['response'].encode('utf-8')) <= MAX_RESPONSE):
             raise RouterError('invalid_broker_response')
         usage = _usage(value['usage'])
-        return _normalized(value['model'], value['provider'], value['response'], usage)
+        return _normalized(value['model'], value['provider'], value['response'],
+                           usage, route, request_sha256)
     except RouterDeferred:
         raise
     except RouterError:
@@ -262,7 +300,12 @@ def broker_transport(system, prompt, route, url, token, timeout, *,
 def routed_transport(payload, glm_key, timeout, config, purpose,
                      complexity='standard', *, openai_token=None,
                      glm_send=None, opener=None, now=None, clock=time.time,
-                     tariff_check=None, on_route=None):
+                     tariff_check=None, on_route=None,
+                     monotonic=time.monotonic):
+    if (type(timeout) not in (int, float) or isinstance(timeout, bool)
+            or not math.isfinite(timeout) or timeout <= 0):
+        raise RouterError('invalid_router_timeout')
+    deadline = monotonic() + timeout
     route = select_route(config, purpose, complexity, now=now,
                          tariff_check=tariff_check)
     if route['provider'] == OPENAI_PROVIDER:
@@ -270,8 +313,11 @@ def routed_transport(payload, glm_key, timeout, config, purpose,
             on_route(route)
         token = openai_token or read_broker_token(config['openai_token_file'])
         system, prompt = _messages(payload)
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise RouterError('router_timeout')
         return broker_transport(system, prompt, route, config['openai_url'],
-                                token, min(timeout, MAX_TIMEOUT),
+                                token, min(remaining, MAX_TIMEOUT),
                                 opener=opener, clock=clock)
     if glm_send is None:
         try:
@@ -282,13 +328,21 @@ def routed_transport(payload, glm_key, timeout, config, purpose,
     try:
         if on_route:
             on_route(route)
-        return normalize_glm(glm_send(payload, glm_key, timeout))
+        glm_wire = json.dumps(payload).encode('utf-8')
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise RouterError('router_timeout')
+        return normalize_glm(glm_send(payload, glm_key, remaining), route,
+                             hashlib.sha256(glm_wire).hexdigest())
     except Exception as error:
         policy = config.get('provider_policy', 'glm_only')
         rate_limited = isinstance(error, urllib.error.HTTPError) and error.code == 429
         tariff_deferred = error.__class__.__name__ == 'TariffDeferred'
         if policy != 'adaptive' or not (rate_limited or tariff_deferred):
             raise
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise RouterError('router_timeout')
         fallback = select_route(config, purpose, complexity, now=now,
                                 glm_rate_limited=True, tariff_check=tariff_check)
         if on_route:
@@ -296,5 +350,5 @@ def routed_transport(payload, glm_key, timeout, config, purpose,
         token = openai_token or read_broker_token(config['openai_token_file'])
         system, prompt = _messages(payload)
         return broker_transport(system, prompt, fallback, config['openai_url'],
-                                token, min(timeout, MAX_TIMEOUT),
+                                token, min(remaining, MAX_TIMEOUT),
                                 opener=opener, clock=clock)

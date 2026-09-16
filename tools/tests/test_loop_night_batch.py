@@ -247,7 +247,11 @@ def test_stage_rejects_model_artifact_wrong_sha(tmp_path, monkeypatch):
     artifact = evidence / 'review.json'
     scope = {'base_sha': 'a' * 40, 'head_sha': 'b' * 40, 'diff_sha256': 'c' * 64}
     driver.atomic_json(artifact, {'artifact_type': 'model-review-not-admission', 'review_complete': True,
-        **scope, 'head_sha': 'f' * 40, 'model': 'glm-5.3-flash', 'verdict': {'status': 'pass', 'findings': []}})
+        **scope, 'head_sha': 'f' * 40, 'model': 'glm-5.3-flash', 'provider': 'z.ai',
+        'actual_provider_route': {'provider': 'z.ai', 'model': 'glm-5.3-flash',
+            'reasoning_effort': None, 'reason': 'glm_only'},
+        'actual_request_sha256': 'e' * 64,
+        'verdict': {'status': 'pass', 'findings': []}})
     class Result:
         returncode = 0
         stdout = json.dumps({'status': 'pass', 'fingerprint': scope, 'evidence_path': str(artifact)}).encode()
@@ -509,6 +513,10 @@ def test_review_stage_router_identity_allowlist(tmp_path, monkeypatch,
         'verdict': {'status': 'pass', 'findings': []}}
     if provider is not None:
         payload['provider'] = provider
+        payload['actual_provider_route'] = {'provider': provider, 'model': model,
+            'reasoning_effort': None if provider == 'z.ai' else 'medium',
+            'reason': 'fixture'}
+        payload['actual_request_sha256'] = 'e' * 64
     driver.atomic_json(artifact, payload)
     class Result:
         returncode = 0
@@ -527,3 +535,107 @@ def test_review_stage_router_identity_allowlist(tmp_path, monkeypatch,
     stage.admit(reviewed)
     receipt = json.loads((receipts / ('b' * 40 + '.json')).read_text())
     assert receipt['reviewer'] == model
+
+
+def test_review_stage_parses_only_bounded_known_deferred(tmp_path):
+    settings = manifest(tmp_path)
+    route = {'provider': 'openai-codex', 'model': 'gpt-5.6-terra',
+             'reasoning_effort': 'medium', 'reason': 'glm_peak'}
+    class Result:
+        returncode = driver.DEFERRED_EXIT
+        stdout = json.dumps({'status': 'deferred',
+            'reason': 'openai_broker_busy', 'resume_at': 1015,
+            'provider_route': route}).encode()
+    stage = driver.ReviewStage(settings,
+        execute=lambda *_args, **_kwargs: Result(), clock=lambda: 1000)
+    with pytest.raises(driver.ReviewDeferred, match='openai_broker_busy') as caught:
+        stage.review({'checkout': '/fixture', 'base_sha': 'a' * 40,
+                      'head_sha': 'b' * 40}, 120)
+    assert caught.value.resume_at == 1015
+
+
+@pytest.mark.parametrize('reason,resume', [
+    ('provider_unavailable', 1015),
+    ('openai_broker_busy', 1000),
+    ('openai_broker_busy', 1000 + driver.MAX_REVIEW_DEFER_SECONDS + 1),
+])
+def test_review_stage_rejects_unsafe_deferred(tmp_path, reason, resume):
+    settings = manifest(tmp_path)
+    class Result:
+        returncode = driver.DEFERRED_EXIT
+        stdout = json.dumps({'status': 'deferred', 'reason': reason,
+            'resume_at': resume}).encode()
+    stage = driver.ReviewStage(settings,
+        execute=lambda *_args, **_kwargs: Result(), clock=lambda: 1000)
+    with pytest.raises(driver.BatchError):
+        stage.review({'checkout': '/fixture', 'base_sha': 'a' * 40,
+                      'head_sha': 'b' * 40}, 120)
+
+
+def test_broker_busy_retries_same_job_without_redispatch(tmp_path):
+    settings = manifest(tmp_path)
+    clock = Clock()
+    class BusyStage(Stage):
+        def __init__(self):
+            super().__init__()
+            self.observations = 0
+        def observe(self, task):
+            self.observations += 1
+            return super().observe(task)
+        def review(self, observed, timeout):
+            self.calls.append((observed, timeout))
+            if len(self.calls) == 1:
+                raise driver.ReviewDeferred('openai_broker_busy',
+                    clock() + 15, {'provider': 'openai-codex',
+                    'model': 'gpt-5.6-terra', 'reasoning_effort': 'medium',
+                    'reason': 'glm_peak'})
+            return {**observed, 'model': 'gpt-5.6-terra',
+                    'provider': 'openai-codex',
+                    'reviewed_at_utc': 'fixture-date',
+                    'evidence_ref': '/fixture/evidence'}
+    stage = BusyStage()
+    http = HTTP(settings, stage)
+    result, http, stage, _ = execute(settings, http, stage, clock)
+    assert result['status'] == 'completed'
+    assert len([call for call in http.calls if call[1] == '/v1/wake']) == 1
+    assert len(stage.calls) == 2 and stage.observations == 2
+    assert len(stage.admissions) == 1
+    assert not any(name in result['tasks'][0] for name in
+                   ('review_retry_at', 'review_retry_scope', 'review_retry_reason'))
+
+
+def test_restart_after_safe_defer_resumes_monitoring_without_wake(tmp_path):
+    settings = manifest(tmp_path)
+    clock = Clock()
+    batch = driver.Batch(settings, None, None, clock=clock)
+    scope = {'base_sha': 'a' * 40, 'head_sha': 'b' * 40,
+             'diff_sha256': 'c' * 64}
+    state = {'version': 1, 'manifest_sha256': batch.digest,
+        'status': 'running', 'reviews': {},
+        'tasks': [{'key': settings['tasks'][0]['key'],
+                   'job_id': settings['tasks'][0]['job_id'],
+                   'phase': 'monitoring', 'run_id': 'existing-run',
+                   'started_at': 1000, 'review_retry_at': 1015,
+                   'review_retry_reason': 'openai_broker_busy',
+                   'review_retry_scope': scope}]}
+    driver.atomic_json(settings['state_file'], state)
+    stage = Stage()
+    http = HTTP(settings, stage)
+    result, http, stage, _ = execute(settings, http, stage, clock)
+    assert result['status'] == 'completed'
+    assert not any(call[1] == '/v1/wake' for call in http.calls)
+    assert len(stage.calls) == 1 and len(stage.admissions) == 1
+
+
+def test_ambiguous_review_failure_still_halts_without_retry(tmp_path):
+    settings = manifest(tmp_path)
+    class Ambiguous(Stage):
+        def review(self, observed, timeout):
+            self.calls.append((observed, timeout))
+            raise TimeoutError('private transport detail')
+    stage = Ambiguous()
+    result, http, stage, _ = execute(settings, HTTP(settings, stage), stage)
+    assert result['status'] == 'blocked'
+    assert result['reason'] == 'batch_operation_failed'
+    assert len(stage.calls) == 1 and not stage.admissions
+    assert len([call for call in http.calls if call[1] == '/v1/wake']) == 1

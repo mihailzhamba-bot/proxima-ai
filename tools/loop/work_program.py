@@ -497,7 +497,17 @@ def parse_response(raw):
                     type(usage.get(name)) is not int or usage[name] < 0
                     for name in ('prompt_tokens', 'completion_tokens', 'total_tokens')):
                 raise ValueError()
-        return verdict, usage, model, provider
+        actual_route = response.get('provider_route')
+        actual_request_sha256 = response.get('actual_request_sha256')
+        if ((actual_route is None) != (actual_request_sha256 is None)
+                or (actual_route is not None
+                    and (not model_router.response_route_allowed(
+                            actual_route, model, provider, 'research')
+                         or not isinstance(actual_request_sha256, str)
+                         or not re.fullmatch(r'[0-9a-f]{64}', actual_request_sha256)))):
+            raise ValueError()
+        return (verdict, usage, model, provider, actual_route,
+                actual_request_sha256)
     except Exception:
         raise ProgramError('invalid_or_incomplete_response') from None
 
@@ -621,6 +631,14 @@ def run_once(config, *, now=None, send=None, key_reader=None,
                                               now=now, tariff_check=tariff_check)
         except model_router.RouterError as error:
             return save_state(state_root, 'blocked', str(error), enabled=True)
+        if policy == 'adaptive':
+            try:
+                fallback_route = model_router.select_route(
+                    config, 'research', complexity, glm_rate_limited=True,
+                    tariff_check=tariff_check)
+                model_router.validate_broker_payload(payload, fallback_route)
+            except model_router.RouterError as error:
+                return save_state(state_root, 'blocked', str(error), enabled=True)
         if policy == 'glm_only':
             try:
                 offpeak_check(request_seconds=REQUEST_SECONDS)
@@ -675,7 +693,8 @@ def run_once(config, *, now=None, send=None, key_reader=None,
                    task_id=task['id'], content_hash=content_hash)
         try:
             raw = actual_send(payload, key_value, REQUEST_SECONDS)
-            verdict, usage, actual_model, actual_provider = parse_response(raw)
+            (verdict, usage, actual_model, actual_provider, actual_route,
+             actual_request_sha256) = parse_response(raw)
             verdict = glm_review.redact_strings(verdict, key_value)
             if openai_token:
                 verdict = glm_review.redact_strings(verdict, openai_token)
@@ -683,9 +702,13 @@ def run_once(config, *, now=None, send=None, key_reader=None,
                         'artifact_type': 'model-research-data-not-admission',
                         'task_id': task['id'], 'content_hash': content_hash,
                         'source_sha': source_sha, 'model': actual_model,
-                        'provider': actual_provider, 'provider_route': route,
+                        'provider': actual_provider,
+                        'planned_provider_route': route,
+                        'actual_provider_route': actual_route,
                         'created_at_utc': datetime.now(timezone.utc).isoformat(),
-                        'request_sha256': hashlib.sha256(canonical(payload)).hexdigest(),
+                        'planned_payload_sha256': hashlib.sha256(
+                            canonical(payload)).hexdigest(),
+                        'actual_request_sha256': actual_request_sha256,
                         'context': [{key2: item[key2] for key2 in
                                      ('path', 'blob_sha', 'sha256', 'bytes')}
                                     for item in context],

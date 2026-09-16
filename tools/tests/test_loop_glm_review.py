@@ -431,6 +431,10 @@ def test_adaptive_review_uses_peak_openai_and_persists_actual_identity(
         data = json.loads(response())
         data['model'] = 'gpt-5.6-terra'
         data['provider'] = 'openai-codex'
+        data['provider_route'] = {'provider': 'openai-codex',
+            'model': 'gpt-5.6-terra', 'reasoning_effort': 'medium',
+            'reason': 'fixture'}
+        data['actual_request_sha256'] = 'f' * 64
         data['usage'] = None
         verdict = json.loads(data['choices'][0]['message']['content'])
         verdict['summary'] = 'openai-fixture'
@@ -442,6 +446,9 @@ def test_adaptive_review_uses_peak_openai_and_persists_actual_identity(
     artifact = json.loads(Path(result['evidence_path']).read_text())
     assert artifact['model'] == 'gpt-5.6-terra'
     assert artifact['provider'] == 'openai-codex'
+    assert artifact['planned_provider_route']['model'] == 'gpt-5.6-terra'
+    assert artifact['actual_provider_route']['model'] == 'gpt-5.6-terra'
+    assert artifact['actual_request_sha256'] == 'f' * 64
     assert artifact['usage'] is None
     assert artifact['verdict']['summary'] == '[redacted]'
     assert len(calls) == 1 and calls[0][4] == 'review'

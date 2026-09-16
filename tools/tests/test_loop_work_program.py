@@ -360,8 +360,16 @@ def adaptive_config(base, complexity='standard'):
 
 def routed_research_response(model='gpt-5.6-sol', usage=None):
     data = json.loads(response())
+    effort = 'low' if model == 'gpt-5.6-luna' else (
+        'high' if model == 'gpt-5.6-sol-high' else 'medium')
+    if model == 'gpt-5.6-sol-high':
+        model = 'gpt-5.6-sol'
+    route = {'provider': 'openai-codex', 'model': model,
+             'reasoning_effort': effort, 'reason': 'fixture'}
     data['model'] = model
     data['provider'] = 'openai-codex'
+    data['provider_route'] = route
+    data['actual_request_sha256'] = 'e' * 64
     data['usage'] = usage
     return json.dumps(data).encode()
 
@@ -375,6 +383,7 @@ def test_adaptive_peak_runs_openai_and_persists_route(setup, monkeypatch):
     def routed(payload, glm_key, timeout, config, purpose, complexity, **kwargs):
         calls.append((purpose, complexity, kwargs))
         data = json.loads(routed_research_response())
+        kwargs['on_route'](data['provider_route'])
         verdict = json.loads(data['choices'][0]['message']['content'])
         verdict['summary'] = 'openai-fixture'
         data['choices'][0]['message']['content'] = json.dumps(verdict)
@@ -390,6 +399,9 @@ def test_adaptive_peak_runs_openai_and_persists_route(setup, monkeypatch):
     artifact = json.loads(Path(result['evidence_path']).read_text())
     assert artifact['model'] == 'gpt-5.6-sol'
     assert artifact['provider'] == 'openai-codex'
+    assert artifact['planned_provider_route']['model'] == 'gpt-5.6-sol'
+    assert artifact['actual_provider_route']['model'] == 'gpt-5.6-sol'
+    assert artifact['actual_request_sha256'] == 'e' * 64
     assert artifact['usage'] is None
     assert artifact['verdict']['summary'] == '[redacted]'
     intent = json.loads((state / 'journal.jsonl').read_text().splitlines()[0])
@@ -449,3 +461,21 @@ def test_extended_daily_limit_is_bounded(setup):
     settings['max_calls_per_day'] = 97
     with pytest.raises(program.ProgramError, match='invalid_daily_limit'):
         program.validate_config(settings)
+
+
+def test_adaptive_oversize_broker_fallback_blocks_before_intent(setup, monkeypatch):
+    base, repo, state, _evidence = setup
+    (repo / 'facts.txt').write_text('\\' * 90_000)
+    git(repo, 'commit', '-qam', 'large escaped context')
+    settings = adaptive_config(base)
+    monkeypatch.setattr(program.model_router, 'read_broker_token',
+                        lambda _path: pytest.fail('credential read after oversize'))
+    monkeypatch.setattr(program.model_router, 'routed_transport',
+                        lambda *_a, **_k: pytest.fail('transport after oversize'))
+    result = program.run_once(settings,
+        now=datetime(2026, 9, 13, tzinfo=timezone.utc),
+        clock=lambda: datetime(2026, 9, 13, tzinfo=timezone.utc),
+        tariff_check=allowed, key_reader=lambda _: 'glm')
+    assert result['status'] == 'blocked'
+    assert result['reason'] == 'broker_request_too_large'
+    assert not (state / 'journal.jsonl').exists()
