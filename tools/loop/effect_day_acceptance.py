@@ -12,7 +12,7 @@ import uuid
 
 IMAGE = 'localhost:5000/loop-verification/producer@sha256:cf2053695d05fc3ee894def2eee3b25f1e2c1aff252fef7e0b1038937327dd31'
 JOB = 'day-20260916-effect-day'
-APPROVED_JOBS = frozenset({JOB, JOB + '-r2'})
+APPROVED_JOBS = frozenset({JOB, JOB + '-r2', JOB + '-r3'})
 MAX_OUTPUT = 100_000
 RUNNER_ROOT = Path('/srv/loop-runner/work')
 UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}', re.I)

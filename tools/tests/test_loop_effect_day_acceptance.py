@@ -149,7 +149,7 @@ def test_candidate_location_and_job_are_fixed(tmp_path):
                   'loop-effect-day-accept-' + 'c' * 32)
 
 
-@pytest.mark.parametrize("retry_suffix", ["", "-r2"])
+@pytest.mark.parametrize("retry_suffix", ["", "-r2", "-r3"])
 def test_command_is_pinned_offline_readonly_and_has_four_ro_dependencies(tmp_path, retry_suffix):
     m = module()
     job = m.JOB + retry_suffix
@@ -200,13 +200,14 @@ def test_worker_prompt_is_fixed_to_two_line_service_change():
     assert len(prompt) < 800
 
 
-def test_retry_result_is_bound_to_exact_approved_job():
+@pytest.mark.parametrize("retry_suffix", ["-r2", "-r3"])
+def test_retry_result_is_bound_to_exact_approved_job(retry_suffix):
     m = module()
     payload = valid_payload()
-    payload["job_id"] = m.JOB + "-r2"
-    m.validate_output(json.dumps(payload), m.JOB + "-r2")
+    payload["job_id"] = m.JOB + retry_suffix
+    m.validate_output(json.dumps(payload), m.JOB + retry_suffix)
     with pytest.raises(ValueError):
         m.validate_output(json.dumps(payload), m.JOB)
-    payload["job_id"] = m.JOB + "-r3"
+    payload["job_id"] = m.JOB + "-r4"
     with pytest.raises(ValueError):
-        m.validate_output(json.dumps(payload), m.JOB + "-r3")
+        m.validate_output(json.dumps(payload), m.JOB + "-r4")
