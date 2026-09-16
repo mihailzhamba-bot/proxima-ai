@@ -12,6 +12,7 @@ import uuid
 
 IMAGE = 'localhost:5000/loop-verification/producer@sha256:cf2053695d05fc3ee894def2eee3b25f1e2c1aff252fef7e0b1038937327dd31'
 JOB = 'day-20260916-effect-day'
+APPROVED_JOBS = frozenset({JOB, JOB + '-r2'})
 MAX_OUTPUT = 100_000
 RUNNER_ROOT = Path('/srv/loop-runner/work')
 UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}', re.I)
@@ -24,7 +25,9 @@ WORKER_PROMPT = (
     'use the computed Moscow observation end day ' + chr(96) + 'end' + chr(96) +
     ' for the fact_nm_daily_current calendar_day argument and snapshot.evaluation_day '
     'instead of row.brief_day. Make only this two-line change; do not alter SQL '
-    'structure, authorization, or other functions.'
+    'structure, authorization, or other functions. '
+    'Create exactly one commit containing only services/webapp/src/lib/loop/service.ts. '
+    'Commit: fix(loop): use observation target day. Do not push.'
 )
 
 
@@ -35,7 +38,7 @@ def worker_prompt():
 def command(checkout, base, head, job, name):
     if not all(re.fullmatch(r'[0-9a-f]{40}', value) for value in (base, head)):
         raise ValueError('invalid sha')
-    if job != JOB or not re.fullmatch(r'loop-effect-day-accept-[0-9a-f]{32}', name):
+    if job not in APPROVED_JOBS or not re.fullmatch(r'loop-effect-day-accept-[0-9a-f]{32}', name):
         raise ValueError('unapproved job')
     checkout = Path(checkout)
     expected_parent = RUNNER_ROOT
@@ -192,7 +195,7 @@ def validate_output(raw, job):
         raise ValueError('output limit')
     value = _unique_json(raw)
     if (type(value) is not dict or set(value) != {'version', 'job_id', 'cases'}
-            or value.get('version') != 1 or value.get('job_id') != job or job != JOB):
+            or value.get('version') != 1 or value.get('job_id') != job or job not in APPROVED_JOBS):
         raise ValueError('incomplete evaluator output')
     cases = value['cases']
     if type(cases) is not list or len(cases) != 3:

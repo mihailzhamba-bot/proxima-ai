@@ -88,7 +88,7 @@ async function runScenario(createQueueService: Function, scenario: Scenario) {
 }
 
 async function evaluate() {
-  if (job !== "day-20260916-effect-day") throw new Error("unapproved acceptance task");
+  if (!["day-20260916-effect-day", "day-20260916-effect-day-r2"].includes(job)) throw new Error("unapproved acceptance task");
   const { createQueueService } = await load("loop/service");
   const cases = [];
   cases.push(await runScenario(createQueueService, {

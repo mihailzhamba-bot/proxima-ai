@@ -149,16 +149,18 @@ def test_candidate_location_and_job_are_fixed(tmp_path):
                   'loop-effect-day-accept-' + 'c' * 32)
 
 
-def test_command_is_pinned_offline_readonly_and_has_four_ro_dependencies(tmp_path):
+@pytest.mark.parametrize("retry_suffix", ["", "-r2"])
+def test_command_is_pinned_offline_readonly_and_has_four_ro_dependencies(tmp_path, retry_suffix):
     m = module()
+    job = m.JOB + retry_suffix
     m.RUNNER_ROOT = tmp_path
-    job_root = tmp_path / ('loop-' + m.JOB + '-fixture')
+    job_root = tmp_path / ('loop-' + job + '-fixture')
     candidate = job_root / 'candidate'
     candidate.mkdir(parents=True)
     for index in range(4):
         (job_root / 'writable' / ('dep-' + str(index))).mkdir(parents=True)
     name = 'loop-effect-day-accept-' + 'c' * 32
-    argv = m.command(candidate, 'a' * 40, 'b' * 40, m.JOB, name)
+    argv = m.command(candidate, 'a' * 40, 'b' * 40, job, name)
     assert argv[:6] == ['docker', 'run', '--rm', '--name', name, '--network']
     assert argv[6] == 'none'
     assert ['--read-only', '--user', '1000:1000'] == argv[
@@ -170,7 +172,7 @@ def test_command_is_pinned_offline_readonly_and_has_four_ro_dependencies(tmp_pat
     assert '/opt/loop-review/effect_day_acceptance.ts:/acceptance/check.ts:ro' in mounts
     assert sum(value.endswith(':ro') and '/writable/dep-' in value for value in mounts) == 4
     assert argv[-5:] == ['node', '--import', '/work/node_modules/tsx/dist/loader.mjs',
-                         '/acceptance/check.ts', m.JOB]
+                         '/acceptance/check.ts', job]
 
 
 def test_evaluator_output_is_bounded():
@@ -193,4 +195,18 @@ def test_worker_prompt_is_fixed_to_two_line_service_change():
     assert chr(96) + 'end' + chr(96) in prompt and 'row.brief_day' in prompt
     assert 'two-line change' in prompt
     assert 'do not alter SQL structure, authorization, or other functions' in prompt
-    assert len(prompt) < 500
+    assert "Create exactly one commit containing only services/webapp/src/lib/loop/service.ts" in prompt
+    assert "Commit: fix(loop): use observation target day" in prompt
+    assert len(prompt) < 800
+
+
+def test_retry_result_is_bound_to_exact_approved_job():
+    m = module()
+    payload = valid_payload()
+    payload["job_id"] = m.JOB + "-r2"
+    m.validate_output(json.dumps(payload), m.JOB + "-r2")
+    with pytest.raises(ValueError):
+        m.validate_output(json.dumps(payload), m.JOB)
+    payload["job_id"] = m.JOB + "-r3"
+    with pytest.raises(ValueError):
+        m.validate_output(json.dumps(payload), m.JOB + "-r3")
