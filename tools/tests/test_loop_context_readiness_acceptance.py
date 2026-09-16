@@ -234,3 +234,31 @@ def test_typescript_evaluator_has_fixed_matrix_and_failure_path():
     assert 'BEGIN READ ONLY' not in source  # SQL comes only from candidate.
     assert 'candidate evaluation failed' in source
     assert 'process.exitCode = 1;' in source
+
+def test_cli_receipt_is_accepted_by_real_review_stage(tmp_path, monkeypatch, capsys):
+    from types import SimpleNamespace
+    from tools.loop.night_batch import ReviewStage
+
+    m = module()
+    raw = json.dumps(valid_payload()).encode()
+    head = 'b' * 40
+    class Process:
+        returncode = 0
+        def __init__(self, _argv, *, stdout, **_kwargs):
+            stdout.write(raw)
+            stdout.flush()
+        def poll(self):
+            return 0
+    monkeypatch.setattr(m.sys, 'argv', ['accept', '/candidate', m.BASE_SHA, head, m.JOB])
+    monkeypatch.setattr(m, 'command', lambda *_args: ['fixture'])
+    monkeypatch.setattr(m.signal, 'signal', lambda *_args: None)
+    monkeypatch.setattr(m.subprocess, 'Popen', Process)
+    monkeypatch.setattr(m.subprocess, 'run', lambda *_args, **_kwargs: SimpleNamespace(returncode=0))
+    m.main()
+    output = capsys.readouterr().out.encode()
+    stage = ReviewStage(
+        {'acceptance_command': ['/fixture'], 'evidence_root': str(tmp_path)},
+        execute=lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout=output))
+    receipt = stage.accept({'checkout': '/candidate', 'base_sha': m.BASE_SHA,
+                            'head_sha': head, 'job_id': m.JOB}, 30)
+    assert json.loads(Path(receipt).read_text())['status'] == 'pass'

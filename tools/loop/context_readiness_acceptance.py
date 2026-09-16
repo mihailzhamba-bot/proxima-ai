@@ -309,8 +309,7 @@ def main():
         subprocess.run(['docker', 'rm', '--force', name], timeout=10,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                        check=False)
-    print(json.dumps({'sha': head, 'status': 'pass', 'skipped': 0,
-                      'worker_prompt': worker_prompt()}))
+    print(json.dumps({'sha': head, 'status': 'pass', 'skipped': 0}))
 
 
 if __name__ == '__main__':
