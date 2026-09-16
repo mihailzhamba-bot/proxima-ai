@@ -477,5 +477,5 @@ def test_adaptive_oversize_broker_fallback_blocks_before_intent(setup, monkeypat
         clock=lambda: datetime(2026, 9, 13, tzinfo=timezone.utc),
         tariff_check=allowed, key_reader=lambda _: 'glm')
     assert result['status'] == 'blocked'
-    assert result['reason'] == 'broker_request_too_large'
+    assert result['reason'] == 'invalid_broker_prompt'
     assert not (state / 'journal.jsonl').exists()

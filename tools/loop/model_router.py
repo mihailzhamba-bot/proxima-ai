@@ -14,9 +14,11 @@ import urllib.error
 import urllib.request
 
 try:
-    from .openai_no_tools import MODELS as BROKER_MODELS
+    from .openai_no_tools import (MAX_PROMPT_CHARS, MAX_SYSTEM_CHARS,
+                                  MODELS as BROKER_MODELS)
 except ImportError:
-    from openai_no_tools import MODELS as BROKER_MODELS
+    from openai_no_tools import (MAX_PROMPT_CHARS, MAX_SYSTEM_CHARS,
+                                 MODELS as BROKER_MODELS)
 
 GLM_MODEL = 'glm-5.3-flash'
 GLM_PROVIDER = 'z.ai'
@@ -31,7 +33,7 @@ BROKER_URLS = {'http://127.0.0.1:18772/v1/infer',
                'http://127.0.0.1:18773/v1/infer'}
 POLICIES = {'glm_only', 'adaptive'}
 MAX_RESPONSE = 100_000
-MAX_BROKER_REQUEST = 160_000
+MAX_BROKER_REQUEST = 128 * 1024
 MAX_TIMEOUT = 125
 BROKER_COOLDOWN = 15
 
@@ -210,8 +212,11 @@ def _messages(payload):
 
 
 def broker_request_wire(system, prompt, route):
-    if type(system) is not str or type(prompt) is not str:
-        raise RouterError('invalid_router_payload')
+    if (type(prompt) is not str or not prompt
+            or len(prompt) > MAX_PROMPT_CHARS):
+        raise RouterError('invalid_broker_prompt')
+    if type(system) is not str or len(system) > MAX_SYSTEM_CHARS:
+        raise RouterError('invalid_broker_system')
     body = {'prompt': prompt, 'system': system, 'model': route['model'],
             'reasoning_effort': route['reasoning_effort']}
     wire = json.dumps(body, ensure_ascii=False,
@@ -349,6 +354,9 @@ def routed_transport(payload, glm_key, timeout, config, purpose,
             on_route(fallback)
         token = openai_token or read_broker_token(config['openai_token_file'])
         system, prompt = _messages(payload)
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise RouterError('router_timeout')
         return broker_transport(system, prompt, fallback, config['openai_url'],
                                 token, min(remaining, MAX_TIMEOUT),
                                 opener=opener, clock=clock)

@@ -220,8 +220,8 @@ def test_broker_wire_limit_blocks_before_http():
     assert calls == []
 
 
-def test_fallback_uses_only_remaining_deadline():
-    moments = iter([0, 0, 100])
+def test_fallback_recomputes_remaining_after_route_and_token_work():
+    moments = iter([0, 0, 100, 110])
     received = []
     class TimedOpener(Opener):
         def open(self, request, **kwargs):
@@ -236,7 +236,7 @@ def test_fallback_uses_only_remaining_deadline():
     router.routed_transport(payload, 'glm', 120, config(), 'research',
         glm_send=glm, openai_token='openai', opener=TimedOpener(value),
         tariff_check=offpeak, monotonic=lambda: next(moments))
-    assert received == [20]
+    assert received == [10]
 
 
 def test_expired_deadline_never_starts_fallback():
@@ -255,3 +255,28 @@ def test_expired_deadline_never_starts_fallback():
             on_route=lambda selected: routes.append(selected['provider']))
     assert routes == ['z.ai']
     assert broker_calls == []
+
+
+def test_wrapper_prompt_char_limit_blocks_before_http():
+    calls = []
+    class Never:
+        def open(self, *_args, **_kwargs):
+            calls.append(1)
+    with pytest.raises(router.RouterError, match='invalid_broker_prompt'):
+        router.broker_transport('s', 'a' * 100_001,
+            route('gpt-5.6-sol', 'medium'),
+            'http://127.0.0.1:18772/v1/infer', 'key', 120, opener=Never())
+    assert calls == []
+
+
+def test_broker_128k_limit_blocks_multibyte_body_before_http():
+    calls = []
+    class Never:
+        def open(self, *_args, **_kwargs):
+            calls.append(1)
+    # Character count is valid, but encoded broker body exceeds 128 KiB.
+    with pytest.raises(router.RouterError, match='broker_request_too_large'):
+        router.broker_transport('s', 'я' * 66_000,
+            route('gpt-5.6-sol', 'medium'),
+            'http://127.0.0.1:18772/v1/infer', 'key', 120, opener=Never())
+    assert calls == []
