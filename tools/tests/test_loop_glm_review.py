@@ -345,8 +345,48 @@ def test_production_retry_rechecks_tariff_before_each_http(candidate, tmp_path, 
         reviewer.review(config(), *candidate, tmp_path / 'evidence',
                         key_reader=lambda _: 'fixture-key')
     assert len(opens) == 2
-    assert len(checks) == 3
+    assert len(checks) == 4
     assert all(0 < seconds <= 120 for seconds in checks)
+
+
+def test_production_review_rechecks_after_payload_before_key(candidate, tmp_path, monkeypatch):
+    checks = []
+    key_reads = []
+    def cross_boundary(seconds=120):
+        checks.append(seconds)
+        if len(checks) == 2:
+            raise reviewer.TariffDeferred('weekday_peak', 1_800_000_000)
+    monkeypatch.setattr(reviewer, 'require_offpeak', cross_boundary)
+    with pytest.raises(reviewer.TariffDeferred, match='weekday_peak'):
+        reviewer.review(config(), *candidate, tmp_path / 'evidence',
+                        key_reader=lambda _: key_reads.append('key'))
+    assert len(checks) == 2
+    assert key_reads == []
+
+
+def test_transport_deferred_propagates_without_http_or_retry(candidate, tmp_path, monkeypatch):
+    checks = []
+    opens = []
+    key_reads = []
+    def cross_boundary(seconds=120):
+        checks.append(seconds)
+        if len(checks) == 3:
+            raise reviewer.TariffDeferred('weekday_peak', 1_800_000_000)
+    class Opener:
+        def open(self, *_args, **_kwargs):
+            opens.append('http')
+            raise AssertionError('HTTP must not run')
+    monkeypatch.setattr(reviewer, 'require_offpeak', cross_boundary)
+    monkeypatch.setattr(reviewer.urllib.request, 'build_opener', lambda *_: Opener())
+    def read_key(_path):
+        key_reads.append('key')
+        return 'fixture-key'
+    with pytest.raises(reviewer.TariffDeferred, match='weekday_peak') as caught:
+        reviewer.review(config(), *candidate, tmp_path / 'evidence', key_reader=read_key)
+    assert caught.value.resume_at == 1_800_000_000
+    assert len(checks) == 3
+    assert key_reads == ['key']
+    assert opens == []
 
 
 def test_production_review_peak_blocks_before_key_reader(candidate, tmp_path, monkeypatch):
