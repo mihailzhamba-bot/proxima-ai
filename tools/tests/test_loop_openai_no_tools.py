@@ -1,7 +1,9 @@
 import io
 import json
 from pathlib import Path
+import subprocess
 import sys
+import time
 
 import pytest
 
@@ -210,15 +212,77 @@ def test_usage_only_contains_bounded_numeric_fields():
     assert runner._usage(result) == {'reasoning_tokens': 7, 'prompt_tokens': 3.5}
 
 
-def test_timeout_handler_attempts_cleanup_then_exits_124(monkeypatch):
+def test_timeout_handler_exits_immediately_without_cleanup(monkeypatch):
     agent = FakeAgent(**{'provider': 'openai-codex', 'enabled_toolsets': []})
     runner._ACTIVE_AGENT = agent
     codes = []
     monkeypatch.setattr(runner.os, '_exit', lambda code: codes.append(code))
     runner._timeout_handler(None, None)
-    assert agent.closed is True
+    assert agent.closed is False
     assert codes == [124]
     runner._ACTIVE_AGENT = None
+
+
+def test_blocking_close_cannot_extend_hard_alarm():
+    root = Path(__file__).resolve().parents[2]
+    code = r"""
+import io
+import json
+import time
+from tools.loop import openai_no_tools as runner
+
+runner.HARD_TIMEOUT_SECONDS = 0.1
+
+def resolver(_provider, _model):
+    return {
+        'provider': 'openai-codex',
+        'api_key': 'fixture',
+        'base_url': 'https://fixture.invalid',
+        'api_mode': None,
+        'command': None,
+        'args': [],
+        'credential_pool': None,
+    }
+
+class Agent:
+    def __init__(self, **kwargs):
+        self.provider = kwargs['provider']
+        self.enabled_toolsets = []
+        self.tools = []
+        self.valid_tool_names = set()
+        self._memory_manager = None
+        self.memory_manager = None
+    def run_conversation(self, *_args, **_kwargs):
+        return {'completed': True, 'final_response': 'done'}
+    def close(self):
+        time.sleep(10)
+
+payload = json.dumps({
+    'prompt': 'test',
+    'system': '',
+    'model': 'gpt-5.6-luna',
+    'reasoning_effort': 'low',
+}).encode()
+runner.main(
+    input_stream=io.BytesIO(payload),
+    output_stream=io.StringIO(),
+    resolver=resolver,
+    agent_cls=Agent,
+    use_alarm=True,
+)
+"""
+    started = time.monotonic()
+    process = subprocess.run(
+        [sys.executable, '-c', code],
+        cwd=root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=2,
+    )
+    assert process.returncode == 124
+    assert time.monotonic() - started < 1.5
+    assert process.stdout == b''
+    assert process.stderr == b''
 
 
 def test_alarm_remains_armed_through_close_then_disarms(monkeypatch):

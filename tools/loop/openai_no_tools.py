@@ -184,10 +184,9 @@ def _close_agent(agent):
 
 
 def _timeout_handler(_signum, _frame):
-    try:
-        _close_agent(_ACTIVE_AGENT)
-    finally:
-        os._exit(124)
+    # A hard deadline cannot depend on provider/client cleanup completing.
+    # Normal completion closes the agent in main() while this alarm is armed.
+    os._exit(124)
 
 
 def _encode_output(payload):
