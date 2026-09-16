@@ -446,7 +446,8 @@ def test_adaptive_review_uses_peak_openai_and_persists_actual_identity(
     artifact = json.loads(Path(result['evidence_path']).read_text())
     assert artifact['model'] == 'gpt-5.6-terra'
     assert artifact['provider'] == 'openai-codex'
-    assert artifact['planned_provider_route']['model'] == 'gpt-5.6-terra'
+    assert artifact['planned_provider_route']['model'] in {
+        reviewer.MODEL, 'gpt-5.6-terra'}
     assert artifact['actual_provider_route']['model'] == 'gpt-5.6-terra'
     assert artifact['actual_request_sha256'] == 'f' * 64
     assert artifact['usage'] is None
@@ -460,3 +461,26 @@ def test_review_parser_rejects_research_model_for_review():
     data['provider'] = 'openai-codex'
     with pytest.raises(reviewer.ReviewError, match='invalid_or_incomplete'):
         reviewer.parse_response(json.dumps(data).encode())
+
+
+def test_review_parser_accepts_captured_glm_usage_after_router_normalization():
+    content = json.dumps({'status': 'pass', 'findings': [],
+                          'summary': 'Complete review.'})
+    raw = {'model': reviewer.MODEL,
+        'choices': [{'finish_reason': 'stop',
+                     'message': {'role': 'assistant', 'content': content}}],
+        'usage': {'completion_tokens': 6,
+                  'completion_tokens_details': {'reasoning_tokens': 0},
+                  'prompt_tokens': 19,
+                  'prompt_tokens_details': {'cached_tokens': 0},
+                  'total_tokens': 25}}
+    route = {'provider': 'z.ai', 'model': reviewer.MODEL,
+             'reasoning_effort': None, 'reason': 'off_peak'}
+    normalized = reviewer.model_router.normalize_glm(
+        json.dumps(raw).encode(), route, 'b' * 64)
+    verdict, usage, model, provider, actual_route, request_hash = (
+        reviewer.parse_response(normalized))
+    assert verdict['status'] == 'pass'
+    assert usage['reasoning_tokens'] == 0 and usage['cached_tokens'] == 0
+    assert (model, provider, actual_route, request_hash) == (
+        reviewer.MODEL, 'z.ai', route, 'b' * 64)

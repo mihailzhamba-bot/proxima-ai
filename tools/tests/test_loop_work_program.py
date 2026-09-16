@@ -477,5 +477,27 @@ def test_adaptive_oversize_broker_fallback_blocks_before_intent(setup, monkeypat
         clock=lambda: datetime(2026, 9, 13, tzinfo=timezone.utc),
         tariff_check=allowed, key_reader=lambda _: 'glm')
     assert result['status'] == 'blocked'
-    assert result['reason'] == 'invalid_broker_prompt'
+    assert result['reason'] == 'invalid_broker_request'
     assert not (state / 'journal.jsonl').exists()
+
+
+def test_research_parser_accepts_captured_glm_usage_after_router_normalization():
+    content = json.dumps({'summary': 'ok', 'findings': [], 'next_steps': []})
+    raw = {'model': program.MODEL,
+        'choices': [{'finish_reason': 'stop',
+                     'message': {'role': 'assistant', 'content': content}}],
+        'usage': {'completion_tokens': 6,
+                  'completion_tokens_details': {'reasoning_tokens': 0},
+                  'prompt_tokens': 19,
+                  'prompt_tokens_details': {'cached_tokens': 0},
+                  'total_tokens': 25}}
+    route = {'provider': 'z.ai', 'model': program.MODEL,
+             'reasoning_effort': None, 'reason': 'off_peak'}
+    normalized = program.model_router.normalize_glm(
+        json.dumps(raw).encode(), route, 'a' * 64)
+    verdict, usage, model, provider, actual_route, request_hash = (
+        program.parse_response(normalized))
+    assert verdict['summary'] == 'ok'
+    assert usage['reasoning_tokens'] == 0 and usage['cached_tokens'] == 0
+    assert (model, provider, actual_route, request_hash) == (
+        program.MODEL, 'z.ai', route, 'a' * 64)

@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.loop import model_router as router
-from tools.loop import openai_no_tools
+from tools.loop import openai_broker, openai_no_tools
 
 
 def config(policy='adaptive'):
@@ -201,7 +201,7 @@ def test_broker_utf8_wire_is_not_ascii_tripled():
         route('gpt-5.6-sol', 'medium'),
         'http://127.0.0.1:18772/v1/infer', 'key', 120, opener=opener)
     wire = opener.requests[0].data
-    assert len(wire) < router.MAX_BROKER_REQUEST
+    assert len(wire) < openai_broker.MAX_REQUEST_BYTES
     assert b'\\u' not in wire
     normalized = json.loads(raw)
     assert normalized['actual_request_sha256']
@@ -213,7 +213,7 @@ def test_broker_wire_limit_blocks_before_http():
     class Never:
         def open(self, *_args, **_kwargs):
             calls.append(1)
-    with pytest.raises(router.RouterError, match='broker_request_too_large'):
+    with pytest.raises(router.RouterError, match='invalid_broker_request'):
         router.broker_transport('s', 'я' * 80_000,
             route('gpt-5.6-sol', 'medium'),
             'http://127.0.0.1:18772/v1/infer', 'key', 120, opener=Never())
@@ -262,7 +262,7 @@ def test_wrapper_prompt_char_limit_blocks_before_http():
     class Never:
         def open(self, *_args, **_kwargs):
             calls.append(1)
-    with pytest.raises(router.RouterError, match='invalid_broker_prompt'):
+    with pytest.raises(router.RouterError, match='invalid_broker_request'):
         router.broker_transport('s', 'a' * 100_001,
             route('gpt-5.6-sol', 'medium'),
             'http://127.0.0.1:18772/v1/infer', 'key', 120, opener=Never())
@@ -275,8 +275,64 @@ def test_broker_128k_limit_blocks_multibyte_body_before_http():
         def open(self, *_args, **_kwargs):
             calls.append(1)
     # Character count is valid, but encoded broker body exceeds 128 KiB.
-    with pytest.raises(router.RouterError, match='broker_request_too_large'):
+    with pytest.raises(router.RouterError, match='invalid_broker_request'):
         router.broker_transport('s', 'я' * 66_000,
             route('gpt-5.6-sol', 'medium'),
             'http://127.0.0.1:18772/v1/infer', 'key', 120, opener=Never())
     assert calls == []
+
+
+def test_router_preflight_reuses_broker_and_wrapper_validators():
+    selected = route('gpt-5.6-sol', 'medium')
+    wire = router.broker_request_wire('system', 'я' * 50_000, selected)
+    body = json.loads(wire)
+    assert openai_broker.validate_request(body) == body
+    assert openai_no_tools.parse_request(wire) == body
+
+
+def test_broker_system_utf8_byte_limit_blocks_emoji_before_http():
+    calls = []
+    class Never:
+        def open(self, *_args, **_kwargs):
+            calls.append(1)
+    # 9,000 emoji are 36 KB: under wrapper char limit, over broker 32 KiB.
+    with pytest.raises(router.RouterError, match='invalid_broker_request'):
+        router.broker_transport('😀' * 9_000, 'prompt',
+            route('gpt-5.6-sol', 'medium'),
+            'http://127.0.0.1:18772/v1/infer', 'key', 120, opener=Never())
+    assert calls == []
+
+
+def captured_glm_response(content='{}'):
+    return json.dumps({'model': router.GLM_MODEL,
+        'choices': [{'finish_reason': 'stop',
+                     'message': {'role': 'assistant', 'content': content}}],
+        'usage': {'completion_tokens': 6,
+                  'completion_tokens_details': {'reasoning_tokens': 0},
+                  'prompt_tokens': 19,
+                  'prompt_tokens_details': {'cached_tokens': 0},
+                  'total_tokens': 25}}).encode()
+
+
+def test_glm_captured_usage_schema_normalizes_to_flat_numeric_counters():
+    selected = {'provider': 'z.ai', 'model': router.GLM_MODEL,
+                'reasoning_effort': None, 'reason': 'off_peak'}
+    value = json.loads(router.normalize_glm(
+        captured_glm_response(), selected, 'a' * 64))
+    assert value['usage'] == {'prompt_tokens': 19, 'completion_tokens': 6,
+                              'total_tokens': 25, 'cached_tokens': 0,
+                              'reasoning_tokens': 0}
+
+
+@pytest.mark.parametrize('details', [
+    {'reasoning_tokens': True},
+    {'reasoning_tokens': -1},
+    {'unknown_counter': 1},
+])
+def test_glm_nested_usage_rejects_bool_negative_and_unknown(details):
+    raw = json.loads(captured_glm_response())
+    raw['usage']['completion_tokens_details'] = details
+    selected = {'provider': 'z.ai', 'model': router.GLM_MODEL,
+                'reasoning_effort': None, 'reason': 'off_peak'}
+    with pytest.raises(router.RouterError, match='invalid_glm'):
+        router.normalize_glm(json.dumps(raw).encode(), selected, 'a' * 64)

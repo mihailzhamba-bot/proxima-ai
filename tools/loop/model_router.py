@@ -14,11 +14,12 @@ import urllib.error
 import urllib.request
 
 try:
-    from .openai_no_tools import (MAX_PROMPT_CHARS, MAX_SYSTEM_CHARS,
-                                  MODELS as BROKER_MODELS)
+    from . import openai_broker, openai_no_tools
 except ImportError:
-    from openai_no_tools import (MAX_PROMPT_CHARS, MAX_SYSTEM_CHARS,
-                                 MODELS as BROKER_MODELS)
+    import openai_broker
+    import openai_no_tools
+
+BROKER_MODELS = openai_no_tools.MODELS
 
 GLM_MODEL = 'glm-5.3-flash'
 GLM_PROVIDER = 'z.ai'
@@ -33,7 +34,6 @@ BROKER_URLS = {'http://127.0.0.1:18772/v1/infer',
                'http://127.0.0.1:18773/v1/infer'}
 POLICIES = {'glm_only', 'adaptive'}
 MAX_RESPONSE = 100_000
-MAX_BROKER_REQUEST = 128 * 1024
 MAX_TIMEOUT = 125
 BROKER_COOLDOWN = 15
 
@@ -183,12 +183,48 @@ def _normalized(model, provider, response, usage, route, request_sha256):
         'usage': usage}, ensure_ascii=False).encode('utf-8')
 
 
+def _numeric_counter(value):
+    return (type(value) is int and not isinstance(value, bool) and value >= 0)
+
+
+def normalize_glm_usage(usage):
+    if type(usage) is not dict or len(usage) > 16:
+        raise RouterError('invalid_glm_usage')
+    required = {'prompt_tokens', 'completion_tokens', 'total_tokens'}
+    details = {'prompt_tokens_details', 'completion_tokens_details'}
+    if not required <= set(usage) or set(usage) - required - details:
+        raise RouterError('invalid_glm_usage')
+    flat = {}
+    for key in required:
+        if not _numeric_counter(usage[key]):
+            raise RouterError('invalid_glm_usage')
+        flat[key] = usage[key]
+    schemas = {
+        'prompt_tokens_details': {'cached_tokens': 'cached_tokens'},
+        'completion_tokens_details': {'reasoning_tokens': 'reasoning_tokens'},
+    }
+    for container, fields in schemas.items():
+        value = usage.get(container)
+        if value is None:
+            continue
+        if type(value) is not dict or set(value) - set(fields):
+            raise RouterError('invalid_glm_usage')
+        for source, destination in fields.items():
+            if source in value:
+                counter = value[source]
+                if not _numeric_counter(counter):
+                    raise RouterError('invalid_glm_usage')
+                flat[destination] = counter
+    return flat
+
+
 def normalize_glm(raw, route, request_sha256):
     try:
         value = strict_json(raw)
         if type(value) is not dict or value.get('model') != GLM_MODEL:
             raise ValueError()
         value = dict(value)
+        value['usage'] = normalize_glm_usage(value.get('usage'))
         value['provider'] = GLM_PROVIDER
         value['provider_route'] = route
         value['actual_request_sha256'] = request_sha256
@@ -212,18 +248,20 @@ def _messages(payload):
 
 
 def broker_request_wire(system, prompt, route):
-    if (type(prompt) is not str or not prompt
-            or len(prompt) > MAX_PROMPT_CHARS):
-        raise RouterError('invalid_broker_prompt')
-    if type(system) is not str or len(system) > MAX_SYSTEM_CHARS:
-        raise RouterError('invalid_broker_system')
     body = {'prompt': prompt, 'system': system, 'model': route['model'],
             'reasoning_effort': route['reasoning_effort']}
-    wire = json.dumps(body, ensure_ascii=False,
-                      separators=(',', ':')).encode('utf-8')
-    if len(wire) > MAX_BROKER_REQUEST:
-        raise RouterError('broker_request_too_large')
-    return wire
+    try:
+        validated = openai_broker.validate_request(body)
+        wire = json.dumps(validated, ensure_ascii=False,
+                          separators=(',', ':')).encode('utf-8')
+        # The exact inner wrapper validates schema, character counts and its
+        # total stdin bound. Both validators are pure: no secrets or I/O.
+        openai_no_tools.parse_request(wire)
+        if len(wire) > openai_broker.MAX_REQUEST_BYTES:
+            raise ValueError()
+        return wire
+    except Exception:
+        raise RouterError('invalid_broker_request') from None
 
 
 def validate_broker_payload(payload, route):
