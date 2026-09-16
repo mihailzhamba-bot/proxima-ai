@@ -35,7 +35,7 @@ RETRY_AFTER_SECONDS = 15
 ALLOWED_MODELS = frozenset({
     "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-6-astra",
 })
-ALLOWED_EFFORTS = frozenset({"LOW", "MEDIUM", "HIGH"})
+ALLOWED_EFFORTS = frozenset({"low", "medium", "high"})
 DOCKER_ARGV = [
     "docker", "exec", "--user", "10000:10000", "-i", "loop-control-hermes-1",
     "python3", "/var/lib/loop/hermes/hooks/loop-native/openai_no_tools.py",
@@ -177,7 +177,7 @@ def validate_request(value: Any) -> dict[str, str]:
     if model not in ALLOWED_MODELS or effort not in ALLOWED_EFFORTS:
         raise RequestError("invalid_request")
     return {"prompt": prompt, "system": system, "model": model,
-            "reasoning_effort": effort.lower()}
+            "reasoning_effort": effort}
 
 
 def validate_cli_response(value: Any, expected_model: str) -> dict[str, Any]:

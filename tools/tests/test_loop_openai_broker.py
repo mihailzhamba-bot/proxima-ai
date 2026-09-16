@@ -11,7 +11,9 @@ import urllib.request
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from tools.loop import model_router
 from tools.loop import openai_broker as broker
+from tools.loop import openai_no_tools
 
 TOKEN = "t" * 32
 
@@ -49,7 +51,7 @@ def running_server():
 
 def valid_request(**changes):
     value = {"prompt": "Do the bounded task.", "system": "No tools.",
-             "model": "gpt-5.6-sol", "reasoning_effort": "MEDIUM"}
+             "model": "gpt-5.6-sol", "reasoning_effort": "medium"}
     value.update(changes)
     return value
 
@@ -76,14 +78,40 @@ def test_auth_required_and_never_calls_model(running_server):
 
 
 @pytest.mark.parametrize("change", [
-    {"model": "gpt-6-astra-ultra"}, {"reasoning_effort": "high"},
-    {"reasoning_effort": "ULTRA"}, {"prompt": ""}, {"extra": "field"},
+    {"model": "gpt-6-astra-ultra"}, {"reasoning_effort": "MEDIUM"},
+    {"reasoning_effort": "ultra"}, {"prompt": ""}, {"extra": "field"},
 ])
 def test_strict_request_schema_rejects_before_runner(running_server, change):
     server, calls = running_server
     status, _headers, value = request(server, "POST", "/v1/infer", valid_request(**change))
     assert status == 400 and value == {"error": "invalid_request"}
     assert calls == []
+
+
+def test_real_router_wire_payload_passes_broker_and_wrapper_validation():
+    captured = []
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def read(self, _limit):
+            return json.dumps({"ok": True, "completed": True, "response": "answer",
+                "model": "gpt-5.6-sol", "provider": "openai-codex", "usage": {}}).encode()
+    class Opener:
+        def open(self, request, timeout):
+            captured.append((json.loads(request.data), timeout))
+            return Response()
+    route = model_router.select_route({"provider_policy": "adaptive",
+        "openai_url": "http://127.0.0.1:18772/v1/infer",
+        "openai_token_file": "/fixture/token"}, "research", "standard",
+        tariff_check=lambda **_kwargs: {"allowed": False, "reason": "weekday_peak",
+                                        "resume_at": 1})
+    model_router.broker_transport("system", "prompt", route,
+        "http://127.0.0.1:18772/v1/infer", TOKEN, 1, opener=Opener())
+    wire, timeout = captured[0]
+    assert timeout == 1 and wire["reasoning_effort"] == "medium"
+    assert broker.validate_request(wire) == wire
+    encoded = json.dumps(wire, separators=(",", ":")).encode()
+    assert openai_no_tools.parse_request(encoded) == wire
 
 
 def test_duplicate_json_keys_chunked_invalid_length_and_methods(running_server):
