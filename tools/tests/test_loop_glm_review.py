@@ -429,7 +429,7 @@ def test_adaptive_review_uses_peak_openai_and_persists_actual_identity(
     def routed(payload, glm_key, timeout, route_config, purpose, **kwargs):
         calls.append((payload, glm_key, timeout, route_config, purpose, kwargs))
         data = json.loads(response())
-        data['model'] = 'gpt5.6terra'
+        data['model'] = 'gpt-5.6-terra'
         data['provider'] = 'openai-codex'
         data['usage'] = None
         verdict = json.loads(data['choices'][0]['message']['content'])
@@ -440,7 +440,7 @@ def test_adaptive_review_uses_peak_openai_and_persists_actual_identity(
     result = reviewer.review(settings, *candidate, tmp_path / 'evidence',
                              key_reader=lambda _: 'glm-fixture')
     artifact = json.loads(Path(result['evidence_path']).read_text())
-    assert artifact['model'] == 'gpt5.6terra'
+    assert artifact['model'] == 'gpt-5.6-terra'
     assert artifact['provider'] == 'openai-codex'
     assert artifact['usage'] is None
     assert artifact['verdict']['summary'] == '[redacted]'
@@ -449,7 +449,7 @@ def test_adaptive_review_uses_peak_openai_and_persists_actual_identity(
 
 def test_review_parser_rejects_research_model_for_review():
     data = json.loads(response())
-    data['model'] = 'gpt5.6sol'
+    data['model'] = 'gpt-5.6-sol'
     data['provider'] = 'openai-codex'
     with pytest.raises(reviewer.ReviewError, match='invalid_or_incomplete'):
         reviewer.parse_response(json.dumps(data).encode())

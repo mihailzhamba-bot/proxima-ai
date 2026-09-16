@@ -489,8 +489,8 @@ def test_review_failure_keeps_only_sanitized_reason(tmp_path):
 
 @pytest.mark.parametrize('model,provider,accepted', [
     ('glm-5.3-flash', 'z.ai', True),
-    ('gpt5.6terra', 'openai-codex', True),
-    ('gpt5.6sol', 'openai-codex', False),
+    ('gpt-5.6-terra', 'openai-codex', True),
+    ('gpt-5.6-sol', 'openai-codex', False),
     ('glm-5.3-flash', None, False),
 ])
 def test_review_stage_router_identity_allowlist(tmp_path, monkeypatch,

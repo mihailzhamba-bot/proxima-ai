@@ -8,6 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.loop import model_router as router
+from tools.loop import openai_no_tools
 
 
 def config(policy='adaptive'):
@@ -27,10 +28,10 @@ def offpeak(**_):
 
 
 @pytest.mark.parametrize('purpose,complexity,model,effort', [
-    ('research', 'small', 'gpt5.6luna', 'low'),
-    ('research', 'standard', 'gpt5.6sol', 'medium'),
-    ('research', 'complex', 'gpt5.6sol', 'high'),
-    ('review', 'standard', 'gpt5.6terra', 'medium'),
+    ('research', 'small', 'gpt-5.6-luna', 'low'),
+    ('research', 'standard', 'gpt-5.6-sol', 'medium'),
+    ('research', 'complex', 'gpt-5.6-sol', 'high'),
+    ('review', 'standard', 'gpt-5.6-terra', 'medium'),
 ])
 def test_peak_routes_to_fixed_openai_models(purpose, complexity, model, effort):
     route = router.select_route(config(), purpose, complexity, tariff_check=peak)
@@ -77,7 +78,7 @@ class Opener:
         return Response(self.value)
 
 
-def route(model='gpt5.6sol', effort='medium'):
+def route(model='gpt-5.6-sol', effort='medium'):
     return {'provider': 'openai-codex', 'model': model,
             'reasoning_effort': effort, 'reason': 'fixture'}
 
@@ -85,23 +86,23 @@ def route(model='gpt5.6sol', effort='medium'):
 def test_broker_normalizes_actual_identity_and_usage():
     verdict = '{"summary":"ok","findings":[],"next_steps":[]}'
     value = {'ok': True, 'completed': True, 'response': verdict,
-             'model': 'gpt5.6sol', 'provider': 'openai-codex',
+             'model': 'gpt-5.6-sol', 'provider': 'openai-codex',
              'usage': {'prompt_tokens': 8, 'completion_tokens': 3, 'total_tokens': 11}}
     opener = Opener(value)
     raw = router.broker_transport('system', 'prompt', route(),
         'http://127.0.0.1:18772/v1/infer', 'fixture-key', 120, opener=opener)
     normalized = json.loads(raw)
-    assert normalized['model'] == 'gpt5.6sol'
+    assert normalized['model'] == 'gpt-5.6-sol'
     assert normalized['provider'] == 'openai-codex'
     assert normalized['usage']['total_tokens'] == 11
     sent = json.loads(opener.requests[0].data)
     assert sent == {'prompt': 'prompt', 'system': 'system',
-                    'model': 'gpt5.6sol', 'reasoning_effort': 'medium'}
+                    'model': 'gpt-5.6-sol', 'reasoning_effort': 'medium'}
     assert 'fixture-key' not in json.dumps(sent)
 
 
 def test_unknown_usage_remains_null():
-    value = {'ok': True, 'response': '{}', 'model': 'gpt5.6sol',
+    value = {'ok': True, 'response': '{}', 'model': 'gpt-5.6-sol',
              'provider': 'openai-codex', 'usage': None}
     raw = router.broker_transport('s', 'p', route(),
         'http://127.0.0.1:18772/v1/infer', 'key', 120, opener=Opener(value))
@@ -110,9 +111,9 @@ def test_unknown_usage_remains_null():
 
 @pytest.mark.parametrize('edit', ['model', 'provider', 'ok', 'usage', 'extra'])
 def test_broker_reply_fails_closed(edit):
-    value = {'ok': True, 'response': '{}', 'model': 'gpt5.6sol',
+    value = {'ok': True, 'response': '{}', 'model': 'gpt-5.6-sol',
              'provider': 'openai-codex', 'usage': {}}
-    if edit == 'model': value['model'] = 'gpt5.6terra'
+    if edit == 'model': value['model'] = 'gpt-5.6-terra'
     elif edit == 'provider': value['provider'] = 'other'
     elif edit == 'ok': value['ok'] = False
     elif edit == 'usage': value['usage'] = {'total_tokens': -1}
@@ -136,21 +137,23 @@ def test_glm_429_falls_back_once_to_openai():
     def glm(*_):
         calls.append('glm')
         raise urllib.error.HTTPError('fixture', 429, 'rate', {}, None)
-    value = {'ok': True, 'response': '{}', 'model': 'gpt5.6sol',
+    value = {'ok': True, 'response': '{}', 'model': 'gpt-5.6-sol',
              'provider': 'openai-codex', 'usage': None}
     payload = {'messages': [{'role': 'system', 'content': 's'},
                             {'role': 'user', 'content': 'p'}]}
+    routes = []
     raw = router.routed_transport(payload, 'glm-key', 120, config(), 'research',
         glm_send=glm, openai_token='openai-key', opener=Opener(value),
-        tariff_check=offpeak)
+        tariff_check=offpeak, on_route=lambda selected: routes.append(selected))
     assert calls == ['glm']
+    assert [item['provider'] for item in routes] == ['z.ai', 'openai-codex']
     assert json.loads(raw)['provider'] == 'openai-codex'
 
 
 def test_identity_allowlist_separates_review_from_research():
-    assert router.identity_allowed('gpt5.6terra', 'openai-codex', 'review')
-    assert not router.identity_allowed('gpt5.6sol', 'openai-codex', 'review')
-    assert router.identity_allowed('gpt5.6sol', 'openai-codex', 'research')
+    assert router.identity_allowed('gpt-5.6-terra', 'openai-codex', 'review')
+    assert not router.identity_allowed('gpt-5.6-sol', 'openai-codex', 'review')
+    assert router.identity_allowed('gpt-5.6-sol', 'openai-codex', 'research')
     assert not router.identity_allowed('gpt-5.5', 'openai-codex', 'research')
 
 
@@ -159,7 +162,7 @@ def test_tariff_boundary_deferral_falls_back_in_adaptive_mode():
         pass
     def glm(*_):
         raise TariffDeferred('boundary')
-    value = {'ok': True, 'response': '{}', 'model': 'gpt5.6sol',
+    value = {'ok': True, 'response': '{}', 'model': 'gpt-5.6-sol',
              'provider': 'openai-codex', 'usage': None}
     payload = {'messages': [{'role': 'system', 'content': 's'},
                             {'role': 'user', 'content': 'p'}]}
@@ -175,9 +178,15 @@ def test_broker_duplicate_json_keys_fail_closed():
             return Response.__new__(Response)
     response = Response.__new__(Response)
     response.value = (b'{"ok":true,"ok":true,"response":"{}",'
-                      b'"model":"gpt5.6sol","provider":"openai-codex","usage":null}')
+                      b'"model":"gpt-5.6-sol","provider":"openai-codex","usage":null}')
     opener = DuplicateOpener()
     opener.open = lambda *_args, **_kwargs: response
     with pytest.raises(router.RouterError):
         router.broker_transport('s', 'p', route(),
             'http://127.0.0.1:18772/v1/infer', 'key', 120, opener=opener)
+
+
+def test_router_models_are_canonical_broker_allowlist_subset():
+    selected = {model for model, _effort in router.OPENAI_MODELS.values()}
+    assert selected == {'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra'}
+    assert selected <= openai_no_tools.MODELS

@@ -316,7 +316,7 @@ def read_journal(root):
                     if len(events) > MAX_JOURNAL_EVENTS:
                         raise ProgramError('journal_too_many_events')
         if any(type(item) is not dict
-               or item.get('event') not in ('intent', 'complete', 'unknown', 'deferred')
+               or item.get('event') not in ('intent', 'complete', 'unknown', 'deferred', 'route')
                or type(item.get('key')) is not str for item in events):
             raise ValueError()
         return events
@@ -505,7 +505,8 @@ def parse_response(raw):
 def _event_index(events):
     index = {}
     for event in events:
-        index[event['key']] = event['event']
+        if event['event'] != 'route':
+            index[event['key']] = event['event']
     return index
 
 
@@ -643,11 +644,17 @@ def run_once(config, *, now=None, send=None, key_reader=None,
             except Exception:
                 return save_state(state_root, 'blocked', 'tariff_preflight_failed', enabled=True)
         if production:
+            def record_route(selected_route):
+                append_journal(state_root, {'schema_version': 1, 'event': 'route',
+                    'key': key, 'task_id': task['id'],
+                    'provider_route': selected_route,
+                    'created_at_utc': datetime.now(timezone.utc).isoformat()})
             def actual_send(request_payload, glm_key, request_timeout):
                 return model_router.routed_transport(
                     request_payload, glm_key, request_timeout, config, 'research',
                     complexity, openai_token=openai_token,
-                    glm_send=glm_review.transport, tariff_check=tariff_check)
+                    glm_send=glm_review.transport, tariff_check=tariff_check,
+                    on_route=record_route)
         else:
             actual_send = send
         reservation_now = clock()

@@ -12,14 +12,19 @@ import time
 import urllib.error
 import urllib.request
 
+try:
+    from .openai_no_tools import MODELS as BROKER_MODELS
+except ImportError:
+    from openai_no_tools import MODELS as BROKER_MODELS
+
 GLM_MODEL = 'glm-5.3-flash'
 GLM_PROVIDER = 'z.ai'
 OPENAI_PROVIDER = 'openai-codex'
 OPENAI_MODELS = {
-    ('research', 'small'): ('gpt5.6luna', 'low'),
-    ('research', 'standard'): ('gpt5.6sol', 'medium'),
-    ('research', 'complex'): ('gpt5.6sol', 'high'),
-    ('review', 'standard'): ('gpt5.6terra', 'medium'),
+    ('research', 'small'): ('gpt-5.6-luna', 'low'),
+    ('research', 'standard'): ('gpt-5.6-sol', 'medium'),
+    ('research', 'complex'): ('gpt-5.6-sol', 'high'),
+    ('review', 'standard'): ('gpt-5.6-terra', 'medium'),
 }
 BROKER_URLS = {'http://127.0.0.1:18772/v1/infer',
                'http://127.0.0.1:18773/v1/infer'}
@@ -27,6 +32,9 @@ POLICIES = {'glm_only', 'adaptive'}
 MAX_RESPONSE = 100_000
 MAX_TIMEOUT = 125
 BROKER_COOLDOWN = 15
+
+if not {model for model, _effort in OPENAI_MODELS.values()} <= BROKER_MODELS:
+    raise RuntimeError('router_model_not_supported_by_broker')
 
 
 class RouterError(ValueError):
@@ -254,10 +262,12 @@ def broker_transport(system, prompt, route, url, token, timeout, *,
 def routed_transport(payload, glm_key, timeout, config, purpose,
                      complexity='standard', *, openai_token=None,
                      glm_send=None, opener=None, now=None, clock=time.time,
-                     tariff_check=None):
+                     tariff_check=None, on_route=None):
     route = select_route(config, purpose, complexity, now=now,
                          tariff_check=tariff_check)
     if route['provider'] == OPENAI_PROVIDER:
+        if on_route:
+            on_route(route)
         token = openai_token or read_broker_token(config['openai_token_file'])
         system, prompt = _messages(payload)
         return broker_transport(system, prompt, route, config['openai_url'],
@@ -270,6 +280,8 @@ def routed_transport(payload, glm_key, timeout, config, purpose,
             from glm_review import transport
         glm_send = transport
     try:
+        if on_route:
+            on_route(route)
         return normalize_glm(glm_send(payload, glm_key, timeout))
     except Exception as error:
         policy = config.get('provider_policy', 'glm_only')
@@ -279,6 +291,8 @@ def routed_transport(payload, glm_key, timeout, config, purpose,
             raise
         fallback = select_route(config, purpose, complexity, now=now,
                                 glm_rate_limited=True, tariff_check=tariff_check)
+        if on_route:
+            on_route(fallback)
         token = openai_token or read_broker_token(config['openai_token_file'])
         system, prompt = _messages(payload)
         return broker_transport(system, prompt, fallback, config['openai_url'],

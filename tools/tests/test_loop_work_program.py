@@ -358,7 +358,7 @@ def adaptive_config(base, complexity='standard'):
     return value
 
 
-def routed_research_response(model='gpt5.6sol', usage=None):
+def routed_research_response(model='gpt-5.6-sol', usage=None):
     data = json.loads(response())
     data['model'] = model
     data['provider'] = 'openai-codex'
@@ -388,31 +388,32 @@ def test_adaptive_peak_runs_openai_and_persists_route(setup, monkeypatch):
         key_reader=lambda _: 'glm-fixture')
     assert result['status'] == 'idle' and result['reason'] == 'task_completed'
     artifact = json.loads(Path(result['evidence_path']).read_text())
-    assert artifact['model'] == 'gpt5.6sol'
+    assert artifact['model'] == 'gpt-5.6-sol'
     assert artifact['provider'] == 'openai-codex'
     assert artifact['usage'] is None
     assert artifact['verdict']['summary'] == '[redacted]'
     intent = json.loads((state / 'journal.jsonl').read_text().splitlines()[0])
-    assert intent['provider_route']['model'] == 'gpt5.6sol'
+    assert intent['provider_route']['model'] == 'gpt-5.6-sol'
     assert calls[0][0:2] == ('research', 'standard')
 
 
 def test_adaptive_broker_busy_is_deferred_then_retryable(setup, monkeypatch):
     base, _repo, state, _evidence = setup
     settings = adaptive_config(base, 'small')
-    route = {'provider': 'openai-codex', 'model': 'gpt5.6luna',
+    route = {'provider': 'openai-codex', 'model': 'gpt-5.6-luna',
              'reasoning_effort': 'low', 'reason': 'glm_peak'}
     current = [datetime(2026, 9, 16, 7, tzinfo=timezone.utc)]
     resume_at = int(current[0].timestamp()) + 15
     calls = []
     monkeypatch.setattr(program.model_router, 'read_broker_token',
                         lambda _path: 'openai-fixture')
-    def routed(*_args, **_kwargs):
+    def routed(*_args, **kwargs):
         calls.append(1)
+        kwargs['on_route'](route)
         if len(calls) == 1:
             raise program.model_router.RouterDeferred(
                 'openai_broker_busy', resume_at, route)
-        return routed_research_response('gpt5.6luna')
+        return routed_research_response('gpt-5.6-luna')
     monkeypatch.setattr(program.model_router, 'routed_transport', routed)
     def invoke():
         return program.run_once(settings, now=current[0], clock=lambda: current[0],
@@ -429,7 +430,7 @@ def test_adaptive_broker_busy_is_deferred_then_retryable(setup, monkeypatch):
     assert second['reason'] == 'task_completed' and calls == [1, 1]
     events = [json.loads(line)['event']
               for line in (state / 'journal.jsonl').read_text().splitlines()]
-    assert events == ['intent', 'deferred', 'intent', 'complete']
+    assert events == ['intent', 'route', 'deferred', 'intent', 'route', 'complete']
 
 
 def test_adaptive_peak_observe_reports_enabled(setup):
