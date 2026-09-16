@@ -1,0 +1,49 @@
+{
+  "enabled": false,
+  "source_repo": "/srv/loop/source/proxima-ai",
+  "state_root": "/var/lib/loop-work-program",
+  "evidence_root": "/srv/loop/work-program/results",
+  "key_file": "/etc/loop/secrets/glm_program",
+  "max_calls_per_day": 48,
+  "tasks": [
+    {
+      "id": "wb-readiness",
+      "complexity": "standard",
+      "paths": [
+        "services/webapp/src/lib/loop/context.ts"
+      ],
+      "prompt": "Review daily WB data readiness: successful vs failed collection, stale and insufficient states, analyzed Moscow calendar day. Identify only concrete defects supported by cited file and code. Suggest smallest independently testable fixes. Return Russian JSON summary/findings/next_steps."
+    },
+    {
+      "id": "effect-calendar",
+      "complexity": "small",
+      "paths": [
+        "services/webapp/src/lib/loop/service.ts",
+        "services/webapp/src/lib/loop/calendar.ts"
+      ],
+      "prompt": "Review observe effect calendar targeting, missing exact-day facts and idempotency. Distinguish deadline from observation horizon. Cite exact functions and deterministic fixture scenarios. Return Russian JSON summary/findings/next_steps."
+    },
+    {
+      "id": "diagnosis-evidence",
+      "complexity": "standard",
+      "paths": [
+        "services/webapp/src/lib/loop/diagnosis.ts",
+        "services/webapp/src/lib/loop/context.ts"
+      ],
+      "prompt": "Check diagnosis claims against code facts, missing sources, confidence and alternatives. No numeric calculations. Find evidence-backed gaps and bounded implementation tasks. Return Russian JSON summary/findings/next_steps."
+    },
+    {
+      "id": "queue-access",
+      "complexity": "standard",
+      "paths": [
+        "services/webapp/src/lib/loop/access.ts",
+        "services/webapp/src/lib/loop/http.ts",
+        "services/webapp/src/lib/loop/service.ts"
+      ],
+      "prompt": "Read-only adversarial review of tenant and assignee authorization, decision/task atomicity, repeated confirmation and blocker/completion evidence. Cite concrete reachable defects only. Return Russian JSON summary/findings/next_steps."
+    }
+  ],
+  "provider_policy": "adaptive",
+  "openai_url": "http://127.0.0.1:18772/v1/infer",
+  "openai_token_file": "/etc/loop/secrets/openai_broker"
+}
