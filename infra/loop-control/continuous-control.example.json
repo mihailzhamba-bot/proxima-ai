@@ -47,5 +47,35 @@
     "max_polls": 4,
     "timeout_seconds": 10,
     "cursor_file": "/var/lib/loop/continuous/merge-observer.json"
+  },
+  "base_refresh": {
+    "repository": "mihailzhamba-bot/proxima-ai",
+    "target_branch": "feat/loop-pilot",
+    "source_repo": "/srv/loop/source/proxima-ai",
+    "policy_file": "/etc/loop-continuous/policy.json",
+    "identity_file": "/etc/loop/continuous/github_read_ed25519",
+    "known_hosts_file": "/etc/loop/continuous/github_known_hosts",
+    "state_root": "/var/lib/loop/continuous/base-refresh",
+    "max_bundle_bytes": 33554432,
+    "github_timeout_seconds": 10,
+    "receivers": {
+      "bridge": [
+        "/usr/bin/sudo",
+        "-n",
+        "/usr/local/sbin/loop-continuous-register"
+      ],
+      "harper": [
+        "/usr/bin/ssh",
+        "-F",
+        "/etc/loop-continuous/ssh_config",
+        "loop-harper-register"
+      ],
+      "worker": [
+        "/usr/bin/ssh",
+        "-F",
+        "/etc/loop-continuous/ssh_config",
+        "loop-worker-register"
+      ]
+    }
   }
 }

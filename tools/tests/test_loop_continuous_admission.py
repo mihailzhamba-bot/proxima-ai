@@ -1,9 +1,10 @@
-import json,os,subprocess,sys
+import json,os,subprocess,sys,threading,time
 from types import SimpleNamespace
 from pathlib import Path
 import pytest
 from tools.loop.continuous_admission import Admission,AdmissionError,command
 from tools.loop.continuous_receiver import ReceiverError,receive,registration_allowed
+import tools.loop.continuous_receiver as receiver_module
 from tools.loop.continuous_proposal_review import review
 
 def test_admission_resumes_partial_three_target_registration():
@@ -108,13 +109,13 @@ def test_receiver_rejects_template_different_from_valid_execution_policy():
 
 def test_installed_receiver_imports_opt_loop_under_isolated_python(tmp_path):
     source=Path(__file__).parents[1]/"loop";installed=tmp_path/"opt-loop";installed.mkdir()
-    for name in ("continuous_receiver.py","continuous_register.py","continuous_queue.py","bridge.py"):
+    for name in ("continuous_receiver.py","continuous_register.py","continuous_queue.py","continuous_base_refresh.py","bridge.py"):
         text=(source/name).read_text()
         if name=="continuous_receiver.py":
             text=text.replace('"/opt/loop"',repr(str(installed)))
             text=text.replace('Path("/etc/loop-continuous/receiver.json")',f'Path({str(tmp_path/"receiver.json")!r})')
         (installed/name).write_text(text)
-    (tmp_path/"receiver.json").write_text(json.dumps({"role":"harper","policy_fingerprint":"a"*64,"policy_file":str(tmp_path/"policy.json")}))
+    (tmp_path/"receiver.json").write_text(json.dumps({"role":"harper","policy_fingerprint":"a"*64,"policy_file":str(tmp_path/"policy.json"),"lock_file":"/etc/loop-continuous/receiver.lock"}))
     (tmp_path/"receiver.json").chmod(0o600)
     result=subprocess.run([sys.executable,"-I",str(installed/"continuous_receiver.py")],input=b"{}",capture_output=True)
     assert result.returncode!=0
@@ -147,3 +148,29 @@ def test_real_subprocess_three_target_registration_refetches_full_contract(tmp_p
     assert result["status"]=="ready" and result["registered"]==["bridge","harper","worker"]
     assert set(registration["receipts"])=={"bridge","harper","worker"}
     assert status["observed_at"]==104
+
+
+def test_forced_receiver_routes_advance_base_without_caller_paths(monkeypatch):
+ payload={"action":"advance_base","target":"harper"}
+ monkeypatch.setattr(receiver_module,"receiver_advance",lambda role,value,policy_file,receiver_config,execute:{
+  "target":role,"policy_file":policy_file,"config":str(receiver_config),"same":value is payload})
+ receive.policy_file="/etc/loop-continuous/policy.json"
+ result=receive("harper",payload)
+ assert result=={"target":"harper","policy_file":"/etc/loop-continuous/policy.json",
+  "config":"/etc/loop-continuous/receiver.json","same":True}
+
+
+def test_forced_receiver_serializes_registration_and_refresh(monkeypatch,tmp_path):
+ receive.lock_file=str(tmp_path/"receiver.lock");active=0;maximum=0;guard=threading.Lock()
+ def fake(role,payload,execute):
+  nonlocal active,maximum
+  with guard:active+=1;maximum=max(maximum,active)
+  time.sleep(.05)
+  with guard:active-=1
+  return payload["action"]
+ monkeypatch.setattr(receiver_module,"_receive_unlocked",fake)
+ results=[]
+ threads=[threading.Thread(target=lambda action=action:results.append(receive("harper",{"action":action}))) for action in ("register","advance_base")]
+ for thread in threads:thread.start()
+ for thread in threads:thread.join()
+ assert maximum==1 and set(results)=={"register","advance_base"}

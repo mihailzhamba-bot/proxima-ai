@@ -61,6 +61,8 @@ def main():
  if profile=='wb-daily-packaging':verify_units(path)
 
  mounts=['-v',str(path)+':/work:ro','-v',str(TESTS)+':/acceptance:ro']
+ if profile=='wb-warehouse-metadata':
+  manifest=TESTS/'manifests'/(base+'.json');trusted_json(manifest);mounts+=['-v',str(manifest)+':/acceptance/migrations.json:ro']
  for i,target in [(0,'node_modules'),(2,'services/collector/node_modules')]:
   dep=path.parent/'writable'/('dep-'+str(i))
   if dep.resolve()!=dep or not dep.is_dir():raise ValueError('dependency missing')

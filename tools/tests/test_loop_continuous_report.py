@@ -1,5 +1,6 @@
 import json
 from types import SimpleNamespace
+from pathlib import Path
 from tools.loop.continuous_report import Reporter,render
 def test_report_is_sent_once_during_08_moscow(tmp_path):
  status={"current":{"id":"one","state":"running","updated":0,"blocker":None,"pr_url":None},"next":{"id":"two","state":"ready"}}
@@ -23,3 +24,13 @@ def test_report_separates_last_pr_and_final_blockers():
  text=render(status)
  assert "Последний PR: https://github.com/acme/repo/pull/1" in text
  assert "Финальные блокеры: bad: duplicate scope." in text
+
+
+def test_dedicated_report_timer_owns_08_moscow_schedule():
+ root=Path(__file__).resolve().parents[2]
+ timer=(root/"infra/loop-control/loop-continuous-report.timer").read_text()
+ service=(root/"infra/loop-control/loop-continuous-report.service").read_text()
+ tick=(root/"tools/loop/continuous_tick.py").read_text()
+ assert "OnCalendar=*-*-* 08:00:00 Europe/Moscow" in timer and "Persistent=true" in timer
+ assert "/opt/loop/continuous_report_once.py" in service
+ assert 'Admission(config["admission"],client.call),None,observer,refresher' in tick

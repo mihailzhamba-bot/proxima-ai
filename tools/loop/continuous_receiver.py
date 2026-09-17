@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -I
 """Forced-command receiver for one closed continuous-template registration target."""
 from __future__ import annotations
-import json,os,stat,subprocess,tempfile
+import fcntl,json,os,stat,subprocess,tempfile
 from pathlib import Path
 if not __package__:
  import sys
@@ -10,9 +10,11 @@ if not __package__:
 try:
  from .continuous_register import install
  from .continuous_queue import digest,validate_policy
+ from .continuous_base_refresh import receiver_advance
 except ImportError:
  from continuous_register import install
  from continuous_queue import digest,validate_policy
+ from continuous_base_refresh import receiver_advance
 CONFIG=Path("/etc/loop-continuous/receiver.json")
 ROLES={
  "bridge":{"config":"/etc/loop/bridge.json","prompts":"/etc/loop/continuous/prompts","owner":10001,
@@ -22,7 +24,7 @@ ROLES={
  "worker":{"config":"/etc/loop-worker/templates.json","prompts":"/etc/loop-worker/prompts","owner":0,
    "activate":None,"seal":["/usr/local/sbin/loop-worker-seal"]}}
 class ReceiverError(ValueError):pass
-def read_bounded(fd=0,limit=1_000_000):
+def read_bounded(fd=0,limit=45*1024*1024):
  chunks=[];total=0
  while True:
   chunk=os.read(fd,min(65536,limit+1-total))
@@ -44,8 +46,12 @@ def registration_allowed(registration,policy):
  template=registration.get("template",{})
  fixed=("base_sha","allowed_paths","contract_files","profile","profile_id","profile_revision")
  return isinstance(template,dict) and all(template.get(key)==matched.get(key) for key in fixed)
-def receive(role,payload,execute=subprocess.run):
- if role not in ROLES or not isinstance(payload,dict) or payload.get("action") not in {"register","dispatch"}:raise ReceiverError("invalid closed request")
+def _receive_unlocked(role,payload,execute=subprocess.run):
+ if role not in ROLES or not isinstance(payload,dict) or payload.get("action") not in {"register","dispatch","advance_base"}:raise ReceiverError("invalid closed request")
+ if payload["action"]=="advance_base":
+  receipt=receiver_advance(role,payload,receive.policy_file,CONFIG,execute)
+  if role=="worker":run(["/usr/local/sbin/loop-worker-seal"],execute)
+  return receipt
  if payload["action"]=="dispatch":
   if role!="harper" or set(payload)!={"action"}:raise ReceiverError("dispatch denied")
   result=execute(["/usr/bin/python3","-I","/opt/loop/continuous_dispatch.py","--config","/etc/loop-continuous/dispatch.json"],stdin=subprocess.DEVNULL,capture_output=True,timeout=3600,check=False)
@@ -68,12 +74,20 @@ def receive(role,payload,execute=subprocess.run):
  receipt=install(payload["registration"],role,settings["config"],settings["prompts"],None,settings["owner"])
  if settings["seal"]:run(settings["seal"],execute)
  return receipt
+def receive(role,payload,execute=subprocess.run):
+ lock=Path(receive.lock_file);lock.parent.mkdir(parents=True,exist_ok=True)
+ fd=os.open(lock,os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
+ try:
+  fcntl.flock(fd,fcntl.LOCK_EX)
+  return _receive_unlocked(role,payload,execute)
+ finally:os.close(fd)
 def main():
  info=CONFIG.lstat()
  if CONFIG.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or stat.S_IMODE(info.st_mode)!=0o600 or info.st_nlink!=1:raise ReceiverError("untrusted receiver config")
  config=json.loads(CONFIG.read_text())
- if not isinstance(config,dict) or set(config)!={"role","policy_fingerprint","policy_file"} or config["role"] not in ROLES or not __import__("re").fullmatch(r"[0-9a-f]{64}",str(config["policy_fingerprint"])):raise ReceiverError("invalid receiver config")
- receive.policy_fingerprint=config["policy_fingerprint"];receive.policy_file=config["policy_file"]
+ if not isinstance(config,dict) or set(config)!={"role","policy_fingerprint","policy_file","lock_file"} or config["role"] not in ROLES or not __import__("re").fullmatch(r"[0-9a-f]{64}",str(config["policy_fingerprint"])):raise ReceiverError("invalid receiver config")
+ if config["lock_file"]!="/etc/loop-continuous/receiver.lock":raise ReceiverError("invalid receiver lock")
+ receive.policy_fingerprint=config["policy_fingerprint"];receive.policy_file=config["policy_file"];receive.lock_file=config["lock_file"]
  print(json.dumps(receive(config["role"],json.loads(read_bounded()))));return 0
 if __name__=="__main__":raise SystemExit(main())
 
@@ -81,3 +95,5 @@ if __name__=="__main__":raise SystemExit(main())
 receive.policy_fingerprint=getattr(receive,"policy_fingerprint",None)
 
 receive.policy_file=getattr(receive,"policy_file",None)
+
+receive.lock_file=getattr(receive,"lock_file","/tmp/loop-continuous-receiver-"+str(os.getpid())+".lock")

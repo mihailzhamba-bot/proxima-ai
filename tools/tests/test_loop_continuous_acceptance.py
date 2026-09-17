@@ -51,3 +51,11 @@ def test_exact_receipt_protocol(candidate,capsys):
  _,_,_,head=candidate
  invoke(json.dumps({'profile':'wb-daily-status','passed':23,'skipped':0,'cases':[str(i) for i in range(23)]})+'\n')
  assert json.loads(capsys.readouterr().out)=={'sha':head,'status':'pass','skipped':0}
+
+
+def test_metadata_acceptance_selects_manifest_by_exact_candidate_base():
+ source=P.read_text()
+ assert "TESTS/'manifests'/(base+'.json')" in source
+ root=Path(__file__).resolve().parents[2]
+ manifest=root/"infra/loop-control/continuous-acceptance/manifests/0153b1605b448cd63e74819413b727f27e87761f.json"
+ assert manifest.is_file() and json.loads(manifest.read_text())

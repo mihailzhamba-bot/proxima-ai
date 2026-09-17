@@ -172,6 +172,9 @@ class Bridge:
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         digest = hashlib.sha256(encoded.encode()).hexdigest()
         with self.tx() as db:
+            maintenance=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='continuous_maintenance'").fetchone()
+            if maintenance and db.execute("SELECT 1 FROM continuous_maintenance WHERE id=1 AND state IN ('fetching','installing')").fetchone():
+                raise BridgeError(409,"base refresh maintenance active",False)
             old = db.execute("SELECT * FROM operations WHERE kind=? AND key=?", (kind, key)).fetchone()
             if old:
                 if old["request_hash"] != digest: raise BridgeError(409, "idempotency payload conflict")
@@ -394,8 +397,13 @@ class Bridge:
     def continuous_required(self):
         if self.continuous is None: raise BridgeError(503,"continuous queue not configured",False)
         return self.continuous
+    def continuous_mutable(self):
+        queue=self.continuous_required()
+        if queue.maintenance_active():raise BridgeError(409,"base refresh maintenance active",False)
+        return queue
     def plan_continuous(self, key):
         queue=self.continuous_required()
+        if queue.maintenance_active():raise BridgeError(409,"base refresh maintenance active",False)
         status=queue.status()
         requirements={key:{**{field:value[field] for field in ("objective","acceptance","max_slices","depends_on","source_evidence")},
             "path_sets":{name:scope["description"] for name,scope in value["path_sets"].items()}}
@@ -412,39 +420,41 @@ class Bridge:
             planner=self.get(payload.get("planner_run_id"))
             with self.tx() as db:
                 parent=db.execute("SELECT * FROM operations WHERE kind='paperclip' AND external_id=?",(planner["key"],)).fetchone()
-            return self.continuous_required().propose(payload,planner,dict(parent) if parent else None)
+            return self.continuous_mutable().propose(payload,planner,dict(parent) if parent else None)
         except (ValueError,TypeError) as error:raise BridgeError(400,str(error),False) from None
     def review_continuous(self,item_id,payload):
-        try:return self.continuous_required().review(item_id,payload)
+        try:return self.continuous_mutable().review(item_id,payload)
         except ValueError as error:raise BridgeError(409,str(error),False) from None
     def reject_continuous(self,item_id,payload):
-        try:return self.continuous_required().reject(item_id,payload)
+        try:return self.continuous_mutable().reject(item_id,payload)
         except ValueError as error:raise BridgeError(409,str(error),False) from None
     def receipt_continuous(self,item_id,payload):
         try:
-            if payload.get("target")=="bridge":
-                registration=self.continuous_required().registration(item_id)
-                name,definition=registration["template_name"],registration["template"]
-                existing=self.approved_templates.get(name)
-                if existing is not None and template_fingerprint(name,existing)!=registration["template_fingerprint"]:raise BridgeError(409,"bridge template conflict",False)
-                if existing is None:self.approved_templates[name]=definition
-            return self.continuous_required().receipt(item_id,payload)
+            with self.guard:
+                registration=self.continuous_mutable().registration(item_id) if payload.get("target")=="bridge" else None
+                result=self.continuous_mutable().receipt(item_id,payload)
+                if registration is not None:
+                    name,definition=registration["template_name"],registration["template"]
+                    existing=self.approved_templates.get(name)
+                    if existing is not None and template_fingerprint(name,existing)!=registration["template_fingerprint"]:raise BridgeError(409,"bridge template conflict",False)
+                    if existing is None:self.approved_templates[name]=definition
+                return result
         except ValueError as error:raise BridgeError(409,str(error),False) from None
     def merge_continuous(self,item_id,payload):
-        try:return self.continuous_required().merge(item_id,payload)
+        try:return self.continuous_mutable().merge(item_id,payload)
         except ValueError as error:raise BridgeError(409,str(error),False) from None
     def settle_continuous(self,item_id,payload):
-        try:return self.continuous_required().settle(item_id,payload)
+        try:return self.continuous_mutable().settle(item_id,payload)
         except ValueError as error:raise BridgeError(409,str(error),False) from None
     def retry_continuous(self,item_id,payload):
         with self.tx() as db:
             if db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0]=="true":raise BridgeError(409,"continuous queue paused",False)
-        try:return self.continuous_required().retry(item_id,payload)
+        try:return self.continuous_mutable().retry(item_id,payload)
         except ValueError as error:raise BridgeError(409,str(error),False) from None
     def update_continuous(self,item_id,payload):
         if set(payload)-{"lease_id","state","run_id","job_id","head_sha","pr_url","blocker","evidence_ref"} or not {"lease_id","state"}<=set(payload):raise BridgeError(400,"invalid continuous update fields",False)
         evidence={k:v for k,v in payload.items() if k not in {"lease_id","state"}}
-        try:return self.continuous_required().update(item_id,payload["lease_id"],payload["state"],**evidence)
+        try:return self.continuous_mutable().update(item_id,payload["lease_id"],payload["state"],**evidence)
         except ValueError as error:raise BridgeError(409,str(error),False) from None
     def claim_continuous(self):
         with self.tx() as db:
@@ -474,12 +484,33 @@ class Bridge:
         if observed is not None:result["planning"]={key:observed[key] for key in ("id","key","state","updated")}
         return result
 
+    def begin_base_refresh(self,payload):
+        if set(payload)!={"key","new_head"}:raise BridgeError(400,"invalid base refresh begin",False)
+        try:
+            with self.guard:return self.continuous_required().begin_refresh(payload["key"],payload["new_head"])
+        except ValueError as error:raise BridgeError(409,str(error),False) from None
+    def prepare_base_refresh(self,payload):
+        if set(payload)!={"key","new_policy","bundle_sha256"}:raise BridgeError(400,"invalid base refresh preparation",False)
+        try:return self.continuous_required().prepare_refresh(payload["key"],payload["new_policy"],payload["bundle_sha256"])
+        except ValueError as error:raise BridgeError(409,str(error),False) from None
+    def receipt_base_refresh(self,payload):
+        if set(payload)!={"key","receipt"}:raise BridgeError(400,"invalid base refresh receipt",False)
+        try:return self.continuous_required().refresh_receipt(payload["key"],payload["receipt"])
+        except ValueError as error:raise BridgeError(409,str(error),False) from None
+    def commit_base_refresh(self,payload):
+        if set(payload)!={"key"}:raise BridgeError(400,"invalid base refresh commit",False)
+        try:result=self.continuous_required().commit_refresh(payload["key"])
+        except ValueError as error:raise BridgeError(409,str(error),False) from None
+        for name in result.get("removed_templates",[]):self.approved_templates.pop(name,None)
+        return result
     def propose_job(self, payload, templates):
         if set(payload) != {"job_id","run_id","generation","template"}: raise BridgeError(400,"invalid job fields")
         job_id = payload["job_id"]
         if not isinstance(job_id,str) or not JOB_ID.fullmatch(job_id) or payload["template"] not in templates: raise BridgeError(400,"unknown job template")
         fingerprint=template_fingerprint(payload["template"],templates[payload["template"]])
         with self.tx() as db:
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='continuous_maintenance'").fetchone() and db.execute("SELECT 1 FROM continuous_maintenance WHERE id=1 AND state IN ('fetching','installing')").fetchone():
+                raise BridgeError(409,"base refresh maintenance active",False)
             op = db.execute("SELECT state,generation,key FROM operations WHERE id=? AND kind='hermes'",(payload["run_id"],)).fetchone()
             if not op or op["state"] != "running" or op["generation"] != payload["generation"]: raise BridgeError(409,"Director attempt no longer owns the lease")
             parent = db.execute("SELECT id,key,state,request FROM operations WHERE kind='paperclip' AND external_id=?",(op["key"],)).fetchone()
@@ -542,6 +573,7 @@ class Bridge:
     def next_job(self):
         with self.tx() as db:
             if db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0]=="true":return {"job_id":None}
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='continuous_maintenance'").fetchone() and db.execute("SELECT 1 FROM continuous_maintenance WHERE id=1 AND state IN ('fetching','installing')").fetchone():return {"job_id":None}
         with self.tx() as db: rows=db.execute("SELECT id FROM jobs WHERE state IN ('queued','recoverable') ORDER BY rowid").fetchall()
         for row in rows:
             try:
@@ -854,6 +886,11 @@ def server(bridge, config):
                 elif self.command=="POST" and path=="/v1/queue/plan":result=bridge.plan_continuous(self.headers.get("Idempotency-Key"))
                 elif self.command=="POST" and path=="/v1/queue/proposals":result=bridge.propose_continuous(payload)
                 elif self.command=="GET" and path=="/v1/queue":result=bridge.continuous_status()
+                elif self.command=="GET" and path=="/v1/queue/base-refresh":result=bridge.continuous_required().maintenance() or {"state":"idle"}
+                elif self.command=="POST" and path=="/v1/queue/base-refresh/begin":result=bridge.begin_base_refresh(payload)
+                elif self.command=="POST" and path=="/v1/queue/base-refresh/prepare":result=bridge.prepare_base_refresh(payload)
+                elif self.command=="POST" and path=="/v1/queue/base-refresh/receipt":result=bridge.receipt_base_refresh(payload)
+                elif self.command=="POST" and path=="/v1/queue/base-refresh/commit":result=bridge.commit_base_refresh(payload)
                 elif self.command=="GET" and (match:=re.fullmatch(r"/v1/queue/([a-z0-9][a-z0-9-]{2,63})(/registration)?",path)):
                     try:result=bridge.continuous_required().registration(match[1]) if match[2] else bridge.continuous_required().get(match[1])
                     except ValueError as error:raise BridgeError(409,str(error),False) from None

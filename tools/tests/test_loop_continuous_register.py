@@ -1,9 +1,9 @@
-import hashlib,json,os,threading
+import hashlib,json,os,stat,threading
 import pytest
 from pathlib import Path
 from tools.loop.bridge import template_fingerprint
 from tools.loop.continuous_queue import digest
-from tools.loop.continuous_register import RegisterError,install
+from tools.loop.continuous_register import RegisterError,install,prompt_permissions
 
 def item():
     prompt={"goal":"fixture","acceptance":["pass"]}
@@ -30,23 +30,23 @@ def test_register_preserves_inode_and_emits_api_receipt(tmp_path):
 
 def test_register_requires_exact_idle_and_never_overwrites_prompt(tmp_path):
     config,idle,prompts=files(tmp_path);idle.write_text('{"idle":false}')
-    with pytest.raises(RegisterError,match="idle"):install(item(),"worker",config,prompts,idle,os.getuid())
-    idle.write_text('{"idle":true}');first=install(item(),"worker",config,prompts,idle,os.getuid())
-    assert install(item(),"worker",config,prompts,idle,os.getuid())==first
+    with pytest.raises(RegisterError,match="idle"):install(item(),"bridge",config,prompts,idle,os.getuid())
+    idle.write_text('{"idle":true}');first=install(item(),"bridge",config,prompts,idle,os.getuid())
+    assert install(item(),"bridge",config,prompts,idle,os.getuid())==first
     (prompts/"continuous-fixture.json").write_text("changed")
-    with pytest.raises(RegisterError,match="prompt"):install(item(),"worker",config,prompts,idle,os.getuid())
+    with pytest.raises(RegisterError,match="prompt"):install(item(),"bridge",config,prompts,idle,os.getuid())
 
 
 
 def test_register_rejects_template_name_path_escape_before_write(tmp_path):
     config,idle,prompts=files(tmp_path);bad=item();bad["template_name"]="../../escape"
-    with pytest.raises(RegisterError,match="template name"):install(bad,"worker",config,prompts,idle,os.getuid())
+    with pytest.raises(RegisterError,match="template name"):install(bad,"bridge",config,prompts,idle,os.getuid())
     assert list(prompts.iterdir())==[]
 
 
 def test_register_rejects_unfingerprinted_template_authority(tmp_path):
     config,idle,prompts=files(tmp_path);bad=item();bad["template"]["command"]=["/bin/sh"]
-    with pytest.raises(RegisterError,match="unapproved fields"):install(bad,"worker",config,prompts,idle,os.getuid())
+    with pytest.raises(RegisterError,match="unapproved fields"):install(bad,"bridge",config,prompts,idle,os.getuid())
     assert list(prompts.iterdir())==[]
 
 
@@ -75,3 +75,20 @@ def test_concurrent_additive_registrars_preserve_both_templates(tmp_path):
     for thread in threads:thread.join()
     assert errors==[]
     assert set(json.loads(config.read_text())["templates"])=={"continuous-fixture","continuous-fixture-two"}
+
+
+def test_worker_prompt_permissions_are_fixed_to_shared_group(monkeypatch):
+    class Group:gr_gid=4321
+    monkeypatch.setattr("tools.loop.continuous_register.grp.getgrnam",lambda name: Group() if name=="loop-worker-shared" else None)
+    assert prompt_permissions("worker",9999)==(0,4321,0o640)
+    assert prompt_permissions("harper",1000)==(1000,-1,0o600)
+
+@pytest.mark.skipif(os.geteuid()!=0,reason="requires root chown to fixed worker identity")
+def test_worker_prompt_is_group_readable_and_seal_compatible(tmp_path,monkeypatch):
+    config,idle,prompts=files(tmp_path)
+    class Group:gr_gid=os.getgid()
+    monkeypatch.setattr("tools.loop.continuous_register.grp.getgrnam",lambda name: Group())
+    install(item(),"worker",config,prompts,idle,0)
+    prompt=prompts/"continuous-fixture.json";info=prompt.stat()
+    assert info.st_uid==0 and info.st_gid==os.getgid() and info.st_mode&0o777==0o640
+    assert info.st_mode&stat.S_IRGRP and not info.st_mode&stat.S_IWGRP

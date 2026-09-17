@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -I
 """Install one reviewed immutable template locally and emit a target receipt."""
 from __future__ import annotations
-import argparse,fcntl,hashlib,json,os,re,stat,tempfile
+import argparse,fcntl,grp,hashlib,json,os,re,stat,tempfile
 from pathlib import Path
 try:
     from .bridge import template_fingerprint
@@ -32,10 +32,10 @@ def fsync_dir(path):
     fd=os.open(Path(path).parent,os.O_RDONLY|os.O_DIRECTORY)
     try:os.fsync(fd)
     finally:os.close(fd)
-def atomic_owned(path,data,owner_uid,mode=0o600):
+def atomic_owned(path,data,owner_uid,mode=0o600,group_gid=-1):
     path=Path(path);fd,temporary=tempfile.mkstemp(prefix=path.name+".",dir=path.parent)
     try:
-        os.fchmod(fd,mode);os.fchown(fd,owner_uid,-1);write_all(fd,data);os.fsync(fd);os.close(fd);fd=-1
+        os.fchmod(fd,mode);os.fchown(fd,owner_uid,group_gid);write_all(fd,data);os.fsync(fd);os.close(fd);fd=-1
         os.replace(temporary,path);fsync_dir(path)
     finally:
         if fd>=0:os.close(fd)
@@ -49,6 +49,9 @@ def restore_prepared(config_path,owner_uid,config_fd):
     if hashlib.sha256(raw).hexdigest()!=state.get("old_sha256"):raise RegisterError("registration backup mismatch")
     os.lseek(config_fd,0,os.SEEK_SET);write_all(config_fd,raw);os.ftruncate(config_fd,len(raw));os.fsync(config_fd);fsync_dir(config_path)
     atomic_owned(marker,(json.dumps({**state,"state":"recovered"},sort_keys=True)+"\n").encode(),owner_uid)
+def prompt_permissions(target,owner_uid):
+    if target=="worker":return 0,grp.getgrnam("loop-worker-shared").gr_gid,0o640
+    return owner_uid,-1,0o600
 def render(item,prompt_dir):
     needed={"id","template_name","template_fingerprint","policy_fingerprint","proposal_fingerprint","review_fingerprint","template","prompt_contract"}
     if not isinstance(item,dict) or not needed<=set(item):raise RegisterError("reviewed queue export required")
@@ -75,16 +78,18 @@ def install(item,target,config_path,prompt_dir,idle_path,owner_uid):
         idle=json.loads(idle_path.read_text())
         if idle!={"idle":True}:raise RegisterError("target is not proven idle")
     installed,prompt_path,prompt,receipt=render(item,prompt_dir)
+    prompt_uid,prompt_gid,prompt_mode=prompt_permissions(target,owner_uid)
     prompt_dir.mkdir(parents=True,exist_ok=True)
     if prompt_path.exists():
-        regular(prompt_path,owner_uid)
+        info=regular(prompt_path,prompt_uid)
+        if stat.S_IMODE(info.st_mode)!=prompt_mode or (target=="worker" and info.st_gid!=prompt_gid):raise RegisterError("immutable prompt ownership mismatch")
         if prompt_path.read_bytes()!=prompt:raise RegisterError("immutable prompt conflict")
     else:
         if prompt_path.is_symlink():raise RegisterError("immutable prompt conflict")
-        fd=os.open(prompt_path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
-        try:os.write(fd,prompt);os.fsync(fd)
+        fd=os.open(prompt_path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,prompt_mode)
+        try:
+            os.fchown(fd,prompt_uid,prompt_gid);os.fchmod(fd,prompt_mode);write_all(fd,prompt);os.fsync(fd)
         finally:os.close(fd)
-        os.chown(prompt_path,owner_uid,-1)
     fd=os.open(config_path,os.O_RDWR|os.O_NOFOLLOW)
     try:
         fcntl.flock(fd,fcntl.LOCK_EX)
@@ -117,6 +122,12 @@ def install(item,target,config_path,prompt_dir,idle_path,owner_uid):
     readback=json.loads(config_path.read_text())
     if readback.get("templates",{}).get(item["template_name"])!=installed:raise RegisterError("template readback failed")
     installed_sha=hashlib.sha256(canonical({"name":item["template_name"],"template":installed,"prompt_sha256":hashlib.sha256(prompt).hexdigest()}).encode()).hexdigest()
+    if target=="harper":
+        receipt_root=Path("/etc/loop-runner/template-receipts");receipt_root.mkdir(parents=True,exist_ok=True)
+        binding={"template_name":item["template_name"],"template_fingerprint":item["template_fingerprint"],
+                 "policy_fingerprint":item["policy_fingerprint"],"base_sha":item["template"]["base_sha"],
+                 "installed_sha256":installed_sha}
+        atomic_owned(receipt_root/(item["template_name"]+".json"),(json.dumps(binding,sort_keys=True)+"\n").encode(),owner_uid,0o600)
     return {"target":target,"template_fingerprint":item["template_fingerprint"],
             "policy_fingerprint":item["policy_fingerprint"],"installed_sha256":installed_sha}
 def main():

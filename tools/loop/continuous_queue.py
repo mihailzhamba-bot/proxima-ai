@@ -10,6 +10,15 @@ POLICY_EXCEPTIONS=frozenset({"tools/wb/daily.py","tools/tests/test_wb_daily.py",
 class QueueError(ValueError): pass
 def canonical(v):return json.dumps(v,sort_keys=True,separators=(",",":"),ensure_ascii=False)
 def digest(v):return hashlib.sha256(canonical(v).encode()).hexdigest()
+def policy_authority(policy):
+    value=json.loads(canonical(validate_policy(policy)))
+    for requirement in value["requirements"].values():
+        requirement.pop("base_sha",None);requirement.pop("source_evidence",None)
+    return value
+def proposal_digest(item_id,requirement_id,slice_key,path_set_id,goal,acceptance,execution_policy,policy_fingerprint):
+    fixed={key:execution_policy[key] for key in ("base_sha","allowed_paths","contract_files","depends_on")}
+    return digest({"id":item_id,"requirement_id":requirement_id,"slice_key":slice_key,"path_set_id":path_set_id,
+                   "goal":goal,"acceptance":acceptance,**fixed,"policy_fingerprint":policy_fingerprint})
 def product_path(v):
     if not isinstance(v,str) or not v or (v.startswith(CONTROL) and v not in POLICY_EXCEPTIONS):return False
     p=PurePosixPath(v);return not p.is_absolute() and ".." not in p.parts and p.parts[0]!=".git"
@@ -65,7 +74,14 @@ created REAL NOT NULL,PRIMARY KEY(queue_id,sequence),FOREIGN KEY(queue_id) REFER
 CREATE TABLE IF NOT EXISTS continuous_merges(queue_id TEXT PRIMARY KEY,receipt TEXT NOT NULL,receipt_fingerprint TEXT NOT NULL,
 created REAL NOT NULL,FOREIGN KEY(queue_id) REFERENCES continuous_queue(id));
 CREATE TABLE IF NOT EXISTS continuous_dependency_receipts(queue_id TEXT NOT NULL,dependency_id TEXT NOT NULL,receipt TEXT NOT NULL,
-PRIMARY KEY(queue_id,dependency_id),FOREIGN KEY(queue_id) REFERENCES continuous_queue(id));""")
+PRIMARY KEY(queue_id,dependency_id),FOREIGN KEY(queue_id) REFERENCES continuous_queue(id));
+CREATE TABLE IF NOT EXISTS continuous_maintenance(
+id INTEGER PRIMARY KEY CHECK(id=1),key TEXT NOT NULL,state TEXT NOT NULL,old_policy_fingerprint TEXT NOT NULL,
+new_head TEXT NOT NULL,new_policy TEXT,new_policy_fingerprint TEXT,bundle_sha256 TEXT,rebase_templates TEXT NOT NULL,
+receipts TEXT NOT NULL,created REAL NOT NULL,updated REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS continuous_queue_history(
+item_id TEXT NOT NULL,sequence INTEGER NOT NULL,snapshot TEXT NOT NULL,created REAL NOT NULL,
+PRIMARY KEY(item_id,sequence));""")
             columns={r[1] for r in d.execute("PRAGMA table_info(continuous_queue)")}
             if "slice_key" not in columns:d.execute("ALTER TABLE continuous_queue ADD COLUMN slice_key TEXT NOT NULL DEFAULT 'legacy'")
             if "execution_policy" not in columns:d.execute("ALTER TABLE continuous_queue ADD COLUMN execution_policy TEXT NOT NULL DEFAULT '{}'")
@@ -101,8 +117,10 @@ PRIMARY KEY(queue_id,dependency_id),FOREIGN KEY(queue_id) REFERENCES continuous_
             "allowed_paths":path_set["allowed_paths"],"contract_files":path_set["contract_files"],
             "acceptance_profile":path_set["acceptance_profile"]}
         fixed={k:execution_policy[k] for k in ("base_sha","allowed_paths","contract_files","depends_on")}
-        fp=digest({"id":item_id,"requirement_id":rid,"slice_key":slice_key,"path_set_id":p["path_set_id"],"goal":goal,"acceptance":acceptance,**fixed,"policy_fingerprint":self.policy_fingerprint});now=self.clock()
+        fp=proposal_digest(item_id,rid,slice_key,p["path_set_id"],goal,acceptance,execution_policy,self.policy_fingerprint);now=self.clock()
         with self.db() as d:
+            d.execute("BEGIN IMMEDIATE")
+            if self.maintenance_active(d):raise QueueError("base refresh maintenance active")
             old=d.execute("SELECT proposal_fingerprint FROM continuous_queue WHERE id=?",(item_id,)).fetchone()
             if old and old[0]!=fp:raise QueueError("proposal id conflict")
             if not old:
@@ -146,6 +164,8 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
         except ImportError:from bridge import template_fingerprint
         tfp=template_fingerprint(name,template)
         with self.db() as d:
+            d.execute("BEGIN IMMEDIATE")
+            if self.maintenance_active(d):raise QueueError("base refresh maintenance active")
             changed=d.execute("UPDATE continuous_queue SET review_fingerprint=?,template_name=?,template_fingerprint=?,state='registering',updated=? WHERE id=? AND state='proposed' AND proposal_fingerprint=? AND policy_fingerprint=?",(rfp,name,tfp,self.clock(),item_id,row["proposal_fingerprint"],self.policy_fingerprint))
             if changed.rowcount!=1:raise QueueError("proposal review raced")
             for dependency_id,proof in dependencies.items():
@@ -172,6 +192,8 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
                 or receipt["proposal_fingerprint"]!=row["proposal_fingerprint"]
                 or not isinstance(receipt["blocker"],str) or not receipt["blocker"]):raise QueueError("invalid proposal rejection")
         with self.db() as d:
+            d.execute("BEGIN IMMEDIATE")
+            if self.maintenance_active(d):raise QueueError("base refresh maintenance active")
             result=d.execute("UPDATE continuous_queue SET state='rejected',review_fingerprint=?,blocker=?,updated=? WHERE id=? AND state='proposed' AND proposal_fingerprint=? AND policy_fingerprint=?",(digest(receipt),receipt["blocker"][:500],self.clock(),item_id,row["proposal_fingerprint"],self.policy_fingerprint))
             if result.rowcount!=1:raise QueueError("proposal rejection raced")
         return self.get(item_id)
@@ -180,6 +202,12 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
         if not isinstance(receipt,dict) or set(receipt)!=required or row["policy_fingerprint"]!=self.policy_fingerprint or receipt["target"] not in TARGETS or row["state"] not in {"registering","ready"} or receipt["template_fingerprint"]!=row["template_fingerprint"] or receipt["policy_fingerprint"]!=self.policy_fingerprint or not DIGEST.fullmatch(str(receipt["installed_sha256"])):raise QueueError("invalid immutable template receipt")
         rfp=digest(receipt);target=receipt["target"];tfp=receipt["template_fingerprint"]
         with self.db() as d:
+            d.execute("BEGIN IMMEDIATE")
+            if self.maintenance_active(d):raise QueueError("base refresh maintenance active")
+            current=d.execute("SELECT state,policy_fingerprint,template_fingerprint FROM continuous_queue WHERE id=?",(item_id,)).fetchone()
+            if (not current or current["state"] not in {"registering","ready"}
+                    or current["policy_fingerprint"]!=self.policy_fingerprint
+                    or current["template_fingerprint"]!=tfp):raise QueueError("stale immutable template receipt")
             old=d.execute("SELECT template_fingerprint,receipt_fingerprint FROM continuous_receipts WHERE queue_id=? AND target=?",(item_id,target)).fetchone()
             if old and tuple(old)!=(tfp,rfp):raise QueueError("template receipt conflict")
             d.execute("INSERT OR IGNORE INTO continuous_receipts VALUES(?,?,?,?,?)",(item_id,target,tfp,rfp,self.clock()))
@@ -192,13 +220,112 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
         if not isinstance(receipt,dict) or set(receipt)!=required or receipt["merged"] is not True or row["state"]!="ready_pr" or receipt["repository"]!=row["execution_policy"]["repository"] or receipt["head_sha"]!=evidence.get("head_sha") or not SHA.fullmatch(str(receipt["merge_commit_sha"])) or not isinstance(receipt["repository"],str) or "/" not in receipt["repository"] or receipt["pr_url"]!=row["pr_url"]:raise QueueError("verified exact-head merge receipt required")
         rfp=digest(receipt)
         with self.db() as d:
+            d.execute("BEGIN IMMEDIATE")
+            if self.maintenance_active(d):raise QueueError("base refresh maintenance active")
             d.execute("INSERT INTO continuous_merges VALUES(?,?,?,?)",(item_id,canonical(receipt),rfp,self.clock()))
             d.execute("UPDATE continuous_queue SET state='merged',updated=? WHERE id=?",(self.clock(),item_id))
         return self.get(item_id)
+    def maintenance(self):
+        with self.db() as d:row=d.execute("SELECT * FROM continuous_maintenance WHERE id=1").fetchone()
+        if not row:return None
+        value=dict(row)
+        for key in ("new_policy","rebase_templates","receipts"):
+            value[key]=json.loads(value[key]) if value[key] else None
+        return value
+    def maintenance_active(self,db=None):
+        if db is not None:return db.execute("SELECT 1 FROM continuous_maintenance WHERE id=1 AND state IN ('fetching','installing')").fetchone() is not None
+        with self.db() as connection:return self.maintenance_active(connection)
+    def begin_refresh(self,key,new_head):
+        if not isinstance(key,str) or not ID.fullmatch(key) or not SHA.fullmatch(str(new_head)):raise QueueError("invalid base refresh identity")
+        with self.db() as d:
+            d.execute("BEGIN IMMEDIATE")
+            old=d.execute("SELECT * FROM continuous_maintenance WHERE id=1").fetchone()
+            if old and old["state"] in {"fetching","installing"}:
+                if old["key"]==key and old["new_head"]==new_head and old["old_policy_fingerprint"]==self.policy_fingerprint:return dict(old)
+                raise QueueError("another base refresh is active")
+            jobs=d.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone()
+            if jobs and d.execute("SELECT 1 FROM jobs WHERE state IN ('queued','dispatching','publishing','unknown','recoverable') OR publication_active=1 LIMIT 1").fetchone():raise QueueError("base refresh blocked by shared executor")
+            operations=d.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='operations'").fetchone()
+            if operations and d.execute("SELECT 1 FROM operations WHERE state IN ('dispatching','running','unknown','cancelling') LIMIT 1").fetchone():raise QueueError("base refresh blocked by active planning")
+            if d.execute("SELECT 1 FROM continuous_queue WHERE state IN ('dispatching','running','unknown') OR (state='blocked' AND lease_id IS NOT NULL) LIMIT 1").fetchone():raise QueueError("base refresh blocked by active attempt")
+            now=self.clock()
+            d.execute("DELETE FROM continuous_maintenance WHERE id=1")
+            d.execute("INSERT INTO continuous_maintenance VALUES(1,?,'fetching',?,?,NULL,NULL,NULL,'[]','{}',?,?)",
+                      (key,self.policy_fingerprint,new_head,now,now))
+        return self.maintenance()
+    def prepare_refresh(self,key,new_policy,bundle_sha256):
+        validate_policy(new_policy)
+        if not DIGEST.fullmatch(str(bundle_sha256)):raise QueueError("invalid base refresh bundle")
+        if policy_authority(new_policy)!=policy_authority(self.policy):raise QueueError("base refresh authority changed")
+        with self.db() as d:
+            d.execute("BEGIN IMMEDIATE")
+            row=d.execute("SELECT * FROM continuous_maintenance WHERE id=1").fetchone()
+            if (not row or row["key"]!=key or row["state"] not in {"fetching","installing"}
+                    or self.policy_fingerprint not in {row["old_policy_fingerprint"],row["new_policy_fingerprint"]}):
+                raise QueueError("base refresh intent unavailable")
+            if any(item["base_sha"]!=row["new_head"] for item in new_policy["requirements"].values()):raise QueueError("base refresh head mismatch")
+            new_fp=digest(new_policy)
+            safe=d.execute("SELECT template_name FROM continuous_queue WHERE attempts=0 AND state IN ('proposed','registering','ready') AND policy_fingerprint=?",(row["old_policy_fingerprint"],)).fetchall()
+            templates=sorted({item[0] for item in safe if item[0]})
+            if row["state"]=="installing":
+                if row["new_policy_fingerprint"]!=new_fp or row["bundle_sha256"]!=bundle_sha256 or json.loads(row["rebase_templates"])!=templates:raise QueueError("base refresh preparation conflict")
+            else:d.execute("UPDATE continuous_maintenance SET state='installing',new_policy=?,new_policy_fingerprint=?,bundle_sha256=?,rebase_templates=?,receipts='{}',updated=? WHERE id=1",
+                           (canonical(new_policy),new_fp,bundle_sha256,canonical(templates),self.clock()))
+        return self.maintenance()
+    def refresh_receipt(self,key,receipt):
+        required={"target","old_policy_fingerprint","new_policy_fingerprint","new_head","bundle_sha256","installed_sha256"}
+        row=self.maintenance()
+        if (not row or row["key"]!=key or row["state"]!="installing" or not isinstance(receipt,dict) or set(receipt)!=required
+                or receipt["target"] not in TARGETS or receipt["old_policy_fingerprint"]!=row["old_policy_fingerprint"]
+                or receipt["new_policy_fingerprint"]!=row["new_policy_fingerprint"] or receipt["new_head"]!=row["new_head"]
+                or receipt["bundle_sha256"]!=row["bundle_sha256"] or not DIGEST.fullmatch(str(receipt["installed_sha256"]))):
+            raise QueueError("invalid base refresh receipt")
+        receipts=dict(row["receipts"]);old=receipts.get(receipt["target"])
+        if old is not None and old!=receipt:raise QueueError("base refresh receipt conflict")
+        receipts[receipt["target"]]=receipt
+        with self.db() as d:d.execute("UPDATE continuous_maintenance SET receipts=?,updated=? WHERE id=1 AND key=?",(canonical(receipts),self.clock(),key))
+        return self.maintenance()
+    def commit_refresh(self,key):
+        with self.db() as d:
+            d.execute("BEGIN IMMEDIATE")
+            row=d.execute("SELECT * FROM continuous_maintenance WHERE id=1").fetchone()
+            if not row or row["key"]!=key:raise QueueError("base refresh intent unavailable")
+            if row["state"]=="complete":return {"state":"complete","policy_fingerprint":row["new_policy_fingerprint"],"rebased":[]}
+            if row["state"]!="installing":raise QueueError("base refresh is not installed")
+            receipts=json.loads(row["receipts"])
+            if set(receipts)!=TARGETS:raise QueueError("three base refresh receipts required")
+            new_policy=json.loads(row["new_policy"]);new_fp=row["new_policy_fingerprint"];rebased=[]
+            candidates=d.execute("SELECT * FROM continuous_queue WHERE attempts=0 AND state IN ('proposed','registering','ready') AND policy_fingerprint=?",(row["old_policy_fingerprint"],)).fetchall()
+            for candidate in candidates:
+                snapshot={"row":dict(candidate),
+                          "receipts":[dict(value) for value in d.execute("SELECT * FROM continuous_receipts WHERE queue_id=? ORDER BY target",(candidate["id"],))],
+                          "dependency_receipts":[dict(value) for value in d.execute("SELECT * FROM continuous_dependency_receipts WHERE queue_id=? ORDER BY dependency_id",(candidate["id"],))]}
+                sequence=d.execute("SELECT coalesce(max(sequence),0)+1 FROM continuous_queue_history WHERE item_id=?",(candidate["id"],)).fetchone()[0]
+                d.execute("INSERT INTO continuous_queue_history VALUES(?,?,?,?)",(candidate["id"],sequence,canonical(snapshot),self.clock()))
+                old_execution=json.loads(candidate["execution_policy"]);requirement=new_policy["requirements"][candidate["requirement_id"]]
+                selected=old_execution["selected_path_set_id"];scope=requirement["path_sets"][selected]
+                execution={**requirement,"selected_path_set_id":selected,"allowed_paths":scope["allowed_paths"],
+                           "contract_files":scope["contract_files"],"acceptance_profile":scope["acceptance_profile"]}
+                acceptance=json.loads(candidate["acceptance"])
+                proposal_fp=proposal_digest(candidate["id"],candidate["requirement_id"],candidate["slice_key"],selected,
+                                            candidate["goal"],acceptance,execution,new_fp)
+                d.execute("""UPDATE continuous_queue SET state='proposed',base_sha=?,allowed_paths=?,contract_files=?,
+                    proposal_fingerprint=?,policy_fingerprint=?,execution_policy=?,review_fingerprint=NULL,
+                    template_name=NULL,template_fingerprint=NULL,blocker=NULL,updated=? WHERE id=? AND attempts=0""",
+                    (execution["base_sha"],canonical(execution["allowed_paths"]),canonical(execution["contract_files"]),
+                     proposal_fp,new_fp,canonical(execution),self.clock(),candidate["id"]))
+                d.execute("DELETE FROM continuous_receipts WHERE queue_id=?",(candidate["id"],))
+                d.execute("DELETE FROM continuous_dependency_receipts WHERE queue_id=?",(candidate["id"],))
+                rebased.append(candidate["id"])
+            d.execute("UPDATE continuous_maintenance SET state='complete',updated=? WHERE id=1",(self.clock(),))
+        self.policy=validate_policy(new_policy);self.policy_fingerprint=new_fp
+        return {"state":"complete","policy_fingerprint":new_fp,"rebased":rebased,
+                "removed_templates":json.loads(row["rebase_templates"])}
     def claim(self,lease_seconds=300):
         now=self.clock()
         with self.db() as d:
             d.execute("BEGIN IMMEDIATE")
+            if self.maintenance_active(d):return None
             jobs_exists=d.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone()
             if jobs_exists and d.execute("SELECT 1 FROM jobs WHERE state IN ('queued','dispatching','publishing','unknown','recoverable') LIMIT 1").fetchone():return None
             if d.execute("SELECT 1 FROM continuous_queue WHERE state IN('dispatching','running','unknown') OR(state='blocked' AND lease_id IS NOT NULL) OR(lease_id IS NOT NULL AND lease_expires>?)",(now,)).fetchone():return None
@@ -217,6 +344,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
         if state not in {"running","unknown","ready_pr","blocked","cancelled"}:raise QueueError("invalid queue transition")
         with self.db() as d:
             d.execute("BEGIN IMMEDIATE")
+            if self.maintenance_active(d):raise QueueError("base refresh maintenance active")
             row=d.execute("SELECT * FROM continuous_queue WHERE id=?",(item_id,)).fetchone()
             if not row or row["policy_fingerprint"]!=self.policy_fingerprint or row["lease_id"]!=lease_id or row["state"] not in {"dispatching","running","unknown","blocked"}:raise QueueError("queue lease lost")
             if state=="ready_pr" and (not SHA.fullmatch(str(evidence.get("head_sha",""))) or not str(evidence.get("pr_url","")).startswith("https://")):raise QueueError("ready PR evidence required")
@@ -233,6 +361,7 @@ lease_id=?,lease_expires=?,updated=? WHERE id=? AND state=? AND lease_id=?""",(s
         required={"stopped","previous_lease_id","external_run_id","external_job_id","evidence_ref","reason"}
         with self.db() as d:
             d.execute("BEGIN IMMEDIATE")
+            if self.maintenance_active(d):raise QueueError("base refresh maintenance active")
             row=d.execute("SELECT * FROM continuous_queue WHERE id=?",(item_id,)).fetchone()
             if (not row or row["policy_fingerprint"]!=self.policy_fingerprint or not isinstance(receipt,dict)
                     or set(receipt)!=required or receipt["stopped"] is not True
@@ -251,6 +380,7 @@ lease_id=?,lease_expires=?,updated=? WHERE id=? AND state=? AND lease_id=?""",(s
         required={"stopped","previous_lease_id","external_run_id","external_job_id","evidence_ref","reason"}
         with self.db() as d:
             d.execute("BEGIN IMMEDIATE")
+            if self.maintenance_active(d):raise QueueError("base refresh maintenance active")
             row=d.execute("SELECT * FROM continuous_queue WHERE id=?",(item_id,)).fetchone()
             if not row or row["policy_fingerprint"]!=self.policy_fingerprint or not isinstance(receipt,dict) or set(receipt)!=required or receipt["stopped"] is not True or receipt.get("reason") not in {"local_failure","transport_unknown"} or row["state"] not in {"unknown","blocked"} or row["attempts"]>=3 or receipt["previous_lease_id"]!=row["lease_id"] or receipt["external_run_id"]!=row["external_run_id"] or receipt["external_job_id"]!=row["external_job_id"] or not isinstance(receipt["evidence_ref"],str) or not receipt["evidence_ref"]:raise QueueError("confirmed stopped predecessor required")
             sequence=d.execute("SELECT coalesce(max(sequence),0)+1 FROM continuous_attempt_events WHERE queue_id=?",(item_id,)).fetchone()[0]
@@ -259,15 +389,20 @@ lease_id=?,lease_expires=?,updated=? WHERE id=? AND state=? AND lease_id=?""",(s
             if result.rowcount!=1:raise QueueError("queue retry raced")
         return self.get(item_id)
     def status(self):
-        with self.db() as d:rows=[dict(r) for r in d.execute("SELECT id,requirement_id,slice_key,state,attempts,updated,pr_url,blocker,lease_id,depends_on FROM continuous_queue ORDER BY created,id")]
-        for row in rows:row["depends_on"]=json.loads(row["depends_on"])
+        with self.db() as d:
+            rows=[dict(r) for r in d.execute("SELECT id,requirement_id,slice_key,state,attempts,updated,pr_url,blocker,lease_id,depends_on,base_sha FROM continuous_queue ORDER BY created,id")]
+            merges={r["queue_id"]:json.loads(r["receipt"]).get("merge_commit_sha") for r in d.execute("SELECT queue_id,receipt FROM continuous_merges")}
+        for row in rows:
+            row["depends_on"]=json.loads(row["depends_on"])
+            if row["id"] in merges:row["merge_commit_sha"]=merges[row["id"]]
         active_counts={key:sum(row["requirement_id"]==key and row["state"] not in {"rejected","cancelled"} for row in rows) for key in self.policy["requirements"]}
         total_counts={key:sum(row["requirement_id"]==key for row in rows) for key in self.policy["requirements"]}
         eligible=[key for key,item in self.policy["requirements"].items() if active_counts[key]<item["max_slices"] and total_counts[key]<item["max_slices"]*3]
         planning_snapshot=digest({"policy_fingerprint":self.policy_fingerprint,
             "items":[{key:row.get(key) for key in ("id","requirement_id","slice_key","state")} for row in rows],
             "eligible_requirements":eligible})
-        return {"policy_fingerprint":self.policy_fingerprint,"planning_snapshot":planning_snapshot,"continuous_ready":False,
+        return {"policy_fingerprint":self.policy_fingerprint,"planning_snapshot":planning_snapshot,
+        "maintenance":self.maintenance(),"continuous_ready":False,
         "plan_exhausted":not eligible,"eligible_requirements":eligible,
         "current":next((r for r in rows if (r["state"] in {"dispatching","running","unknown"} or (r["state"]=="blocked" and r.get("lease_id")))),None),
         "next":next((r for r in rows if r["state"] in {"ready","registering","proposed"}),None),"items":rows}

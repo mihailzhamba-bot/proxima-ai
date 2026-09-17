@@ -241,3 +241,48 @@ def test_tick_merge_observer_failure_does_not_block_ready_dispatch():
     result=tick(client,Dispatch(),Idle(),observer=Observer(),now=lambda:1000)
     assert result["merges"]=={"status":"unknown","blocker":"merge_observer_failed"}
     assert result["dispatch"]=={"status":"dispatched"}
+
+
+def test_tick_base_refresh_completes_before_admission():
+ status={"policy_fingerprint":"a"*64,"plan_exhausted":True,"items":[],"current":None,"maintenance":None}
+ order=[]
+ def client(method,path,payload=None,headers=None):
+  assert path=="/v1/queue";return status
+ class Observer:
+  def run_once(self,value):order.append("merge");return {"status":"idle","merged":0}
+ class Refresher:
+  def run_once(self,value):order.append("refresh");return {"status":"complete","rebased":[]}
+ class Admission:
+  def run_once(self):order.append("admission");return {"status":"idle"}
+ class Dispatch:
+  def run_once(self):order.append("dispatch");return {"status":"idle"}
+ tick(client,Dispatch(),Admission(),observer=Observer(),refresher=Refresher(),now=lambda:1000)
+ assert order==["merge","refresh","admission","dispatch"]
+
+def test_tick_maintenance_blocker_prevents_planning_admission_and_dispatch():
+ status={"policy_fingerprint":"a"*64,"plan_exhausted":False,"items":[{"id":"one","state":"ready"}],"current":None,
+   "maintenance":{"state":"fetching"}}
+ calls=[]
+ def client(method,path,payload=None,headers=None):calls.append(path);return status
+ class Refresher:
+  def run_once(self,value):return {"status":"blocked","blocker":"non_fast_forward"}
+ class Never:
+  def run_once(self):raise AssertionError("maintenance leaked work")
+ result=tick(client,Never(),Never(),refresher=Refresher(),now=lambda:1000)
+ assert result["status"]=="maintenance" and result["dispatch"]=={"status":"maintenance"}
+ assert "/v1/queue/plan" not in calls
+
+
+def test_active_attempt_defers_refresh_but_still_reconciles_dispatcher():
+ status={"policy_fingerprint":"a"*64,"items":[{"id":"active","state":"unknown"}],"current":{"id":"active","state":"unknown"},"maintenance":None}
+ order=[]
+ def client(method,path,payload=None,headers=None):return status
+ class Refresher:
+  def run_once(self,value):raise AssertionError("refresh must defer")
+ class Admission:
+  def run_once(self):return {"status":"active"}
+ class Dispatch:
+  def run_once(self):order.append("dispatch");return {"status":"reconciled"}
+ result=tick(client,Dispatch(),Admission(),refresher=Refresher(),now=lambda:1000)
+ assert result["base_refresh"]=={"status":"deferred","reason":"active_attempt"}
+ assert result["dispatch"]=={"status":"reconciled"} and order==["dispatch"]

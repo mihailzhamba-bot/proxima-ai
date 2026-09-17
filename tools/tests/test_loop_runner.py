@@ -1,11 +1,12 @@
 from __future__ import annotations
+import hashlib
 import json
 import sys
 from pathlib import Path
 import pytest
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
-from tools.loop.bridge import Bridge, BridgeError
-from tools.loop.runner import DeliveryRunner,prepare_mountpoints,restore_tracked_modes
+from tools.loop.bridge import Bridge, BridgeError, template_fingerprint
+from tools.loop.runner import DeliveryRunner,prepare_mountpoints,restore_tracked_modes,reload_templates,acknowledge_installed_refresh
 
 class Remote:
     def call(self,method,path,payload=None,headers=None):return {"id":"remote-run","status":"running"}
@@ -153,3 +154,81 @@ def test_checkout_exec_modes_are_restored_without_changing_bytes(tmp_path):
     target=tmp_path/'outside';target.mkdir();(target/'file').write_text('preserve')
     (tmp_path/'redirect').symlink_to(target,target_is_directory=True)
     with pytest.raises(ValueError):restore_tracked_modes(tmp_path,'100644 blob '+'a'*40+'\tredirect/file\0')
+
+
+def continuous_template(base):
+ return {"base_sha":base,"prompt_sha256":"1"*64,"allowed_paths":["tools/example.py"],"contract_files":[],
+         "profile":"fedor","profile_id":"73bf9c3a-ab69-4b2e-a7f0-e808df8f2614","profile_revision":0}
+
+
+def binding(tmp_path,name,definition,policy,valid=True):
+ root=tmp_path/"bindings";root.mkdir(exist_ok=True);prompt=tmp_path/(name+".prompt")
+ prompt.write_text("reviewed prompt\n");prompt.chmod(0o600);definition["prompt_file"]=str(prompt)
+ installed=hashlib.sha256(json.dumps({"name":name,"template":definition,"prompt_sha256":hashlib.sha256(prompt.read_bytes()).hexdigest()},
+  sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
+ receipt={"template_name":name,"template_fingerprint":template_fingerprint(name,definition),"policy_fingerprint":policy,
+          "base_sha":definition["base_sha"],"installed_sha256":installed if valid else "0"*64}
+ target=root/(name+".json");target.write_text(json.dumps(receipt));target.chmod(0o600)
+ return root
+
+
+def test_authenticated_idle_reload_allows_only_exact_maintenance_removals(tmp_path):
+ old="a"*64;new="b"*64;receipt=tmp_path/"receipt.json"
+ stable=continuous_template("2"*40);fresh={"stable":stable}
+ receipt.write_text(json.dumps({"old_policy_fingerprint":old,"new_policy_fingerprint":new,"new_head":"c"*40,
+  "bundle_sha256":"d"*64,"removed_templates":["continuous-old"],
+  "retained_templates":{"stable":template_fingerprint("stable",stable)},"config_sha256":"e"*64}))
+ receipt.chmod(0o600)
+ pinned={"continuous-old":continuous_template("1"*40),"stable":stable}
+ observed,policy=reload_templates(pinned,fresh,old,new,"e"*64,receipt,tmp_path/"ack.json",tmp_path/"bindings")
+ assert observed==fresh and policy==new
+ assert json.loads((tmp_path/"ack.json").read_text())["removed_templates"]==["continuous-old"]
+def test_idle_reload_rejects_changed_existing_template_or_wrong_receipt(tmp_path):
+ receipt=tmp_path/"receipt.json";receipt.write_text("{}");receipt.chmod(0o600)
+ with pytest.raises(ValueError,match="changed existing"):reload_templates({"same":{"x":1}},{"same":{"x":2}},"a"*64,"a"*64,"e"*64,receipt,tmp_path/"ack.json")
+ with pytest.raises(ValueError,match="receipt"):reload_templates({"old":{}},{}, "a"*64,"b"*64,"e"*64,receipt,tmp_path/"ack.json")
+
+
+def test_finite_runner_keeps_legacy_additive_reload_without_continuous_policy(tmp_path):
+ pinned={"fixed":{"base":"a"}};fresh={**pinned,"new":{"base":"b"}}
+ assert reload_templates(pinned,fresh,None,None,"e"*64,tmp_path/"missing",tmp_path/"ack")== (fresh,None)
+ with pytest.raises(ValueError,match="removed finite"):reload_templates(pinned,{},None,None,"e"*64,tmp_path/"missing",tmp_path/"ack")
+
+
+def test_runner_startup_requires_binding_for_additions_and_allows_reregistered_name(tmp_path):
+ policy="b"*64;config={"continuous_policy_fingerprint":policy,"templates":{}}
+ raw=(json.dumps(config,sort_keys=True,indent=2)+"\n").encode();receipt=tmp_path/"receipt.json";ack=tmp_path/"ack.json"
+ receipt.write_text(json.dumps({"old_policy_fingerprint":"a"*64,"new_policy_fingerprint":policy,
+  "new_head":"c"*40,"bundle_sha256":"d"*64,"removed_templates":["continuous-old"],
+  "retained_templates":{},"config_sha256":hashlib.sha256(raw).hexdigest()}));receipt.chmod(0o600)
+ assert acknowledge_installed_refresh(raw,config,receipt,ack,tmp_path/"bindings")
+ definition=continuous_template("c"*40);bindings=binding(tmp_path,"continuous-old",definition,policy)
+ additive={**config,"templates":{"continuous-old":definition}};additive_raw=json.dumps(additive).encode()
+ assert acknowledge_installed_refresh(additive_raw,additive,receipt,ack,bindings)
+ changed={**additive,"bridge_url":"https://untrusted.invalid"}
+ with pytest.raises(ValueError,match="config differs"):
+  acknowledge_installed_refresh(json.dumps(changed).encode(),changed,receipt,ack,bindings)
+ (bindings/"continuous-old.json").unlink()
+ with pytest.raises((ValueError,OSError)):acknowledge_installed_refresh(additive_raw,additive,receipt,ack,bindings)
+
+
+def test_runner_startup_replaces_old_ack_for_second_exact_refresh(tmp_path):
+ config={"continuous_policy_fingerprint":"c"*64,"templates":{}}
+ raw=(json.dumps(config,sort_keys=True,indent=2)+"\n").encode();receipt=tmp_path/"receipt.json";ack=tmp_path/"ack.json"
+ receipt.write_text(json.dumps({"old_policy_fingerprint":"b"*64,"new_policy_fingerprint":"c"*64,
+  "new_head":"e"*40,"bundle_sha256":"f"*64,"removed_templates":[],"retained_templates":{},
+  "config_sha256":hashlib.sha256(raw).hexdigest()}));receipt.chmod(0o600)
+ ack.write_text(json.dumps({"new_policy_fingerprint":"b"*64}));ack.chmod(0o600)
+ assert acknowledge_installed_refresh(raw,config,receipt,ack,tmp_path/"bindings")
+ assert json.loads(ack.read_text())["new_policy_fingerprint"]=="c"*64
+
+
+def test_runner_rejects_unbound_continuous_idle_addition(tmp_path):
+ pinned={"stable":continuous_template("a"*40)};addition=continuous_template("b"*40)
+ long_name="continuous-"+"a"*36
+ with pytest.raises((ValueError,OSError)):
+  reload_templates(pinned,{**pinned,long_name:addition},"a"*64,"a"*64,"e"*64,
+                   tmp_path/"missing",tmp_path/"ack",tmp_path/"bindings")
+ bindings=binding(tmp_path,long_name,addition,"a"*64)
+ assert reload_templates(pinned,{**pinned,long_name:addition},"a"*64,"a"*64,"e"*64,
+                         tmp_path/"missing",tmp_path/"ack",bindings)[0][long_name]==addition

@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shlex
+import stat
 import subprocess
 import tempfile
 import time
@@ -289,23 +290,118 @@ class DeliveryRunner:
         # and creating/recovering the PR. No merge/deploy path exists.
         return self.bridge.call("POST",f"/v1/runner/jobs/{job_id}/finish-publication",{"permit":admitted["permit"]})
 
+def trusted_reload_receipt(path):
+    path=Path(path);fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+    try:
+        info=os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid!=os.geteuid() or stat.S_IMODE(info.st_mode)!=0o600 or info.st_nlink!=1 or info.st_size>100_000:raise ValueError("untrusted runner reload receipt")
+        return json.loads(os.read(fd,100_001))
+    finally:os.close(fd)
+def write_reload_ack(path,receipt):
+    path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.NamedTemporaryFile("w",dir=path.parent,delete=False) as output:
+        temporary=Path(output.name);json.dump(receipt,output,sort_keys=True,separators=(",",":"));output.write("\n");output.flush();os.fsync(output.fileno())
+    os.chmod(temporary,0o600);os.replace(temporary,path)
+    directory=os.open(path.parent,os.O_RDONLY|os.O_DIRECTORY);os.fsync(directory);os.close(directory)
+def trusted_template_binding(name,definition,policy,receipt_root="/etc/loop-runner/template-receipts"):
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,63}",str(name)) or not isinstance(definition,dict):raise ValueError("invalid runner template binding")
+    receipt=trusted_reload_receipt(Path(receipt_root)/(name+".json"))
+    required={"template_name","template_fingerprint","policy_fingerprint","base_sha","installed_sha256"}
+    prompt_path=Path(str(definition.get("prompt_file","")))
+    try:fd=os.open(prompt_path,os.O_RDONLY|os.O_NOFOLLOW)
+    except (OSError,TypeError):raise ValueError("untrusted runner template prompt") from None
+    try:
+        info=os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid!=os.geteuid() or info.st_mode&0o022
+                or info.st_nlink!=1 or info.st_size>1_000_000):raise ValueError("untrusted runner template prompt")
+        chunks=[];total=0
+        while True:
+            chunk=os.read(fd,min(65536,1_000_001-total))
+            if not chunk:break
+            chunks.append(chunk);total+=len(chunk)
+            if total>1_000_000:raise ValueError("untrusted runner template prompt")
+        prompt=b"".join(chunks)
+    finally:os.close(fd)
+    installed_sha=hashlib.sha256(json.dumps({"name":name,"template":definition,"prompt_sha256":hashlib.sha256(prompt).hexdigest()},
+        sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
+    if (not isinstance(receipt,dict) or set(receipt)!=required or receipt["template_name"]!=name
+            or receipt["template_fingerprint"]!=template_fingerprint(name,definition)
+            or receipt["policy_fingerprint"]!=policy or receipt["base_sha"]!=definition.get("base_sha")
+            or receipt["installed_sha256"]!=installed_sha):raise ValueError("runner template binding mismatch")
+    return True
+def validate_continuous_additions(templates,retained,policy,receipt_root):
+    if not isinstance(templates,dict) or not isinstance(retained,dict):raise ValueError("invalid retained runner templates")
+    for name,fingerprint in retained.items():
+        if name not in templates or template_fingerprint(name,templates[name])!=fingerprint:raise ValueError("retained runner authority changed")
+    for name in sorted(set(templates)-set(retained)):
+        trusted_template_binding(name,templates[name],policy,receipt_root)
+def acknowledge_installed_refresh(config_raw,config,receipt_path="/etc/loop-runner/base-refresh-receipt.json",ack_path="/var/lib/loop-runner/base-refresh-ack.json",template_receipt_root="/etc/loop-runner/template-receipts"):
+    path=Path(receipt_path)
+    if not path.exists():return False
+    receipt=trusted_reload_receipt(path);policy=config.get("continuous_policy_fingerprint")
+    if receipt.get("new_policy_fingerprint")!=policy:return False
+    expected={"new_policy_fingerprint":policy,"config_sha256":receipt.get("config_sha256"),
+              "removed_templates":receipt.get("removed_templates"),"new_head":receipt.get("new_head"),
+              "bundle_sha256":receipt.get("bundle_sha256"),"retained_templates":receipt.get("retained_templates")}
+    required={"new_policy_fingerprint","config_sha256","removed_templates","new_head","bundle_sha256","retained_templates"}
+    if (set(expected)!=required or not isinstance(expected["removed_templates"],list)
+            or not isinstance(expected["retained_templates"],dict)):raise ValueError("invalid startup reload receipt")
+    validate_continuous_additions(config.get("templates",{}),expected["retained_templates"],policy,template_receipt_root)
+    ack_file=Path(ack_path)
+    acknowledged=ack_file.exists() and trusted_reload_receipt(ack_file)==expected
+    observed=hashlib.sha256(config_raw).hexdigest()
+    if expected["config_sha256"]!=observed:
+        baseline=dict(config);baseline["templates"]={name:config["templates"][name] for name in expected["retained_templates"]}
+        baseline_raw=(json.dumps(baseline,sort_keys=True,indent=2)+"\n").encode()
+        if hashlib.sha256(baseline_raw).hexdigest()!=expected["config_sha256"]:
+            raise ValueError("installed runner config differs from reload receipt")
+    if not acknowledged:write_reload_ack(ack_path,expected)
+    return True
+def reload_templates(pinned,fresh,pinned_policy,fresh_policy,config_sha256,receipt_path="/etc/loop-runner/base-refresh-receipt.json",ack_path="/var/lib/loop-runner/base-refresh-ack.json",template_receipt_root="/etc/loop-runner/template-receipts"):
+    if not isinstance(fresh,dict):raise ValueError("runner templates unavailable")
+    changed={name for name in set(pinned)&set(fresh) if pinned[name]!=fresh[name]}
+    if changed:raise ValueError("runner template registry changed existing authority")
+    removed=sorted(set(pinned)-set(fresh))
+    if pinned_policy is None and fresh_policy is None:
+        if removed:raise ValueError("runner template registry removed finite authority")
+        return dict(fresh),None
+    if pinned_policy is None or fresh_policy is None:raise ValueError("runner policy mode changed without restart")
+    for name in sorted(set(fresh)-set(pinned)):trusted_template_binding(name,fresh[name],fresh_policy,template_receipt_root)
+    if removed or fresh_policy!=pinned_policy:
+        receipt=trusted_reload_receipt(receipt_path)
+        required={"old_policy_fingerprint","new_policy_fingerprint","new_head","bundle_sha256","removed_templates","retained_templates","config_sha256"}
+        if (not isinstance(receipt,dict) or set(receipt)!=required or receipt["old_policy_fingerprint"]!=pinned_policy
+                or receipt["new_policy_fingerprint"]!=fresh_policy or receipt["removed_templates"]!=removed
+                or not isinstance(receipt["retained_templates"],dict)
+                or not re.fullmatch(r"[0-9a-f]{40}",str(receipt["new_head"]))
+                or not re.fullmatch(r"[0-9a-f]{64}",str(receipt["bundle_sha256"]))
+                or receipt["config_sha256"]!=config_sha256 or not re.fullmatch(r"[0-9a-f]{64}",str(config_sha256))):
+            raise ValueError("runner base reload receipt mismatch")
+        validate_continuous_additions(fresh,receipt["retained_templates"],fresh_policy,template_receipt_root)
+        ack={"new_policy_fingerprint":fresh_policy,"config_sha256":config_sha256,
+             "removed_templates":removed,"retained_templates":receipt["retained_templates"],
+             "new_head":receipt["new_head"],"bundle_sha256":receipt["bundle_sha256"]}
+        write_reload_ack(ack_path,ack)
+    return dict(fresh),fresh_policy
 def main():
     parser=argparse.ArgumentParser();parser.add_argument("--config",required=True);parser.add_argument("--job");parser.add_argument("--serve",action="store_true");parser.add_argument("--recover-push");args=parser.parse_args()
-    config=json.loads(Path(args.config).read_text()); bridge=JsonHTTP(config["bridge_url"],secret(config["runner_token_file"]),trusted_bridge=True)
+    config_raw=Path(args.config).read_bytes();config=json.loads(config_raw); bridge=JsonHTTP(config["bridge_url"],secret(config["runner_token_file"]),trusted_bridge=True)
     if args.recover_push:
         print(json.dumps(recover_push(bridge,args.recover_push,config["evidence_root"])));return
     if args.serve:
         # Consumer only: Paperclip remains the Director scheduler.
         pinned_templates=dict(config.get("templates",{}))
+        pinned_policy=config.get("continuous_policy_fingerprint")
+        if pinned_policy is not None and not re.fullmatch(r"[0-9a-f]{64}",str(pinned_policy)):raise ValueError("runner policy fingerprint invalid")
+        if pinned_policy is not None:acknowledge_installed_refresh(config_raw,config)
         while True:
             job_id=None
             try:
-                fresh=json.loads(Path(args.config).read_text())
+                fresh_raw=Path(args.config).read_bytes();fresh=json.loads(fresh_raw)
                 fresh_templates=fresh.get("templates")
-                if (not isinstance(fresh_templates,dict)
-                        or any(name not in fresh_templates or fresh_templates[name]!=definition for name,definition in pinned_templates.items())):
-                    raise ValueError("runner template registry changed existing authority")
-                pinned_templates=dict(fresh_templates);config=fresh
+                pinned_templates,pinned_policy=reload_templates(pinned_templates,fresh_templates,pinned_policy,
+                    fresh.get("continuous_policy_fingerprint"),hashlib.sha256(fresh_raw).hexdigest())
+                config=fresh
                 job_id=bridge.call("GET","/v1/runner/jobs/next").get("job_id")
                 if job_id: DeliveryRunner(config,bridge).run(job_id)
             except Exception:
