@@ -241,3 +241,15 @@ def test_prompt_contract_version_preserves_legacy_registration_and_constrains_ne
  fresh=proposal(proposal_id="fresh-task",slice_key="fresh-slice");restarted.propose(fresh,*planner(restarted));reviewed=approve(restarted,"fresh-task")
  assert reviewed["prompt_contract_version"]==2 and reviewed["prompt_contract"]["checkout"]=="proxima-ai"
  assert reviewed["prompt_contract"]["allowed_paths"]==reviewed["allowed_paths"] and "scoped_commit" in reviewed["prompt_contract"]
+
+
+def test_settled_blocked_attempt_can_retry_with_fresh_confirmed_stop(tmp_path):
+ q=ContinuousQueue(tmp_path/"q.db",policy());q.propose(proposal(),*planner(q));register(q);claimed=q.claim();lease=claimed["lease_id"]
+ blocked=q.update(claimed["id"],lease,"blocked",run_id="run-stopped",job_id="job-stopped",blocker="oracle_false_failure")
+ settled=q.settle(blocked["id"],{"stopped":True,"previous_lease_id":lease,"external_run_id":"run-stopped","external_job_id":"job-stopped","evidence_ref":"stop-1.json","reason":"nonretryable"})
+ assert settled["state"]=="blocked" and settled["lease_id"] is None and settled["attempts"]==1
+ retried=q.retry(settled["id"],{"stopped":True,"previous_lease_id":None,"external_run_id":"run-stopped","external_job_id":"job-stopped","evidence_ref":"stop-2-after-oracle-fix.json","reason":"local_failure"})
+ assert retried["state"]=="ready" and retried["attempts"]==1 and retried["lease_id"] is None
+ with q.db() as db:
+  events=[json.loads(row[0])["state"] for row in db.execute("SELECT event FROM continuous_attempt_events WHERE queue_id=? ORDER BY sequence",(retried["id"],))]
+ assert events[-2:]==["settled","retry_ready"]
