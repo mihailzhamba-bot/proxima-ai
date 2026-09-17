@@ -4,7 +4,9 @@ from __future__ import annotations
 import json,os,stat,subprocess,tempfile
 from pathlib import Path
 if not __package__:
- import sys;sys.path.insert(0,str(Path(__file__).resolve().parent))
+ import sys
+ sys.path.insert(0,"/opt/loop")
+ sys.path.insert(0,str(Path(__file__).resolve().parent))
 try:
  from .continuous_register import install
  from .continuous_queue import digest,validate_policy

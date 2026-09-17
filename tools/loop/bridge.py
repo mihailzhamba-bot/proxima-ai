@@ -208,12 +208,13 @@ class Bridge:
 
     def continuous_execution(self,payload):
         queue=self.continuous_required()
-        if not isinstance(payload,dict) or set(payload)!={"source","policy_fingerprint","requirements","queue","goal"} or payload.get("source")!="continuous_planning" or payload.get("policy_fingerprint")!=queue.policy_fingerprint:
+        if not isinstance(payload,dict) or set(payload)!={"source","policy_fingerprint","planning_snapshot","requirements","queue","goal"} or payload.get("source")!="continuous_planning" or payload.get("policy_fingerprint")!=queue.policy_fingerprint:
             raise BridgeError(409,"continuous planning envelope changed",False)
         expected={key:{**{field:value[field] for field in ("objective","acceptance","max_slices","depends_on","source_evidence")},
             "path_sets":{name:scope["description"] for name,scope in value["path_sets"].items()}}
             for key,value in queue.policy["requirements"].items()}
-        if payload.get("requirements")!=expected or not isinstance(payload.get("queue"),dict):
+        if (payload.get("requirements")!=expected or not isinstance(payload.get("queue"),dict)
+                or not re.fullmatch(r"[0-9a-f]{64}",str(payload.get("planning_snapshot","")))):
             raise BridgeError(409,"continuous planning policy changed",False)
         return payload
 
@@ -400,7 +401,7 @@ class Bridge:
             "path_sets":{name:scope["description"] for name,scope in value["path_sets"].items()}}
             for key,value in queue.policy["requirements"].items()}
         payload={"source":"continuous_planning","policy_fingerprint":queue.policy_fingerprint,
-            "requirements":requirements,
+            "planning_snapshot":status["planning_snapshot"],"requirements":requirements,
             "queue":{"pending":[{key:item[key] for key in ("id","requirement_id","slice_key","state")} for item in status["items"] if item["state"] not in {"merged","cancelled"}],
                      "completed":[{key:item[key] for key in ("id","requirement_id","slice_key","state")} for item in status["items"] if item["state"]=="merged"],
                      "eligible_requirements":status["eligible_requirements"],"plan_exhausted":status["plan_exhausted"]},
@@ -432,6 +433,9 @@ class Bridge:
     def merge_continuous(self,item_id,payload):
         try:return self.continuous_required().merge(item_id,payload)
         except ValueError as error:raise BridgeError(409,str(error),False) from None
+    def settle_continuous(self,item_id,payload):
+        try:return self.continuous_required().settle(item_id,payload)
+        except ValueError as error:raise BridgeError(409,str(error),False) from None
     def retry_continuous(self,item_id,payload):
         with self.tx() as db:
             if db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0]=="true":raise BridgeError(409,"continuous queue paused",False)
@@ -453,12 +457,21 @@ class Bridge:
             result["shared_executor_busy"]=db.execute("SELECT 1 FROM jobs WHERE state IN ('queued','dispatching','publishing','unknown','recoverable') LIMIT 1").fetchone() is not None
             result["queue_paused"]=db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0]=="true"
             rows=db.execute("SELECT id,key,state,request,updated FROM operations WHERE kind='paperclip' ORDER BY created DESC LIMIT 20").fetchall()
+        matching=[];latest=None;active=None
+        terminal={"completed","failed","error","cancelled","interrupted","rejected"}
+        active_states={"dispatching","running","unknown","cancelling"}
         for row in rows:
             try:request=json.loads(row["request"])
             except Exception:continue
-            if request.get("source")=="continuous_planning":
-                result["planning"]={key:row[key] for key in ("id","key","state","updated")}
-                break
+            if request.get("source")!="continuous_planning":continue
+            if active is None and row["state"] in active_states:active=row
+            if request.get("planning_snapshot")!=result["planning_snapshot"]:continue
+            if latest is None:latest=row
+            if row["state"] in terminal:matching.append(row)
+        result["planning_generation"]=len(matching)
+        result["planning_retry_exhausted"]=len(matching)>=3
+        observed=active or latest
+        if observed is not None:result["planning"]={key:observed[key] for key in ("id","key","state","updated")}
         return result
 
     def propose_job(self, payload, templates):
@@ -845,13 +858,14 @@ def server(bridge, config):
                     try:result=bridge.continuous_required().registration(match[1]) if match[2] else bridge.continuous_required().get(match[1])
                     except ValueError as error:raise BridgeError(409,str(error),False) from None
                 elif self.command=="POST" and path=="/v1/queue/claim":result=bridge.claim_continuous() or {"item_id":None}
-                elif match:=re.fullmatch(r"/v1/queue/([a-z0-9][a-z0-9-]{2,63})/(review|reject|receipt|update|merge|retry)",path):
+                elif match:=re.fullmatch(r"/v1/queue/([a-z0-9][a-z0-9-]{2,63})/(review|reject|receipt|update|merge|retry|settle)",path):
                     if self.command!="POST":raise BridgeError(404,"queue operation unavailable")
                     if match[2]=="review":result=bridge.review_continuous(match[1],payload)
                     elif match[2]=="reject":result=bridge.reject_continuous(match[1],payload)
                     elif match[2]=="receipt":result=bridge.receipt_continuous(match[1],payload)
                     elif match[2]=="merge":result=bridge.merge_continuous(match[1],payload)
                     elif match[2]=="retry":result=bridge.retry_continuous(match[1],payload)
+                    elif match[2]=="settle":result=bridge.settle_continuous(match[1],payload)
                     else:result=bridge.update_continuous(match[1],payload)
                 elif self.command=="GET" and path=="/v1/runner/jobs/next": result=bridge.next_job()
                 elif match:=re.fullmatch(r"/v1/runner/jobs/([a-z0-9][a-z0-9-]{2,40})(/(claim|begin-publication|start-push|record-push|finish-publication|fence|fail))?",path):

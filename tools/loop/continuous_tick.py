@@ -20,7 +20,8 @@ except ImportError:
 PIPELINE={"proposed","registering","ready","dispatching","running","unknown"}
 def planning_key(status,now):
     snapshot=[(item.get("id"),item.get("state")) for item in status.get("items",[]) if item.get("state") in PIPELINE]
-    value=json.dumps({"policy":status.get("policy_fingerprint"),"queue":snapshot},sort_keys=True)
+    value=json.dumps({"policy":status.get("policy_fingerprint"),"queue":snapshot,
+                      "snapshot":status.get("planning_snapshot"),"generation":status.get("planning_generation",0)},sort_keys=True)
     return "continuous-plan-"+hashlib.sha256(value.encode()).hexdigest()[:32]
 def tick(client,dispatcher,admission=None,reporter=None,now=time.time):
     status=client("GET","/v1/queue")
@@ -30,16 +31,26 @@ def tick(client,dispatcher,admission=None,reporter=None,now=time.time):
                 "admission":{"status":"paused"},"dispatch":{"status":"paused"},"report":reported}
     pending=[item for item in status.get("items",[]) if item.get("state") in PIPELINE]
     plan=None
-    planning_state=(status.get("planning") or {}).get("state")
-    if len(pending)<3 and not status.get("plan_exhausted",False) and planning_state not in {"dispatching","running","unknown"}:
+    planning=(status.get("planning") or {});planning_state=planning.get("state")
+    if planning_state in {"dispatching","running","unknown","cancelling"} and planning.get("id"):
+        try:
+            observed=client("GET","/v1/runs/"+planning["id"])
+            planning_state=observed.get("status",planning_state)
+        except Exception:planning_state="unknown"
+    if (status.get("current") is None and not status.get("shared_executor_busy",False)
+            and len(pending)<3 and not status.get("plan_exhausted",False)
+            and not status.get("planning_retry_exhausted",False)
+            and planning_state not in {"dispatching","running","unknown","cancelling"}):
         try:plan=client("POST","/v1/queue/plan",payload={},headers={"Idempotency-Key":planning_key(status,now())})
         except Exception:plan={"status":"unknown","reason":"planning_reconcile_required"}
     try:admitted=admission.run_once() if admission is not None else {"status":"disabled"}
     except Exception:admitted={"status":"blocked","reason":"admission_failed"}
+    try:report_status=client("GET","/v1/queue")
+    except Exception:report_status=status
+    try:reported=reporter.run(report_status,now()) if reporter is not None else {"status":"disabled"}
+    except Exception:reported={"status":"unknown"}
     try:dispatched=dispatcher.run_once()
     except Exception:dispatched={"status":"unknown","reason":"dispatch_reconcile_required"}
-    try:reported=reporter.run(status,now()) if reporter is not None else {"status":"disabled"}
-    except Exception:reported={"status":"unknown"}
     return {"status":"ok","queue_depth":len(pending),"planning":plan,"admission":admitted,"dispatch":dispatched,"report":reported}
 def main():
     parser=argparse.ArgumentParser();parser.add_argument("--config",required=True,type=Path);args=parser.parse_args()

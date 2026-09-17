@@ -11,15 +11,19 @@ except ImportError:
  from night_batch import atomic_json,json_file
 MSK=timezone(timedelta(hours=3))
 def render(status):
- current=status.get("current");upcoming=status.get("next")
+ current=status.get("current");upcoming=status.get("next");items=status.get("items",[])
  lines=["LOOP очередь WB."]
  if current:
   lines.append("Текущая: "+str(current.get("id"))+" ("+str(current.get("state"))+").")
   lines.append("Последний прогресс: "+datetime.fromtimestamp(current.get("updated",0),MSK).strftime("%d.%m %H:%M МСК")+".")
-  if current.get("blocker"):lines.append("Блокер: "+str(current["blocker"])[:160]+".")
-  if current.get("pr_url"):lines.append("PR: "+str(current["pr_url"]))
  else:lines.append("Текущая: нет.")
  lines.append("Следующая: "+(str(upcoming.get("id"))+" ("+str(upcoming.get("state"))+")." if upcoming else "нет."))
+ last_pr=next((item for item in sorted(items,key=lambda v:v.get("updated",0),reverse=True) if item.get("pr_url")),None)
+ lines.append("Последний PR: "+(str(last_pr["pr_url"]) if last_pr else "нет."))
+ final_blockers=[item for item in items if item.get("state") in {"blocked","rejected","cancelled"} and not item.get("lease_id")]
+ if final_blockers:
+  lines.append("Финальные блокеры: "+"; ".join(str(item.get("id"))+": "+str(item.get("blocker") or item.get("state"))[:120] for item in final_blockers[:3])+".")
+ else:lines.append("Финальные блокеры: нет.")
  return "\n".join(lines)
 class Reporter:
  def __init__(self,config,execute=None):

@@ -4,6 +4,7 @@ import hashlib, json, re, sqlite3, time
 from pathlib import PurePosixPath
 ID=re.compile(r"^[a-z0-9][a-z0-9-]{2,63}$"); SHA=re.compile(r"^[0-9a-f]{40}$"); DIGEST=re.compile(r"^[0-9a-f]{64}$")
 PROFILE_ID="73bf9c3a-ab69-4b2e-a7f0-e808df8f2614"; TARGETS={"bridge","harper","worker"}
+ACCEPTANCE_PROFILES={"wb-daily-packaging","wb-warehouse-metadata","wb-daily-status"}
 CONTROL=("tools/","infra/loop-control/",".github/","db/")
 POLICY_EXCEPTIONS=frozenset({"tools/wb/daily.py","tools/tests/test_wb_daily.py","infra/systemd/proxima-wb-daily.service","infra/systemd/proxima-wb-daily.timer","services/collector/tests/collect.db.test.ts","tools/loop/wb_daily_status.py","tools/tests/test_wb_daily_status.py"})
 class QueueError(ValueError): pass
@@ -21,7 +22,7 @@ def validate_policy(p):
         if not ID.fullmatch(str(key)) or not isinstance(item,dict) or not req<=set(item) or set(item)-req:raise QueueError("invalid continuous requirement")
         if (type(item["max_slices"]) is not int or not 1<=item["max_slices"]<=20
                 or not isinstance(item["objective"],str) or not item["objective"]
-                or not isinstance(item["acceptance"],list) or not item["acceptance"] or not ID.fullmatch(str(item["acceptance_profile"]))
+                or not isinstance(item["acceptance"],list) or not item["acceptance"] or item["acceptance_profile"] not in ACCEPTANCE_PROFILES
                 or not re.fullmatch(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",str(item["repository"])) or not SHA.fullmatch(str(item["base_sha"])) or item["profile"]!="fedor" or item["profile_id"]!=PROFILE_ID or type(item["profile_revision"]) is not int or item["profile_revision"]<0):raise QueueError("invalid continuous execution identity")
         path_sets=item["path_sets"]
         if (not isinstance(path_sets,dict) or not path_sets
@@ -31,7 +32,7 @@ def validate_policy(p):
                        or not isinstance(scope["allowed_paths"],list) or not scope["allowed_paths"]
                        or any(not product_path(v) for v in scope["allowed_paths"])
                        or not isinstance(scope["contract_files"],list)
-                       or not ID.fullmatch(str(scope["acceptance_profile"])) for name,scope in path_sets.items())):
+                       or scope["acceptance_profile"] not in ACCEPTANCE_PROFILES for name,scope in path_sets.items())):
             raise QueueError("invalid operator path sets")
         evidence=item["source_evidence"]
         if (not isinstance(evidence,list) or not 1<=len(evidence)<=12
@@ -145,7 +146,8 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
         except ImportError:from bridge import template_fingerprint
         tfp=template_fingerprint(name,template)
         with self.db() as d:
-            d.execute("UPDATE continuous_queue SET review_fingerprint=?,template_name=?,template_fingerprint=?,state='registering',updated=? WHERE id=?",(rfp,name,tfp,self.clock(),item_id))
+            changed=d.execute("UPDATE continuous_queue SET review_fingerprint=?,template_name=?,template_fingerprint=?,state='registering',updated=? WHERE id=? AND state='proposed' AND proposal_fingerprint=? AND policy_fingerprint=?",(rfp,name,tfp,self.clock(),item_id,row["proposal_fingerprint"],self.policy_fingerprint))
+            if changed.rowcount!=1:raise QueueError("proposal review raced")
             for dependency_id,proof in dependencies.items():
                 d.execute("INSERT OR REPLACE INTO continuous_dependency_receipts VALUES(?,?,?)",(item_id,dependency_id,canonical(proof)))
         return {**self.get(item_id),"template":template,"prompt_contract":prompt,"review_receipt":receipt}
@@ -170,7 +172,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
                 or receipt["proposal_fingerprint"]!=row["proposal_fingerprint"]
                 or not isinstance(receipt["blocker"],str) or not receipt["blocker"]):raise QueueError("invalid proposal rejection")
         with self.db() as d:
-            result=d.execute("UPDATE continuous_queue SET state='rejected',review_fingerprint=?,blocker=?,updated=? WHERE id=? AND state='proposed'",(digest(receipt),receipt["blocker"][:500],self.clock(),item_id))
+            result=d.execute("UPDATE continuous_queue SET state='rejected',review_fingerprint=?,blocker=?,updated=? WHERE id=? AND state='proposed' AND proposal_fingerprint=? AND policy_fingerprint=?",(digest(receipt),receipt["blocker"][:500],self.clock(),item_id,row["proposal_fingerprint"],self.policy_fingerprint))
             if result.rowcount!=1:raise QueueError("proposal rejection raced")
         return self.get(item_id)
     def receipt(self,item_id,receipt):
@@ -197,6 +199,8 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
         now=self.clock()
         with self.db() as d:
             d.execute("BEGIN IMMEDIATE")
+            jobs_exists=d.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone()
+            if jobs_exists and d.execute("SELECT 1 FROM jobs WHERE state IN ('queued','dispatching','publishing','unknown','recoverable') LIMIT 1").fetchone():return None
             if d.execute("SELECT 1 FROM continuous_queue WHERE state IN('dispatching','running','unknown') OR(state='blocked' AND lease_id IS NOT NULL) OR(lease_id IS NOT NULL AND lease_expires>?)",(now,)).fetchone():return None
             selected=None
             for row in d.execute("SELECT id,depends_on FROM continuous_queue WHERE state='ready' AND attempts<3 AND policy_fingerprint=? ORDER BY created,id",(self.policy_fingerprint,)):
@@ -217,13 +221,31 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
             if not row or row["policy_fingerprint"]!=self.policy_fingerprint or row["lease_id"]!=lease_id or row["state"] not in {"dispatching","running","unknown","blocked"}:raise QueueError("queue lease lost")
             if state=="ready_pr" and (not SHA.fullmatch(str(evidence.get("head_sha",""))) or not str(evidence.get("pr_url","")).startswith("https://")):raise QueueError("ready PR evidence required")
             event={"state":state,"lease_id":lease_id,"evidence":evidence}
-            terminal=state in {"ready_pr","cancelled"} or (state=="blocked" and row["attempts"]>=3)
+            terminal=state in {"ready_pr","cancelled"}
             sequence=d.execute("SELECT coalesce(max(sequence),0)+1 FROM continuous_attempt_events WHERE queue_id=?",(item_id,)).fetchone()[0]
             d.execute("INSERT INTO continuous_attempt_events VALUES(?,?,?,?)",(item_id,sequence,canonical(event),self.clock()))
             result=d.execute("""UPDATE continuous_queue SET state=?,external_run_id=coalesce(?,external_run_id),
 external_job_id=coalesce(?,external_job_id),evidence=?,pr_url=coalesce(?,pr_url),blocker=coalesce(?,blocker),
 lease_id=?,lease_expires=?,updated=? WHERE id=? AND state=? AND lease_id=?""",(state,evidence.get("run_id"),evidence.get("job_id"),canonical(evidence),evidence.get("pr_url"),evidence.get("blocker"),None if terminal else lease_id,None if terminal else row["lease_expires"],self.clock(),item_id,row["state"],lease_id))
             if result.rowcount!=1:raise QueueError("queue transition raced")
+        return self.get(item_id)
+    def settle(self,item_id,receipt):
+        required={"stopped","previous_lease_id","external_run_id","external_job_id","evidence_ref","reason"}
+        with self.db() as d:
+            d.execute("BEGIN IMMEDIATE")
+            row=d.execute("SELECT * FROM continuous_queue WHERE id=?",(item_id,)).fetchone()
+            if (not row or row["policy_fingerprint"]!=self.policy_fingerprint or not isinstance(receipt,dict)
+                    or set(receipt)!=required or receipt["stopped"] is not True
+                    or receipt["reason"] not in {"nonretryable","attempts_exhausted","user_stop"}
+                    or row["state"] not in {"unknown","blocked"} or receipt["previous_lease_id"]!=row["lease_id"]
+                    or receipt["external_run_id"]!=row["external_run_id"] or receipt["external_job_id"]!=row["external_job_id"]
+                    or not isinstance(receipt["evidence_ref"],str) or not receipt["evidence_ref"]):
+                raise QueueError("confirmed terminal settlement required")
+            sequence=d.execute("SELECT coalesce(max(sequence),0)+1 FROM continuous_attempt_events WHERE queue_id=?",(item_id,)).fetchone()[0]
+            d.execute("INSERT INTO continuous_attempt_events VALUES(?,?,?,?)",(item_id,sequence,canonical({"state":"settled","stop_receipt":receipt}),self.clock()))
+            state="cancelled" if receipt["reason"]=="user_stop" else "blocked"
+            changed=d.execute("UPDATE continuous_queue SET state=?,lease_id=NULL,lease_expires=NULL,updated=? WHERE id=? AND state=? AND lease_id=?",(state,self.clock(),item_id,row["state"],row["lease_id"]))
+            if changed.rowcount!=1:raise QueueError("queue settlement raced")
         return self.get(item_id)
     def retry(self,item_id,receipt):
         required={"stopped","previous_lease_id","external_run_id","external_job_id","evidence_ref","reason"}
@@ -241,7 +263,10 @@ lease_id=?,lease_expires=?,updated=? WHERE id=? AND state=? AND lease_id=?""",(s
         active_counts={key:sum(row["requirement_id"]==key and row["state"] not in {"rejected","cancelled"} for row in rows) for key in self.policy["requirements"]}
         total_counts={key:sum(row["requirement_id"]==key for row in rows) for key in self.policy["requirements"]}
         eligible=[key for key,item in self.policy["requirements"].items() if active_counts[key]<item["max_slices"] and total_counts[key]<item["max_slices"]*3]
-        return {"policy_fingerprint":self.policy_fingerprint,"continuous_ready":False,
+        planning_snapshot=digest({"policy_fingerprint":self.policy_fingerprint,
+            "items":[{key:row.get(key) for key in ("id","requirement_id","slice_key","state")} for row in rows],
+            "eligible_requirements":eligible})
+        return {"policy_fingerprint":self.policy_fingerprint,"planning_snapshot":planning_snapshot,"continuous_ready":False,
         "plan_exhausted":not eligible,"eligible_requirements":eligible,
         "current":next((r for r in rows if (r["state"] in {"dispatching","running","unknown"} or (r["state"]=="blocked" and r.get("lease_id")))),None),
         "next":next((r for r in rows if r["state"] in {"ready","registering","proposed"}),None),"items":rows}

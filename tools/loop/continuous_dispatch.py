@@ -111,13 +111,16 @@ class Dispatcher:
             item=self.call("POST",f'/v1/queue/{item["id"]}/update',payload={"lease_id":item["lease_id"],
               "state":item["state"],"run_id":run_id,"job_id":item.get("external_job_id") or attempt_id(item),
               "evidence_ref":str(state_path),"blocker":str(reason or "reconcile")[:120]})
-        if item["attempts"]>=3 or reason not in retryable or not run_id:return {"status":"blocked","item_id":item["id"],"reason":reason}
+        if not run_id:return {"status":"unknown","item_id":item["id"],"reason":"run_identity_unavailable"}
         try:run=self.call("GET","/v1/runs/"+run_id)
         except Exception:return {"status":"unknown","item_id":item["id"],"reason":"stop_reconcile_failed"}
         if run.get("status") not in {"cancelled","failed","error","interrupted","stopped"}:return {"status":"active","item_id":item["id"],"state":run.get("status")}
-        receipt={"stopped":True,"previous_lease_id":item["lease_id"],"external_run_id":run_id,
-          "external_job_id":item.get("external_job_id"),"evidence_ref":str(state_path),"reason":"local_failure"}
-        return self.call("POST",f'/v1/queue/{item["id"]}/retry',payload=receipt)
+        base_receipt={"stopped":True,"previous_lease_id":item["lease_id"],"external_run_id":run_id,
+          "external_job_id":item.get("external_job_id"),"evidence_ref":str(state_path)}
+        if item["attempts"]<3 and reason in retryable:
+            return self.call("POST",f'/v1/queue/{item["id"]}/retry',payload={**base_receipt,"reason":"local_failure"})
+        settlement="attempts_exhausted" if item["attempts"]>=3 else "nonretryable"
+        return self.call("POST",f'/v1/queue/{item["id"]}/settle',payload={**base_receipt,"reason":settlement})
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument("--config",required=True,type=Path);args=parser.parse_args()

@@ -18,7 +18,13 @@ class Admission:
         status=self.call("GET","/v1/queue")
         if status.get("current") is not None:return {"status":"active","item_id":status["current"]["id"]}
         if status.get("shared_executor_busy"):return {"status":"active","reason":"shared_executor_busy"}
-        candidate=next((v for v in status.get("items",[]) if v.get("state") in {"proposed","registering"}),None)
+        states={value.get("id"):value.get("state") for value in status.get("items",[])}
+        candidate=None
+        for value in status.get("items",[]):
+            if value.get("state") not in {"proposed","registering"}:continue
+            detail=self.call("GET","/v1/queue/"+value["id"])
+            if all(states.get(dependency)=="merged" for dependency in detail.get("depends_on",[])):
+                candidate=value;break
         if candidate is None:return {"status":"idle"}
         item=self.call("GET","/v1/queue/"+candidate["id"])
         if item["state"]=="proposed":
@@ -34,12 +40,16 @@ class Admission:
         completed=set(registration.get("receipts",{}));receipts=[]
         for target in ("bridge","harper","worker"):
             if target in completed:continue
-            idle={"observed_at":status["observed_at"],"queue_current":None,
-                  "shared_executor_busy":False,"policy_fingerprint":status["policy_fingerprint"]}
+            fresh=self.call("GET","/v1/queue")
+            if fresh.get("current") is not None or fresh.get("shared_executor_busy") or fresh.get("policy_fingerprint")!=registration["policy_fingerprint"]:
+                raise AdmissionError("registration idle fence changed")
+            idle={"observed_at":fresh["observed_at"],"queue_current":None,
+                  "shared_executor_busy":False,"policy_fingerprint":fresh["policy_fingerprint"]}
             receipt=command(self.config["registrars"][target],{"action":"register","target":target,
                 "registration":registration,"idle_receipt":idle},self.execute)
             if receipt.get("target")!=target:raise AdmissionError("registration target mismatch")
-            registration=self.call("POST","/v1/queue/"+item["id"]+"/receipt",payload=receipt);receipts.append(target)
+            self.call("POST","/v1/queue/"+item["id"]+"/receipt",payload=receipt);receipts.append(target)
+            registration=self.call("GET","/v1/queue/"+item["id"]+"/registration")
         return {"status":registration["state"],"item_id":item["id"],"registered":receipts}
 
 

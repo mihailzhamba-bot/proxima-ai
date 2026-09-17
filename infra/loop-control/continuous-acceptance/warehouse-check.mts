@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import {createHash} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
+import {spawn} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {mkdtemp,readFile,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {runCollect} from '/work/services/collector/src/jobs/collect.ts';
-import {FixtureTransport,DEFAULT_FIXTURE_ROOT} from '/work/services/collector/src/wb/fixture-transport.ts';
+import {DEFAULT_FIXTURE_ROOT} from '/work/services/collector/src/wb/fixture-transport.ts';
 const {Client}=createRequire('/work/services/collector/package.json')('pg');
 assert.ok(process.env.PROXIMA_TEST_POSTGRES_DSN);assert.ok(process.env.PROXIMA_TEST_DSN_COLLECTOR);
 const db=new Client({connectionString:process.env.PROXIMA_TEST_POSTGRES_DSN});await db.connect();
@@ -19,8 +19,22 @@ await writeFile(token,Buffer.from('{"alg":"none"}').toString('base64url')+'.'+Bu
 let lastRun;const cases=[];
 async function collect(o,s,t='fixture-warehouse-a'){
  await db.query('INSERT INTO tenants(tenant_id) VALUES($1) ON CONFLICT DO NOTHING',[t]);
- const transport=new FixtureTransport({scripts:{'statistics.orders':[{status:200,body:JSON.stringify(o),headers:{'content-type':'application/json'}}],'statistics.sales':[{status:200,body:JSON.stringify(s),headers:{'content-type':'application/json'}}]}}).transport;
- return runCollect({tenantId:t,dateFrom:'2026-08-17',statisticsTokenFile:token},{transport,env:{COLLECTOR_DATABASE_URI_FILE:uri,PROXIMA_RAW_DIR:raw},repositoryRoot:'/work',clock:{now:()=>Date.parse('2026-08-20T10:00:00Z'),sleep:async()=>{}},onRunOpened:id=>{lastRun=id;}});
+ const nonce=randomBytes(20).toString('hex');
+ const request={orders:o,sales:s,args:{tenantId:t,dateFrom:'2026-08-17',statisticsTokenFile:token},env:{COLLECTOR_DATABASE_URI_FILE:uri,PROXIMA_RAW_DIR:raw,PROXIMA_GIT_SHA:nonce}};
+ const reply=await new Promise((resolve,reject)=>{
+  const child=spawn('node',['--import','/work/node_modules/tsx/dist/loader.mjs','/acceptance/warehouse_candidate.mts'],{env:{PATH:process.env.PATH,LANG:'C.UTF-8',HOME:'/tmp'},stdio:['pipe','pipe','pipe']});
+  let out='',err='';const timer=setTimeout(()=>{child.kill('SIGKILL');reject(Error('candidate timeout'));},15000);
+  child.stdout.on('data',b=>{out+=b.toString();if(out.length>1000000){child.kill('SIGKILL');reject(Error('candidate output bound'));}});
+  child.stderr.on('data',b=>{err+=b.toString();if(err.length>1000000){child.kill('SIGKILL');reject(Error('candidate stderr bound'));}});
+  child.on('error',reject);child.on('close',code=>{clearTimeout(timer);try{assert.equal(code,0,'candidate exit');const lines=out.split('\n').filter(l=>l.startsWith('CANDIDATE_RESULT '));assert.equal(lines.length,1);resolve(JSON.parse(lines[0].slice(17)));}catch(e){reject(e);}});
+  child.stdin.end(JSON.stringify(request));
+ });
+ assert.ok(reply && typeof reply==='object' && typeof reply.run_id==='string','candidate run identity');
+ lastRun=reply.run_id;
+ const ledger=(await db.query('SELECT git_sha FROM collector_runs WHERE run_id=$1',[lastRun])).rows[0];
+ assert.equal(ledger?.git_sha,nonce,'observed fresh invocation');
+ if(!reply.ok){const e=new Error('candidate rejected data');e.code=reply.code;throw e;}
+ return reply.result;
 }
 async function snapshot(){return (await db.query("SELECT row_to_json(s) AS row FROM stg_wb_orders_obs s WHERE tenant_id='fixture-warehouse-a' ORDER BY srid,last_change_at")).rows;}
 async function reject(o,s){
@@ -35,7 +49,7 @@ try{
  const first=await collect(orders,sales);
  // Force genuine legacy full-payload hashes independently of candidate converter.
  for(const row of orders)await db.query('UPDATE stg_wb_orders_obs SET canonical_sha256=$1 WHERE tenant_id=$2 AND srid=$3 AND run_id=$4',[sha(canonical(row)),'fixture-warehouse-a',row.srid,first.runId]);
- const before=await snapshot();const renamed=orders.map(x=>({...x,warehouseName:'renamed-fixture-warehouse'}));
+ const before=await snapshot();assert.equal(before.length,orders.length,'seeded legacy rows exist');const renamed=orders.map(x=>({...x,warehouseName:'renamed-fixture-warehouse'}));
  for(let i=0;i<2;i++){
   const r=await collect(renamed,sales);assert.equal(r.orders.inserted,0);assert.equal(r.orders.skipped,orders.length);assert.deepEqual(await snapshot(),before);
   const evidence=(await db.query("SELECT content_sha256 FROM wb_raw_artifacts WHERE run_id=$1 AND endpoint_id='statistics.orders'",[r.runId])).rows[0];

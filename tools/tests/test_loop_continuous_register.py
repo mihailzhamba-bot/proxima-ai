@@ -1,5 +1,6 @@
-import hashlib,json,os
+import hashlib,json,os,threading
 import pytest
+from pathlib import Path
 from tools.loop.bridge import template_fingerprint
 from tools.loop.continuous_queue import digest
 from tools.loop.continuous_register import RegisterError,install
@@ -47,3 +48,30 @@ def test_register_rejects_unfingerprinted_template_authority(tmp_path):
     config,idle,prompts=files(tmp_path);bad=item();bad["template"]["command"]=["/bin/sh"]
     with pytest.raises(RegisterError,match="unapproved fields"):install(bad,"worker",config,prompts,idle,os.getuid())
     assert list(prompts.iterdir())==[]
+
+
+def test_prepared_recovery_restores_backup_before_idempotent_retry(tmp_path):
+    config,idle,prompts=files(tmp_path);install(item(),"bridge",config,prompts,idle,os.getuid())
+    marker=Path(str(config)+".continuous-recovery.json")
+    state=json.loads(marker.read_text());state["state"]="prepared";marker.write_text(json.dumps(state));marker.chmod(0o600)
+    config.write_text('{"truncated":');config.chmod(0o600)
+    receipt=install(item(),"bridge",config,prompts,idle,os.getuid())
+    assert receipt["target"]=="bridge"
+    assert json.loads(config.read_text())["templates"]["continuous-fixture"]["base_sha"]=="a"*40
+    assert json.loads(marker.read_text())["state"]=="committed"
+
+
+def test_concurrent_additive_registrars_preserve_both_templates(tmp_path):
+    config,idle,prompts=files(tmp_path);first=item();second=item();second["id"]="fixture-two";second["template_name"]="continuous-fixture-two"
+    second["prompt_contract"]={"goal":"fixture two","acceptance":["pass"]}
+    second["template"]={**second["template"],"prompt_sha256":hashlib.sha256((json.dumps(second["prompt_contract"],sort_keys=True,separators=(",",":"))+"\n").encode()).hexdigest()}
+    second["template_fingerprint"]=template_fingerprint(second["template_name"],second["template"])
+    errors=[]
+    def worker(value):
+        try:install(value,"bridge",config,prompts,idle,os.getuid())
+        except Exception as error:errors.append(error)
+    threads=[threading.Thread(target=worker,args=(value,)) for value in (first,second)]
+    for thread in threads:thread.start()
+    for thread in threads:thread.join()
+    assert errors==[]
+    assert set(json.loads(config.read_text())["templates"])=={"continuous-fixture","continuous-fixture-two"}

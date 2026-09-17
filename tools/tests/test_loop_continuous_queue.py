@@ -138,6 +138,7 @@ def test_director_can_propose_but_cannot_review_or_register_http(tmp_path):
         hermes=bridge.create("hermes","paperclip-external",{"input":"plan","instructions":"plan","session_id":"fixture"})
         candidate=proposal(planner_run_id=hermes["run_id"])
         proposed=director.call("POST","/v1/queue/proposals",candidate)
+        assert bridge.continuous_status()["planning"]["id"]==planned["run_id"]
         receipt={"proposal_fingerprint":proposed["proposal_fingerprint"],"verdict":"approve","reviewer":"reviewer",
                  "checks":{"policy":"pass","scope":"pass","dependencies":{},"duplicates":{"status":"pass","compared":[],"duplicate_of":None}}}
         with pytest.raises(BridgeError):director.call("POST","/v1/queue/wb-small-task/review",receipt)
@@ -173,3 +174,39 @@ def test_user_stop_cancellation_never_becomes_retry(tmp_path):
     receipt={"stopped":True,"previous_lease_id":claimed["lease_id"],"external_run_id":"run",
       "external_job_id":"job","evidence_ref":"stop.json","reason":"user_stop"}
     with pytest.raises(QueueError,match="stopped predecessor"):q.retry(claimed["id"],receipt)
+
+
+def test_claim_atomically_respects_legacy_shared_executor(tmp_path):
+    q=ContinuousQueue(tmp_path/"q.db",policy());q.propose(proposal(),*planner(q));register(q)
+    with q.db() as db:
+        db.execute("CREATE TABLE jobs(id TEXT,state TEXT)")
+        db.execute("INSERT INTO jobs VALUES('legacy','dispatching')")
+    assert q.claim() is None
+    with q.db() as db:db.execute("UPDATE jobs SET state='ready_pr'")
+    assert q.claim()["id"]=="wb-small-task"
+
+def test_third_blocked_attempt_keeps_lease_until_confirmed_stop_settlement(tmp_path):
+    q=ContinuousQueue(tmp_path/"q.db",policy());q.propose(proposal(),*planner(q));register(q)
+    for attempt in (1,2,3):
+        claimed=q.claim();assert claimed["attempts"]==attempt
+        blocked=q.update(claimed["id"],claimed["lease_id"],"blocked",run_id=f"run-{attempt}",job_id=f"job-{attempt}",blocker="local")
+        assert blocked["lease_id"]==claimed["lease_id"]
+        receipt={"stopped":True,"previous_lease_id":claimed["lease_id"],"external_run_id":f"run-{attempt}",
+          "external_job_id":f"job-{attempt}","evidence_ref":f"stop-{attempt}.json",
+          "reason":"local_failure" if attempt<3 else "attempts_exhausted"}
+        if attempt<3:q.retry(claimed["id"],receipt)
+        else:
+            with pytest.raises(QueueError):q.retry(claimed["id"],{**receipt,"reason":"local_failure"})
+            settled=q.settle(claimed["id"],receipt);assert settled["lease_id"] is None and settled["state"]=="blocked"
+
+def test_reject_wins_race_against_late_review(tmp_path):
+    q=ContinuousQueue(tmp_path/"q.db",policy());row=q.propose(proposal(),*planner(q))
+    rejection={"proposal_fingerprint":row["proposal_fingerprint"],"verdict":"block","reviewer":"terra","checks":{},"blocker":"duplicate"}
+    q.reject(row["id"],rejection)
+    with pytest.raises(QueueError,match="exact proposal"):approve(q)
+
+
+def test_generic_acceptance_profile_is_disabled_until_real_proof_exists():
+    candidate=policy();candidate["requirements"]["wb-task"]["acceptance_profile"]="wb-generic"
+    candidate["requirements"]["wb-task"]["path_sets"]["default"]["acceptance_profile"]="wb-generic"
+    with pytest.raises(QueueError,match="execution identity|path sets"):validate_policy(candidate)

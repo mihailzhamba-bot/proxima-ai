@@ -6,12 +6,13 @@ ROOT=Path('/srv/loop-runner/work')
 ADMISSIONS=Path('/etc/loop-review/continuous/admissions')
 TESTS=Path('/opt/loop-review/continuous')
 IMAGE='localhost:5000/loop-verification/producer@sha256:cf2053695d05fc3ee894def2eee3b25f1e2c1aff252fef7e0b1038937327dd31'
-PROFILES={'wb-daily-packaging':('wb_daily_acceptance.py',11),'wb-daily-status':('wb_daily_status_acceptance.py',15),'wb-warehouse-metadata':('warehouse-pg-acceptance.py',7),'wb-generic':('generic_acceptance.py',1)}
+OWNER_UID=0
+PROFILES={'wb-daily-packaging':('wb_daily_acceptance.py',14),'wb-daily-status':('wb_daily_status_acceptance.py',23),'wb-warehouse-metadata':('warehouse-pg-acceptance.py',7)}
 def trusted_json(path):
  fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
  try:
   st=os.fstat(fd)
-  if not stat.S_ISREG(st.st_mode) or st.st_uid!=0 or st.st_mode&0o022 or st.st_nlink!=1 or st.st_size>65536:raise ValueError('untrusted admission')
+  if not stat.S_ISREG(st.st_mode) or st.st_uid!=OWNER_UID or st.st_mode&0o022 or st.st_nlink!=1 or st.st_size>65536:raise ValueError('untrusted admission')
   return json.loads(os.read(fd,65537))
  finally:os.close(fd)
 def git(path,*args):
@@ -19,6 +20,29 @@ def git(path,*args):
  r=subprocess.run(['/usr/bin/git','-c','safe.directory='+str(path),'-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','-C',str(path),*args],env=env,capture_output=True,timeout=20,check=True)
  if len(r.stdout)>4194304:raise ValueError('git output bound')
  return r.stdout.decode()
+def verify_units(checkout):
+ import configparser,shlex
+ names=['proxima-wb-daily.service','proxima-wb-daily.timer']
+ with tempfile.TemporaryDirectory(prefix='loop-unit-check-') as tmp:
+  root=Path(tmp);units=root/'etc/systemd/system';units.mkdir(parents=True)
+  allowed={'/usr/bin/python3','/usr/bin/env','/usr/bin/docker','/usr/bin/true','/srv/proxima-ai/repo/tools/wb/daily.py','/opt/proxima-wb-daily/daily.py'}
+  for name in names:
+   body=(checkout/'infra/systemd'/name).read_text()
+   parser=configparser.ConfigParser(interpolation=None);parser.read_string(body)
+   if parser.has_section('Service'):
+    for key,value in parser['Service'].items():
+     if key.startswith('exec'):
+      parts=shlex.split(value)
+      if not parts or parts[0] not in allowed:raise ValueError('unapproved unit executable')
+   (units/name).write_text(body)
+  for name in ['sysinit.target','basic.target','shutdown.target','timers.target','network-online.target','local-fs.target','multi-user.target']:
+   (units/name).write_text('[Unit]\nDefaultDependencies=no\n')
+  (units/'docker.service').write_text('[Unit]\nDefaultDependencies=no\n[Service]\nExecStart=/usr/bin/true\n')
+  for name in allowed:
+   f=root/name.lstrip('/');f.parent.mkdir(parents=True,exist_ok=True);f.write_text('#!/bin/sh\nexit 0\n');f.chmod(0o755)
+  r=subprocess.run(['/usr/bin/systemd-analyze','--root='+tmp,'verify',*names],capture_output=True,timeout=20)
+  if r.returncode:raise ValueError('systemd staged unit verification failed')
+
 def main():
  checkout,base,head,job=sys.argv[1:]
  if not re.fullmatch('[a-z0-9][a-z0-9-]{2,80}',job) or not all(re.fullmatch('[0-9a-f]{40}',v) for v in [base,head]):raise ValueError('invalid identity')
@@ -33,9 +57,9 @@ def main():
  if not changed or set(changed)!=set(proof['allowed_paths']):raise ValueError('candidate paths')
  for rev in [base,head]:
   if any(l.startswith('160000 ') or l.startswith('120000 ') and l.split('\t',1)[-1] in changed for l in git(path,'ls-tree','-r',rev).splitlines()):raise ValueError('candidate link')
- profile=proof['acceptance_profile']
- if profile=='wb-generic' and (not isinstance(proof.get('goal'),str) or not isinstance(proof.get('acceptance'),list) or not proof['acceptance'] or not all(re.fullmatch('[0-9a-f]{64}',str(proof.get(k,''))) for k in ('proposal_fingerprint','review_fingerprint'))):raise ValueError('generic acceptance binding')
- script,count=PROFILES[profile]
+ profile=proof['acceptance_profile'];script,count=PROFILES[profile]
+ if profile=='wb-daily-packaging':verify_units(path)
+
  mounts=['-v',str(path)+':/work:ro','-v',str(TESTS)+':/acceptance:ro']
  for i,target in [(0,'node_modules'),(2,'services/collector/node_modules')]:
   dep=path.parent/'writable'/('dep-'+str(i))

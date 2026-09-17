@@ -1,5 +1,6 @@
-import json,subprocess
+import json,subprocess,sys
 from types import SimpleNamespace
+from pathlib import Path
 import pytest
 from tools.loop.continuous_admission import Admission,AdmissionError,command
 from tools.loop.continuous_receiver import ReceiverError,receive,registration_allowed
@@ -8,7 +9,7 @@ from tools.loop.continuous_proposal_review import review
 def test_admission_resumes_partial_three_target_registration():
     calls=[]
     status={"current":None,"observed_at":1,"shared_executor_busy":False,"policy_fingerprint":"b"*64,"items":[{"id":"task-one","requirement_id":"req","state":"registering"}]}
-    registration={"id":"task-one","state":"registering","receipts":{"bridge":"done"}}
+    registration={"id":"task-one","state":"registering","policy_fingerprint":"b"*64,"template":{"base_sha":"a"*40},"receipts":{"bridge":"done"}}
     def api(method,path,payload=None):
         calls.append((method,path,payload))
         if path=="/v1/queue":return status
@@ -19,6 +20,7 @@ def test_admission_resumes_partial_three_target_registration():
             return registration
         raise AssertionError(path)
     def execute(argv,**kwargs):
+        sent=json.loads(kwargs["input"]);assert sent["registration"]["template"]["base_sha"]=="a"*40
         target="harper" if "harper" in argv[0] else "worker"
         value={"target":target,"template_fingerprint":"a"*64,"policy_fingerprint":"b"*64,"installed_sha256":"c"*64}
         return SimpleNamespace(returncode=0,stdout=json.dumps(value).encode())
@@ -102,3 +104,46 @@ def test_receiver_rejects_template_different_from_valid_execution_policy():
     assert registration_allowed(registration,policy)
     registration["template"]={**template,"allowed_paths":["tools/loop/bridge.py"]}
     assert not registration_allowed(registration,policy)
+
+
+def test_installed_receiver_imports_opt_loop_under_isolated_python(tmp_path):
+    source=Path(__file__).parents[1]/"loop";installed=tmp_path/"opt-loop";installed.mkdir()
+    for name in ("continuous_receiver.py","continuous_register.py","continuous_queue.py","bridge.py"):
+        text=(source/name).read_text()
+        if name=="continuous_receiver.py":
+            text=text.replace('"/opt/loop"',repr(str(installed)))
+            text=text.replace('Path("/etc/loop-continuous/receiver.json")',f'Path({str(tmp_path/"receiver.json")!r})')
+        (installed/name).write_text(text)
+    (tmp_path/"receiver.json").write_text(json.dumps({"role":"harper","policy_fingerprint":"a"*64,"policy_file":str(tmp_path/"policy.json")}))
+    (tmp_path/"receiver.json").chmod(0o600)
+    result=subprocess.run([sys.executable,"-I",str(installed/"continuous_receiver.py")],input=b"{}",capture_output=True)
+    assert result.returncode!=0
+    assert b"ModuleNotFoundError" not in result.stderr
+    assert b"invalid closed request" in result.stderr
+
+
+def test_real_subprocess_three_target_registration_refetches_full_contract(tmp_path):
+    review=tmp_path/"review.py"
+    review.write_text("import json,sys\nv=json.load(sys.stdin);p=v['proposal'];print(json.dumps({'proposal_fingerprint':p['proposal_fingerprint'],'verdict':'approve','reviewer':'terra','checks':{'policy':'pass','scope':'pass','dependencies':{},'duplicates':{'status':'pass','compared':[],'duplicate_of':None}}}))\n")
+    registrar=tmp_path/"register.py"
+    registrar.write_text("import json,sys\nt=sys.argv[1];v=json.load(sys.stdin);r=v['registration'];assert r['template']['base_sha']=='a'*40;print(json.dumps({'target':t,'template_fingerprint':r['template_fingerprint'],'policy_fingerprint':r['policy_fingerprint'],'installed_sha256':t[0]*64}))\n")
+    item={"id":"task","requirement_id":"req","state":"proposed","depends_on":[],"proposal_fingerprint":"d"*64}
+    registration={**item,"state":"registering","policy_fingerprint":"b"*64,"template_fingerprint":"c"*64,
+      "template":{"base_sha":"a"*40},"receipts":{}}
+    status={"current":None,"shared_executor_busy":False,"observed_at":100.0,"policy_fingerprint":"b"*64,"items":[item]}
+    def api(method,path,payload=None):
+      if path=="/v1/queue":status["observed_at"]+=1;return status
+      if path=="/v1/queue/task":return item if item["state"]=="proposed" else registration
+      if path.endswith("/review"):item["state"]="registering";return registration
+      if path.endswith("/registration"):return registration
+      if path.endswith("/receipt"):
+       registration["receipts"][payload["target"]]=payload["installed_sha256"]
+       registration["state"]="ready" if len(registration["receipts"])==3 else "registering"
+       return registration
+      raise AssertionError(path)
+    config={"reviewer_command":["/usr/bin/python3",str(review)],"registrars":{
+      target:["/usr/bin/python3",str(registrar),target] for target in ("bridge","harper","worker")}}
+    result=Admission(config,api).run_once()
+    assert result["status"]=="ready" and result["registered"]==["bridge","harper","worker"]
+    assert set(registration["receipts"])=={"bridge","harper","worker"}
+    assert status["observed_at"]==104

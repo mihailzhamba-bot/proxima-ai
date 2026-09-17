@@ -15,7 +15,7 @@ def candidate(tmp_path,monkeypatch):
  admissions=tmp_path/'admissions';admissions.mkdir()
  proof={'job_id':'fixture-job-1','base_sha':base,'allowed_paths':['x.py'],'acceptance_profile':'wb-daily-status'}
  f=admissions/'fixture-job-1.json';f.write_text(json.dumps(proof));f.chmod(0o600)
- monkeypatch.setattr(m,'ROOT',root);monkeypatch.setattr(m,'ADMISSIONS',admissions)
+ monkeypatch.setattr(m,'OWNER_UID',os.getuid());monkeypatch.setattr(m,'ROOT',root);monkeypatch.setattr(m,'ADMISSIONS',admissions)
  monkeypatch.setattr(sys,'argv',['accept',str(p),base,head,'fixture-job-1'])
  return p,f,proof,head
 def invoke(result):
@@ -43,11 +43,11 @@ def test_reject_group_writable_receipt(candidate):
  _,f,_,_=candidate;f.chmod(0o660)
  with pytest.raises(ValueError):m.main()
 def test_reject_skipped_and_duplicate_output(candidate):
- result={'profile':'wb-daily-status','passed':15,'skipped':1,'cases':[str(i) for i in range(15)]}
+ result={'profile':'wb-daily-status','passed':23,'skipped':1,'cases':[str(i) for i in range(23)]}
  with pytest.raises(ValueError):invoke(json.dumps(result)+'\n')
  result['skipped']=0
  with pytest.raises(ValueError):invoke(json.dumps(result)+'\n'+json.dumps(result)+'\n')
 def test_exact_receipt_protocol(candidate,capsys):
  _,_,_,head=candidate
- invoke(json.dumps({'profile':'wb-daily-status','passed':15,'skipped':0,'cases':[str(i) for i in range(15)]})+'\n')
+ invoke(json.dumps({'profile':'wb-daily-status','passed':23,'skipped':0,'cases':[str(i) for i in range(23)]})+'\n')
  assert json.loads(capsys.readouterr().out)=={'sha':head,'status':'pass','skipped':0}

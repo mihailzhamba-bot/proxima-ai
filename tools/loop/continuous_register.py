@@ -14,6 +14,41 @@ def regular(path,owner_uid,max_bytes=1_000_000):
     info=path.lstat()
     if path.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_uid!=owner_uid or info.st_mode&0o022 or info.st_nlink!=1 or info.st_size>max_bytes:raise RegisterError("untrusted registration file")
     return info
+def read_bounded_fd(fd,limit):
+    chunks=[];total=0
+    while True:
+        chunk=os.read(fd,min(65536,limit+1-total))
+        if not chunk:break
+        chunks.append(chunk);total+=len(chunk)
+        if total>limit:raise RegisterError("registration config too large")
+    return b"".join(chunks)
+def write_all(fd,data):
+    view=memoryview(data)
+    while view:
+        written=os.write(fd,view)
+        if written<=0:raise RegisterError("short registration write")
+        view=view[written:]
+def fsync_dir(path):
+    fd=os.open(Path(path).parent,os.O_RDONLY|os.O_DIRECTORY)
+    try:os.fsync(fd)
+    finally:os.close(fd)
+def atomic_owned(path,data,owner_uid,mode=0o600):
+    path=Path(path);fd,temporary=tempfile.mkstemp(prefix=path.name+".",dir=path.parent)
+    try:
+        os.fchmod(fd,mode);os.fchown(fd,owner_uid,-1);write_all(fd,data);os.fsync(fd);os.close(fd);fd=-1
+        os.replace(temporary,path);fsync_dir(path)
+    finally:
+        if fd>=0:os.close(fd)
+        if os.path.exists(temporary):os.unlink(temporary)
+def restore_prepared(config_path,owner_uid,config_fd):
+    backup=Path(str(config_path)+".continuous-backup");marker=Path(str(config_path)+".continuous-recovery.json")
+    if not marker.exists():return
+    regular(marker,owner_uid,100_000);state=json.loads(marker.read_text())
+    if state.get("state")!="prepared":return
+    regular(backup,owner_uid);raw=backup.read_bytes()
+    if hashlib.sha256(raw).hexdigest()!=state.get("old_sha256"):raise RegisterError("registration backup mismatch")
+    os.lseek(config_fd,0,os.SEEK_SET);write_all(config_fd,raw);os.ftruncate(config_fd,len(raw));os.fsync(config_fd);fsync_dir(config_path)
+    atomic_owned(marker,(json.dumps({**state,"state":"recovered"},sort_keys=True)+"\n").encode(),owner_uid)
 def render(item,prompt_dir):
     needed={"id","template_name","template_fingerprint","policy_fingerprint","proposal_fingerprint","review_fingerprint","template","prompt_contract"}
     if not isinstance(item,dict) or not needed<=set(item):raise RegisterError("reviewed queue export required")
@@ -53,15 +88,29 @@ def install(item,target,config_path,prompt_dir,idle_path,owner_uid):
     fd=os.open(config_path,os.O_RDWR|os.O_NOFOLLOW)
     try:
         fcntl.flock(fd,fcntl.LOCK_EX)
-        raw=os.read(fd,1_000_001)
-        if len(raw)>1_000_000:raise RegisterError("registration config too large")
+        restore_prepared(config_path,owner_uid,fd)
+        os.lseek(fd,0,os.SEEK_SET)
+        raw=read_bounded_fd(fd,1_000_000)
         config=json.loads(raw);templates=config.get("templates")
         if not isinstance(templates,dict):raise RegisterError("template registry unavailable")
         old=templates.get(item["template_name"])
         if old is not None and old!=installed:raise RegisterError("template registration conflict")
         templates[item["template_name"]]=installed
         encoded=(json.dumps(config,sort_keys=True,indent=2)+"\n").encode()
-        os.lseek(fd,0,os.SEEK_SET);os.write(fd,encoded);os.ftruncate(fd,len(encoded));os.fsync(fd)
+        if encoded!=raw:
+            backup=Path(str(config_path)+".continuous-backup");marker_path=Path(str(config_path)+".continuous-recovery.json")
+            atomic_owned(backup,raw,owner_uid)
+            recovery={"state":"prepared","old_sha256":hashlib.sha256(raw).hexdigest(),
+                      "new_sha256":hashlib.sha256(encoded).hexdigest(),"template_fingerprint":item["template_fingerprint"]}
+            atomic_owned(marker_path,(json.dumps(recovery,sort_keys=True)+"\n").encode(),owner_uid)
+            try:
+                os.lseek(fd,0,os.SEEK_SET);write_all(fd,encoded);os.ftruncate(fd,len(encoded));os.fsync(fd);fsync_dir(config_path)
+                atomic_owned(marker_path,(json.dumps({**recovery,"state":"committed"},sort_keys=True)+"\n").encode(),owner_uid)
+            except Exception:
+                try:
+                    os.lseek(fd,0,os.SEEK_SET);write_all(fd,raw);os.ftruncate(fd,len(raw));os.fsync(fd)
+                    atomic_owned(marker_path,(json.dumps({**recovery,"state":"recovered"},sort_keys=True)+"\n").encode(),owner_uid)
+                finally:raise
     except Exception:
         raise
     finally:os.close(fd)

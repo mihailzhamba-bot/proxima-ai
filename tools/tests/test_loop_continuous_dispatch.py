@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from tools.loop.continuous_dispatch import Dispatcher,render
-from tools.loop.continuous_tick import tick
+from tools.loop.continuous_tick import tick,planning_key
 
 def config(tmp_path):
     for name in ("evidence","work","receipts","state","admission"): (tmp_path/name).mkdir()
@@ -109,3 +109,104 @@ def test_tick_authoritative_pause_blocks_plan_admission_and_dispatch():
     result=tick(client,Never(),Never(),now=lambda:1000)
     assert result["status"]=="paused" and result["planning"] is None
     assert result["dispatch"]=={"status":"paused"}
+
+
+def test_unknown_monitoring_resumes_same_manifest_and_adopts_run_identity(tmp_path):
+    settings=config(tmp_path);claimed=item();claimed.update(state="unknown",external_run_id=None,external_job_id=None)
+    manifest,admission,root=render({**claimed,"state":"running"},settings,1000);root.mkdir(parents=True)
+    from tools.loop.night_batch import atomic_json
+    atomic_json(root/"manifest.json",manifest);atomic_json(Path(settings["admission_root"])/(claimed["id"]+"-a1.json"),admission)
+    atomic_json(Path(manifest["state_file"]),{"status":"running","tasks":[{"phase":"monitoring","run_id":"run-1"}]})
+    calls=[]
+    def call(method,path,payload=None):
+        calls.append((path,payload))
+        if path=="/v1/queue":return {"current":{"id":claimed["id"],"state":"unknown"}}
+        if path=="/v1/queue/"+claimed["id"]:return claimed
+        if path.endswith("/update") and payload["state"]=="running":
+            claimed.update(state="running",external_run_id="run-1",external_job_id=payload["job_id"]);return claimed
+        if path.endswith("/update"):return {"state":payload["state"]}
+        raise AssertionError(path)
+    def execute(argv,**kwargs):
+        atomic_json(Path(manifest["state_file"]),{"status":"completed","tasks":[{"phase":"ready_pr","run_id":"run-1","head_sha":"3"*40,"pr_url":"https://github.com/acme/repo/pull/3"}]})
+        return SimpleNamespace(returncode=0)
+    assert Dispatcher(settings,call,execute,clock=lambda:2000).run_once()["state"]=="ready_pr"
+    assert "/v1/queue/claim" not in [path for path,_ in calls]
+
+def test_blocked_unavailable_run_remains_quarantined(tmp_path):
+    settings=config(tmp_path);claimed=item();claimed.update(state="blocked",external_run_id="run-1",external_job_id="job-1")
+    _manifest,_admission,root=render({**claimed,"state":"running"},settings,1000);root.mkdir(parents=True)
+    from tools.loop.night_batch import atomic_json
+    atomic_json(root/"batch-state.json",{"status":"blocked","reason":"job_timeout","tasks":[{"phase":"monitoring","run_id":"run-1"}]})
+    def call(method,path,payload=None):
+        if path=="/v1/queue":return {"current":{"id":claimed["id"],"state":"blocked"}}
+        if path=="/v1/queue/"+claimed["id"]:return claimed
+        if path=="/v1/runs/run-1":raise RuntimeError("offline")
+        raise AssertionError(path)
+    result=Dispatcher(settings,call,clock=lambda:2000).run_once()
+    assert result["status"]=="unknown" and result["reason"]=="stop_reconcile_failed"
+
+def test_nonretryable_stopped_block_is_settled_once(tmp_path):
+    settings=config(tmp_path);claimed=item();claimed.update(state="blocked",external_run_id="run-1",external_job_id="job-1")
+    _manifest,_admission,root=render({**claimed,"state":"running"},settings,1000);root.mkdir(parents=True)
+    from tools.loop.night_batch import atomic_json
+    atomic_json(root/"batch-state.json",{"status":"blocked","reason":"run_terminal_or_unknown","tasks":[{"phase":"monitoring","run_id":"run-1"}]})
+    settled=[]
+    def call(method,path,payload=None):
+        if path=="/v1/queue":return {"current":{"id":claimed["id"],"state":"blocked"}}
+        if path=="/v1/queue/"+claimed["id"]:return claimed
+        if path=="/v1/runs/run-1":return {"status":"cancelled"}
+        if path.endswith("/settle"):settled.append(payload);return {"state":"blocked","lease_id":None}
+        raise AssertionError(path)
+    result=Dispatcher(settings,call,clock=lambda:2000).run_once()
+    assert result["lease_id"] is None and len(settled)==1 and settled[0]["reason"]=="nonretryable"
+
+def test_tick_reconciles_saved_planning_before_new_generation():
+    status={"policy_fingerprint":"a"*64,"planning_snapshot":"b"*64,"planning_generation":0,
+      "plan_exhausted":False,"items":[],"planning":{"id":"plan-local","state":"unknown"}}
+    calls=[]
+    def client(method,path,payload=None,headers=None):
+        calls.append((method,path))
+        if path=="/v1/queue":return status
+        if path=="/v1/runs/plan-local":return {"status":"unknown"}
+        raise AssertionError(path)
+    class Idle:
+        def run_once(self):return {"status":"idle"}
+    result=tick(client,Idle(),now=lambda:1000)
+    assert result["planning"] is None
+    assert not any(path=="/v1/queue/plan" for _method,path in calls)
+
+def test_planning_generation_changes_key_only_after_terminal_attempt():
+    base={"policy_fingerprint":"a"*64,"planning_snapshot":"b"*64,"items":[]}
+    first=planning_key({**base,"planning_generation":0},1000)
+    assert planning_key({**base,"planning_generation":0},999999)==first
+    assert planning_key({**base,"planning_generation":1},1000)!=first
+
+
+def test_tick_refreshes_report_before_dispatch():
+ status={"policy_fingerprint":"a"*64,"plan_exhausted":True,"items":[],"current":None}
+ order=[]
+ def client(method,path,payload=None,headers=None):
+  assert path=="/v1/queue";return status
+ class Stage:
+  def run_once(self):return {"status":"idle"}
+ class Report:
+  def run(self,value,now):order.append("report");return {"status":"not_due"}
+ class Dispatch:
+  def run_once(self):order.append("dispatch");return {"status":"idle"}
+ tick(client,Dispatch(),Stage(),Report(),now=lambda:1000)
+ assert order==["report","dispatch"]
+
+
+def test_tick_does_not_replace_cancelling_cross_snapshot_planner():
+    status={"policy_fingerprint":"a"*64,"planning_snapshot":"new","planning_generation":0,
+      "plan_exhausted":False,"items":[],"planning":{"id":"old-plan","state":"cancelling"}}
+    calls=[]
+    def client(method,path,payload=None,headers=None):
+        calls.append(path)
+        if path=="/v1/queue":return status
+        if path=="/v1/runs/old-plan":return {"status":"cancelling"}
+        raise AssertionError(path)
+    class Idle:
+        def run_once(self):return {"status":"idle"}
+    assert tick(client,Idle(),now=lambda:1000)["planning"] is None
+    assert "/v1/queue/plan" not in calls
