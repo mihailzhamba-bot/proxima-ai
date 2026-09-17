@@ -7,9 +7,14 @@ spec=importlib.util.spec_from_file_location("continuous_acceptance_units",P);m=i
 def test_exact_offline_uv_launcher_is_approved():
  assert m.approved_unit_exec(m.UV_EXEC)
  assert m.approved_unit_exec(m.ENV_UV_EXEC)
+ assert m.approved_unit_exec(m.MANAGED_ENV_UV_EXEC)
+ assert m.MANAGED_ENV_UV_EXEC==["/usr/bin/env","uv","run","--offline","--no-python-downloads","--managed-python","--no-project","--python","3.14","/srv/proxima-ai/repo/tools/wb/daily.py","--config","/etc/proxima-ai/wb-daily.json"]
  assert m.uv_environment_allowed({"Environment":"UV_OFFLINE=1 UV_PYTHON_DOWNLOADS=never"})
  assert not m.uv_environment_allowed(["UV_OFFLINE=1 UV_PYTHON_DOWNLOADS=never","UV_OFFLINE=0"])
  assert not m.uv_environment_allowed(["UV_OFFLINE=1 UV_PYTHON_DOWNLOADS=never",""])
+ assert m.uv_environment_allowed(["UV_OFFLINE=1","UV_PYTHON_DOWNLOADS=never","UV_MANAGED_PYTHON=1"],True)
+ assert not m.uv_environment_allowed(["UV_OFFLINE=1","UV_PYTHON_DOWNLOADS=never"],True)
+ assert not m.uv_environment_allowed(["UV_OFFLINE=1","UV_PYTHON_DOWNLOADS=never","UV_MANAGED_PYTHON=0"],True)
 @pytest.mark.parametrize("index,value",[(1,"sync"),(2,"--online"),(3,"--allow-python-downloads"),(4,"--project"),(6,"3.13"),(7,"/tmp/evil.py"),(9,"/tmp/config.json")])
 def test_uv_launcher_variants_are_denied(index,value):
  command=list(m.UV_EXEC);command[index]=value;assert not m.approved_unit_exec(command)
@@ -33,5 +38,9 @@ def test_verify_units_accepts_only_exact_uv_form(monkeypatch,tmp_path):
  with pytest.raises(ValueError,match="executable"):m.verify_units(bad)
  env_form=write_units(tmp_path/"env"," ".join(m.ENV_UV_EXEC),"Environment=UV_OFFLINE=1\nEnvironment=UV_PYTHON_DOWNLOADS=never\nEnvironment=UV_MANAGED_PYTHON=1")
  m.verify_units(env_form)
+ managed=write_units(tmp_path/"managed"," ".join(m.MANAGED_ENV_UV_EXEC),"Environment=UV_OFFLINE=1\nEnvironment=UV_PYTHON_DOWNLOADS=never\nEnvironment=UV_MANAGED_PYTHON=1")
+ m.verify_units(managed)
+ managed_missing=write_units(tmp_path/"managed-missing"," ".join(m.MANAGED_ENV_UV_EXEC))
+ with pytest.raises(ValueError,match="offline environment"):m.verify_units(managed_missing)
  missing=write_units(tmp_path/"missing"," ".join(m.UV_EXEC),"Environment=UV_OFFLINE=1")
  with pytest.raises(ValueError,match="offline environment"):m.verify_units(missing)

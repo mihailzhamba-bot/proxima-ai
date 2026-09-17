@@ -23,13 +23,18 @@ def git(path,*args):
 UV_ARGS=['run','--offline','--no-python-downloads','--no-project','--python','3.14','/srv/proxima-ai/repo/tools/wb/daily.py','--config','/etc/proxima-ai/wb-daily.json']
 UV_EXEC=['/usr/local/bin/uv',*UV_ARGS]
 ENV_UV_EXEC=['/usr/bin/env','uv',*UV_ARGS]
+MANAGED_UV_ARGS=[*UV_ARGS[:3],'--managed-python',*UV_ARGS[3:]]
+MANAGED_UV_EXEC=['/usr/local/bin/uv',*MANAGED_UV_ARGS]
+MANAGED_ENV_UV_EXEC=['/usr/bin/env','uv',*MANAGED_UV_ARGS]
 def is_uv_exec(parts):
- return parts in (UV_EXEC,ENV_UV_EXEC)
+ return parts in (UV_EXEC,ENV_UV_EXEC,MANAGED_UV_EXEC,MANAGED_ENV_UV_EXEC)
+def is_managed_uv_exec(parts):
+ return parts in (MANAGED_UV_EXEC,MANAGED_ENV_UV_EXEC)
 def approved_unit_exec(parts):
  if not parts:return False
  if parts[0]=='/usr/local/bin/uv' or parts[:2]==['/usr/bin/env','uv']:return is_uv_exec(parts)
  return parts[0] in {'/usr/bin/python3','/usr/bin/env','/usr/bin/docker','/usr/bin/true','/srv/proxima-ai/repo/tools/wb/daily.py','/opt/proxima-wb-daily/daily.py'}
-def uv_environment_allowed(environments):
+def uv_environment_allowed(environments,managed=False):
  if hasattr(environments,'get'):environments=[environments.get('Environment','')]
  final={}
  for environment in environments:
@@ -37,7 +42,8 @@ def uv_environment_allowed(environments):
   for assignment in shlex.split(environment):
    if '=' not in assignment:continue
    key,value=assignment.split('=',1);final[key]=value
- return final.get('UV_OFFLINE')=='1' and final.get('UV_PYTHON_DOWNLOADS')=='never'
+ return (final.get('UV_OFFLINE')=='1' and final.get('UV_PYTHON_DOWNLOADS')=='never'
+         and (not managed or final.get('UV_MANAGED_PYTHON')=='1'))
 def unit_directives(body,section):
  current=None;found=[]
  for raw in body.splitlines():
@@ -60,7 +66,7 @@ def verify_units(checkout):
     if key.lower().startswith('exec'):
      parts=shlex.split(value)
      if not approved_unit_exec(parts):raise ValueError('unapproved unit executable')
-     if is_uv_exec(parts) and not uv_environment_allowed(environments):raise ValueError('unapproved uv offline environment')
+     if is_uv_exec(parts) and not uv_environment_allowed(environments,is_managed_uv_exec(parts)):raise ValueError('unapproved uv offline environment')
    (units/name).write_text(body)
   for name in ['sysinit.target','basic.target','shutdown.target','timers.target','network-online.target','local-fs.target','multi-user.target']:
    (units/name).write_text('[Unit]\nDefaultDependencies=no\n')
