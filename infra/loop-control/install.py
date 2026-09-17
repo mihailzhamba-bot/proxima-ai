@@ -119,6 +119,8 @@ RUNNER_FILES = {
     CONF / "continuous-acceptance/warehouse-check.mts": (Path("/opt/loop-review/continuous/warehouse-check.mts"), 0o644),
     CONF / "continuous-acceptance/warehouse-pg-acceptance.py": (Path("/opt/loop-review/continuous/warehouse-pg-acceptance.py"), 0o644),
     CONF / "continuous-acceptance/wb_daily_acceptance.py": (Path("/opt/loop-review/continuous/wb_daily_acceptance.py"), 0o644),
+    CONF / "continuous-acceptance/wb_daily_contract.py": (Path("/opt/loop-review/continuous/wb_daily_contract.py"), 0o644),
+    CONF / "continuous-acceptance/wb_daily_pg.py": (Path("/opt/loop-review/continuous/wb_daily_pg.py"), 0o644),
     CONF / "continuous-acceptance/wb_daily_status_acceptance.py": (Path("/opt/loop-review/continuous/wb_daily_status_acceptance.py"), 0o644),
     ROOT / "tools/loop/review_candidate.py": (Path("/opt/loop-review/review-candidate"), 0o755),
     ROOT / "tools/loop/runner.py": (Path("/opt/loop/runner.py"), 0o755),
