@@ -250,6 +250,9 @@ def test_settled_blocked_attempt_can_retry_with_fresh_confirmed_stop(tmp_path):
  assert settled["state"]=="blocked" and settled["lease_id"] is None and settled["attempts"]==1
  retried=q.retry(settled["id"],{"stopped":True,"previous_lease_id":None,"external_run_id":"run-stopped","external_job_id":"job-stopped","evidence_ref":"stop-2-after-oracle-fix.json","reason":"local_failure"})
  assert retried["state"]=="ready" and retried["attempts"]==1 and retried["lease_id"] is None
+ assert retried["blocker"] is None and retried["evidence"] is None and retried["pr_url"] is None
  with q.db() as db:
-  events=[json.loads(row[0])["state"] for row in db.execute("SELECT event FROM continuous_attempt_events WHERE queue_id=? ORDER BY sequence",(retried["id"],))]
- assert events[-2:]==["settled","retry_ready"]
+  raw_events=[json.loads(row[0]) for row in db.execute("SELECT event FROM continuous_attempt_events WHERE queue_id=? ORDER BY sequence",(retried["id"],))]
+ assert [event["state"] for event in raw_events][-2:]==["settled","retry_ready"]
+ assert any(event.get("evidence",{}).get("blocker")=="oracle_false_failure" for event in raw_events)
+ claimed_again=q.claim();assert claimed_again["state"]=="dispatching" and claimed_again["attempts"]==2 and claimed_again["blocker"] is None

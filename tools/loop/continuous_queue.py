@@ -388,7 +388,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["i
                        for dep in dependencies):selected=row["id"];break
             if selected is None:return None
             lease=digest({"id":selected,"at":now})
-            result=d.execute("UPDATE continuous_queue SET state='dispatching',attempts=attempts+1,lease_id=?,lease_expires=?,updated=? WHERE id=? AND state='ready' AND attempts<3",(lease,now+lease_seconds,now,selected))
+            result=d.execute("UPDATE continuous_queue SET state='dispatching',attempts=attempts+1,lease_id=?,lease_expires=?,blocker=NULL,evidence=NULL,pr_url=NULL,updated=? WHERE id=? AND state='ready' AND attempts<3",(lease,now+lease_seconds,now,selected))
             if result.rowcount!=1:return None
         return self.get(selected)
     def update(self,item_id,lease_id,state,**evidence):
@@ -436,7 +436,7 @@ lease_id=?,lease_expires=?,updated=? WHERE id=? AND state=? AND lease_id=?""",(s
             if not row or row["policy_fingerprint"]!=self.policy_fingerprint or not isinstance(receipt,dict) or set(receipt)!=required or receipt["stopped"] is not True or receipt.get("reason") not in {"local_failure","transport_unknown"} or row["state"] not in {"unknown","blocked"} or row["attempts"]>=3 or receipt["previous_lease_id"]!=row["lease_id"] or receipt["external_run_id"]!=row["external_run_id"] or receipt["external_job_id"]!=row["external_job_id"] or not isinstance(receipt["evidence_ref"],str) or not receipt["evidence_ref"]:raise QueueError("confirmed stopped predecessor required")
             sequence=d.execute("SELECT coalesce(max(sequence),0)+1 FROM continuous_attempt_events WHERE queue_id=?",(item_id,)).fetchone()[0]
             d.execute("INSERT INTO continuous_attempt_events VALUES(?,?,?,?)",(item_id,sequence,canonical({"state":"retry_ready","stop_receipt":receipt}),self.clock()))
-            result=d.execute("UPDATE continuous_queue SET state='ready',lease_id=NULL,lease_expires=NULL,external_run_id=NULL,external_job_id=NULL,updated=? WHERE id=? AND state=? AND lease_id IS ?",(self.clock(),item_id,row["state"],row["lease_id"]))
+            result=d.execute("UPDATE continuous_queue SET state='ready',lease_id=NULL,lease_expires=NULL,external_run_id=NULL,external_job_id=NULL,blocker=NULL,evidence=NULL,pr_url=NULL,updated=? WHERE id=? AND state=? AND lease_id IS ?",(self.clock(),item_id,row["state"],row["lease_id"]))
             if result.rowcount!=1:raise QueueError("queue retry raced")
         return self.get(item_id)
     def status(self):
