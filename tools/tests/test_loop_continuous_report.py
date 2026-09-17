@@ -49,3 +49,8 @@ def test_continuous_unit_writes_common_git_directory():
  root=Path(__file__).resolve().parents[2];unit=(root/"infra/loop-control/loop-continuous.service").read_text()
  assert "/srv/loop/source/proxima-ai.git" in unit
  assert "/srv/loop/source/proxima-ai/.git" not in unit
+
+
+def test_continuous_tick_bypasses_proxy_for_fixed_github_origins():
+ root=Path(__file__).resolve().parents[2];unit=(root/"infra/loop-control/loop-continuous.service").read_text()
+ assert "Environment=NO_PROXY=127.0.0.1,localhost,api.github.com,github.com" in unit

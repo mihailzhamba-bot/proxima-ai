@@ -8,7 +8,7 @@ Environment=LOOP_OPENAI_BROKER_URL=http://127.0.0.1:18772
 Environment=LOOP_OPENAI_BROKER_TOKEN_FILE=/etc/loop/secrets/openai_broker
 Environment=LOOP_SOURCE_REPO=/srv/loop/source/proxima-ai
 Environment=HTTPS_PROXY=http://172.30.240.1:18180
-Environment=NO_PROXY=127.0.0.1,localhost
+Environment=NO_PROXY=127.0.0.1,localhost,api.github.com,github.com
 Type=oneshot
 User=root
 Group=root

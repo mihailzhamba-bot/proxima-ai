@@ -31,7 +31,8 @@ class Admission:
             existing=[self.call("GET","/v1/queue/"+value["id"]) for value in status["items"]
                       if value["id"]!=item["id"] and value["requirement_id"]==item["requirement_id"]]
             dependencies=[self.call("GET","/v1/queue/"+dependency_id) for dependency_id in item["depends_on"]]
-            receipt=command(self.config["reviewer_command"],{"proposal":item,"existing":existing,"dependencies":dependencies},self.execute)
+            receipt=command(self.config["reviewer_command"],{"proposal":item,"existing":existing,
+                "legacy_existing":status.get("existing_work",[]),"dependencies":dependencies},self.execute)
             if receipt.get("verdict")=="block":
                 item=self.call("POST","/v1/queue/"+item["id"]+"/reject",payload=receipt)
                 return {"status":"rejected","item_id":item["id"],"blocker":item.get("blocker")}

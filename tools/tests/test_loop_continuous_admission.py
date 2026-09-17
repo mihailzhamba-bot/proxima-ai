@@ -63,9 +63,10 @@ def test_independent_proposal_reviewer_returns_bound_receipt(tmp_path):
             return json.dumps({"ok":True,"model":"gpt-5.6-terra","provider":"openai-codex","response":json.dumps(verdict)}).encode()
     class Opener:
         def open(self,request,timeout):return Response()
-    receipt=review({"proposal":proposal,"existing":existing,"dependencies":[]},"http://127.0.0.1:1","x"*32,tmp_path,Opener())
+    legacy=[{"title":"Existing WB PR","body":"accepted criteria","files":["services/x.ts"],"fingerprint":"f"*64}]
+    receipt=review({"proposal":proposal,"existing":existing,"legacy_existing":legacy,"dependencies":[]},"http://127.0.0.1:1","x"*32,tmp_path,Opener())
     assert receipt["verdict"]=="approve"
-    assert receipt["checks"]["duplicates"]["compared"]==["e"*64]
+    assert receipt["checks"]["duplicates"]["compared"]==["e"*64,"f"*64]
 
 
 def test_command_real_subprocess_roundtrip_has_single_stdin_owner():

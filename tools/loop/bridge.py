@@ -412,6 +412,7 @@ class Bridge:
             "planning_snapshot":status["planning_snapshot"],"requirements":requirements,
             "queue":{"pending":[{key:item[key] for key in ("id","requirement_id","slice_key","state")} for item in status["items"] if item["state"] not in {"merged","cancelled"}],
                      "completed":[{key:item[key] for key in ("id","requirement_id","slice_key","state")} for item in status["items"] if item["state"]=="merged"],
+                     "existing_work":[{key:item[key] for key in ("job_id","title","body","files","github_state","fingerprint","pr_url")} for item in status.get("existing_work",[])],
                      "eligible_requirements":status["eligible_requirements"],"plan_exhausted":status["plan_exhausted"]},
             "goal":"Propose bounded WB tasks only from the pinned operator policy. Submit proposals with this trusted planning run identity. Do not choose paths, profiles, commands, credentials or execution settings."}
         return self.create("paperclip",key,payload)
@@ -483,6 +484,10 @@ class Bridge:
         observed=active or latest
         if observed is not None:result["planning"]={key:observed[key] for key in ("id","key","state","updated")}
         return result
+
+    def record_existing_work(self,payload):
+        try:return self.continuous_mutable().existing_work_receipt(payload)
+        except ValueError as error:raise BridgeError(409,str(error),False) from None
 
     def begin_base_refresh(self,payload):
         if set(payload)!={"key","new_head"}:raise BridgeError(400,"invalid base refresh begin",False)
@@ -887,6 +892,7 @@ def server(bridge, config):
                 elif self.command=="POST" and path=="/v1/queue/proposals":result=bridge.propose_continuous(payload)
                 elif self.command=="GET" and path=="/v1/queue":result=bridge.continuous_status()
                 elif self.command=="GET" and path=="/v1/queue/base-refresh":result=bridge.continuous_required().maintenance() or {"state":"idle"}
+                elif self.command=="POST" and path=="/v1/queue/existing-work":result=bridge.record_existing_work(payload)
                 elif self.command=="POST" and path=="/v1/queue/base-refresh/begin":result=bridge.begin_base_refresh(payload)
                 elif self.command=="POST" and path=="/v1/queue/base-refresh/prepare":result=bridge.prepare_base_refresh(payload)
                 elif self.command=="POST" and path=="/v1/queue/base-refresh/receipt":result=bridge.receipt_base_refresh(payload)

@@ -40,6 +40,7 @@ CONTROL_RUNTIME_FILES = {
     ROOT / "tools/loop/continuous_dispatch.py": (Path("/opt/loop/continuous_dispatch.py"), 0o755),
     ROOT / "tools/loop/continuous_admission.py": (Path("/opt/loop/continuous_admission.py"), 0o644),
     ROOT / "tools/loop/continuous_merge_observer.py": (Path("/opt/loop/continuous_merge_observer.py"), 0o644),
+    ROOT / "tools/loop/continuous_existing_work.py": (Path("/opt/loop/continuous_existing_work.py"), 0o644),
     ROOT / "tools/loop/continuous_report.py": (Path("/opt/loop/continuous_report.py"), 0o644),
     ROOT / "tools/loop/continuous_report_sender.py": (Path("/opt/loop/continuous_report_sender.py"), 0o755),
     ROOT / "tools/loop/continuous_report_once.py": (Path("/opt/loop/continuous_report_once.py"), 0o755),

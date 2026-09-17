@@ -81,7 +81,9 @@ new_head TEXT NOT NULL,new_policy TEXT,new_policy_fingerprint TEXT,bundle_sha256
 receipts TEXT NOT NULL,created REAL NOT NULL,updated REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS continuous_queue_history(
 item_id TEXT NOT NULL,sequence INTEGER NOT NULL,snapshot TEXT NOT NULL,created REAL NOT NULL,
-PRIMARY KEY(item_id,sequence));""")
+PRIMARY KEY(item_id,sequence));
+CREATE TABLE IF NOT EXISTS continuous_existing_work(
+job_id TEXT PRIMARY KEY,receipt TEXT NOT NULL,receipt_fingerprint TEXT NOT NULL,created REAL NOT NULL);""")
             columns={r[1] for r in d.execute("PRAGMA table_info(continuous_queue)")}
             if "slice_key" not in columns:d.execute("ALTER TABLE continuous_queue ADD COLUMN slice_key TEXT NOT NULL DEFAULT 'legacy'")
             if "execution_policy" not in columns:d.execute("ALTER TABLE continuous_queue ADD COLUMN execution_policy TEXT NOT NULL DEFAULT '{}'")
@@ -144,7 +146,14 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
         if receipt["verdict"]!="approve" or not isinstance(receipt["reviewer"],str) or not receipt["reviewer"] or not isinstance(checks,dict) or set(checks)!={"policy","scope","dependencies","duplicates"} or checks["policy"]!="pass" or checks["scope"]!="pass" or not isinstance(checks["dependencies"],dict) or not isinstance(checks["duplicates"],dict):raise QueueError("independent approval receipt required")
         policy=row["execution_policy"];dependencies={}
         with self.db() as d:
-            compared=sorted(r[0] for r in d.execute("SELECT proposal_fingerprint FROM continuous_queue WHERE requirement_id=? AND id!=?",(row["requirement_id"],item_id)))
+            legacy=[]
+            has_jobs=d.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone()
+            if has_jobs:
+                for stored in d.execute("SELECT receipt,receipt_fingerprint FROM continuous_existing_work"):
+                    value=json.loads(stored[0]);job=d.execute("SELECT template,state,pr_url,candidate_sha FROM jobs WHERE id=?",(value["job_id"],)).fetchone()
+                    if (job and job["state"]=="ready_pr" and job["template"]==value["template"]
+                            and job["pr_url"]==value["pr_url"] and job["candidate_sha"]==value["head_sha"]):legacy.append(stored[1])
+            compared=sorted([r[0] for r in d.execute("SELECT proposal_fingerprint FROM continuous_queue WHERE requirement_id=? AND id!=?",(row["requirement_id"],item_id))]+legacy)
             if checks["duplicates"]!={"status":"pass","compared":compared,"duplicate_of":None}:raise QueueError("independent semantic duplicate review required")
             for dependency_id in row["depends_on"]:
                 dep=d.execute("SELECT state FROM continuous_queue WHERE id=?",(dependency_id,)).fetchone()
@@ -325,6 +334,33 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
         self.policy=validate_policy(new_policy);self.policy_fingerprint=new_fp
         return {"state":"complete","policy_fingerprint":new_fp,"rebased":rebased,
                 "removed_templates":json.loads(row["rebase_templates"])}
+    def existing_work_receipt(self,receipt):
+        required={"job_id","template","pr_url","pr_number","head_sha","base_ref","github_state","merge_commit_sha","title","body","files"}
+        if (not isinstance(receipt,dict) or set(receipt)!=required or not ID.fullmatch(str(receipt.get("job_id","")))
+                or not SHA.fullmatch(str(receipt.get("head_sha",""))) or receipt.get("base_ref")!="feat/loop-pilot"
+                or receipt.get("github_state") not in {"open","merged","closed_unmerged"}
+                or (receipt.get("merge_commit_sha") is not None and not SHA.fullmatch(str(receipt["merge_commit_sha"])))
+                or (receipt.get("github_state")=="merged")!=(receipt.get("merge_commit_sha") is not None)
+                or not isinstance(receipt.get("pr_number"),int) or receipt["pr_number"]<1
+                or not isinstance(receipt.get("title"),str) or len(receipt["title"])>500
+                or not isinstance(receipt.get("body"),str) or len(receipt["body"])>10_000
+                or not isinstance(receipt.get("files"),list) or not receipt["files"] or len(receipt["files"])>100
+                or any(not isinstance(v,str) or not v or len(v)>500 for v in receipt["files"])):
+            raise QueueError("invalid existing-work receipt")
+        repositories={value["repository"] for value in self.policy["requirements"].values()}
+        if len(repositories)!=1:raise QueueError("existing-work repository unavailable")
+        expected_url=f"https://github.com/{next(iter(repositories))}/pull/{receipt['pr_number']}"
+        if receipt["pr_url"]!=expected_url:raise QueueError("existing-work repository mismatch")
+        with self.db() as d:
+            d.execute("BEGIN IMMEDIATE")
+            has_jobs=d.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone()
+            row=d.execute("SELECT id,template,state,pr_url,candidate_sha FROM jobs WHERE id=?",(receipt["job_id"],)).fetchone() if has_jobs else None
+            if (not row or row["state"]!="ready_pr" or row["template"]!=receipt["template"]
+                    or row["pr_url"]!=receipt["pr_url"] or row["candidate_sha"]!=receipt["head_sha"]):raise QueueError("existing-work job changed")
+            fingerprint=digest(receipt);old=d.execute("SELECT receipt_fingerprint FROM continuous_existing_work WHERE job_id=?",(receipt["job_id"],)).fetchone()
+            if old and old[0]!=fingerprint:raise QueueError("existing-work receipt conflict")
+            d.execute("INSERT OR IGNORE INTO continuous_existing_work VALUES(?,?,?,?)",(receipt["job_id"],canonical(receipt),fingerprint,self.clock()))
+        return {**receipt,"fingerprint":fingerprint}
     def claim(self,lease_seconds=300):
         now=self.clock()
         with self.db() as d:
@@ -399,14 +435,24 @@ lease_id=?,lease_expires=?,updated=? WHERE id=? AND state=? AND lease_id=?""",(s
         for row in rows:
             row["depends_on"]=json.loads(row["depends_on"])
             if row["id"] in merges:row["merge_commit_sha"]=merges[row["id"]]
+        with self.db() as d:
+            has_jobs=d.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone()
+            candidate_count=d.execute("SELECT count(*) FROM jobs WHERE state='ready_pr' AND pr_url IS NOT NULL AND candidate_sha IS NOT NULL").fetchone()[0] if has_jobs else 0
+            candidates=[dict(v) for v in d.execute("SELECT id AS job_id,template,pr_url,candidate_sha AS head_sha FROM jobs WHERE state='ready_pr' AND pr_url IS NOT NULL AND candidate_sha IS NOT NULL ORDER BY id LIMIT 32")] if has_jobs else []
+            verified={v["job_id"]:(json.loads(v["receipt"]),v["receipt_fingerprint"]) for v in d.execute("SELECT * FROM continuous_existing_work")}
+        existing=[]
+        for candidate in candidates:
+            stored=verified.get(candidate["job_id"])
+            if stored and all(stored[0].get(key)==candidate[key] for key in ("job_id","template","pr_url","head_sha")):existing.append({**stored[0],"fingerprint":stored[1]})
         active_counts={key:sum(row["requirement_id"]==key and row["state"] not in {"rejected","cancelled"} for row in rows) for key in self.policy["requirements"]}
         total_counts={key:sum(row["requirement_id"]==key for row in rows) for key in self.policy["requirements"]}
         eligible=[key for key,item in self.policy["requirements"].items() if active_counts[key]<item["max_slices"] and total_counts[key]<item["max_slices"]*3]
         planning_snapshot=digest({"policy_fingerprint":self.policy_fingerprint,
             "items":[{key:row.get(key) for key in ("id","requirement_id","slice_key","state")} for row in rows],
+            "existing_work":sorted(value["fingerprint"] for value in existing),"legacy_ready_pr_overflow":candidate_count>32,
             "eligible_requirements":eligible})
         return {"policy_fingerprint":self.policy_fingerprint,"planning_snapshot":planning_snapshot,
-        "maintenance":self.maintenance(),"continuous_ready":False,
+        "legacy_ready_pr_candidates":candidates,"legacy_ready_pr_overflow":candidate_count>32,"existing_work":existing,"maintenance":self.maintenance(),"continuous_ready":False,
         "plan_exhausted":not eligible,"eligible_requirements":eligible,
         "current":next((r for r in rows if (r["state"] in {"dispatching","running","unknown"} or (r["state"]=="blocked" and r.get("lease_id")))),None),
         "next":next((r for r in rows if r["state"] in {"ready","registering","proposed"}),None),"items":rows}

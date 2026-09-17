@@ -286,3 +286,18 @@ def test_active_attempt_defers_refresh_but_still_reconciles_dispatcher():
  result=tick(client,Dispatch(),Admission(),refresher=Refresher(),now=lambda:1000)
  assert result["base_refresh"]=={"status":"deferred","reason":"active_attempt"}
  assert result["dispatch"]=={"status":"reconciled"} and order==["dispatch"]
+
+
+def test_unverified_legacy_work_blocks_planning_but_preserves_dispatch_reconcile():
+ calls=[]
+ status={"queue_paused":False,"current":None,"shared_executor_busy":False,"items":[],"plan_exhausted":False,
+         "legacy_ready_pr_candidates":[{"job_id":"legacy","pr_url":"https://github.com/mihailzhamba-bot/proxima-ai/pull/143","head_sha":"a"*40}],"existing_work":[]}
+ def client(method,path,payload=None,headers=None):
+  calls.append((method,path));return status
+ class Catalog:
+  def run_once(self,_status):raise TimeoutError("github unavailable")
+ class Dispatch:
+  def run_once(self):return {"status":"idle"}
+ result=tick(client,Dispatch(),existing_observer=Catalog(),now=lambda:1000)
+ assert result["status"]=="existing_work_unknown" and result["planning"] is None and result["dispatch"]=={"status":"idle"}
+ assert not any(path=="/v1/queue/plan" for _,path in calls)
