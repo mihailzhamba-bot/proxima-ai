@@ -227,3 +227,11 @@ def test_control_source_accepts_only_pinned_linked_worktree_common_dir(tmp_path,
  assert validate_source_repo(linked)==bare.resolve()
  monkeypatch.setattr("tools.loop.continuous_base_refresh.CONTROL_GIT_COMMON_DIR",tmp_path/"other.git")
  with pytest.raises(RefreshError,match="common directory"):validate_source_repo(linked)
+
+
+def test_first_refresh_creates_private_state_root_before_askpass(tmp_path,monkeypatch):
+ cfg=refresher_config(tmp_path);state=Path(cfg["state_root"]);assert not state.exists()
+ old=policy();base=old["requirements"]["wb-task"]["base_sha"]
+ result=BaseRefresher(cfg,lambda *_: {},lambda *_:{"ref":"refs/heads/feat/loop-pilot","object":{"type":"commit","sha":base}}).run_once(
+  {"policy_fingerprint":digest(old),"items":[{"id":"safe","state":"proposed","base_sha":base}],"maintenance":None})
+ assert result=={"status":"idle","reason":"base_current"} and state.is_dir() and state.stat().st_mode&0o777==0o700

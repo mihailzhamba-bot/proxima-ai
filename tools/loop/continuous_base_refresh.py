@@ -320,9 +320,10 @@ class BaseRefresher:
         if response.get("ref")!="refs/heads/"+BRANCH or (response.get("object") or {}).get("type")!="commit" or not SHA.fullmatch(str(value)):raise RefreshError("trusted branch head unavailable")
         return value
     def run_once(self,status=None):
-        root=Path(self.config["state_root"]);root.mkdir(parents=True,exist_ok=True)
+        root=Path(self.config["state_root"]);root.mkdir(parents=True,exist_ok=True,mode=0o700)
         info=root.lstat()
-        if root.is_symlink() or not root.is_dir() or info.st_uid!=os.geteuid() or info.st_mode&0o022:raise RefreshError("untrusted base refresh state root")
+        if (root.is_symlink() or not root.is_dir() or info.st_uid!=ROOT_UID
+                or stat.S_IMODE(info.st_mode)!=0o700):raise RefreshError("untrusted base refresh state root")
         fd=os.open(root/"refresh.lock",os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
         try:
             try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
