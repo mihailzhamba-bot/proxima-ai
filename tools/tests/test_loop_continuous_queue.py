@@ -230,3 +230,14 @@ def test_planning_intent_is_atomically_rejected_after_execution_claim(tmp_path):
  bridge=Bridge(tmp_path/"bridge.db",Never(),Never(),"director",continuous_policy=policy())
  q=bridge.continuous;q.propose(proposal(),*planner(q));register(q);assert q.claim()["state"]=="dispatching"
  with pytest.raises(BridgeError,match="execution active"):bridge.plan_continuous("planning-after-claim")
+
+
+def test_prompt_contract_version_preserves_legacy_registration_and_constrains_new(tmp_path):
+ db=tmp_path/"q.db";q=ContinuousQueue(db,policy());q.propose(proposal(),*planner(q))
+ with q.db() as connection:connection.execute("UPDATE continuous_queue SET prompt_contract_version=1 WHERE id='wb-small-task'")
+ legacy=approve(q);assert "allowed_paths" not in legacy["prompt_contract"] and legacy["prompt_contract_version"]==1
+ restarted=ContinuousQueue(db,policy());again=restarted.registration("wb-small-task")
+ assert again["template_fingerprint"]==legacy["template_fingerprint"] and again["prompt_contract"]==legacy["prompt_contract"]
+ fresh=proposal(proposal_id="fresh-task",slice_key="fresh-slice");restarted.propose(fresh,*planner(restarted));reviewed=approve(restarted,"fresh-task")
+ assert reviewed["prompt_contract_version"]==2 and reviewed["prompt_contract"]["checkout"]=="proxima-ai"
+ assert reviewed["prompt_contract"]["allowed_paths"]==reviewed["allowed_paths"] and "scoped_commit" in reviewed["prompt_contract"]

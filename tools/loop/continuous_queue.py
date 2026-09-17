@@ -62,7 +62,7 @@ class ContinuousQueue:
             d.executescript("""CREATE TABLE IF NOT EXISTS continuous_queue(
 id TEXT PRIMARY KEY,requirement_id TEXT NOT NULL,slice_key TEXT NOT NULL,planner_run_id TEXT NOT NULL,planner_generation INTEGER NOT NULL,
 goal TEXT NOT NULL,acceptance TEXT NOT NULL,base_sha TEXT NOT NULL,allowed_paths TEXT NOT NULL,contract_files TEXT NOT NULL,
-depends_on TEXT NOT NULL,proposal_fingerprint TEXT NOT NULL,policy_fingerprint TEXT NOT NULL,execution_policy TEXT NOT NULL,review_fingerprint TEXT,
+depends_on TEXT NOT NULL,proposal_fingerprint TEXT NOT NULL,policy_fingerprint TEXT NOT NULL,execution_policy TEXT NOT NULL,prompt_contract_version INTEGER NOT NULL DEFAULT 2,review_fingerprint TEXT,
 template_name TEXT,template_fingerprint TEXT,state TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,
 lease_id TEXT,lease_expires REAL,external_run_id TEXT,external_job_id TEXT,evidence TEXT,pr_url TEXT,blocker TEXT,
 created REAL NOT NULL,updated REAL NOT NULL);
@@ -87,6 +87,7 @@ job_id TEXT PRIMARY KEY,receipt TEXT NOT NULL,receipt_fingerprint TEXT NOT NULL,
             columns={r[1] for r in d.execute("PRAGMA table_info(continuous_queue)")}
             if "slice_key" not in columns:d.execute("ALTER TABLE continuous_queue ADD COLUMN slice_key TEXT NOT NULL DEFAULT 'legacy'")
             if "execution_policy" not in columns:d.execute("ALTER TABLE continuous_queue ADD COLUMN execution_policy TEXT NOT NULL DEFAULT '{}'")
+            if "prompt_contract_version" not in columns:d.execute("ALTER TABLE continuous_queue ADD COLUMN prompt_contract_version INTEGER NOT NULL DEFAULT 1")
             d.execute("CREATE UNIQUE INDEX IF NOT EXISTS continuous_slice_unique ON continuous_queue(requirement_id,slice_key)")
     def db(self):
         d=sqlite3.connect(self.database,timeout=20);d.row_factory=sqlite3.Row;d.execute("PRAGMA foreign_keys=ON");return d
@@ -130,8 +131,8 @@ job_id TEXT PRIMARY KEY,receipt TEXT NOT NULL,receipt_fingerprint TEXT NOT NULL,
                 total=d.execute("SELECT count(*) FROM continuous_queue WHERE requirement_id=?",(rid,)).fetchone()[0]
                 if active>=policy["max_slices"] or total>=policy["max_slices"]*3:raise QueueError("requirement slice capacity exhausted")
                 try:d.execute("""INSERT INTO continuous_queue(id,requirement_id,slice_key,planner_run_id,planner_generation,goal,acceptance,
-base_sha,allowed_paths,contract_files,depends_on,proposal_fingerprint,policy_fingerprint,execution_policy,state,created,updated)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"],planner["generation"],goal,canonical(acceptance),fixed["base_sha"],canonical(fixed["allowed_paths"]),canonical(fixed["contract_files"]),canonical(deps),fp,self.policy_fingerprint,canonical(execution_policy),"proposed",now,now))
+base_sha,allowed_paths,contract_files,depends_on,proposal_fingerprint,policy_fingerprint,execution_policy,prompt_contract_version,state,created,updated)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"],planner["generation"],goal,canonical(acceptance),fixed["base_sha"],canonical(fixed["allowed_paths"]),canonical(fixed["contract_files"]),canonical(deps),fp,self.policy_fingerprint,canonical(execution_policy),2,"proposed",now,now))
                 except sqlite3.IntegrityError:raise QueueError("requirement slice already proposed") from None
         return self.get(item_id)
     def review(self,item_id,receipt):
@@ -168,6 +169,8 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
         prompt={"proposal_fingerprint":row["proposal_fingerprint"],"requirement_id":row["requirement_id"],
                 "requirement_objective":policy["objective"],"goal":row["goal"],"acceptance":row["acceptance"],
                 "source_evidence":policy["source_evidence"]}
+        if row["prompt_contract_version"]>=2:prompt.update(checkout="proxima-ai",allowed_paths=policy["allowed_paths"],
+                scoped_commit="Create exactly one scoped commit containing only changes within allowed_paths.")
         template={k:policy[k] for k in ("base_sha","allowed_paths","contract_files","profile","profile_id","profile_revision")};template["prompt_sha256"]=hashlib.sha256((canonical(prompt)+"\n").encode()).hexdigest();name="continuous-"+item_id
         try:from .bridge import template_fingerprint
         except ImportError:from bridge import template_fingerprint
@@ -187,6 +190,8 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
         prompt={"proposal_fingerprint":row["proposal_fingerprint"],"requirement_id":row["requirement_id"],
                 "requirement_objective":policy["objective"],"goal":row["goal"],"acceptance":row["acceptance"],
                 "source_evidence":policy["source_evidence"]}
+        if row["prompt_contract_version"]>=2:prompt.update(checkout="proxima-ai",allowed_paths=policy["allowed_paths"],
+                scoped_commit="Create exactly one scoped commit containing only changes within allowed_paths.")
         template={k:policy[k] for k in ("base_sha","allowed_paths","contract_files","profile","profile_id","profile_revision")}
         template["prompt_sha256"]=hashlib.sha256((canonical(prompt)+"\n").encode()).hexdigest()
         try:from .bridge import template_fingerprint

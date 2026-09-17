@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import grp
 import fcntl
 import hashlib
 import hmac
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import pwd
 import re
 import shutil
@@ -29,6 +30,7 @@ COLLECTOR_HOME = Path("/srv/loop-worker/collector-home")
 GATEWAY_ROOT = Path("/srv/loop-worker/gateway")
 OUTBOX = GATEWAY_ROOT / "outbox"
 RECEIPTS = GATEWAY_ROOT / "receipts"
+DELIVERY_PROMPTS = Path("/etc/loop-worker/delivery-prompts")
 DISPATCHER = Path("/opt/loop/worker_dispatch.py")
 COLLECTOR = Path("/opt/loop/worker_collect.py")
 ROOT_HELPER = Path("/opt/loop/worker_root.py")
@@ -142,7 +144,7 @@ def verify_pinned_tool_versions(execute=subprocess.run) -> None:
 
 def request_config(template_name: str) -> dict:
     verify_pinned_tool_versions();config=root_json(CONFIG);integrity=root_json(INTEGRITY)
-    if config.get("source_repo")!=str(SOURCE) or config.get("run_root")!=str(RUN_ROOT) or config.get("workspace_root")!=str(WORKSPACES) or config.get("runtime_user")!="loop-worker-runner" or config.get("prompt_root")!="/etc/loop-worker/prompts":raise ValueError("unexpected worker roots or identities")
+    if config.get("source_repo")!=str(SOURCE) or config.get("run_root")!=str(RUN_ROOT) or config.get("workspace_root")!=str(WORKSPACES) or config.get("runtime_user")!="loop-worker-runner" or config.get("prompt_root")!="/etc/loop-worker/prompts" or config.get("delivery_prompt_root")!=str(DELIVERY_PROMPTS):raise ValueError("unexpected worker roots or identities")
     template=config.get("templates",{}).get(template_name)
     if not isinstance(template,dict) or not SHA1.fullmatch(str(template.get("base_sha",""))):raise ValueError("template not admitted")
     profile_id=config.get("profile_fedor");profile_revision=config.get("profile_fedor_revision")
@@ -167,6 +169,52 @@ def deterministic_conversation(job: str) -> str:
     return str(uuid.uuid5(uuid.uuid5(uuid.NAMESPACE_URL,"https://proxima.local/bad-dev-story"),job+"/1"))
 
 
+def delivery_prompt_bytes(raw: bytes,template: dict) -> bytes:
+    if hashlib.sha256(raw).hexdigest()!=template.get("prompt_sha256"):raise ValueError("raw prompt differs from template")
+    paths=template.get("allowed_paths")
+    if not isinstance(paths,list) or not paths:raise ValueError("template paths unavailable")
+    for value in paths:
+        if (not isinstance(value,str) or not value or any(ord(char)<32 for char in value)
+                or PurePosixPath(value).is_absolute() or ".." in PurePosixPath(value).parts or PurePosixPath(value).parts[0]==".git"):
+            raise ValueError("invalid template path")
+    authority={"checkout":"proxima-ai","base_sha":template.get("base_sha"),"allowed_paths":paths,
+               "commit":"Create exactly one scoped commit containing only changes within allowed_paths."}
+    return raw.rstrip(b"\n")+b"\n\nTRUSTED DELIVERY CONSTRAINTS (authoritative):\n"+json.dumps(authority,sort_keys=True,ensure_ascii=False,indent=2).encode()+b"\n"
+
+
+def prepare_delivery_prompt(template: dict,job: str) -> tuple[Path,dict]:
+    raw_path=Path(str(template.get("prompt_file","")));raw=raw_path.read_bytes();delivery=delivery_prompt_bytes(raw,template)
+    group=grp.getgrnam("loop-worker-shared").gr_gid
+    try:DELIVERY_PROMPTS.mkdir(mode=0o750)
+    except FileExistsError:
+        before=DELIVERY_PROMPTS.lstat()
+        if DELIVERY_PROMPTS.is_symlink() or not stat.S_ISDIR(before.st_mode) or before.st_uid!=PRIVILEGED_UID:raise ValueError("delivery prompt root is untrusted")
+    os.chown(DELIVERY_PROMPTS,PRIVILEGED_UID,group);os.chmod(DELIVERY_PROMPTS,0o750);info=DELIVERY_PROMPTS.lstat()
+    if DELIVERY_PROMPTS.is_symlink() or not stat.S_ISDIR(info.st_mode) or info.st_uid!=PRIVILEGED_UID or info.st_gid!=group or stat.S_IMODE(info.st_mode)!=0o750:raise ValueError("delivery prompt root is untrusted")
+    path=DELIVERY_PROMPTS/(job+".txt");metadata=DELIVERY_PROMPTS/(job+".json")
+    values={"raw_prompt_sha256":hashlib.sha256(raw).hexdigest(),"delivery_prompt_sha256":hashlib.sha256(delivery).hexdigest()}
+    for target,data,mode in ((path,delivery,0o640),(metadata,json.dumps(values,sort_keys=True).encode(),0o640)):
+        if target.exists():
+            if target.is_symlink() or target.read_bytes()!=data:raise ValueError("delivery prompt conflict")
+            observed=target.stat()
+            if observed.st_uid!=PRIVILEGED_UID or observed.st_gid!=group or stat.S_IMODE(observed.st_mode)!=mode:raise ValueError("delivery prompt ownership changed")
+            continue
+        directory=os.open(DELIVERY_PROMPTS,directory_flags());temporary=target.name+"."+uuid.uuid4().hex+".tmp"
+        try:
+            fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0),mode,dir_fd=directory)
+            try:
+                os.fchown(fd,PRIVILEGED_UID,group);os.fchmod(fd,mode);view=memoryview(data)
+                while view:
+                    written=os.write(fd,view)
+                    if written<=0:raise ValueError("short delivery prompt write")
+                    view=view[written:]
+                os.fsync(fd)
+            finally:os.close(fd)
+            os.replace(temporary,target.name,src_dir_fd=directory,dst_dir_fd=directory);os.fsync(directory)
+        finally:os.close(directory)
+    return path,values
+
+
 def template_fingerprint(name: str,definition: dict) -> str:
     portable={key:definition.get(key) for key in ("base_sha","prompt_sha256","allowed_paths","contract_files","profile","profile_id","profile_revision")}
     for key in ("allowed_paths","contract_files"):
@@ -180,6 +228,7 @@ def collect_unit(job: str) -> str:return "loop-worker-collect-"+job
 
 
 def dispatch_command(template_name: str,job: str) -> list[str]:
+    delivery=DELIVERY_PROMPTS/(job+".txt")
     return ["/usr/bin/systemd-run","--quiet","--wait","--pipe","--collect","--unit",dispatch_unit(job),"--property=Type=oneshot","--property=User=loop-worker-runner","--property=Group=loop-worker-shared","--property=SupplementaryGroups=loop-worker-runner",f"--property=WorkingDirectory={SOURCE}","--property=UMask=0007","--property=NoNewPrivileges=yes","--property=PrivateTmp=yes","--property=PrivateDevices=yes","--property=PrivateIPC=yes","--property=ProtectSystem=strict","--property=ProtectHome=yes","--property=ProtectHostname=yes","--property=ProtectKernelTunables=yes","--property=ProtectKernelModules=yes","--property=ProtectKernelLogs=yes","--property=ProtectControlGroups=yes","--property=ProtectClock=yes","--property=ProtectProc=invisible","--property=ProcSubset=pid","--property=RestrictNamespaces=yes","--property=RestrictRealtime=yes","--property=LockPersonality=yes","--property=CapabilityBoundingSet=","--property=AmbientCapabilities=","--property=RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX","--property=IPAddressDeny=any","--property=IPAddressAllow=localhost",f"--property=ReadWritePaths={SOURCE} {RUN_ROOT} {WORKSPACES}","--property=ReadOnlyPaths=/etc/loop-worker /opt/loop /srv/loop-worker/agent-state/conversations","--property=InaccessiblePaths=/srv/openhands /srv/proxima-ai /etc/proxima-ai /home/openhands-agent /srv/loop-worker/codex-home /srv/loop-worker/gateway /srv/loop-worker/transfer","--property=MemoryMax=4G","--property=CPUQuota=200%","--property=TasksMax=512","--property=TimeoutStartSec=95min","--property=RuntimeMaxSec=95min","--property=KillMode=control-group","--property=SendSIGKILL=yes","/usr/bin/python3","-I",str(DISPATCHER),"--config",str(CONFIG),"--template",template_name,"--job",job]
 
 
@@ -321,12 +370,13 @@ def finalize(job: str,template_name: str,base_sha: str,fingerprint: str) -> dict
     if prior is not None:
         return validate_root_receipt(prior,job,template_name,base_sha,fingerprint)
     dispatched=dispatch_receipt(job,template_name,base_sha,fingerprint);collected=collector_receipt(job,template_name,base_sha);bundle_sha=copy_bundle(job)
-    receipt={"ok":True,"transport_only":True,"job":job,"template":template_name,"template_fingerprint":fingerprint,"conversation_id":dispatched["conversation_id"],"branch":collected["branch"],"base_sha":base_sha,"head_sha":collected["head_sha"],"commits":collected["commits"],"bundle_sha256":bundle_sha,"gates":{"transport":"untrusted","harper_verification_required":True}}
+    prompt_meta=json.loads((DELIVERY_PROMPTS/(job+".json")).read_text()) if (DELIVERY_PROMPTS/(job+".json")).is_file() else {}
+    receipt={"ok":True,"transport_only":True,**prompt_meta,"job":job,"template":template_name,"template_fingerprint":fingerprint,"conversation_id":dispatched["conversation_id"],"branch":collected["branch"],"base_sha":base_sha,"head_sha":collected["head_sha"],"commits":collected["commits"],"bundle_sha256":bundle_sha,"gates":{"transport":"untrusted","harper_verification_required":True}}
     atomic_root_json(RECEIPTS/(job+".json"),receipt);return receipt
 
 
 def dispatch(template_name: str,job: str) -> None:
-    template=request_config(template_name);base_sha=template["base_sha"];fingerprint=template_fingerprint(template_name,template);prepare_paths(job);prior=root_receipt(job)
+    template=request_config(template_name);base_sha=template["base_sha"];fingerprint=template_fingerprint(template_name,template);prepare_paths(job);prepare_delivery_prompt(template,job);prior=root_receipt(job)
     usage=shutil.disk_usage(WORKSPACES)
     if usage.total>8*1024**3+128*1024**2 or usage.free<512*1024**2:raise ValueError("bounded worker filesystem reserve is unavailable")
     if prior is not None:

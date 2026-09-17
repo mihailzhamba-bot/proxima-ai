@@ -88,13 +88,20 @@ def live_profile_identity(config: dict,base_url: str,session_key: str) -> tuple[
     return expected_id,expected_revision
 
 
+def delivery_prompt_bytes(raw: bytes,template: dict) -> bytes:
+    paths=admitted_paths(template)
+    authority={"checkout":"proxima-ai","base_sha":template.get("base_sha"),"allowed_paths":paths,
+               "commit":"Create exactly one scoped commit containing only changes within allowed_paths."}
+    return raw.rstrip(b"\n")+b"\n\nTRUSTED DELIVERY CONSTRAINTS (authoritative):\n"+json.dumps(authority,sort_keys=True,ensure_ascii=False,indent=2).encode()+b"\n"
+
+
 def admitted_paths(template: dict) -> list[str]:
     values = template.get("allowed_paths")
     if not isinstance(values, list) or not values:
         raise SystemExit("template needs an explicit non-empty allowed_paths list")
     admitted = []
     for value in values:
-        if not isinstance(value, str) or not value or "\x00" in value:
+        if not isinstance(value, str) or not value or "\x00" in value or any(ord(character)<32 for character in value):
             raise SystemExit("invalid allowed path")
         path = PurePosixPath(value)
         if path.is_absolute() or ".." in path.parts or path.parts[0] == ".git":
@@ -183,7 +190,7 @@ def main() -> None:
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,40}", args.job):
         raise SystemExit("invalid job")
 
-    config_path = trusted_regular_file(Path(args.config))
+    config_path = trusted_regular_file(Path(args.config));config_owner=config_path.stat().st_uid
     try:
         config = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
@@ -213,13 +220,24 @@ def main() -> None:
     expected_prompt = template.get("prompt_sha256")
     if not isinstance(expected_prompt, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_prompt):
         raise SystemExit("template needs prompt_sha256")
-    if hashlib.sha256(prompt_file.read_bytes()).hexdigest() != expected_prompt:
+    raw_prompt=prompt_file.read_bytes()
+    if hashlib.sha256(raw_prompt).hexdigest() != expected_prompt:
         raise SystemExit("prompt hash differs from approved template")
     allowed_paths = admitted_paths(template)
+    delivery_root=required_path(config,"delivery_prompt_root")
+    if not delivery_root.is_absolute() or delivery_root.is_symlink() or not delivery_root.is_dir():raise SystemExit("invalid delivery prompt root")
+    delivery_path=delivery_root/(args.job+".txt")
+    if delivery_path.parent!=delivery_root or delivery_path.is_symlink() or not delivery_path.is_file():raise SystemExit("invalid delivery prompt path")
+    delivery_info=delivery_path.stat()
+    if delivery_info.st_uid!=config_owner or delivery_info.st_gid!=os.getegid() or stat.S_IMODE(delivery_info.st_mode)!=0o640 or delivery_info.st_nlink!=1:raise SystemExit("untrusted delivery prompt")
+    delivery=delivery_prompt_bytes(raw_prompt,template)
+    if delivery_path.read_bytes()!=delivery:raise SystemExit("delivery prompt differs from approved template")
     environment = child_environment(config, root)
     if template.get("profile_id")!=environment["PROFILE_FEDOR"] or template.get("profile_revision")!=int(environment["BRIDGE_PROFILE_REVISION"]):raise SystemExit("approved template Agent Profile binding changed")
     environment["BRIDGE_TEMPLATE_NAME"] = args.template
     environment["BRIDGE_TEMPLATE_FINGERPRINT"] = template_fingerprint(args.template,template)
+    environment["BRIDGE_RAW_PROMPT_SHA256"] = expected_prompt
+    environment["BRIDGE_DELIVERY_PROMPT_SHA256"] = hashlib.sha256(delivery).hexdigest()
     command = [
         "/bin/bash",
         str(script),
@@ -232,7 +250,7 @@ def main() -> None:
         "--base-ref",
         template["base_sha"],
         "--prompt-file",
-        str(prompt_file),
+        str(delivery_path),
         "--profile",
         template.get("profile", "fedor"),
         "--attempt",

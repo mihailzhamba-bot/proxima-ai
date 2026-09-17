@@ -22,6 +22,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+from tools.loop import worker_dispatch as worker_dispatch_module
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "orchestrator" / "bad_dev_story.sh"
@@ -501,6 +502,11 @@ def worker_dispatch_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     key_file.chmod(0o600)
     prompt = tmp_path / "trusted-prompt.txt"
     prompt.write_text("trusted job\n", encoding="utf-8")
+    delivery_root=tmp_path/"delivery-prompts";delivery_root.mkdir()
+    template={"base_sha":"a"*40,"prompt_file":str(prompt),"prompt_sha256":hashlib.sha256(prompt.read_bytes()).hexdigest(),
+              "allowed_paths":["services/webapp/src/lib/fixture.ts"],"profile":"fedor","profile_id":PROFILE_ID,"profile_revision":PROFILE_REVISION}
+    (delivery_root/"fixture-job.txt").write_bytes(worker_dispatch_module.delivery_prompt_bytes(prompt.read_bytes(),template))
+    (delivery_root/"fixture-job.txt").chmod(0o640)
     config = tmp_path / "worker-config.json"
     config.write_text(
         json.dumps(
@@ -511,6 +517,7 @@ def worker_dispatch_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
                 "run_root": str(run_root),
                 "prompt_root": str(tmp_path),
                 "workspace_root": str(workspace_root),
+                "delivery_prompt_root": str(delivery_root),
                 "openhands_base_url": "http://127.0.0.1:18002",
                 "openhands_key_file": str(key_file),
                 "openhands_persistence_root": str(persistence),
@@ -518,15 +525,7 @@ def worker_dispatch_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
                 "profile_fedor_revision": PROFILE_REVISION,
                 "lang": "C",
                 "templates": {
-                    "fixture": {
-                        "base_sha": "a" * 40,
-                        "prompt_file": str(prompt),
-                        "prompt_sha256": hashlib.sha256(prompt.read_bytes()).hexdigest(),
-                        "allowed_paths": ["services/webapp/src/lib/fixture.ts"],
-                        "profile": "fedor",
-                        "profile_id": PROFILE_ID,
-                        "profile_revision": PROFILE_REVISION,
-                    }
+                    "fixture": template
                 },
             }
         ),
@@ -579,6 +578,12 @@ def test_worker_dispatch_uses_only_dedicated_runtime_environment(tmp_path: Path)
     assert child_env["GIT_CONFIG_GLOBAL"] == "/dev/null"
     assert child_env["GIT_CONFIG_SYSTEM"] == "/dev/null"
     assert child_env["GIT_CONFIG_NOSYSTEM"] == "1"
+    child_args=(tmp_path/"child-arguments.txt").read_text().splitlines()
+    delivered=Path(json.loads(config.read_text())["delivery_prompt_root"])/"fixture-job.txt"
+    assert child_args[child_args.index("--prompt-file")+1]==str(delivered)
+    raw=Path(json.loads(config.read_text())["templates"]["fixture"]["prompt_file"]).read_bytes()
+    assert child_env["BRIDGE_RAW_PROMPT_SHA256"]==hashlib.sha256(raw).hexdigest()
+    assert child_env["BRIDGE_DELIVERY_PROMPT_SHA256"]==hashlib.sha256(delivered.read_bytes()).hexdigest()
     for forbidden in (
         "OPENAI_API_KEY",
         "LOCAL_BACKEND_API_KEY",
