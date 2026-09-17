@@ -20,29 +20,47 @@ def git(path,*args):
  r=subprocess.run(['/usr/bin/git','-c','safe.directory='+str(path),'-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','-C',str(path),*args],env=env,capture_output=True,timeout=20,check=True)
  if len(r.stdout)>4194304:raise ValueError('git output bound')
  return r.stdout.decode()
-UV_EXEC=['/usr/local/bin/uv','run','--offline','--no-python-downloads','--no-project','--python','3.14','/srv/proxima-ai/repo/tools/wb/daily.py','--config','/etc/proxima-ai/wb-daily.json']
+UV_ARGS=['run','--offline','--no-python-downloads','--no-project','--python','3.14','/srv/proxima-ai/repo/tools/wb/daily.py','--config','/etc/proxima-ai/wb-daily.json']
+UV_EXEC=['/usr/local/bin/uv',*UV_ARGS]
+ENV_UV_EXEC=['/usr/bin/env','uv',*UV_ARGS]
+def is_uv_exec(parts):
+ return parts in (UV_EXEC,ENV_UV_EXEC)
 def approved_unit_exec(parts):
  if not parts:return False
- if parts[0]=='/usr/local/bin/uv':return parts==UV_EXEC
+ if parts[0]=='/usr/local/bin/uv' or parts[:2]==['/usr/bin/env','uv']:return is_uv_exec(parts)
  return parts[0] in {'/usr/bin/python3','/usr/bin/env','/usr/bin/docker','/usr/bin/true','/srv/proxima-ai/repo/tools/wb/daily.py','/opt/proxima-wb-daily/daily.py'}
-def uv_environment_allowed(service):
- values=shlex.split(service.get('Environment',''))
- return 'UV_OFFLINE=1' in values and 'UV_PYTHON_DOWNLOADS=never' in values
+def uv_environment_allowed(environments):
+ if hasattr(environments,'get'):environments=[environments.get('Environment','')]
+ final={}
+ for environment in environments:
+  if not environment:final.clear();continue
+  for assignment in shlex.split(environment):
+   if '=' not in assignment:continue
+   key,value=assignment.split('=',1);final[key]=value
+ return final.get('UV_OFFLINE')=='1' and final.get('UV_PYTHON_DOWNLOADS')=='never'
+def unit_directives(body,section):
+ current=None;found=[]
+ for raw in body.splitlines():
+  line=raw.strip()
+  if not line or line.startswith(('#',';')):continue
+  if line.startswith('[') and line.endswith(']'):current=line[1:-1];continue
+  if current==section:
+   if '=' not in line:raise ValueError('invalid unit directive')
+   key,value=line.split('=',1);found.append((key.strip(),value.strip()))
+ return found
 def verify_units(checkout):
- import configparser
  names=['proxima-wb-daily.service','proxima-wb-daily.timer']
  with tempfile.TemporaryDirectory(prefix='loop-unit-check-') as tmp:
   root=Path(tmp);units=root/'etc/systemd/system';units.mkdir(parents=True)
   allowed={'/usr/local/bin/uv','/usr/bin/python3','/usr/bin/env','/usr/bin/docker','/usr/bin/true','/srv/proxima-ai/repo/tools/wb/daily.py','/opt/proxima-wb-daily/daily.py'}
   for name in names:
    body=(checkout/'infra/systemd'/name).read_text()
-   parser=configparser.ConfigParser(interpolation=None);parser.read_string(body)
-   if parser.has_section('Service'):
-    for key,value in parser['Service'].items():
-     if key.startswith('exec'):
-      parts=shlex.split(value)
-      if not approved_unit_exec(parts):raise ValueError('unapproved unit executable')
-      if parts[0]=='/usr/local/bin/uv' and not uv_environment_allowed(parser['Service']):raise ValueError('unapproved uv offline environment')
+   service=unit_directives(body,'Service');environments=[value for key,value in service if key.lower()=='environment']
+   for key,value in service:
+    if key.lower().startswith('exec'):
+     parts=shlex.split(value)
+     if not approved_unit_exec(parts):raise ValueError('unapproved unit executable')
+     if is_uv_exec(parts) and not uv_environment_allowed(environments):raise ValueError('unapproved uv offline environment')
    (units/name).write_text(body)
   for name in ['sysinit.target','basic.target','shutdown.target','timers.target','network-online.target','local-fs.target','multi-user.target']:
    (units/name).write_text('[Unit]\nDefaultDependencies=no\n')
