@@ -112,7 +112,10 @@ def regenerate_policy(policy,new_head,repo):
     for requirement in value["requirements"].values():
         paths=[]
         for scope in requirement["path_sets"].values():paths.extend(scope["allowed_paths"])
-        requirement["base_sha"]=new_head;requirement["source_evidence"]=evidence_for(repo,new_head,paths)
+        external=[item for item in requirement["source_evidence"] if not item["ref"].startswith("git:")]
+        generated=evidence_for(repo,new_head,paths)
+        if len(external)+len(generated)>MAX_EVIDENCE:raise RefreshError("source evidence path bound exceeded")
+        requirement["base_sha"]=new_head;requirement["source_evidence"]=external+generated
     validate_policy(value);return value
 def migration_manifest(repo,head):
     names=run_git(repo,["ls-tree","-r","--name-only",head,"--","db/migrations"]).splitlines()

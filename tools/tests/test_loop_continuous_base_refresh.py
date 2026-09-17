@@ -2,7 +2,7 @@ import hashlib,json,os,subprocess,threading
 import pytest
 from pathlib import Path
 from tools.loop.continuous_queue import ContinuousQueue,QueueError,digest
-from tools.loop.continuous_base_refresh import BaseRefresher,RefreshError,regenerate_policy,checked,trusted_fetch_env,validate_source_repo
+from tools.loop.continuous_base_refresh import BaseRefresher,RefreshError,regenerate_policy,checked,trusted_fetch_env,validate_source_repo,verify_authority
 from tools.tests.test_loop_continuous_queue import policy,planner,proposal,register
 
 NEW="9"*40
@@ -10,7 +10,8 @@ def refreshed(original,head=NEW):
  value=json.loads(json.dumps(original))
  for key,item in value["requirements"].items():
   item["base_sha"]=head
-  item["source_evidence"]=[{"ref":f"git:{head}:fixture","sha256":"8"*64,"summary":"trusted refreshed evidence"}]
+  external=[entry for entry in item["source_evidence"] if not entry["ref"].startswith("git:")]
+  item["source_evidence"]=external+[{"ref":f"git:{head}:fixture","sha256":"8"*64,"summary":"trusted refreshed evidence"}]
  return value
 def refresh_receipt(target,old_fp,new_fp,bundle="7"*64):
  return {"target":target,"old_policy_fingerprint":old_fp,"new_policy_fingerprint":new_fp,
@@ -242,3 +243,32 @@ def test_first_refresh_creates_private_state_root_before_askpass(tmp_path,monkey
 def test_example_uses_dedicated_root_owned_refresh_token_path():
  config=json.loads((Path(__file__).resolve().parents[2]/"infra/loop-control/continuous-control.example.json").read_text())
  assert config["base_refresh"]["github_token_file"]=="/etc/loop-continuous/github.token"
+
+
+def empty_git_repo(tmp_path):
+ repo=tmp_path/"evidence-repo";repo.mkdir();subprocess.run(["git","-C",str(repo),"init","-q"],check=True);subprocess.run(["git","-C",str(repo),"config","user.name","Fixture"],check=True);subprocess.run(["git","-C",str(repo),"config","user.email","fixture@invalid"],check=True);subprocess.run(["git","-C",str(repo),"commit","--allow-empty","-qm","base"],check=True)
+ return repo,subprocess.check_output(["git","-C",str(repo),"rev-parse","HEAD"],text=True).strip()
+
+
+def test_regenerate_policy_preserves_all_bootstrap_external_references_exactly(tmp_path):
+ root=Path(__file__).resolve().parents[2];old=json.loads((root/"infra/loop-control/continuous.policy.example.json").read_text());repo,head=empty_git_repo(tmp_path)
+ expected={key:[json.loads(json.dumps(item)) for item in value["source_evidence"] if not item["ref"].startswith("git:")] for key,value in old["requirements"].items()}
+ new=regenerate_policy(old,head,repo)
+ for key,value in new["requirements"].items():
+  external=[item for item in value["source_evidence"] if not item["ref"].startswith("git:")]
+  assert external==expected[key] and len(value["source_evidence"])<=12
+  assert all(item["ref"].startswith("git:"+head+":") for item in value["source_evidence"][len(external):])
+
+
+def test_external_reference_tamper_is_authority_change(tmp_path):
+ old=policy();external={"ref":"operator-reference/runtime.py","sha256":"d"*64,"summary":"Pinned operator reference."};old["requirements"]["wb-task"]["source_evidence"].insert(0,external)
+ new=refreshed(old);new["requirements"]["wb-task"]["source_evidence"][0]["summary"]="Tampered summary"
+ with pytest.raises(RefreshError,match="authority changed"):verify_authority(old,new)
+ new=refreshed(old);new["requirements"]["wb-task"]["source_evidence"][0]["sha256"]="e"*64
+ with pytest.raises(RefreshError,match="authority changed"):verify_authority(old,new)
+
+
+def test_external_plus_regenerated_git_evidence_respects_total_bound(tmp_path):
+ old=policy();old["requirements"]["wb-task"]["source_evidence"]=[{"ref":f"operator-reference/ref-{index}","sha256":hashlib.sha256(str(index).encode()).hexdigest(),"summary":f"Pinned reference {index}"} for index in range(12)]
+ repo,head=empty_git_repo(tmp_path)
+ with pytest.raises(RefreshError,match="evidence path bound"):regenerate_policy(old,head,repo)

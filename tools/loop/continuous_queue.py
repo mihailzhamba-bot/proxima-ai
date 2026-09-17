@@ -13,7 +13,8 @@ def digest(v):return hashlib.sha256(canonical(v).encode()).hexdigest()
 def policy_authority(policy):
     value=json.loads(canonical(validate_policy(policy)))
     for requirement in value["requirements"].values():
-        requirement.pop("base_sha",None);requirement.pop("source_evidence",None)
+        requirement.pop("base_sha",None)
+        requirement["source_evidence"]=[item for item in requirement["source_evidence"] if not item["ref"].startswith("git:")]
     return value
 def proposal_digest(item_id,requirement_id,slice_key,path_set_id,goal,acceptance,execution_policy,policy_fingerprint):
     fixed={key:execution_policy[key] for key in ("base_sha","allowed_paths","contract_files","depends_on")}
