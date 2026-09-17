@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -I
 """Operator-owned acceptance for bounded continuous pilot tasks."""
-import hashlib,json,os,re,stat,subprocess,sys,tempfile,uuid,time
+import hashlib,json,os,re,shlex,stat,subprocess,sys,tempfile,uuid,time
 from pathlib import Path
 ROOT=Path('/srv/loop-runner/work')
 ADMISSIONS=Path('/etc/loop-review/continuous/admissions')
@@ -20,12 +20,20 @@ def git(path,*args):
  r=subprocess.run(['/usr/bin/git','-c','safe.directory='+str(path),'-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','-C',str(path),*args],env=env,capture_output=True,timeout=20,check=True)
  if len(r.stdout)>4194304:raise ValueError('git output bound')
  return r.stdout.decode()
+UV_EXEC=['/usr/local/bin/uv','run','--offline','--no-python-downloads','--no-project','--python','3.14','/srv/proxima-ai/repo/tools/wb/daily.py','--config','/etc/proxima-ai/wb-daily.json']
+def approved_unit_exec(parts):
+ if not parts:return False
+ if parts[0]=='/usr/local/bin/uv':return parts==UV_EXEC
+ return parts[0] in {'/usr/bin/python3','/usr/bin/env','/usr/bin/docker','/usr/bin/true','/srv/proxima-ai/repo/tools/wb/daily.py','/opt/proxima-wb-daily/daily.py'}
+def uv_environment_allowed(service):
+ values=shlex.split(service.get('Environment',''))
+ return 'UV_OFFLINE=1' in values and 'UV_PYTHON_DOWNLOADS=never' in values
 def verify_units(checkout):
- import configparser,shlex
+ import configparser
  names=['proxima-wb-daily.service','proxima-wb-daily.timer']
  with tempfile.TemporaryDirectory(prefix='loop-unit-check-') as tmp:
   root=Path(tmp);units=root/'etc/systemd/system';units.mkdir(parents=True)
-  allowed={'/usr/bin/python3','/usr/bin/env','/usr/bin/docker','/usr/bin/true','/srv/proxima-ai/repo/tools/wb/daily.py','/opt/proxima-wb-daily/daily.py'}
+  allowed={'/usr/local/bin/uv','/usr/bin/python3','/usr/bin/env','/usr/bin/docker','/usr/bin/true','/srv/proxima-ai/repo/tools/wb/daily.py','/opt/proxima-wb-daily/daily.py'}
   for name in names:
    body=(checkout/'infra/systemd'/name).read_text()
    parser=configparser.ConfigParser(interpolation=None);parser.read_string(body)
@@ -33,7 +41,8 @@ def verify_units(checkout):
     for key,value in parser['Service'].items():
      if key.startswith('exec'):
       parts=shlex.split(value)
-      if not parts or parts[0] not in allowed:raise ValueError('unapproved unit executable')
+      if not approved_unit_exec(parts):raise ValueError('unapproved unit executable')
+      if parts[0]=='/usr/local/bin/uv' and not uv_environment_allowed(parser['Service']):raise ValueError('unapproved uv offline environment')
    (units/name).write_text(body)
   for name in ['sysinit.target','basic.target','shutdown.target','timers.target','network-online.target','local-fs.target','multi-user.target']:
    (units/name).write_text('[Unit]\nDefaultDependencies=no\n')
