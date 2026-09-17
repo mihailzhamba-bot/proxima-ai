@@ -1,5 +1,5 @@
 """Trusted semantic helpers for WB daily acceptance; no candidate imports."""
-import re,subprocess
+import re,shlex,subprocess
 
 def flag(cmd,key):
  for i,value in enumerate(cmd):
@@ -20,20 +20,30 @@ def execute_reply(cmd,kwargs,reply):
  if kwargs.get('check') and completed.returncode:raise subprocess.CalledProcessError(completed.returncode,cmd,output=completed.stdout,stderr=completed.stderr)
  return completed
 
-def exec_container(cmd):
+def exec_parts(cmd):
  assert len(cmd)>=4 and cmd[1]=='exec','not docker exec'
  tail=cmd[2:]
  if tail and tail[0]=='-i':tail=tail[1:]
- assert tail and not tail[0].startswith('-'),'unsupported docker exec options'
- return tail[0]
-
+ assert len(tail)>=2 and not tail[0].startswith('-'),'unsupported docker exec options'
+ return tail[0],tail[1:]
+def exec_container(cmd):return exec_parts(cmd)[0]
+def direct_psql_command(cmd):
+ _container,argv=exec_parts(cmd);program=argv[0].rsplit('/',1)[-1]
+ if program=='psql':return argv
+ if program in {'sh','bash'}:
+  expected_prefix='read -r dbuser < "$POSTGRES_USER_FILE"; exec psql '
+  assert len(argv)==3 and argv[1]=='-c' and argv[2].startswith(expected_prefix),'unapproved SQL wrapper'
+  inner=shlex.split(argv[2][len(expected_prefix):]);expected=['-X','-A','-t','-U','$dbuser','-d','$POSTGRES_DB','-v','ON_ERROR_STOP=1']
+  assert inner==expected,'unapproved SQL wrapper'
+  return None
+ raise AssertionError('unapproved SQL executable')
 def sql_from(cmd,kwargs):
- stdin=kwargs.get('input');cvalue=flag(cmd,'-c') or flag(cmd,'--command')
+ stdin=kwargs.get('input');psql=direct_psql_command(cmd);cvalue=(flag(psql,'-c') or flag(psql,'--command')) if psql else None
  assert not (stdin and cvalue),'ambiguous SQL transport'
  sql=stdin or cvalue
  assert isinstance(sql,str) and sql.strip(),'missing SQL probe'
  normalized=' '.join(sql.split());upper=normalized.upper()
  assert 'BEGIN READ ONLY' in upper and re.search(r"SET LOCAL PROXIMA\.TENANT_ID\s*=\s*'FIXTURE-TENANT'",upper),'tenant read-only transaction required'
- assert 'BRIEF_CURRENT' in upper and 'NORM_DAILY_CURRENT' in upper and ('DATA_STATUS_CURRENT' in upper or ('FACT_CABINET_DAILY' in upper and 'COLLECTOR_RUNS' in upper)),'daily readiness sources required'
+ assert 'BRIEF_CURRENT' in upper and ('DATA_STATUS_CURRENT' in upper or ('FACT_CABINET_DAILY' in upper and 'COLLECTOR_RUNS' in upper and 'NORM_DAILY_CURRENT' in upper)),'daily readiness sources required'
  assert not re.search(r'\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|COPY)\b',upper),'mutating SQL forbidden'
  return sql
