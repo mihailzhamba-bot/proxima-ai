@@ -242,33 +242,44 @@ class ReviewStage:
             raise BatchError('ambiguous_candidate')
         return matches[0] if matches else None
 
-    def reject_acceptance(self,observation,result):
+    def publish_rejection(self,observation,result,reason,reviewer,artifact_type,diagnostic_reason=None,verify_checkout=False):
         if os.geteuid()!=REVIEW_RECEIPT_UID:raise BatchError('root_required_for_receipt')
         if not DIGEST.fullmatch(str(observation.get('diff_sha256',''))):raise BatchError('acceptance_scope_missing')
-        directory=Path(self.manifest['evidence_root'])/'acceptance';directory.mkdir(mode=0o700,parents=True,exist_ok=True)
+        if verify_checkout:
+            try:current=fingerprint(observation['checkout'],observation['base_sha'],observation['head_sha'])
+            except Exception:return False
+            if current!={key:observation[key] for key in ('base_sha','head_sha','diff_sha256')}:return False
+        directory=Path(self.manifest['evidence_root'])/('acceptance' if artifact_type=='independent-acceptance-error' else 'model-review');directory.mkdir(mode=0o700,parents=True,exist_ok=True)
         def bounded(value):
             if isinstance(value,bytes):value=value.decode(errors='replace')
             value=re.sub(r'(?i)bearer\s+[^\s]+','Bearer [REDACTED]',str(value))
             return value[-4000:]
         diagnostic=directory/('error-'+observation['head_sha']+'-'+str(time.time_ns())+'.json')
-        artifact={'artifact_type':'independent-acceptance-error','reason':'independent_acceptance_blocked',
+        artifact={'artifact_type':artifact_type,'reason':reason,'diagnostic_reason':diagnostic_reason or reason,
             'base_sha':observation['base_sha'],'head_sha':observation['head_sha'],'diff_sha256':observation['diff_sha256'],
             'returncode':result.returncode,'stdout_tail':bounded(result.stdout),'stderr_tail':bounded(getattr(result,'stderr',''))}
         atomic_json(diagnostic,artifact,mode=0o600)
         destination=Path(self.manifest['review_receipts']);trusted_directory(destination,(REVIEW_RECEIPT_UID,))
         receipt={'base_sha':observation['base_sha'],'sha':observation['head_sha'],'diff_sha256':observation['diff_sha256'],
-            'status':'blocked','skipped':0,'reviewer':'independent-acceptance','reviewed_at_utc':str(time.time()),
-            'evidence_ref':str(diagnostic),'reason':'independent_acceptance_blocked'}
+            'status':'blocked','skipped':0,'reviewer':reviewer,'reviewed_at_utc':str(time.time()),
+            'evidence_ref':str(diagnostic),'reason':reason}
         path=destination/(observation['head_sha']+'.json')
         if path.exists() or path.is_symlink():
             existing=json_file(path)
             if existing.get('status')=='pass':
                 if (existing.get('base_sha'),existing.get('sha'),existing.get('diff_sha256'))!=(receipt['base_sha'],receipt['sha'],receipt['diff_sha256']):raise BatchError('review_receipt_conflict')
-                return
+                return True
             if existing!=receipt and not (existing.get('status')=='blocked' and
                 (existing.get('base_sha'),existing.get('sha'),existing.get('diff_sha256'))==(receipt['base_sha'],receipt['sha'],receipt['diff_sha256'])):raise BatchError('review_receipt_conflict')
-            return
-        atomic_json(path,receipt,mode=0o644)
+            return True
+        atomic_json(path,receipt,mode=0o644);return True
+
+    def reject_acceptance(self,observation,result):
+        return self.publish_rejection(observation,result,'independent_acceptance_blocked','independent-acceptance','independent-acceptance-error')
+
+    def reject_model_review(self,observation,result,diagnostic_reason):
+        if os.geteuid()!=REVIEW_RECEIPT_UID or not DIGEST.fullmatch(str(observation.get('diff_sha256',''))):return False
+        return self.publish_rejection(observation,result,'independent_model_review_blocked','independent-model-review','independent-model-review-error',diagnostic_reason,True)
 
     def accept(self, observation, timeout):
         command = self.manifest['acceptance_command']
@@ -297,11 +308,13 @@ class ReviewStage:
         return str(path)
 
     def review(self, observation, timeout):
-        result = self.execute([sys.executable, '-I', self.manifest['glm_script'],
-            '--config', self.manifest['glm_config'], '--checkout', observation['checkout'],
-            '--base', observation['base_sha'], '--head', observation['head_sha'],
-            '--evidence-root', str(Path(self.manifest['evidence_root']) / 'model-review')],
-            stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, check=False)
+        argv=[sys.executable, '-I', self.manifest['glm_script'],'--config', self.manifest['glm_config'],
+            '--checkout', observation['checkout'],'--base', observation['base_sha'], '--head', observation['head_sha'],
+            '--evidence-root', str(Path(self.manifest['evidence_root']) / 'model-review')]
+        try:result = self.execute(argv,stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, check=False)
+        except subprocess.TimeoutExpired as error:
+            failed=subprocess.CompletedProcess(argv,124,error.stdout or b'',error.stderr or b'model review timeout')
+            self.reject_model_review(observation,failed,'review_deadline');raise
         if result.returncode == DEFERRED_EXIT and len(result.stdout) <= 100_000:
             try:
                 deferred = strict_json(result.stdout)
@@ -340,10 +353,15 @@ class ReviewStage:
             directory.mkdir(mode=0o700, parents=True, exist_ok=True)
             atomic_json(directory / ('error-' + observation['head_sha'] + '-' + str(time.time_ns()) + '.json'),
                 {'artifact_type': 'model-review-error', 'reason': reason, 'head_sha': observation['head_sha'], 'observed_at': time.time()})
+            self.reject_model_review(observation,result,reason)
             raise BatchError(reason)
-        value = strict_json(result.stdout)
+        try:value = strict_json(result.stdout)
+        except Exception:
+            self.reject_model_review(observation,result,'invalid_model_review_receipt')
+            raise BatchError('invalid_model_review_receipt') from None
         expected = {key: observation[key] for key in ('base_sha', 'head_sha', 'diff_sha256')}
         if value.get('status') != 'pass' or value.get('fingerprint') != expected:
+            self.reject_model_review(observation,result,'glm_scope_mismatch')
             raise BatchError('glm_scope_mismatch')
         path = Path(value['evidence_path'])
         path.resolve().relative_to((Path(self.manifest['evidence_root']) / 'model-review').resolve())
@@ -363,6 +381,7 @@ class ReviewStage:
                                 str(artifact.get('actual_request_sha256', '')))
             or artifact.get('verdict', {}).get('status') != 'pass'
             or artifact['verdict'].get('findings') != []):
+            self.reject_model_review(observation,result,'glm_artifact_invalid')
             raise BatchError('glm_artifact_invalid')
         if fingerprint(observation['checkout'], observation['base_sha'], observation['head_sha']) != expected:
             raise BatchError('candidate_changed')

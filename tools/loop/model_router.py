@@ -32,7 +32,7 @@ OPENAI_MODELS = {
 }
 BROKER_URLS = {'http://127.0.0.1:18772/v1/infer',
                'http://127.0.0.1:18773/v1/infer'}
-POLICIES = {'glm_only', 'adaptive'}
+POLICIES = {'glm_only', 'adaptive', 'openai_only'}
 MAX_RESPONSE = 100_000
 MAX_TIMEOUT = 125
 BROKER_COOLDOWN = 15
@@ -78,7 +78,7 @@ def validate_provider_config(config):
         raise RouterError('invalid_provider_policy')
     url = config.get('openai_url')
     token = config.get('openai_token_file')
-    if policy == 'adaptive':
+    if policy in {'adaptive', 'openai_only'}:
         if url not in BROKER_URLS:
             raise RouterError('invalid_openai_url')
         if type(token) is not str or not Path(token).is_absolute():
@@ -103,6 +103,10 @@ def select_route(config, purpose, complexity='standard', *, now=None,
         complexity = 'standard'
     if (purpose, complexity) not in OPENAI_MODELS:
         raise RouterError('invalid_task_complexity')
+    if policy == 'openai_only':
+        if purpose != 'review':raise RouterError('openai_only_review_required')
+        model,effort=OPENAI_MODELS[('review','standard')]
+        return _route(OPENAI_PROVIDER,model,effort,'operator_selected')
     if policy == 'glm_only':
         return _route(GLM_PROVIDER, GLM_MODEL, None, 'glm_only')
     if glm_rate_limited:

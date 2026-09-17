@@ -745,3 +745,20 @@ def test_acceptance_timeout_writes_negative_receipt_before_preserving_deadline(t
  with pytest.raises(subprocess.TimeoutExpired):stage.accept(observation,10)
  receipt=json.loads((receipts/("b"*40+".json")).read_text());assert receipt["status"]=="blocked" and receipt["reason"]=="independent_acceptance_blocked"
  artifact=json.loads(Path(receipt["evidence_ref"]).read_text());assert artifact["returncode"]==124 and artifact["stdout_tail"]=="partial"
+
+
+@pytest.mark.parametrize("mode",["blocked","timeout"])
+def test_model_review_failure_publishes_exact_negative_receipt(mode,tmp_path,monkeypatch):
+ settings=manifest(tmp_path);receipts=Path(settings["review_receipts"]);receipts.mkdir();monkeypatch.setattr(driver,"REVIEW_RECEIPT_UID",os.geteuid());monkeypatch.setattr(driver,"trusted_directory",lambda *_a,**_k:None)
+ scope={"base_sha":"a"*40,"head_sha":"b"*40,"diff_sha256":"c"*64};observation={"checkout":"/fixture",**scope};monkeypatch.setattr(driver,"fingerprint",lambda *_args:scope)
+ if mode=="timeout":
+  execute=lambda argv,**kwargs:(_ for _ in ()).throw(subprocess.TimeoutExpired(argv,kwargs["timeout"],output=b"partial review",stderr=b"timeout"))
+  expected=subprocess.TimeoutExpired
+ else:
+  execute=lambda *_args,**_kwargs:SimpleNamespace(returncode=1,stdout=b'{"reason":"provider_unavailable"}',stderr=b"review failed")
+  expected=driver.BatchError
+ stage=driver.ReviewStage(settings,execute)
+ with pytest.raises(expected):stage.review(observation,10)
+ receipt=json.loads((receipts/(scope["head_sha"]+".json")).read_text());assert receipt["status"]=="blocked" and receipt["reason"]=="independent_model_review_blocked" and receipt["diff_sha256"]==scope["diff_sha256"]
+ artifact=json.loads(Path(receipt["evidence_ref"]).read_text());assert artifact["artifact_type"]=="independent-model-review-error" and Path(receipt["evidence_ref"]).stat().st_mode&0o777==0o600
+ if mode=="timeout":assert artifact["diagnostic_reason"]=="review_deadline" and artifact["returncode"]==124
