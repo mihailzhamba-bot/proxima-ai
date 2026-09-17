@@ -64,5 +64,5 @@ Local Python only orchestrates subprocess stdin; never save project files on Mac
 Portable template fields: base_sha,prompt_sha256,allowed_paths,contract_files,profile=fedor,profile_id=73bf9c3a-ab69-4b2e-a7f0-e808df8f2614,profile_revision=0.
 Control runtime /etc/loop/bridge.json owner10001:10001 mode600; Harper /etc/loop-runner/config.json owner1000:1000 mode600; worker /etc/loop-worker/templates.json + prompts + source-integrity.json sealed with /usr/local/sbin/loop-worker-seal.
 Bridge/runner currently need idle reload; Docker single-file bind cannot see atomic replacement unless recreated. Preserve inode or recreate idle only.
-Последнее зафиксированное свободное место Harper `3047907328` bytes, ниже start floor 3 GiB; floor не снижать. Архивы подготовлены, удаление cache выполняет только parent после явного разрешения Mike.
+По состоянию на 2026-09-17 после уже разрешённой и завершённой очистки трёх архивированных cache на Harper свободно `6018236416` bytes; это выше start floor 3 GiB. T3 завершена; будущие claims по-прежнему обязаны проходить неизменённый 3 GiB preflight.
 No deployment, live dispatch or merge by code implementer. Обычный fast-forward push source-ветки в существующий draft PR #146 отдельно разрешён оператором 2026-09-17; force push запрещён. Stage only owned files. Commit with LOOP Operator / loop-control@localhost if identity unset.
