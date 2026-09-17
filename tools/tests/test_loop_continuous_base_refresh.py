@@ -110,7 +110,8 @@ def refresher_config(tmp_path):
   "state_root":str(tmp_path/"state"),"max_bundle_bytes":33554432,"github_timeout_seconds":10,
   "receivers":{target:["/trusted/"+target] for target in ("bridge","harper","worker")}}
 
-def test_unmerged_branch_head_equal_to_pinned_base_is_idle(tmp_path):
+def test_unmerged_branch_head_equal_to_pinned_base_is_idle(tmp_path,monkeypatch):
+ monkeypatch.setattr("tools.loop.continuous_base_refresh.ROOT_UID",os.getuid())
  old=policy();base=old["requirements"]["wb-task"]["base_sha"]
  status={"policy_fingerprint":digest(old),"items":[{"id":"safe","state":"proposed","base_sha":base}],"maintenance":None}
  def bridge(method,path,payload=None):
@@ -230,6 +231,7 @@ def test_control_source_accepts_only_pinned_linked_worktree_common_dir(tmp_path,
 
 
 def test_first_refresh_creates_private_state_root_before_askpass(tmp_path,monkeypatch):
+ monkeypatch.setattr("tools.loop.continuous_base_refresh.ROOT_UID",os.getuid())
  cfg=refresher_config(tmp_path);state=Path(cfg["state_root"]);assert not state.exists()
  old=policy();base=old["requirements"]["wb-task"]["base_sha"]
  result=BaseRefresher(cfg,lambda *_: {},lambda *_:{"ref":"refs/heads/feat/loop-pilot","object":{"type":"commit","sha":base}}).run_once(
