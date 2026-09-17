@@ -11,10 +11,17 @@ import sys
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 import urllib.request
+if not __package__:
+    sys.path.insert(0,str(Path(__file__).resolve().parent))
+try:
+    from .worker_prompt import delivery_prompt as build_delivery_prompt
+except ImportError:
+    from worker_prompt import delivery_prompt as build_delivery_prompt
 
 
 SAFE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 SHARED_AGENT_CANVAS_ENV = Path("/home/openhands-agent/.agent-canvas.env")
+ATTEMPT_FEEDBACK = Path("/etc/loop-worker/attempt-feedback")
 
 
 def template_fingerprint(name: str,definition: dict) -> str:
@@ -89,10 +96,7 @@ def live_profile_identity(config: dict,base_url: str,session_key: str) -> tuple[
 
 
 def delivery_prompt_bytes(raw: bytes,template: dict) -> bytes:
-    paths=admitted_paths(template)
-    authority={"checkout":"proxima-ai","base_sha":template.get("base_sha"),"allowed_paths":paths,
-               "commit":"Create exactly one scoped commit containing only changes within allowed_paths."}
-    return raw.rstrip(b"\n")+b"\n\nTRUSTED DELIVERY CONSTRAINTS (authoritative):\n"+json.dumps(authority,sort_keys=True,ensure_ascii=False,indent=2).encode()+b"\n"
+    return build_delivery_prompt(raw,template,"fixture-job","fixture-task")[0]
 
 
 def admitted_paths(template: dict) -> list[str]:
@@ -230,14 +234,21 @@ def main() -> None:
     if delivery_path.parent!=delivery_root or delivery_path.is_symlink() or not delivery_path.is_file():raise SystemExit("invalid delivery prompt path")
     delivery_info=delivery_path.stat()
     if delivery_info.st_uid!=config_owner or delivery_info.st_gid!=os.getegid() or stat.S_IMODE(delivery_info.st_mode)!=0o640 or delivery_info.st_nlink!=1:raise SystemExit("untrusted delivery prompt")
-    delivery=delivery_prompt_bytes(raw_prompt,template)
+    feedback_path=ATTEMPT_FEEDBACK/(args.job+".json");sidecar=None
+    if feedback_path.exists() or feedback_path.is_symlink():
+        if feedback_path.is_symlink():raise SystemExit("attempt feedback symlink")
+        feedback_info=feedback_path.stat()
+        if feedback_info.st_uid!=config_owner or feedback_info.st_gid!=os.getegid() or stat.S_IMODE(feedback_info.st_mode)!=0o640 or feedback_info.st_nlink!=1 or feedback_info.st_size>100000:raise SystemExit("untrusted attempt feedback")
+        sidecar=json.loads(feedback_path.read_text())
+    delivery,delivery_metadata=build_delivery_prompt(raw_prompt,template,args.job,args.template,sidecar)
     if delivery_path.read_bytes()!=delivery:raise SystemExit("delivery prompt differs from approved template")
     environment = child_environment(config, root)
     if template.get("profile_id")!=environment["PROFILE_FEDOR"] or template.get("profile_revision")!=int(environment["BRIDGE_PROFILE_REVISION"]):raise SystemExit("approved template Agent Profile binding changed")
     environment["BRIDGE_TEMPLATE_NAME"] = args.template
     environment["BRIDGE_TEMPLATE_FINGERPRINT"] = template_fingerprint(args.template,template)
     environment["BRIDGE_RAW_PROMPT_SHA256"] = expected_prompt
-    environment["BRIDGE_DELIVERY_PROMPT_SHA256"] = hashlib.sha256(delivery).hexdigest()
+    environment["BRIDGE_DELIVERY_PROMPT_SHA256"] = delivery_metadata["delivery_prompt_sha256"]
+    environment["BRIDGE_FEEDBACK_SIDECAR_SHA256"] = delivery_metadata["feedback_sidecar_sha256"] or "none"
     command = [
         "/bin/bash",
         str(script),

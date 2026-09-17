@@ -20,6 +20,13 @@ import sys
 import time
 import uuid
 
+if not __package__:
+    sys.path.insert(0,str(Path(__file__).resolve().parent))
+try:
+    from .worker_prompt import delivery_prompt as build_delivery_prompt
+except ImportError:
+    from worker_prompt import delivery_prompt as build_delivery_prompt
+
 SOURCE = Path("/srv/loop-worker/trusted-source/proxima-ai")
 CONFIG = Path("/etc/loop-worker/templates.json")
 INTEGRITY = Path("/etc/loop-worker/source-integrity.json")
@@ -31,6 +38,8 @@ GATEWAY_ROOT = Path("/srv/loop-worker/gateway")
 OUTBOX = GATEWAY_ROOT / "outbox"
 RECEIPTS = GATEWAY_ROOT / "receipts"
 DELIVERY_PROMPTS = Path("/etc/loop-worker/delivery-prompts")
+ATTEMPT_FEEDBACK = Path("/etc/loop-worker/attempt-feedback")
+WORKER_PROMPT = Path("/opt/loop/worker_prompt.py")
 DISPATCHER = Path("/opt/loop/worker_dispatch.py")
 COLLECTOR = Path("/opt/loop/worker_collect.py")
 ROOT_HELPER = Path("/opt/loop/worker_root.py")
@@ -151,7 +160,7 @@ def request_config(template_name: str) -> dict:
     if template.get("profile","fedor")!="fedor" or not isinstance(profile_id,str) or not re.fullmatch(r"[0-9a-f-]{36}",profile_id) or not isinstance(profile_revision,int) or isinstance(profile_revision,bool) or profile_revision<0 or template.get("profile_id")!=profile_id or template.get("profile_revision")!=profile_revision:raise ValueError("template Agent Profile binding is invalid")
     prompt=Path(str(template.get("prompt_file","")))
     if prompt.parent!=Path(config["prompt_root"]):raise ValueError("unexpected trusted prompt path")
-    required={str(DISPATCHER):PRIVILEGED_UID,str(COLLECTOR):PRIVILEGED_UID,str(ROOT_HELPER):PRIVILEGED_UID,str(SSH_HELPER):PRIVILEGED_UID,str(AGENT_LAUNCHER):PRIVILEGED_UID,str(ACP_WRAPPER):PRIVILEGED_UID,str(CODEX_CONFIG):PRIVILEGED_UID,str(VOLUME_HELPER):PRIVILEGED_UID,str(SOURCE/"tools/orchestrator/bad_dev_story.sh"):uid("loop-worker-runner"),str(SOURCE/"tools/orchestrator/lib.sh"):uid("loop-worker-runner")}
+    required={str(DISPATCHER):PRIVILEGED_UID,str(COLLECTOR):PRIVILEGED_UID,str(ROOT_HELPER):PRIVILEGED_UID,str(SSH_HELPER):PRIVILEGED_UID,str(AGENT_LAUNCHER):PRIVILEGED_UID,str(ACP_WRAPPER):PRIVILEGED_UID,str(CODEX_CONFIG):PRIVILEGED_UID,str(VOLUME_HELPER):PRIVILEGED_UID,str(SOURCE/"tools/orchestrator/bad_dev_story.sh"):uid("loop-worker-runner"),str(SOURCE/"tools/orchestrator/lib.sh"):uid("loop-worker-runner"),str(WORKER_PROMPT):PRIVILEGED_UID}
     for candidate in config.get("templates",{}).values():
         if not isinstance(candidate,dict):raise ValueError("invalid template collection")
         candidate_prompt=Path(str(candidate.get("prompt_file","")))
@@ -170,21 +179,18 @@ def deterministic_conversation(job: str) -> str:
 
 
 def delivery_prompt_bytes(raw: bytes,template: dict) -> bytes:
-    if hashlib.sha256(raw).hexdigest()!=template.get("prompt_sha256"):raise ValueError("raw prompt differs from template")
-    paths=template.get("allowed_paths")
-    if not isinstance(paths,list) or not paths:raise ValueError("template paths unavailable")
-    for value in paths:
-        if (not isinstance(value,str) or not value or any(ord(char)<32 for char in value)
-                or PurePosixPath(value).is_absolute() or ".." in PurePosixPath(value).parts or PurePosixPath(value).parts[0]==".git"):
-            raise ValueError("invalid template path")
-    authority={"checkout":"proxima-ai","base_sha":template.get("base_sha"),"allowed_paths":paths,
-               "commit":"Create exactly one scoped commit containing only changes within allowed_paths."}
-    return raw.rstrip(b"\n")+b"\n\nTRUSTED DELIVERY CONSTRAINTS (authoritative):\n"+json.dumps(authority,sort_keys=True,ensure_ascii=False,indent=2).encode()+b"\n"
+    return build_delivery_prompt(raw,template,"fixture-job","fixture-task")[0]
 
 
-def prepare_delivery_prompt(template: dict,job: str) -> tuple[Path,dict]:
-    raw_path=Path(str(template.get("prompt_file","")));raw=raw_path.read_bytes();delivery=delivery_prompt_bytes(raw,template)
-    group=grp.getgrnam("loop-worker-shared").gr_gid
+def prepare_delivery_prompt(template_name: str,template: dict,job: str) -> tuple[Path,dict]:
+    raw_path=Path(str(template.get("prompt_file","")));raw=raw_path.read_bytes();group=grp.getgrnam("loop-worker-shared").gr_gid
+    feedback_path=ATTEMPT_FEEDBACK/(job+".json");sidecar=None
+    if feedback_path.exists() or feedback_path.is_symlink():
+        if feedback_path.is_symlink():raise ValueError("attempt feedback symlink")
+        info=feedback_path.stat()
+        if info.st_uid!=PRIVILEGED_UID or info.st_gid!=group or stat.S_IMODE(info.st_mode)!=0o640 or info.st_nlink!=1 or info.st_size>100000:raise ValueError("attempt feedback ownership mismatch")
+        sidecar=json.loads(feedback_path.read_text())
+    delivery,values=build_delivery_prompt(raw,template,job,template_name,sidecar)
     try:DELIVERY_PROMPTS.mkdir(mode=0o750)
     except FileExistsError:
         before=DELIVERY_PROMPTS.lstat()
@@ -192,7 +198,6 @@ def prepare_delivery_prompt(template: dict,job: str) -> tuple[Path,dict]:
     os.chown(DELIVERY_PROMPTS,PRIVILEGED_UID,group);os.chmod(DELIVERY_PROMPTS,0o750);info=DELIVERY_PROMPTS.lstat()
     if DELIVERY_PROMPTS.is_symlink() or not stat.S_ISDIR(info.st_mode) or info.st_uid!=PRIVILEGED_UID or info.st_gid!=group or stat.S_IMODE(info.st_mode)!=0o750:raise ValueError("delivery prompt root is untrusted")
     path=DELIVERY_PROMPTS/(job+".txt");metadata=DELIVERY_PROMPTS/(job+".json")
-    values={"raw_prompt_sha256":hashlib.sha256(raw).hexdigest(),"delivery_prompt_sha256":hashlib.sha256(delivery).hexdigest()}
     for target,data,mode in ((path,delivery,0o640),(metadata,json.dumps(values,sort_keys=True).encode(),0o640)):
         if target.exists():
             if target.is_symlink() or target.read_bytes()!=data:raise ValueError("delivery prompt conflict")
@@ -376,13 +381,14 @@ def finalize(job: str,template_name: str,base_sha: str,fingerprint: str) -> dict
 
 
 def dispatch(template_name: str,job: str) -> None:
-    template=request_config(template_name);base_sha=template["base_sha"];fingerprint=template_fingerprint(template_name,template);prepare_paths(job);prepare_delivery_prompt(template,job);prior=root_receipt(job)
-    usage=shutil.disk_usage(WORKSPACES)
-    if usage.total>8*1024**3+128*1024**2 or usage.free<512*1024**2:raise ValueError("bounded worker filesystem reserve is unavailable")
+    template=request_config(template_name);base_sha=template["base_sha"];fingerprint=template_fingerprint(template_name,template);prior=root_receipt(job)
     if prior is not None:
         prior=validate_root_receipt(prior,job,template_name,base_sha,fingerprint)
         if not service_active(AGENT_SERVICE):restart_agent_server()
         print(json.dumps(prior,ensure_ascii=False));return
+    prepare_paths(job);prepare_delivery_prompt(template_name,template,job)
+    usage=shutil.disk_usage(WORKSPACES)
+    if usage.total>8*1024**3+128*1024**2 or usage.free<512*1024**2:raise ValueError("bounded worker filesystem reserve is unavailable")
     try:dispatch_receipt(job,template_name,base_sha,fingerprint)
     except FileNotFoundError:
         if service_active(dispatch_unit(job)+".service"):wait_for(lambda:dispatch_receipt(job,template_name,base_sha,fingerprint),dispatch_unit(job))

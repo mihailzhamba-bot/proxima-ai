@@ -5,6 +5,7 @@ import pytest
 from tools.loop.continuous_admission import Admission,AdmissionError,command
 from tools.loop.continuous_receiver import ReceiverError,receive,registration_allowed
 import tools.loop.continuous_receiver as receiver_module
+import tools.loop.continuous_feedback as feedback_module
 from tools.loop.continuous_proposal_review import review
 
 def test_admission_resumes_partial_three_target_registration():
@@ -184,3 +185,15 @@ def test_forced_receiver_serializes_registration_and_refresh(monkeypatch,tmp_pat
  for thread in threads:thread.start()
  for thread in threads:thread.join()
  assert maximum==1 and set(results)=={"register","advance_base"}
+
+
+def test_forced_receiver_registers_feedback_only_on_worker_and_reseals(monkeypatch,tmp_path):
+ receive.lock_file=str(tmp_path/"receiver.lock");receive.policy_fingerprint="a"*64;receive.policy_file="/trusted/policy.json";seen=[]
+ sidecar={"policy_fingerprint":"a"*64,"job_id":"queue-a3"};payload={"action":"register_feedback","target":"worker","sidecar":sidecar}
+ monkeypatch.setattr(feedback_module,"register_feedback",lambda value,policy,config:seen.append((value,policy,config)) or {"target":"worker","job_id":"queue-a3","sidecar_sha256":"b"*64})
+ def execute(argv,**kwargs):seen.append(argv);return SimpleNamespace(returncode=0,stdout=b"")
+ assert receive("worker",payload,execute)["sidecar_sha256"]=="b"*64
+ assert seen[0][1:]==("/trusted/policy.json","/etc/loop-worker/templates.json") and seen[1]==["/usr/local/sbin/loop-worker-seal"]
+ with pytest.raises(ReceiverError,match="denied"):receive("harper",payload,execute)
+ changed=json.loads(json.dumps(payload));changed["sidecar"]["policy_fingerprint"]="c"*64
+ with pytest.raises(ReceiverError,match="denied"):receive("worker",changed,execute)

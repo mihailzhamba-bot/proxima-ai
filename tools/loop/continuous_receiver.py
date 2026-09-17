@@ -47,7 +47,14 @@ def registration_allowed(registration,policy):
  fixed=("base_sha","allowed_paths","contract_files","profile","profile_id","profile_revision")
  return isinstance(template,dict) and all(template.get(key)==matched.get(key) for key in fixed)
 def _receive_unlocked(role,payload,execute=subprocess.run):
- if role not in ROLES or not isinstance(payload,dict) or payload.get("action") not in {"register","dispatch","reconcile_dispatch","advance_base"}:raise ReceiverError("invalid closed request")
+ if role not in ROLES or not isinstance(payload,dict) or payload.get("action") not in {"register","register_feedback","dispatch","reconcile_dispatch","advance_base"}:raise ReceiverError("invalid closed request")
+ if payload["action"]=="register_feedback":
+  if role!="worker" or payload.get("target")!="worker" or payload.get("sidecar",{}).get("policy_fingerprint")!=receive.policy_fingerprint:raise ReceiverError("feedback registration denied")
+  try:
+   from .continuous_feedback import register_feedback
+  except ImportError:
+   from continuous_feedback import register_feedback
+  receipt=register_feedback(payload,receive.policy_file,ROLES["worker"]["config"]);run(["/usr/local/sbin/loop-worker-seal"],execute);return receipt
  if payload["action"]=="advance_base":
   receipt=receiver_advance(role,payload,receive.policy_file,CONFIG,execute)
   if role=="worker":run(["/usr/local/sbin/loop-worker-seal"],execute)

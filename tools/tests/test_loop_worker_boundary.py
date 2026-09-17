@@ -10,7 +10,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools.loop import worker_root,worker_dispatch
+from tools.loop import worker_root,worker_dispatch,worker_prompt
+from tools.loop import continuous_feedback
 from tools.loop.worker_ssh import parse
 
 
@@ -137,3 +138,47 @@ def test_root_gateway_selects_delivery_prompt_path_from_job_only():
  command=worker_root.dispatch_command("fixture-task","fixture-job")
  assert "--delivery-prompt" not in command
  assert worker_root.DELIVERY_PROMPTS/("fixture-job"+".txt")==Path("/etc/loop-worker/delivery-prompts/fixture-job.txt")
+
+
+def feedback_fixture():
+ raw=b"approved raw prompt\n";reference="#!/usr/bin/python3\nprint('approved reference')\n";paths=["tools/wb/daily.py","tools/tests/test_wb_daily.py","infra/systemd/proxima-wb-daily.service","infra/systemd/proxima-wb-daily.timer"]
+ template={"base_sha":"a"*40,"prompt_sha256":hashlib.sha256(raw).hexdigest(),"allowed_paths":paths,"contract_files":["AGENTS.md"],"profile":"fedor","profile_id":"73bf9c3a-ab69-4b2e-a7f0-e808df8f2614","profile_revision":0,"prompt_file":"/etc/loop-worker/prompts/continuous-wb-daily-packaging-slice.json"}
+ source={"ref":"operator-reference/daily_wb_runtime.py","sha256":hashlib.sha256(reference.encode()).hexdigest(),"content":reference}
+ policy={"requirements":{"wb-daily-packaging":{"base_sha":template["base_sha"],"allowed_paths":paths,"path_sets":{"default":{"allowed_paths":paths,"contract_files":["AGENTS.md"]}},"source_evidence":[{"ref":source["ref"],"sha256":source["sha256"]}]}}}
+ sidecar={"schema_version":1,"job_id":"wb-daily-packaging-slice-a3","queue_id":"wb-daily-packaging-slice","attempt":3,"requirement_id":"wb-daily-packaging","path_set_id":"default","policy_fingerprint":worker_prompt.digest(policy),"template_name":"continuous-wb-daily-packaging-slice","template_fingerprint":worker_prompt.template_fingerprint("continuous-wb-daily-packaging-slice",template),"base_sha":template["base_sha"],"raw_prompt_sha256":template["prompt_sha256"],"allowed_paths_sha256":worker_prompt.allowed_paths_digest(paths),"predecessor":{"job_id":"wb-daily-packaging-slice-a2","attempt":2,"head_sha":"b"*40,"diff_sha256":"c"*64,"acceptance_receipt":{"base_sha":template["base_sha"],"sha":"b"*40,"diff_sha256":"c"*64,"status":"blocked","reason":"independent_acceptance_blocked","evidence_sha256":"d"*64}},"feedback_codes":["missing_resource_limits"],"reference":source}
+ return raw,template,policy,sidecar
+
+
+def test_attempt_feedback_is_exactly_bound_and_scope_preserving():
+ raw,template,policy,sidecar=feedback_fixture();worker_prompt.validate_sidecar(sidecar,sidecar["job_id"],sidecar["template_name"],template,policy)
+ delivered,metadata=worker_prompt.delivery_prompt(raw,template,sidecar["job_id"],sidecar["template_name"],sidecar)
+ text=delivered.decode();assert "missing_resource_limits" in text and "#!/usr/bin/python3" in text and "approved reference" in text
+ assert metadata["feedback_sidecar_sha256"]==worker_prompt.digest(sidecar) and metadata["raw_prompt_sha256"]==template["prompt_sha256"]
+ changed=json.loads(json.dumps(sidecar));changed["feedback_codes"]=["arbitrary_operator_text"]
+ with pytest.raises(ValueError,match="code unavailable"):worker_prompt.validate_sidecar(changed,changed["job_id"],changed["template_name"],template,policy)
+ changed=json.loads(json.dumps(sidecar));changed["reference"]["content"]+="changed"
+ with pytest.raises(ValueError,match="reference mismatch"):worker_prompt.validate_sidecar(changed,changed["job_id"],changed["template_name"],template,policy)
+ changed=json.loads(json.dumps(sidecar));changed["allowed_paths_sha256"]="0"*64
+ with pytest.raises(ValueError,match="template binding"):worker_prompt.validate_sidecar(changed,changed["job_id"],changed["template_name"],template,policy)
+
+
+def test_closed_feedback_registrar_writes_immutable_group_readable_sidecar(tmp_path,monkeypatch):
+ raw,template,policy,sidecar=feedback_fixture();prompt=tmp_path/"prompt";prompt.write_bytes(raw);prompt.chmod(0o600);template["prompt_file"]=str(prompt)
+ # Fingerprint ignores prompt_file, so sidecar stays bound.
+ policy_path=tmp_path/"policy.json";policy_path.write_text(json.dumps(policy));policy_path.chmod(0o600)
+ config_path=tmp_path/"templates.json";config_path.write_text(json.dumps({"templates":{sidecar["template_name"]:template}}));config_path.chmod(0o600)
+ monkeypatch.setattr(continuous_feedback,"ROOT",tmp_path/"feedback");monkeypatch.setattr(continuous_feedback,"ROOT_UID",os.getuid());monkeypatch.setattr(continuous_feedback.grp,"getgrnam",lambda _name:SimpleNamespace(gr_gid=os.getgid()))
+ payload={"action":"register_feedback","target":"worker","sidecar":sidecar};receipt=continuous_feedback.register_feedback(payload,policy_path,config_path)
+ target=continuous_feedback.ROOT/(sidecar["job_id"]+".json");assert receipt["sidecar_sha256"]==worker_prompt.digest(sidecar)
+ assert target.stat().st_uid==os.getuid() and target.stat().st_gid==os.getgid() and target.stat().st_mode&0o777==0o640
+ assert continuous_feedback.register_feedback(payload,policy_path,config_path)==receipt
+ altered=json.loads(json.dumps(payload));altered["sidecar"]["feedback_codes"]=["timeout_cleanup_contract"]
+ with pytest.raises(ValueError,match="conflict"):continuous_feedback.register_feedback(altered,policy_path,config_path)
+
+
+def test_completed_legacy_job_returns_before_new_delivery_metadata(tmp_path,monkeypatch,capsys):
+ template={"base_sha":"a"*40,"allowed_paths":["x"],"profile":"fedor","profile_id":"73bf9c3a-ab69-4b2e-a7f0-e808df8f2614","profile_revision":0}
+ fingerprint=worker_root.template_fingerprint("fixture-task",template);prior={"ok":True,"job":"fixture-job","template":"fixture-task","template_fingerprint":fingerprint,"base_sha":"a"*40,"conversation_id":worker_root.deterministic_conversation("fixture-job"),"branch":"feat/loop-fixture-job","head_sha":"b"*40,"bundle_sha256":"c"*64}
+ monkeypatch.setattr(worker_root,"request_config",lambda _name:template);monkeypatch.setattr(worker_root,"root_receipt",lambda _job:prior);monkeypatch.setattr(worker_root,"service_active",lambda _service:True)
+ monkeypatch.setattr(worker_root,"prepare_delivery_prompt",lambda *_args:(_ for _ in ()).throw(AssertionError("legacy receipt attempted new delivery")))
+ worker_root.dispatch("fixture-task","fixture-job");assert json.loads(capsys.readouterr().out)==prior

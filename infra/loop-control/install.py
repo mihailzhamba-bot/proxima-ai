@@ -79,6 +79,8 @@ WORKER_FILES = {
     ROOT / "tools/loop/continuous_register.py": (Path("/opt/loop/continuous_register.py"), 0o644),
     ROOT / "tools/loop/continuous_queue.py": (Path("/opt/loop/continuous_queue.py"), 0o644),
     ROOT / "tools/loop/continuous_base_refresh.py": (Path("/opt/loop/continuous_base_refresh.py"), 0o644),
+    ROOT / "tools/loop/continuous_feedback.py": (Path("/opt/loop/continuous_feedback.py"), 0o644),
+    ROOT / "tools/loop/worker_prompt.py": (Path("/opt/loop/worker_prompt.py"), 0o644),
     ROOT / "tools/loop/bridge.py": (Path("/opt/loop/bridge.py"), 0o644),
     CONF / "loop-continuous-worker-sudoers": (Path("/etc/sudoers.d/loop-continuous-registrar"), 0o440),
     CONF / "continuous.policy.example.json": (Path("/etc/loop-continuous/policy.json"), 0o600),
