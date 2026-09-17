@@ -54,3 +54,8 @@ def test_continuous_unit_writes_common_git_directory():
 def test_continuous_tick_bypasses_proxy_for_fixed_github_origins():
  root=Path(__file__).resolve().parents[2];unit=(root/"infra/loop-control/loop-continuous.service").read_text()
  assert "Environment=NO_PROXY=127.0.0.1,localhost,api.github.com,github.com" in unit
+
+
+def test_continuous_timer_retriggers_after_long_oneshot_completion():
+ root=Path(__file__).resolve().parents[2];timer=(root/"infra/loop-control/loop-continuous.timer").read_text()
+ assert "OnUnitActiveSec=5min" in timer and "OnUnitInactiveSec=60s" in timer

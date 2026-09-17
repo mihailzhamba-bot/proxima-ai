@@ -46,6 +46,7 @@ ID = re.compile(r'[a-z0-9][a-z0-9-]{2,40}')
 RUN = re.compile(r'[A-Za-z0-9-]{1,80}')
 SHA = re.compile(r'[a-f0-9]{40}')
 DIGEST = re.compile(r'[a-f0-9]{64}')
+REVIEW_RECEIPT_UID = 0
 PATHS = ('state_file', 'evidence_root', 'work_root', 'glm_config', 'glm_script',
          'review_receipts', 'operator_key_file', 'runner_key_file')
 
@@ -241,11 +242,43 @@ class ReviewStage:
             raise BatchError('ambiguous_candidate')
         return matches[0] if matches else None
 
+    def reject_acceptance(self,observation,result):
+        if os.geteuid()!=REVIEW_RECEIPT_UID:raise BatchError('root_required_for_receipt')
+        if not DIGEST.fullmatch(str(observation.get('diff_sha256',''))):raise BatchError('acceptance_scope_missing')
+        directory=Path(self.manifest['evidence_root'])/'acceptance';directory.mkdir(mode=0o700,parents=True,exist_ok=True)
+        def bounded(value):
+            if isinstance(value,bytes):value=value.decode(errors='replace')
+            value=re.sub(r'(?i)bearer\s+[^\s]+','Bearer [REDACTED]',str(value))
+            return value[-4000:]
+        diagnostic=directory/('error-'+observation['head_sha']+'-'+str(time.time_ns())+'.json')
+        artifact={'artifact_type':'independent-acceptance-error','reason':'independent_acceptance_blocked',
+            'base_sha':observation['base_sha'],'head_sha':observation['head_sha'],'diff_sha256':observation['diff_sha256'],
+            'returncode':result.returncode,'stdout_tail':bounded(result.stdout),'stderr_tail':bounded(getattr(result,'stderr',''))}
+        atomic_json(diagnostic,artifact,mode=0o600)
+        destination=Path(self.manifest['review_receipts']);trusted_directory(destination,(REVIEW_RECEIPT_UID,))
+        receipt={'base_sha':observation['base_sha'],'sha':observation['head_sha'],'diff_sha256':observation['diff_sha256'],
+            'status':'blocked','skipped':0,'reviewer':'independent-acceptance','reviewed_at_utc':str(time.time()),
+            'evidence_ref':str(diagnostic),'reason':'independent_acceptance_blocked'}
+        path=destination/(observation['head_sha']+'.json')
+        if path.exists() or path.is_symlink():
+            existing=json_file(path)
+            if existing.get('status')=='pass':
+                if (existing.get('base_sha'),existing.get('sha'),existing.get('diff_sha256'))!=(receipt['base_sha'],receipt['sha'],receipt['diff_sha256']):raise BatchError('review_receipt_conflict')
+                return
+            if existing!=receipt and not (existing.get('status')=='blocked' and
+                (existing.get('base_sha'),existing.get('sha'),existing.get('diff_sha256'))==(receipt['base_sha'],receipt['sha'],receipt['diff_sha256'])):raise BatchError('review_receipt_conflict')
+            return
+        atomic_json(path,receipt,mode=0o644)
+
     def accept(self, observation, timeout):
         command = self.manifest['acceptance_command']
-        result = self.execute([*command, observation['checkout'], observation['base_sha'],
-            observation['head_sha'], observation['job_id']], stdin=subprocess.DEVNULL,
-            capture_output=True, timeout=min(120, timeout), check=False)
+        argv=[*command, observation['checkout'], observation['base_sha'],observation['head_sha'], observation['job_id']]
+        try:
+            result = self.execute(argv, stdin=subprocess.DEVNULL,capture_output=True, timeout=min(120, timeout), check=False)
+        except subprocess.TimeoutExpired as error:
+            failed=subprocess.CompletedProcess(argv,124,error.stdout or b'',error.stderr or b'acceptance timeout')
+            self.reject_acceptance(observation,failed)
+            raise
         expected = {'sha': observation['head_sha'], 'status': 'pass', 'skipped': 0}
         try:
             value = strict_json(result.stdout) if len(result.stdout) <= 100_000 else None
@@ -259,6 +292,7 @@ class ReviewStage:
             'head_sha': observation['head_sha'], 'status': 'pass' if passed else 'blocked',
             'receipt': expected if passed else None})
         if not passed:
+            self.reject_acceptance(observation,result)
             raise BatchError('independent_acceptance_blocked')
         return str(path)
 

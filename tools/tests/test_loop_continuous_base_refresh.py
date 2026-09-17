@@ -237,3 +237,8 @@ def test_first_refresh_creates_private_state_root_before_askpass(tmp_path,monkey
  result=BaseRefresher(cfg,lambda *_: {},lambda *_:{"ref":"refs/heads/feat/loop-pilot","object":{"type":"commit","sha":base}}).run_once(
   {"policy_fingerprint":digest(old),"items":[{"id":"safe","state":"proposed","base_sha":base}],"maintenance":None})
  assert result=={"status":"idle","reason":"base_current"} and state.is_dir() and state.stat().st_mode&0o777==0o700
+
+
+def test_example_uses_dedicated_root_owned_refresh_token_path():
+ config=json.loads((Path(__file__).resolve().parents[2]/"infra/loop-control/continuous-control.example.json").read_text())
+ assert config["base_refresh"]["github_token_file"]=="/etc/loop-continuous/github.token"
