@@ -58,3 +58,4 @@ class Admission:
 class CommandDispatcher:
     def __init__(self,argv,execute=subprocess.run):self.argv,self.execute=argv,execute
     def run_once(self):return command(self.argv,{"action":"dispatch"},self.execute,timeout=3600)
+    def reconcile_only(self):return command(self.argv,{"action":"reconcile_dispatch"},self.execute,timeout=300)

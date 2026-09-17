@@ -368,6 +368,12 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
             if self.maintenance_active(d):return None
             jobs_exists=d.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone()
             if jobs_exists and d.execute("SELECT 1 FROM jobs WHERE state IN ('queued','dispatching','publishing','unknown','recoverable') LIMIT 1").fetchone():return None
+            operations_exists=d.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='operations'").fetchone()
+            if operations_exists:
+                for operation in d.execute("SELECT request FROM operations WHERE state IN ('dispatching','running','unknown','cancelling')"):
+                    try:request=json.loads(operation[0])
+                    except Exception:return None
+                    if request.get("source")=="continuous_planning":return None
             if d.execute("SELECT 1 FROM continuous_queue WHERE state IN('dispatching','running','unknown') OR(state='blocked' AND lease_id IS NOT NULL) OR(lease_id IS NOT NULL AND lease_expires>?)",(now,)).fetchone():return None
             selected=None
             for row in d.execute("SELECT id,depends_on FROM continuous_queue WHERE state='ready' AND attempts<3 AND policy_fingerprint=? ORDER BY created,id",(self.policy_fingerprint,)):

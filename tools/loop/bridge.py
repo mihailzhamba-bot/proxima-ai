@@ -188,6 +188,14 @@ class Bridge:
                 if hasattr(self, "native_control"):
                     self.validate_native_parent(db, parent)
                 if parent and parent["state"] in {"cancelling", "cancelled", "interrupted", "failed", "error"}: raise BridgeError(409, "parent run revoked")
+            if kind=="paperclip" and payload.get("source")=="continuous_planning":
+                if db.execute("SELECT 1 FROM jobs WHERE state IN ('queued','dispatching','publishing','unknown','recoverable') LIMIT 1").fetchone():raise BridgeError(409,"shared executor busy",False)
+                queue_table=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='continuous_queue'").fetchone()
+                if queue_table and db.execute("SELECT 1 FROM continuous_queue WHERE state IN ('dispatching','running','unknown') OR (state='blocked' AND lease_id IS NOT NULL) LIMIT 1").fetchone():raise BridgeError(409,"continuous execution active",False)
+                for active in db.execute("SELECT request FROM operations WHERE kind='paperclip' AND state IN ('dispatching','running','unknown','cancelling')"):
+                    try:active_request=json.loads(active[0])
+                    except Exception:raise BridgeError(409,"Director lease uncertain",False) from None
+                    if active_request.get("source") in {"continuous_planning","operator_batch"}:raise BridgeError(409,"Director lease busy",False)
             if kind == "paperclip" and payload.get("source") == "native_telegram" and hasattr(self, "native_control"):
                 row = db.execute("SELECT * FROM native_drafts WHERE id=?", (payload.get("draft_id"),)).fetchone()
                 if not row or self.native_control.approved_execution(dict(row)) != payload:

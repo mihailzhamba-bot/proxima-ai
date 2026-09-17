@@ -47,6 +47,17 @@ class Dispatcher:
             except BlockingIOError:return {"status":"busy"}
             return self._run_locked()
         finally:os.close(fd)
+    def reconcile_only(self):
+        lock_path=Path(self.config["state_root"])/"dispatcher.lock";lock_path.parent.mkdir(parents=True,exist_ok=True)
+        fd=os.open(lock_path,os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
+        try:
+            try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            except BlockingIOError:return {"status":"busy"}
+            status=self.call("GET","/v1/queue");current=status.get("current")
+            if current is None:return {"status":"idle","reason":"reconciliation_only"}
+            item=self.call("GET","/v1/queue/"+current["id"])
+            return self.reconcile(item)
+        finally:os.close(fd)
     def _run_locked(self):
         status=self.call("GET","/v1/queue");current=status.get("current");resume=False
         if status.get("queue_paused"):return {"status":"paused"}
@@ -123,12 +134,13 @@ class Dispatcher:
         return self.call("POST",f'/v1/queue/{item["id"]}/settle',payload={**base_receipt,"reason":settlement})
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument("--config",required=True,type=Path);args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument("--config",required=True,type=Path);parser.add_argument("--reconcile-only",action="store_true");args=parser.parse_args()
     config=json_file(args.config);bridge_url=config.pop("bridge_url")
     try:
         from .bridge import JsonHTTP,secret
     except ImportError:
         from bridge import JsonHTTP,secret
     client=JsonHTTP(bridge_url,secret(config.pop("bridge_key_file")),trusted_bridge=True)
-    print(json.dumps(Dispatcher(config,client.call).run_once()));return 0
+    dispatcher=Dispatcher(config,client.call)
+    print(json.dumps(dispatcher.reconcile_only() if args.reconcile_only else dispatcher.run_once()));return 0
 if __name__=="__main__":raise SystemExit(main())

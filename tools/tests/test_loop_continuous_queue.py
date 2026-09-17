@@ -210,3 +210,23 @@ def test_generic_acceptance_profile_is_disabled_until_real_proof_exists():
     candidate=policy();candidate["requirements"]["wb-task"]["acceptance_profile"]="wb-generic"
     candidate["requirements"]["wb-task"]["path_sets"]["default"]["acceptance_profile"]="wb-generic"
     with pytest.raises(QueueError,match="execution identity|path sets"):validate_policy(candidate)
+
+
+def test_manual_claim_is_atomically_blocked_by_continuous_planning(tmp_path):
+ q=ContinuousQueue(tmp_path/"q.db",policy());q.propose(proposal(),*planner(q));register(q)
+ before=q.get("wb-small-task");assert before["state"]=="ready" and before["attempts"]==0
+ with q.db() as db:
+  db.execute("CREATE TABLE operations(id TEXT PRIMARY KEY,state TEXT,request TEXT)")
+  db.execute("INSERT INTO operations VALUES(?,?,?)",("planner-active","running",json.dumps({"source":"continuous_planning","planning_snapshot":"f"*64})))
+ assert q.claim() is None
+ after=q.get("wb-small-task");assert after["state"]=="ready" and after["attempts"]==0 and after["lease_id"] is None
+ with q.db() as db:db.execute("UPDATE operations SET state='completed'")
+ assert q.claim()["attempts"]==1
+
+
+def test_planning_intent_is_atomically_rejected_after_execution_claim(tmp_path):
+ class Never:
+  def call(self,*args,**kwargs):raise AssertionError("planning reached upstream")
+ bridge=Bridge(tmp_path/"bridge.db",Never(),Never(),"director",continuous_policy=policy())
+ q=bridge.continuous;q.propose(proposal(),*planner(q));register(q);assert q.claim()["state"]=="dispatching"
+ with pytest.raises(BridgeError,match="execution active"):bridge.plan_continuous("planning-after-claim")

@@ -47,14 +47,16 @@ def registration_allowed(registration,policy):
  fixed=("base_sha","allowed_paths","contract_files","profile","profile_id","profile_revision")
  return isinstance(template,dict) and all(template.get(key)==matched.get(key) for key in fixed)
 def _receive_unlocked(role,payload,execute=subprocess.run):
- if role not in ROLES or not isinstance(payload,dict) or payload.get("action") not in {"register","dispatch","advance_base"}:raise ReceiverError("invalid closed request")
+ if role not in ROLES or not isinstance(payload,dict) or payload.get("action") not in {"register","dispatch","reconcile_dispatch","advance_base"}:raise ReceiverError("invalid closed request")
  if payload["action"]=="advance_base":
   receipt=receiver_advance(role,payload,receive.policy_file,CONFIG,execute)
   if role=="worker":run(["/usr/local/sbin/loop-worker-seal"],execute)
   return receipt
- if payload["action"]=="dispatch":
+ if payload["action"] in {"dispatch","reconcile_dispatch"}:
   if role!="harper" or set(payload)!={"action"}:raise ReceiverError("dispatch denied")
-  result=execute(["/usr/bin/python3","-I","/opt/loop/continuous_dispatch.py","--config","/etc/loop-continuous/dispatch.json"],stdin=subprocess.DEVNULL,capture_output=True,timeout=3600,check=False)
+  argv=["/usr/bin/python3","-I","/opt/loop/continuous_dispatch.py","--config","/etc/loop-continuous/dispatch.json"]
+  if payload["action"]=="reconcile_dispatch":argv.append("--reconcile-only")
+  result=execute(argv,stdin=subprocess.DEVNULL,capture_output=True,timeout=300 if payload["action"]=="reconcile_dispatch" else 3600,check=False)
   if result.returncode or len(result.stdout)>100_000:raise ReceiverError("fixed dispatch failed")
   value=json.loads(result.stdout)
   if not isinstance(value,dict):raise ReceiverError("invalid dispatch receipt")

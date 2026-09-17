@@ -46,6 +46,16 @@ def tick(client,dispatcher,admission=None,reporter=None,observer=None,refresher=
             client("GET","/v1/runs/"+pre_refresh_planning["id"])
             status=client("GET","/v1/queue")
         except Exception:pass
+    active_planning=status.get("planning") or {}
+    if active_planning.get("state") in {"dispatching","running","unknown","cancelling"}:
+        reconciled={"status":"blocked","reason":"active_planning"}
+        if status.get("current") is not None:
+            try:reconciled=dispatcher.reconcile_only()
+            except Exception:reconciled={"status":"unknown","reason":"attempt_reconcile_required"}
+        return {"status":"planning_active","queue_depth":len(status.get("items",[])),"merges":merges,
+                "base_refresh":{"status":"deferred","reason":"active_planning"},"existing_work":{"status":"deferred"},
+                "planning":None,"planning_active":active_planning,"admission":{"status":"blocked","reason":"active_planning"},
+                "dispatch":reconciled,"report":{"status":"disabled"}}
     if status.get("current") is not None:
         refresh={"status":"deferred","reason":"active_attempt"}
     else:
@@ -88,6 +98,9 @@ def tick(client,dispatcher,admission=None,reporter=None,observer=None,refresher=
             and planning_state not in {"dispatching","running","unknown","cancelling"}):
         try:plan=client("POST","/v1/queue/plan",payload={},headers={"Idempotency-Key":planning_key(status,now())})
         except Exception:plan={"status":"unknown","reason":"planning_reconcile_required"}
+        return {"status":"planning_started","queue_depth":len(pending),"merges":merges,"base_refresh":refresh,
+                "existing_work":catalog,"planning":plan,"admission":{"status":"blocked","reason":"planning_active"},
+                "dispatch":{"status":"blocked","reason":"planning_active"},"report":{"status":"disabled"}}
     try:admitted=admission.run_once() if admission is not None else {"status":"disabled"}
     except Exception:admitted={"status":"blocked","reason":"admission_failed"}
     try:report_status=client("GET","/v1/queue")

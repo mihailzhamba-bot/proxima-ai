@@ -301,3 +301,60 @@ def test_unverified_legacy_work_blocks_planning_but_preserves_dispatch_reconcile
  result=tick(client,Dispatch(),existing_observer=Catalog(),now=lambda:1000)
  assert result["status"]=="existing_work_unknown" and result["planning"] is None and result["dispatch"]=={"status":"idle"}
  assert not any(path=="/v1/queue/plan" for _,path in calls)
+
+
+def test_tick_starting_planning_never_admits_or_dispatches_ready_work():
+ status={"policy_fingerprint":"a"*64,"plan_exhausted":False,"shared_executor_busy":False,"current":None,
+         "items":[{"id":"ready-task","state":"ready"}],"legacy_ready_pr_candidates":[],"existing_work":[]}
+ calls=[]
+ def client(method,path,payload=None,headers=None):
+  calls.append((method,path));return {"run_id":"planner-new","status":"running"} if path=="/v1/queue/plan" else status
+ class Never:
+  def run_once(self):raise AssertionError("execution raced planning")
+ result=tick(client,Never(),Never(),now=lambda:1000)
+ assert result["status"]=="planning_started" and result["planning"]["run_id"]=="planner-new"
+ assert result["admission"]["reason"]=="planning_active" and result["dispatch"]["reason"]=="planning_active"
+ assert calls.count(("POST","/v1/queue/plan"))==1
+
+
+def test_tick_active_planning_never_admits_or_dispatches():
+ status={"policy_fingerprint":"a"*64,"plan_exhausted":False,"shared_executor_busy":False,"current":None,
+         "items":[{"id":"ready-task","state":"ready"}],"planning":{"id":"planner-active","state":"running"}}
+ def client(method,path,payload=None,headers=None):
+  if path.startswith("/v1/runs/"):raise TimeoutError("planning observation unknown")
+  return status
+ class Never:
+  def run_once(self):raise AssertionError("execution raced active planning")
+ result=tick(client,Never(),Never(),now=lambda:1000)
+ assert result["status"]=="planning_active" and result["planning"] is None and result["planning_active"]["id"]=="planner-active" and result["dispatch"]["reason"]=="active_planning"
+
+
+def test_active_planning_with_legacy_current_runs_reconciliation_only():
+ status={"items":[{"id":"old-attempt","state":"unknown"}],"current":{"id":"old-attempt","state":"unknown"},
+         "planning":{"id":"planner-active","state":"unknown"}}
+ def client(method,path,payload=None,headers=None):
+  if path.startswith("/v1/runs/"):raise TimeoutError("planner unknown")
+  return status
+ class ReconcileOnly:
+  def run_once(self):raise AssertionError("generic dispatcher may claim or resume")
+  def reconcile_only(self):return {"status":"settled","item_id":"old-attempt"}
+ class NeverAdmission:
+  def run_once(self):raise AssertionError("admission raced planning")
+ result=tick(client,ReconcileOnly(),NeverAdmission(),now=lambda:1000)
+ assert result["status"]=="planning_active" and result["dispatch"]=={"status":"settled","item_id":"old-attempt"}
+
+
+def test_dispatcher_reconcile_only_never_claims_or_executes(tmp_path):
+ settings=config(tmp_path);current=item();current.update(state="unknown",attempts=1)
+ state=Path(settings["state_root"])/current["id"]/"attempt-1"/"batch-state.json";state.parent.mkdir(parents=True)
+ state.write_text(json.dumps({"status":"completed","tasks":[{"phase":"ready_pr","run_id":"run-old","head_sha":"a"*40,"pr_url":"https://github.com/acme/repo/pull/1"}]}))
+ calls=[]
+ def call(method,path,payload=None):
+  calls.append(path)
+  if path=="/v1/queue":return {"current":{"id":current["id"],"state":"unknown"}}
+  if path=="/v1/queue/"+current["id"]:return current
+  if path.endswith("/update"):return {"state":payload["state"]}
+  raise AssertionError(path)
+ def execute(*args,**kwargs):raise AssertionError("reconciliation executed batch")
+ result=Dispatcher(settings,call,execute).reconcile_only()
+ assert result=={"state":"ready_pr"} and "/v1/queue/claim" not in calls

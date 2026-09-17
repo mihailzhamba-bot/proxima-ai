@@ -35,6 +35,15 @@ def test_admission_never_registers_while_execution_active():
     config={"reviewer_command":["/trusted/reviewer"],"registrars":{k:["/trusted/"+k] for k in ("bridge","harper","worker")}}
     assert Admission(config,api).run_once()=={"status":"active","item_id":"active"}
 
+def test_forced_receiver_routes_reconciliation_without_generic_dispatch():
+ seen=[]
+ def execute(argv,**kwargs):
+  seen.append((argv,kwargs["timeout"]));return SimpleNamespace(returncode=0,stdout=b'{"status":"idle","reason":"reconciliation_only"}')
+ assert receive("harper",{"action":"reconcile_dispatch"},execute)=={"status":"idle","reason":"reconciliation_only"}
+ assert seen==[(["/usr/bin/python3","-I","/opt/loop/continuous_dispatch.py","--config","/etc/loop-continuous/dispatch.json","--reconcile-only"],300)]
+ with pytest.raises(ReceiverError,match="denied"):receive("worker",{"action":"reconcile_dispatch"},execute)
+
+
 def test_forced_receiver_denies_dispatch_outside_harper_and_has_fixed_command():
     with pytest.raises(ReceiverError,match="denied"):receive("worker",{"action":"dispatch"})
     seen=[]
