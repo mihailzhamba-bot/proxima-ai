@@ -259,7 +259,8 @@ lease_id=?,lease_expires=?,updated=? WHERE id=? AND state=? AND lease_id=?""",(s
             if result.rowcount!=1:raise QueueError("queue retry raced")
         return self.get(item_id)
     def status(self):
-        with self.db() as d:rows=[dict(r) for r in d.execute("SELECT id,requirement_id,slice_key,state,attempts,updated,pr_url,blocker,lease_id FROM continuous_queue ORDER BY created,id")]
+        with self.db() as d:rows=[dict(r) for r in d.execute("SELECT id,requirement_id,slice_key,state,attempts,updated,pr_url,blocker,lease_id,depends_on FROM continuous_queue ORDER BY created,id")]
+        for row in rows:row["depends_on"]=json.loads(row["depends_on"])
         active_counts={key:sum(row["requirement_id"]==key and row["state"] not in {"rejected","cancelled"} for row in rows) for key in self.policy["requirements"]}
         total_counts={key:sum(row["requirement_id"]==key for row in rows) for key in self.policy["requirements"]}
         eligible=[key for key,item in self.policy["requirements"].items() if active_counts[key]<item["max_slices"] and total_counts[key]<item["max_slices"]*3]

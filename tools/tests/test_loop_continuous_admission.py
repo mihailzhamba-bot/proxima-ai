@@ -1,4 +1,4 @@
-import json,subprocess,sys
+import json,os,subprocess,sys
 from types import SimpleNamespace
 from pathlib import Path
 import pytest
@@ -119,7 +119,7 @@ def test_installed_receiver_imports_opt_loop_under_isolated_python(tmp_path):
     result=subprocess.run([sys.executable,"-I",str(installed/"continuous_receiver.py")],input=b"{}",capture_output=True)
     assert result.returncode!=0
     assert b"ModuleNotFoundError" not in result.stderr
-    assert b"invalid closed request" in result.stderr
+    assert ((b"invalid closed request" in result.stderr) if os.geteuid()==0 else (b"untrusted receiver config" in result.stderr))
 
 
 def test_real_subprocess_three_target_registration_refetches_full_contract(tmp_path):

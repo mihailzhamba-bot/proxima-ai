@@ -210,3 +210,34 @@ def test_tick_does_not_replace_cancelling_cross_snapshot_planner():
         def run_once(self):return {"status":"idle"}
     assert tick(client,Idle(),now=lambda:1000)["planning"] is None
     assert "/v1/queue/plan" not in calls
+
+
+def test_tick_runs_merge_observer_before_planning_and_admission():
+    status={"policy_fingerprint":"a"*64,"plan_exhausted":True,"items":[],"current":None}
+    order=[]
+    def client(method,path,payload=None,headers=None):
+        assert path=="/v1/queue";return status
+    class Observer:
+        def run_once(self,value):order.append("observer");return {"status":"idle","merged":0}
+    class Admission:
+        def run_once(self):order.append("admission");return {"status":"idle"}
+    class Report:
+        def run(self,value,now):order.append("report");return {"status":"not_due"}
+    class Dispatch:
+        def run_once(self):order.append("dispatch");return {"status":"idle"}
+    result=tick(client,Dispatch(),Admission(),Report(),Observer(),now=lambda:1000)
+    assert order==["observer","admission","report","dispatch"]
+    assert result["merges"]["status"]=="idle"
+
+def test_tick_merge_observer_failure_does_not_block_ready_dispatch():
+    status={"policy_fingerprint":"a"*64,"plan_exhausted":True,"items":[{"id":"ready","state":"ready"}],"current":None}
+    def client(method,path,payload=None,headers=None):return status
+    class Observer:
+        def run_once(self,value):raise TimeoutError("secret")
+    class Idle:
+        def run_once(self):return {"status":"idle"}
+    class Dispatch:
+        def run_once(self):return {"status":"dispatched"}
+    result=tick(client,Dispatch(),Idle(),observer=Observer(),now=lambda:1000)
+    assert result["merges"]=={"status":"unknown","blocker":"merge_observer_failed"}
+    assert result["dispatch"]=={"status":"dispatched"}

@@ -38,6 +38,7 @@ CONTROL_RUNTIME_FILES = {
     ROOT / "tools/loop/continuous_queue.py": (Path("/opt/loop/continuous_queue.py"), 0o644),
     ROOT / "tools/loop/continuous_dispatch.py": (Path("/opt/loop/continuous_dispatch.py"), 0o755),
     ROOT / "tools/loop/continuous_admission.py": (Path("/opt/loop/continuous_admission.py"), 0o644),
+    ROOT / "tools/loop/continuous_merge_observer.py": (Path("/opt/loop/continuous_merge_observer.py"), 0o644),
     ROOT / "tools/loop/continuous_report.py": (Path("/opt/loop/continuous_report.py"), 0o644),
     ROOT / "tools/loop/continuous_report_sender.py": (Path("/opt/loop/continuous_report_sender.py"), 0o755),
     ROOT / "tools/loop/telegram.py": (Path("/opt/loop/telegram.py"), 0o644),

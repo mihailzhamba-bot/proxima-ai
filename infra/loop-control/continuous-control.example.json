@@ -38,5 +38,14 @@
       "--config",
       "/etc/loop-continuous/report.json"
     ]
+  },
+  "merge_observer": {
+    "github_url": "https://api.github.com",
+    "token_file": "/etc/loop/secrets/github_pr",
+    "repository": "mihailzhamba-bot/proxima-ai",
+    "target_branch": "feat/loop-pilot",
+    "max_polls": 4,
+    "timeout_seconds": 10,
+    "cursor_file": "/var/lib/loop/continuous/merge-observer.json"
   }
 }
