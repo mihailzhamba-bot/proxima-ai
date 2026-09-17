@@ -30,7 +30,8 @@ def pair_files(tmp_path,old_policy):
  config.write_text(json.dumps({"templates":{"continuous-fixture":template}}));config.chmod(0o600)
  receiver=tmp_path/"receiver.json";receiver.write_text(json.dumps({"role":"harper","policy_fingerprint":digest(old_policy),"policy_file":str(policy_path),"lock_file":"/etc/loop-continuous/receiver.lock"}));receiver.chmod(0o600)
  return {"config":str(config),"owner":os.getuid(),"prompts":str(prompt_root),"policy":str(policy_path),"receiver":str(receiver),"journal":str(tmp_path/"journal.json"),"manifest_root":str(tmp_path/"manifests"),"reload_receipt":str(tmp_path/"reload.json"),"reload_ack":str(tmp_path/"ack.json")}
-def portable_owners(monkeypatch):
+def portable_owners(monkeypatch,tmp_path):
+ monkeypatch.setattr(refresh,"ROOT_UID",os.getuid());monkeypatch.setattr(refresh,"RECEIVER_STATE_ROOT",tmp_path/"receiver-state")
  original_regular=refresh.regular;original_atomic=refresh.atomic_owned
  monkeypatch.setattr(refresh,"regular",lambda path,owner,*args:original_regular(path,os.getuid() if owner==0 else owner,*args))
  monkeypatch.setattr(refresh,"atomic_owned",lambda path,data,owner,*args:original_atomic(path,data,os.getuid() if owner==0 else owner,*args))
@@ -53,7 +54,7 @@ def request(old_policy,new_policy,new,bundle,merge_commits=None):
   "merge_commits":merge_commits or [],"migration_manifest":manifest,"rebase_templates":["continuous-fixture"]}
 def test_receiver_imports_bundle_as_fixed_user_updates_pair_and_is_idempotent(tmp_path,monkeypatch):
  source,repo,old,new,bundle=repository(tmp_path);old_policy=policy();old_policy["requirements"]["wb-task"]["base_sha"]=old
- new_policy=regenerate_policy(old_policy,new,source);settings=pair_files(tmp_path,old_policy);portable_owners(monkeypatch)
+ new_policy=regenerate_policy(old_policy,new,source);settings=pair_files(tmp_path,old_policy);portable_owners(monkeypatch,tmp_path)
  monkeypatch.setattr(refresh,"RECEIVER_GIT",{"harper":("verifier",str(repo))});monkeypatch.setattr(refresh,"receiver_settings",lambda role,policy_file,receiver_config:settings)
  seen=[];payload=request(old_policy,new_policy,new,bundle,[old])
  config_before=Path(settings["config"]).stat()
@@ -71,7 +72,7 @@ def test_receiver_imports_bundle_as_fixed_user_updates_pair_and_is_idempotent(tm
  assert receiver_advance("harper",payload,settings["policy"],settings["receiver"],execute_as_current(seen))==receipt
 def test_receiver_rejects_non_fast_forward_and_dependency_not_in_head(tmp_path,monkeypatch):
  source,repo,old,new,bundle=repository(tmp_path,non_ff=True);old_policy=policy();old_policy["requirements"]["wb-task"]["base_sha"]=old
- new_policy=refreshed(old_policy,new);settings=pair_files(tmp_path,old_policy);portable_owners(monkeypatch)
+ new_policy=refreshed(old_policy,new);settings=pair_files(tmp_path,old_policy);portable_owners(monkeypatch,tmp_path)
  monkeypatch.setattr(refresh,"RECEIVER_GIT",{"harper":("verifier",str(repo))});monkeypatch.setattr(refresh,"receiver_settings",lambda role,policy_file,receiver_config:settings)
  with pytest.raises(RefreshError,match="ancestry"):receiver_advance("harper",request(old_policy,new_policy,new,bundle,[old]),settings["policy"],settings["receiver"],execute_as_current([]))
 def test_malformed_oversize_bundle_and_authority_change_fail_closed(tmp_path,monkeypatch):
@@ -83,7 +84,7 @@ def test_malformed_oversize_bundle_and_authority_change_fail_closed(tmp_path,mon
  monkeypatch.setattr(refresh,"MAX_BUNDLE",16);raw=b"x"*17;payload.update(bundle_b64=base64.b64encode(raw).decode(),bundle_sha256=hashlib.sha256(raw).hexdigest())
  with pytest.raises(RefreshError,match="size"):receiver_advance("bridge",payload,tmp_path/"policy",tmp_path/"receiver")
 def test_prepared_pair_journal_restores_policy_config_receiver_and_prompt(tmp_path,monkeypatch):
- old=policy();settings=pair_files(tmp_path,old);portable_owners(monkeypatch)
+ old=policy();settings=pair_files(tmp_path,old);portable_owners(monkeypatch,tmp_path)
  originals={key:Path(settings[key]).read_bytes() for key in ("policy","config","receiver")}
  for key,owner in (("policy",0),("config",os.getuid()),("receiver",0)):
   refresh.atomic_owned(Path(settings[key]+".base-refresh-backup"),originals[key],os.getuid())
@@ -100,7 +101,7 @@ def test_prepared_pair_journal_restores_policy_config_receiver_and_prompt(tmp_pa
 
 def test_receiver_rejects_prerequisite_merge_not_in_new_head(tmp_path,monkeypatch):
  source,repo,old,new,bundle=repository(tmp_path);old_policy=policy();old_policy["requirements"]["wb-task"]["base_sha"]=old
- new_policy=regenerate_policy(old_policy,new,source);settings=pair_files(tmp_path,old_policy);portable_owners(monkeypatch)
+ new_policy=regenerate_policy(old_policy,new,source);settings=pair_files(tmp_path,old_policy);portable_owners(monkeypatch,tmp_path)
  monkeypatch.setattr(refresh,"RECEIVER_GIT",{"harper":("verifier",str(repo))});monkeypatch.setattr(refresh,"receiver_settings",lambda role,policy_file,receiver_config:settings)
  payload=request(old_policy,new_policy,new,bundle,["c"*40])
  with pytest.raises(RefreshError,match="ancestry"):receiver_advance("harper",payload,settings["policy"],settings["receiver"],execute_as_current([]))

@@ -1,8 +1,8 @@
-import hashlib,json,os
+import hashlib,json,os,subprocess,threading
 import pytest
 from pathlib import Path
 from tools.loop.continuous_queue import ContinuousQueue,QueueError,digest
-from tools.loop.continuous_base_refresh import BaseRefresher,RefreshError,regenerate_policy,checked,trusted_env
+from tools.loop.continuous_base_refresh import BaseRefresher,RefreshError,regenerate_policy,checked,trusted_fetch_env,validate_source_repo
 from tools.tests.test_loop_continuous_queue import policy,planner,proposal,register
 
 NEW="9"*40
@@ -73,6 +73,26 @@ def test_partial_receipts_and_restart_resume_same_intent(tmp_path):
  assert restarted.refresh_receipt(state["key"],first)["receipts"]["bridge"]==first
  for target in ("harper","worker"):restarted.refresh_receipt(state["key"],refresh_receipt(target,prepared["old_policy_fingerprint"],prepared["new_policy_fingerprint"]))
  assert restarted.commit_refresh(state["key"])["state"]=="complete"
+def test_parallel_refresh_receipts_are_not_lost(tmp_path,monkeypatch):
+ q=ContinuousQueue(tmp_path/"q.db",policy());state=q.begin_refresh("base-refresh-999999999999",NEW)
+ prepared=q.prepare_refresh(state["key"],refreshed(q.policy),"7"*64)
+ original=q.maintenance;barrier=threading.Barrier(2);counter=[0];lock=threading.Lock()
+ def synchronized_read():
+  value=original()
+  with lock:counter[0]+=1;number=counter[0]
+  if number<=2:barrier.wait(timeout=5)
+  return value
+ monkeypatch.setattr(q,"maintenance",synchronized_read)
+ errors=[]
+ def submit(target):
+  try:q.refresh_receipt(state["key"],refresh_receipt(target,prepared["old_policy_fingerprint"],prepared["new_policy_fingerprint"]))
+  except Exception as error:errors.append(error)
+ threads=[threading.Thread(target=submit,args=(target,)) for target in ("bridge","harper")]
+ for thread in threads:thread.start()
+ for thread in threads:thread.join(timeout=10)
+ assert not errors and set(original()["receipts"])=={"bridge","harper"}
+
+
 def test_old_review_completion_cannot_land_after_refresh(tmp_path):
  q=ContinuousQueue(tmp_path/"q.db",policy());q.propose(proposal(),*planner(q));old=q.get("wb-small-task")
  key,_=prepare(q);q.commit_refresh(key)
@@ -83,9 +103,10 @@ def test_old_review_completion_cannot_land_after_refresh(tmp_path):
 
 
 def refresher_config(tmp_path):
+ token=tmp_path/"github-token";token.write_text("fixture-token");token.chmod(0o600)
  return {"repository":"mihailzhamba-bot/proxima-ai","target_branch":"feat/loop-pilot",
   "source_repo":str(tmp_path/"repo"),"policy_file":str(tmp_path/"policy.json"),
-  "identity_file":str(tmp_path/"id"),"known_hosts_file":str(tmp_path/"known"),
+  "github_token_file":str(tmp_path/"github-token"),
   "state_root":str(tmp_path/"state"),"max_bundle_bytes":33554432,"github_timeout_seconds":10,
   "receivers":{target:["/trusted/"+target] for target in ("bridge","harper","worker")}}
 
@@ -111,7 +132,8 @@ def test_trusted_source_evidence_is_regenerated_from_new_head(tmp_path):
  assert all(item["ref"].startswith("git:"+head+":") for item in evidence)
  assert any("trusted new source" in item["summary"] for item in evidence)
 
-def test_toolchain_change_blocks_before_bundle_or_receivers(tmp_path):
+def test_toolchain_change_blocks_before_bundle_or_receivers(tmp_path,monkeypatch):
+ monkeypatch.setattr("tools.loop.continuous_base_refresh.ROOT_UID",os.getuid());monkeypatch.setattr("tools.loop.continuous_base_refresh.validate_source_repo",lambda _repo:None)
  old=policy();new_head="9"*40;cfg=refresher_config(tmp_path)
  Path(cfg["policy_file"]).write_text(json.dumps(old));(Path(cfg["source_repo"])/".git").mkdir(parents=True)
  status={"policy_fingerprint":digest(old),"items":[{"id":"safe","state":"proposed","base_sha":"a"*40}],"maintenance":None}
@@ -143,7 +165,8 @@ def test_bridge_restart_with_new_policy_resumes_old_safe_template_projection(tmp
  assert prepared["rebase_templates"]==["continuous-wb-small-task"]
 
 
-def test_refresh_resume_keeps_recorded_head_when_branch_advances(tmp_path):
+def test_refresh_resume_keeps_recorded_head_when_branch_advances(tmp_path,monkeypatch):
+ monkeypatch.setattr("tools.loop.continuous_base_refresh.ROOT_UID",os.getuid());monkeypatch.setattr("tools.loop.continuous_base_refresh.validate_source_repo",lambda _repo:None)
  old=policy();head="9"*40;tip="8"*40;cfg=refresher_config(tmp_path)
  Path(cfg["policy_file"]).write_text(json.dumps(old));(Path(cfg["source_repo"])/".git").mkdir(parents=True)
  status={"policy_fingerprint":digest(old),"items":[],"maintenance":{"state":"fetching","key":"base-refresh-"+head[:12],
@@ -169,13 +192,17 @@ def test_maintenance_fence_is_rechecked_inside_queue_mutations(tmp_path):
  with pytest.raises(QueueError,match="maintenance"):q.propose(proposal(proposal_id="other",slice_key="slice-two"),*planner(q))
 
 
-def test_git_credentials_are_fixed_private_paths_and_values_are_not_returned(tmp_path):
- identity=tmp_path/"id";known=tmp_path/"known";identity.write_text("private-value");known.write_text("host-key")
- identity.chmod(0o600);known.chmod(0o600)
- env=trusted_env(str(identity),str(known))
- assert "private-value" not in str(env) and str(identity) in env["GIT_SSH_COMMAND"]
- known.chmod(0o644)
- with pytest.raises(RefreshError,match="credential"):trusted_env(str(identity),str(known))
+def test_git_credentials_use_temporary_askpass_without_secret_in_environment(tmp_path,monkeypatch):
+ monkeypatch.setattr("tools.loop.continuous_base_refresh.ROOT_UID",os.getuid())
+ token=tmp_path/"token";token.write_text("private-value");token.chmod(0o600);state=tmp_path/"state";state.mkdir()
+ with trusted_fetch_env(str(token),state) as env:
+  script=Path(env["GIT_ASKPASS"]);assert script.is_file() and script.stat().st_mode&0o777==0o700
+  assert "private-value" not in json.dumps(env) and "private-value" not in script.read_text()
+  assert subprocess.check_output([str(script),"Username for github"],text=True).strip()=="x-access-token"
+ assert not script.exists()
+ token.chmod(0o644)
+ with pytest.raises(RefreshError,match="credential"):
+  with trusted_fetch_env(str(token),state):pass
 
 
 def test_stale_registration_receipt_cannot_cross_maintenance_boundary(tmp_path):
@@ -184,3 +211,19 @@ def test_stale_registration_receipt_cannot_cross_maintenance_boundary(tmp_path):
  receipt={"target":"bridge","template_fingerprint":row["template_fingerprint"],
   "policy_fingerprint":row["policy_fingerprint"],"installed_sha256":hashlib.sha256(b"bridge").hexdigest()}
  with pytest.raises(QueueError,match="maintenance"):q.receipt(row["id"],receipt)
+
+
+def test_control_source_accepts_only_pinned_linked_worktree_common_dir(tmp_path,monkeypatch):
+ bare=tmp_path/"common.git";main=tmp_path/"main";linked=tmp_path/"linked"
+ subprocess.run(["git","init","--bare","-q",str(bare)],check=True)
+ subprocess.run(["git","clone","-q",str(bare),str(main)],check=True)
+ subprocess.run(["git","-C",str(main),"config","user.name","Fixture"],check=True)
+ subprocess.run(["git","-C",str(main),"config","user.email","fixture@invalid"],check=True)
+ (main/"tracked").write_text("x");subprocess.run(["git","-C",str(main),"add","tracked"],check=True);subprocess.run(["git","-C",str(main),"commit","-qm","base"],check=True)
+ subprocess.run(["git","-C",str(main),"push","-q","origin","HEAD:master"],check=True)
+ subprocess.run(["git","--git-dir",str(bare),"worktree","add","-q",str(linked),"master"],check=True)
+ assert (linked/".git").is_file()
+ monkeypatch.setattr("tools.loop.continuous_base_refresh.ROOT_UID",os.getuid());monkeypatch.setattr("tools.loop.continuous_base_refresh.CONTROL_GIT_COMMON_DIR",bare)
+ assert validate_source_repo(linked)==bare.resolve()
+ monkeypatch.setattr("tools.loop.continuous_base_refresh.CONTROL_GIT_COMMON_DIR",tmp_path/"other.git")
+ with pytest.raises(RefreshError,match="common directory"):validate_source_repo(linked)

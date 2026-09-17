@@ -274,16 +274,20 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["id"
         return self.maintenance()
     def refresh_receipt(self,key,receipt):
         required={"target","old_policy_fingerprint","new_policy_fingerprint","new_head","bundle_sha256","installed_sha256"}
-        row=self.maintenance()
-        if (not row or row["key"]!=key or row["state"]!="installing" or not isinstance(receipt,dict) or set(receipt)!=required
-                or receipt["target"] not in TARGETS or receipt["old_policy_fingerprint"]!=row["old_policy_fingerprint"]
-                or receipt["new_policy_fingerprint"]!=row["new_policy_fingerprint"] or receipt["new_head"]!=row["new_head"]
-                or receipt["bundle_sha256"]!=row["bundle_sha256"] or not DIGEST.fullmatch(str(receipt["installed_sha256"]))):
-            raise QueueError("invalid base refresh receipt")
-        receipts=dict(row["receipts"]);old=receipts.get(receipt["target"])
-        if old is not None and old!=receipt:raise QueueError("base refresh receipt conflict")
-        receipts[receipt["target"]]=receipt
-        with self.db() as d:d.execute("UPDATE continuous_maintenance SET receipts=?,updated=? WHERE id=1 AND key=?",(canonical(receipts),self.clock(),key))
+        with self.db() as d:
+            d.execute("BEGIN IMMEDIATE")
+            row=d.execute("SELECT * FROM continuous_maintenance WHERE id=1").fetchone()
+            if (not row or row["key"]!=key or row["state"]!="installing" or not isinstance(receipt,dict) or set(receipt)!=required
+                    or receipt["target"] not in TARGETS or receipt["old_policy_fingerprint"]!=row["old_policy_fingerprint"]
+                    or receipt["new_policy_fingerprint"]!=row["new_policy_fingerprint"] or receipt["new_head"]!=row["new_head"]
+                    or receipt["bundle_sha256"]!=row["bundle_sha256"] or not DIGEST.fullmatch(str(receipt["installed_sha256"]))):
+                raise QueueError("invalid base refresh receipt")
+            receipts=json.loads(row["receipts"]);old=receipts.get(receipt["target"])
+            if old is not None and old!=receipt:raise QueueError("base refresh receipt conflict")
+            receipts[receipt["target"]]=receipt
+            changed=d.execute("UPDATE continuous_maintenance SET receipts=?,updated=? WHERE id=1 AND key=? AND state='installing'",
+                              (canonical(receipts),self.clock(),key))
+            if changed.rowcount!=1:raise QueueError("base refresh receipt raced")
         return self.maintenance()
     def commit_refresh(self,key):
         with self.db() as d:

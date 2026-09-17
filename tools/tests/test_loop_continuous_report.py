@@ -1,4 +1,4 @@
-import json
+import json,subprocess,sys
 from types import SimpleNamespace
 from pathlib import Path
 from tools.loop.continuous_report import Reporter,render
@@ -34,3 +34,18 @@ def test_dedicated_report_timer_owns_08_moscow_schedule():
  assert "OnCalendar=*-*-* 08:00:00 Europe/Moscow" in timer and "Persistent=true" in timer
  assert "/opt/loop/continuous_report_once.py" in service
  assert 'Admission(config["admission"],client.call),None,observer,refresher' in tick
+
+
+def test_report_imports_in_isolated_installed_layout(tmp_path):
+ root=Path(__file__).resolve().parents[2]
+ for name in ("continuous_report.py","continuous_admission.py"):
+  (tmp_path/name).write_bytes((root/"tools/loop"/name).read_bytes())
+ probe=tmp_path/"probe.py";probe.write_text("import sys;sys.path.insert(0,sys.argv[1]);import continuous_report;print(continuous_report.__name__)\n")
+ result=subprocess.run([sys.executable,"-I",str(probe),str(tmp_path)],capture_output=True,text=True,check=False)
+ assert result.returncode==0 and result.stdout.strip()=="continuous_report" and "night_batch" not in result.stderr
+
+
+def test_continuous_unit_writes_common_git_directory():
+ root=Path(__file__).resolve().parents[2];unit=(root/"infra/loop-control/loop-continuous.service").read_text()
+ assert "/srv/loop/source/proxima-ai.git" in unit
+ assert "/srv/loop/source/proxima-ai/.git" not in unit

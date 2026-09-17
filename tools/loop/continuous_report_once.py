@@ -4,8 +4,7 @@ import argparse,json,sys,time
 from pathlib import Path
 if not __package__:sys.path.insert(0,str(Path(__file__).resolve().parent))
 from bridge import JsonHTTP,secret
-from continuous_report import Reporter
-from night_batch import json_file
+from continuous_report import Reporter,json_file
 def main():
  parser=argparse.ArgumentParser();parser.add_argument("--config",required=True,type=Path);args=parser.parse_args()
  config=json_file(args.config);client=JsonHTTP(config["bridge_url"],secret(config["bridge_key_file"]),trusted_bridge=True)

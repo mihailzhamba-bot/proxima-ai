@@ -1,14 +1,37 @@
 """Deduplicated 08:00 Moscow continuous queue report."""
 from __future__ import annotations
-import hashlib,json,time
+import hashlib,json,os,tempfile,time
 from datetime import datetime,timezone,timedelta
 from pathlib import Path
-try:
- from .continuous_admission import command
- from .night_batch import atomic_json,json_file
-except ImportError:
- from continuous_admission import command
- from night_batch import atomic_json,json_file
+try:from .continuous_admission import command
+except ImportError:from continuous_admission import command
+def json_file(path):
+ fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+ try:
+  info=os.fstat(fd)
+  if info.st_size>100_000:raise ValueError("report config exceeds bound")
+  raw=os.read(fd,100_001)
+ finally:os.close(fd)
+ def unique(pairs):
+  value={}
+  for key,item in pairs:
+   if key in value:raise ValueError("duplicate report config key")
+   value[key]=item
+  return value
+ return json.loads(raw,object_pairs_hook=unique)
+def atomic_json(path,value,mode=0o600):
+ path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
+ fd,temporary=tempfile.mkstemp(prefix=path.name+".",dir=path.parent)
+ try:
+  os.fchmod(fd,mode)
+  with os.fdopen(fd,"w") as output:
+   fd=-1;json.dump(value,output,sort_keys=True,indent=2);output.flush();os.fsync(output.fileno())
+  os.replace(temporary,path);directory=os.open(path.parent,os.O_RDONLY|os.O_DIRECTORY)
+  try:os.fsync(directory)
+  finally:os.close(directory)
+ finally:
+  if fd>=0:os.close(fd)
+  if os.path.exists(temporary):os.unlink(temporary)
 MSK=timezone(timedelta(hours=3))
 def render(status):
  current=status.get("current");upcoming=status.get("next");items=status.get("items",[])
