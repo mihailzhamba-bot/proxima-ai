@@ -7,7 +7,7 @@ from tools.loop.continuous_tick import tick,planning_key
 def config(tmp_path):
     for name in ("evidence","work","receipts","state","admission"): (tmp_path/name).mkdir()
     return {"state_root":str(tmp_path/"state"),"admission_root":str(tmp_path/"admission"),
-      "night_batch_script":"/opt/loop/night_batch.py","manifest_defaults":{
+      "start_disk_floor_bytes":3*1024**3,"night_batch_script":"/opt/loop/night_batch.py","manifest_defaults":{
       "template_bases":{},"job_timeout_seconds":120,"poll_seconds":10,"disk_floor_bytes":2*1024**3,
       "evidence_root":str(tmp_path/"evidence"),"work_root":str(tmp_path/"work"),
       "glm_config":"/etc/loop/glm.json","glm_script":"/opt/loop/glm_review.py",
@@ -39,7 +39,7 @@ def test_dispatcher_projects_completed_batch_to_exact_pr(tmp_path):
         manifest=json.loads(Path(argv[-1]).read_text());state=Path(manifest["state_file"]);state.parent.mkdir(parents=True,exist_ok=True)
         state.write_text(json.dumps({"status":"completed","tasks":[{"phase":"ready_pr","head_sha":"1"*40,"pr_url":"https://github.com/acme/repo/pull/1"}]}))
         return SimpleNamespace(returncode=0)
-    result=Dispatcher(config(tmp_path),call,execute,clock=lambda:1000).run_once()
+    result=Dispatcher(config(tmp_path),call,execute,clock=lambda:1000,disk_free=lambda _path:4*1024**3).run_once()
     assert result["state"]=="ready_pr"
     updates=[payload for _method,path,payload in calls if path.endswith("/update")]
     assert [u["state"] for u in updates]==["running","ready_pr"]
@@ -96,7 +96,7 @@ def test_dispatcher_recovers_existing_running_manifest_without_second_claim(tmp_
         runs.append(argv);state=Path(manifest["state_file"])
         state.write_text(json.dumps({"status":"completed","tasks":[{"phase":"ready_pr","head_sha":"2"*40,"pr_url":"https://github.com/acme/repo/pull/2"}]}))
         return SimpleNamespace(returncode=0)
-    result=Dispatcher(settings,call,execute,clock=lambda:2000).run_once()
+    result=Dispatcher(settings,call,execute,clock=lambda:2000,disk_free=lambda _path:4*1024**3).run_once()
     assert result["state"]=="ready_pr" and len(runs)==1 and "/v1/queue/claim" not in calls
 
 
@@ -129,7 +129,7 @@ def test_unknown_monitoring_resumes_same_manifest_and_adopts_run_identity(tmp_pa
     def execute(argv,**kwargs):
         atomic_json(Path(manifest["state_file"]),{"status":"completed","tasks":[{"phase":"ready_pr","run_id":"run-1","head_sha":"3"*40,"pr_url":"https://github.com/acme/repo/pull/3"}]})
         return SimpleNamespace(returncode=0)
-    assert Dispatcher(settings,call,execute,clock=lambda:2000).run_once()["state"]=="ready_pr"
+    assert Dispatcher(settings,call,execute,clock=lambda:2000,disk_free=lambda _path:4*1024**3).run_once()["state"]=="ready_pr"
     assert "/v1/queue/claim" not in [path for path,_ in calls]
 
 def test_blocked_unavailable_run_remains_quarantined(tmp_path):
@@ -142,7 +142,7 @@ def test_blocked_unavailable_run_remains_quarantined(tmp_path):
         if path=="/v1/queue/"+claimed["id"]:return claimed
         if path=="/v1/runs/run-1":raise RuntimeError("offline")
         raise AssertionError(path)
-    result=Dispatcher(settings,call,clock=lambda:2000).run_once()
+    result=Dispatcher(settings,call,clock=lambda:2000,disk_free=lambda _path:4*1024**3).run_once()
     assert result["status"]=="unknown" and result["reason"]=="stop_reconcile_failed"
 
 def test_nonretryable_stopped_block_is_settled_once(tmp_path):
@@ -157,7 +157,7 @@ def test_nonretryable_stopped_block_is_settled_once(tmp_path):
         if path=="/v1/runs/run-1":return {"status":"cancelled"}
         if path.endswith("/settle"):settled.append(payload);return {"state":"blocked","lease_id":None}
         raise AssertionError(path)
-    result=Dispatcher(settings,call,clock=lambda:2000).run_once()
+    result=Dispatcher(settings,call,clock=lambda:2000,disk_free=lambda _path:4*1024**3).run_once()
     assert result["lease_id"] is None and len(settled)==1 and settled[0]["reason"]=="nonretryable"
 
 def test_tick_reconciles_saved_planning_before_new_generation():
@@ -356,5 +356,49 @@ def test_dispatcher_reconcile_only_never_claims_or_executes(tmp_path):
   if path.endswith("/update"):return {"state":payload["state"]}
   raise AssertionError(path)
  def execute(*args,**kwargs):raise AssertionError("reconciliation executed batch")
- result=Dispatcher(settings,call,execute).reconcile_only()
+ result=Dispatcher(settings,call,execute,disk_free=lambda _path:0).reconcile_only()
  assert result=={"state":"ready_pr"} and "/v1/queue/claim" not in calls
+
+
+def test_dispatcher_low_disk_blocks_before_claim_without_attempt(tmp_path):
+ settings=config(tmp_path);calls=[]
+ def call(method,path,payload=None):calls.append(path);return {"current":None}
+ floor=settings["start_disk_floor_bytes"];result=Dispatcher(settings,call,disk_free=lambda _path:floor-1).run_once()
+ assert result=={"status":"blocked","reason":"disk_start_floor","free_bytes":floor-1,"required_bytes":floor}
+ assert calls==["/v1/queue"] and "/v1/queue/claim" not in calls
+
+
+def test_dispatcher_high_disk_reaches_claim(tmp_path):
+ settings=config(tmp_path);calls=[]
+ def call(method,path,payload=None):
+  calls.append(path)
+  if path=="/v1/queue":return {"current":None}
+  if path=="/v1/queue/claim":return {"id":None}
+  raise AssertionError(path)
+ assert Dispatcher(settings,call,disk_free=lambda _path:settings["start_disk_floor_bytes"]).run_once()=={"status":"idle"}
+ assert calls==["/v1/queue","/v1/queue/claim"]
+
+
+def test_existing_unknown_reconciles_despite_low_disk(tmp_path):
+ settings=config(tmp_path);current=item();current.update(state="unknown",attempts=1)
+ state=Path(settings["state_root"])/current["id"]/"attempt-1"/"batch-state.json";state.parent.mkdir(parents=True)
+ state.write_text(json.dumps({"status":"completed","tasks":[{"phase":"ready_pr","head_sha":"a"*40,"pr_url":"https://github.com/acme/repo/pull/1"}]}))
+ calls=[]
+ def call(method,path,payload=None):
+  calls.append(path)
+  if path=="/v1/queue":return {"current":{"id":current["id"],"state":"unknown"}}
+  if path=="/v1/queue/"+current["id"]:return current
+  if path.endswith("/update"):return {"state":payload["state"]}
+  raise AssertionError(path)
+ result=Dispatcher(settings,call,disk_free=lambda _path:0).run_once()
+ assert result=={"state":"ready_pr"} and "/v1/queue/claim" not in calls
+
+
+def test_legacy_dispatch_config_keeps_three_gib_floor_and_reconciliation(tmp_path):
+ settings=config(tmp_path);settings.pop("start_disk_floor_bytes")
+ calls=[]
+ def idle(method,path,payload=None):calls.append(path);return {"current":None}
+ result=Dispatcher(settings,idle,disk_free=lambda _path:3*1024**3-1).run_once()
+ assert result["reason"]=="disk_start_floor" and result["required_bytes"]==3*1024**3 and calls==["/v1/queue"]
+ # reconcile-only must remain constructible before the operator atomically updates the config.
+ assert Dispatcher(settings,lambda *_args,**_kwargs:{"current":None},disk_free=lambda _path:0).reconcile_only()=={"status":"idle","reason":"reconciliation_only"}

@@ -19,5 +19,6 @@
     "acceptance_command": [
       "/opt/loop-review/continuous-acceptance"
     ]
-  }
+  },
+  "start_disk_floor_bytes": 3221225472
 }

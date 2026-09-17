@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -I
 """Dispatch one reviewed continuous queue item through the existing finite night batch."""
 from __future__ import annotations
-import argparse,fcntl,json,os,re,subprocess,sys,time
+import argparse,fcntl,json,os,re,shutil,subprocess,sys,time
 from pathlib import Path
 if not __package__:sys.path.insert(0,str(Path(__file__).resolve().parent))
 try:
@@ -11,10 +11,13 @@ except ImportError:
 SHA=re.compile(r"^[0-9a-f]{40}$");DIGEST=re.compile(r"^[0-9a-f]{64}$")
 class DispatchError(ValueError):pass
 def checked(config):
-    required={"state_root","admission_root","night_batch_script","manifest_defaults"}
-    if not isinstance(config,dict) or set(config)!=required:raise DispatchError("invalid continuous dispatcher config")
+    required={"state_root","admission_root","night_batch_script","manifest_defaults"};allowed=required|{"start_disk_floor_bytes"}
+    if not isinstance(config,dict) or set(config) not in {frozenset(required),frozenset(allowed)}:raise DispatchError("invalid continuous dispatcher config")
+    config=dict(config);config.setdefault("start_disk_floor_bytes",3*1024**3)
     for key in required-{"manifest_defaults"}:
         if not isinstance(config[key],str) or not Path(config[key]).is_absolute():raise DispatchError("dispatcher paths must be absolute")
+    floor=config["start_disk_floor_bytes"]
+    if not isinstance(floor,int) or isinstance(floor,bool) or not 3*1024**3<=floor<=64*1024**3:raise DispatchError("dispatcher start disk floor must be at least 3 GiB")
     defaults=config["manifest_defaults"]
     needed={"template_bases","job_timeout_seconds","poll_seconds","disk_floor_bytes","evidence_root","work_root","glm_config","glm_script","review_receipts","operator_key_file","runner_key_file","acceptance_command"}
     if not isinstance(defaults,dict) or set(defaults)!=needed:raise DispatchError("invalid manifest defaults")
@@ -37,8 +40,8 @@ def render(item,config,now):
       "allowed_paths":item["allowed_paths"],"goal":item["goal"],"acceptance":item["acceptance"],"acceptance_profile":item["execution_policy"]["acceptance_profile"]}
     return manifest,acceptance,root
 class Dispatcher:
-    def __init__(self,config,call,execute=subprocess.run,clock=time.time):
-        self.config,self.call,self.execute,self.clock=checked(config),call,execute,clock
+    def __init__(self,config,call,execute=subprocess.run,clock=time.time,disk_free=lambda path:shutil.disk_usage(path).free):
+        self.config,self.call,self.execute,self.clock,self.disk_free=checked(config),call,execute,clock,disk_free
     def run_once(self):
         lock_path=Path(self.config["state_root"])/"dispatcher.lock";lock_path.parent.mkdir(parents=True,exist_ok=True)
         fd=os.open(lock_path,os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
@@ -76,7 +79,10 @@ class Dispatcher:
             elif current.get("state")=="blocked":return self.reconcile(item)
             elif current.get("state") not in {"dispatching","running"}:return {"status":"active","item_id":current.get("id"),"state":current.get("state")}
             else:resume=True
-        else:item=self.call("POST","/v1/queue/claim",payload={})
+        else:
+            free=self.disk_free(self.config["manifest_defaults"]["work_root"]);required=self.config["start_disk_floor_bytes"]
+            if free<required:return {"status":"blocked","reason":"disk_start_floor","free_bytes":free,"required_bytes":required}
+            item=self.call("POST","/v1/queue/claim",payload={})
         if item.get("id") is None:return {"status":"idle"}
         manifest,admission,root=render(item,self.config,self.clock());root.mkdir(parents=True,exist_ok=resume)
         admission_path=Path(self.config["admission_root"])/(attempt_id(item)+".json")
