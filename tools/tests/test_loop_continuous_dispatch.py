@@ -402,3 +402,52 @@ def test_legacy_dispatch_config_keeps_three_gib_floor_and_reconciliation(tmp_pat
  assert result["reason"]=="disk_start_floor" and result["required_bytes"]==3*1024**3 and calls==["/v1/queue"]
  # reconcile-only must remain constructible before the operator atomically updates the config.
  assert Dispatcher(settings,lambda *_args,**_kwargs:{"current":None},disk_free=lambda _path:0).reconcile_only()=={"status":"idle","reason":"reconciliation_only"}
+
+
+def test_resumed_same_attempt_uses_fresh_subdirectory_and_keeps_original_artifacts(tmp_path):
+ settings=config(tmp_path);resumed=item();resumed.update(id="wb-daily-status-slice",state="dispatching",attempts=2,external_job_id="wb-daily-status-slice-a2",evidence={"resume_sequence":1,"resume_proof":{"state_sha256":"b"*64}})
+ original=Path(settings["state_root"])/resumed["id"]/"attempt-2";original.mkdir(parents=True);old_manifest=original/"manifest.json";old_state=original/"batch-state.json";old_manifest.write_text("immutable-manifest");old_state.write_text("immutable-state")
+ calls=[];observed={}
+ def call(method,path,payload=None):
+  calls.append((path,payload))
+  if path=="/v1/queue":return {"current":{"id":resumed["id"],"state":"dispatching"}}
+  if path=="/v1/queue/"+resumed["id"]:return resumed
+  if path.endswith("/update"):return {"state":payload["state"]}
+  raise AssertionError(path)
+ def execute(argv,**kwargs):
+  manifest_path=Path(argv[-1]);observed["path"]=manifest_path;manifest=json.loads(manifest_path.read_text());observed["manifest"]=manifest
+  state=Path(manifest["state_file"]);state.write_text(json.dumps({"status":"completed","tasks":[{"phase":"ready_pr","head_sha":"1"*40,"pr_url":"https://github.com/acme/repo/pull/1"}]}));return SimpleNamespace(returncode=0)
+ result=Dispatcher(settings,call,execute,clock=lambda:5000,disk_free=lambda _path:0).run_once()
+ assert result=={"state":"ready_pr"} and observed["path"].parent.name=="resume-1"
+ assert observed["manifest"]["tasks"][0]["job_id"]=="wb-daily-status-slice-a2" and observed["manifest"]["end_at"]==5000+120+300
+ assert old_manifest.read_text()=="immutable-manifest" and old_state.read_text()=="immutable-state"
+ running=next(payload for path,payload in calls if path.endswith("/update") and payload["state"]=="running")
+ assert running["resume_sequence"]==1 and "/v1/queue/claim" not in [path for path,_ in calls]
+
+
+def test_resumed_unknown_monitoring_preserves_sequence_when_adopting_running(tmp_path):
+ settings=config(tmp_path);current=item();current.update(id="wb-daily-status-slice",state="unknown",attempts=2,external_run_id=None,external_job_id="wb-daily-status-slice-a2",evidence={"resume_sequence":1})
+ root=Path(settings["state_root"])/current["id"]/"attempt-2"/"resume-1";root.mkdir(parents=True)
+ manifest,admission,_=render({**current,"state":"running"},settings,2000);Path(settings["admission_root"]).mkdir(exist_ok=True);from tools.loop.night_batch import atomic_json
+ atomic_json(root/"manifest.json",manifest);atomic_json(Path(settings["admission_root"])/"wb-daily-status-slice-a2.json",admission);atomic_json(Path(manifest["state_file"]),{"status":"running","tasks":[{"phase":"monitoring","run_id":"run-resumed"}]})
+ updates=[]
+ def call(method,path,payload=None):
+  if path=="/v1/queue":return {"current":{"id":current["id"],"state":"unknown"}}
+  if path=="/v1/queue/"+current["id"]:return current
+  if path.endswith("/update"):updates.append(payload);return {**current,"state":payload["state"],"external_run_id":payload.get("run_id"),"evidence":{"resume_sequence":payload.get("resume_sequence")}}
+  raise AssertionError(path)
+ def execute(argv,**kwargs):return SimpleNamespace(returncode=1)
+ Dispatcher(settings,call,execute,clock=lambda:2000,disk_free=lambda _path:0).run_once()
+ assert updates[0]["state"]=="running" and updates[0]["resume_sequence"]==1 and updates[0]["run_id"]=="run-resumed"
+
+
+def test_resumed_reconcile_preserves_sequence_when_adopting_run_identity(tmp_path):
+ settings=config(tmp_path);current=item();current.update(id="wb-daily-status-slice",state="blocked",attempts=2,external_run_id=None,external_job_id="wb-daily-status-slice-a2",evidence={"resume_sequence":1})
+ state=Path(settings["state_root"])/current["id"]/"attempt-2"/"resume-1"/"batch-state.json";state.parent.mkdir(parents=True);state.write_text(json.dumps({"status":"blocked","reason":"job_timeout","tasks":[{"phase":"monitoring","run_id":"run-resumed"}]}))
+ updates=[]
+ def call(method,path,payload=None):
+  if path.endswith("/update"):updates.append(payload);return {**current,"external_run_id":payload["run_id"],"evidence":{"resume_sequence":payload.get("resume_sequence")}}
+  if path=="/v1/runs/run-resumed":return {"status":"running"}
+  raise AssertionError(path)
+ result=Dispatcher(settings,call,disk_free=lambda _path:0).reconcile(current)
+ assert result["status"]=="active" and updates[0]["resume_sequence"]==1 and updates[0]["run_id"]=="run-resumed"

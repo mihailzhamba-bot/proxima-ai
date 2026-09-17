@@ -455,13 +455,16 @@ class Bridge:
     def settle_continuous(self,item_id,payload):
         try:return self.continuous_mutable().settle(item_id,payload)
         except ValueError as error:raise BridgeError(409,str(error),False) from None
+    def resume_never_dispatched_continuous(self,item_id,payload):
+        try:return self.continuous_mutable().resume_never_dispatched(item_id,payload)
+        except ValueError as error:raise BridgeError(409,str(error),False) from None
     def retry_continuous(self,item_id,payload):
         with self.tx() as db:
             if db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0]=="true":raise BridgeError(409,"continuous queue paused",False)
         try:return self.continuous_mutable().retry(item_id,payload)
         except ValueError as error:raise BridgeError(409,str(error),False) from None
     def update_continuous(self,item_id,payload):
-        if set(payload)-{"lease_id","state","run_id","job_id","head_sha","pr_url","blocker","evidence_ref"} or not {"lease_id","state"}<=set(payload):raise BridgeError(400,"invalid continuous update fields",False)
+        if set(payload)-{"lease_id","state","run_id","job_id","head_sha","pr_url","blocker","evidence_ref","resume_sequence"} or not {"lease_id","state"}<=set(payload):raise BridgeError(400,"invalid continuous update fields",False)
         evidence={k:v for k,v in payload.items() if k not in {"lease_id","state"}}
         try:return self.continuous_mutable().update(item_id,payload["lease_id"],payload["state"],**evidence)
         except ValueError as error:raise BridgeError(409,str(error),False) from None
@@ -909,7 +912,7 @@ def server(bridge, config):
                     try:result=bridge.continuous_required().registration(match[1]) if match[2] else bridge.continuous_required().get(match[1])
                     except ValueError as error:raise BridgeError(409,str(error),False) from None
                 elif self.command=="POST" and path=="/v1/queue/claim":result=bridge.claim_continuous() or {"item_id":None}
-                elif match:=re.fullmatch(r"/v1/queue/([a-z0-9][a-z0-9-]{2,63})/(review|reject|receipt|update|merge|retry|settle)",path):
+                elif match:=re.fullmatch(r"/v1/queue/([a-z0-9][a-z0-9-]{2,63})/(review|reject|receipt|update|merge|retry|settle|resume-never-dispatched)",path):
                     if self.command!="POST":raise BridgeError(404,"queue operation unavailable")
                     if match[2]=="review":result=bridge.review_continuous(match[1],payload)
                     elif match[2]=="reject":result=bridge.reject_continuous(match[1],payload)
@@ -917,6 +920,7 @@ def server(bridge, config):
                     elif match[2]=="merge":result=bridge.merge_continuous(match[1],payload)
                     elif match[2]=="retry":result=bridge.retry_continuous(match[1],payload)
                     elif match[2]=="settle":result=bridge.settle_continuous(match[1],payload)
+                    elif match[2]=="resume-never-dispatched":result=bridge.resume_never_dispatched_continuous(match[1],payload)
                     else:result=bridge.update_continuous(match[1],payload)
                 elif self.command=="GET" and path=="/v1/runner/jobs/next": result=bridge.next_job()
                 elif match:=re.fullmatch(r"/v1/runner/jobs/([a-z0-9][a-z0-9-]{2,40})(/(claim|begin-publication|start-push|record-push|finish-publication|fence|fail))?",path):

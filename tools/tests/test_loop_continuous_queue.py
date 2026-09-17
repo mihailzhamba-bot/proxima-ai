@@ -256,3 +256,62 @@ def test_settled_blocked_attempt_can_retry_with_fresh_confirmed_stop(tmp_path):
  assert [event["state"] for event in raw_events][-2:]==["settled","retry_ready"]
  assert any(event.get("evidence",{}).get("blocker")=="oracle_false_failure" for event in raw_events)
  claimed_again=q.claim();assert claimed_again["state"]=="dispatching" and claimed_again["attempts"]==2 and claimed_again["blocker"] is None
+
+
+def disk_blocked_attempt_two(tmp_path):
+ q=ContinuousQueue(tmp_path/"q.db",policy());q.propose(proposal(),*planner(q));register(q)
+ first=q.claim();q.update(first["id"],first["lease_id"],"blocked",run_id="run-a1",job_id=first["id"]+"-a1",blocker="local_failure",evidence_ref="a1.json")
+ q.settle(first["id"],{"stopped":True,"previous_lease_id":first["lease_id"],"external_run_id":"run-a1","external_job_id":first["id"]+"-a1","evidence_ref":"stop-a1.json","reason":"nonretryable"})
+ q.retry(first["id"],{"stopped":True,"previous_lease_id":None,"external_run_id":"run-a1","external_job_id":first["id"]+"-a1","evidence_ref":"retry-a1.json","reason":"local_failure"})
+ second=q.claim();job=second["id"]+"-a2";q.update(second["id"],second["lease_id"],"running",job_id=job,evidence_ref="admission-a2.json")
+ blocked=q.update(second["id"],second["lease_id"],"blocked",job_id=job,run_id=None,blocker="disk_start_floor",evidence_ref="state-a2.json")
+ receipt={"previous_lease_id":blocked["lease_id"],"process_stopped":True,"external_job_id":job,"external_run_id":None,
+  "manifest_sha256":"a"*64,"state_sha256":"b"*64,"state_status":"blocked","task_phase":"pending","reason":"disk_start_floor",
+  "free_bytes":4*1024**3,"required_bytes":3*1024**3,"observed_at":q.clock(),"evidence_ref":"operator-stop-and-disk-proof.json"}
+ return q,blocked,receipt
+
+
+def test_proven_never_dispatched_resume_keeps_attempt_and_history(tmp_path):
+ q,blocked,receipt=disk_blocked_attempt_two(tmp_path);resumed=q.resume_never_dispatched(blocked["id"],receipt)
+ assert resumed["state"]=="dispatching" and resumed["attempts"]==2 and resumed["lease_id"]!=blocked["lease_id"]
+ assert resumed["external_job_id"]==blocked["id"]+"-a2" and resumed["external_run_id"] is None and resumed["evidence"]["resume_sequence"]==1
+ with q.db() as db:events=[json.loads(row[0]) for row in db.execute("SELECT event FROM continuous_attempt_events WHERE queue_id=? ORDER BY sequence",(blocked["id"],))]
+ assert events[-1]["state"]=="resume_never_dispatched" and events[-1]["proof"]==receipt
+ assert any(event.get("evidence",{}).get("blocker")=="disk_start_floor" for event in events[:-1])
+ with pytest.raises(QueueError,match="queue state|required|already used"):q.resume_never_dispatched(blocked["id"],receipt)
+
+
+def test_never_dispatched_resume_rechecks_new_operation_after_observation(tmp_path):
+ q,blocked,receipt=disk_blocked_attempt_two(tmp_path)
+ with q.db() as db:
+  db.execute("CREATE TABLE operations(key TEXT,request TEXT)")
+  db.execute("INSERT INTO operations VALUES(?,?)",("different-key",json.dumps({"payload":{"job_id":receipt["external_job_id"]}})))
+ with pytest.raises(QueueError,match="operation already exists"):q.resume_never_dispatched(blocked["id"],receipt)
+ assert q.get(blocked["id"])["attempts"]==2 and q.get(blocked["id"])["state"]=="blocked"
+
+
+def test_never_dispatched_resume_is_atomic_under_concurrency(tmp_path):
+ q,blocked,receipt=disk_blocked_attempt_two(tmp_path);barrier=threading.Barrier(2);results=[];errors=[]
+ def resume():
+  try:barrier.wait();results.append(q.resume_never_dispatched(blocked["id"],receipt))
+  except Exception as error:errors.append(error)
+ threads=[threading.Thread(target=resume) for _ in range(2)]
+ for thread in threads:thread.start()
+ for thread in threads:thread.join(timeout=10)
+ assert len(results)==1 and len(errors)==1 and isinstance(errors[0],QueueError)
+ assert results[0]["attempts"]==2 and q.get(blocked["id"])["attempts"]==2
+
+
+def test_never_dispatched_resume_rejects_unknown_or_missing_proof(tmp_path):
+ q,blocked,receipt=disk_blocked_attempt_two(tmp_path)
+ bad={**receipt,"process_stopped":False}
+ with pytest.raises(QueueError,match="proof"):q.resume_never_dispatched(blocked["id"],bad)
+ q.update(blocked["id"],blocked["lease_id"],"unknown",job_id=receipt["external_job_id"],run_id=None,blocker="transport_unknown",evidence_ref="unknown.json")
+ with pytest.raises(QueueError,match="queue state"):q.resume_never_dispatched(blocked["id"],receipt)
+
+
+def test_never_dispatched_resume_rejects_existing_job_under_any_state(tmp_path):
+ q,blocked,receipt=disk_blocked_attempt_two(tmp_path)
+ with q.db() as db:
+  db.execute("CREATE TABLE jobs(id TEXT PRIMARY KEY,state TEXT)");db.execute("INSERT INTO jobs VALUES(?,?)",(receipt["external_job_id"],"cancelled"))
+ with pytest.raises(QueueError,match="job already exists"):q.resume_never_dispatched(blocked["id"],receipt)

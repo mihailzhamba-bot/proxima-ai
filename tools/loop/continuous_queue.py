@@ -399,6 +399,9 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(item_id,rid,slice_key,planner["i
             row=d.execute("SELECT * FROM continuous_queue WHERE id=?",(item_id,)).fetchone()
             if not row or row["policy_fingerprint"]!=self.policy_fingerprint or row["lease_id"]!=lease_id or row["state"] not in {"dispatching","running","unknown","blocked"}:raise QueueError("queue lease lost")
             if state=="ready_pr" and (not SHA.fullmatch(str(evidence.get("head_sha",""))) or not str(evidence.get("pr_url","")).startswith("https://")):raise QueueError("ready PR evidence required")
+            current_evidence=json.loads(row["evidence"]) if row["evidence"] else {};resume_sequence=current_evidence.get("resume_sequence")
+            if state in {"running","unknown","blocked"} and resume_sequence is not None and evidence.get("resume_sequence")!=resume_sequence:raise QueueError("never-dispatched resume identity required")
+            if evidence.get("resume_sequence") is not None and evidence.get("resume_sequence")!=1:raise QueueError("invalid never-dispatched resume identity")
             event={"state":state,"lease_id":lease_id,"evidence":evidence}
             terminal=state in {"ready_pr","cancelled"}
             sequence=d.execute("SELECT coalesce(max(sequence),0)+1 FROM continuous_attempt_events WHERE queue_id=?",(item_id,)).fetchone()[0]
@@ -427,6 +430,50 @@ lease_id=?,lease_expires=?,updated=? WHERE id=? AND state=? AND lease_id=?""",(s
             changed=d.execute("UPDATE continuous_queue SET state=?,lease_id=NULL,lease_expires=NULL,updated=? WHERE id=? AND state=? AND lease_id IS ?",(state,self.clock(),item_id,row["state"],row["lease_id"]))
             if changed.rowcount!=1:raise QueueError("queue settlement raced")
         return self.get(item_id)
+    def resume_never_dispatched(self,item_id,receipt,lease_seconds=300):
+        required={"previous_lease_id","process_stopped","external_job_id","external_run_id","manifest_sha256","state_sha256","state_status","task_phase","reason","free_bytes","required_bytes","observed_at","evidence_ref"}
+        now=self.clock()
+        if (not isinstance(receipt,dict) or set(receipt)!=required or receipt.get("process_stopped") is not True
+                or receipt.get("external_run_id") is not None or receipt.get("state_status")!="blocked" or receipt.get("task_phase")!="pending"
+                or receipt.get("reason")!="disk_start_floor" or not DIGEST.fullmatch(str(receipt.get("manifest_sha256","")))
+                or not DIGEST.fullmatch(str(receipt.get("state_sha256",""))) or not isinstance(receipt.get("evidence_ref"),str) or not receipt["evidence_ref"]
+                or not isinstance(receipt.get("free_bytes"),int) or isinstance(receipt.get("free_bytes"),bool)
+                or not isinstance(receipt.get("required_bytes"),int) or isinstance(receipt.get("required_bytes"),bool)
+                or receipt["required_bytes"]<3*1024**3 or receipt["free_bytes"]<receipt["required_bytes"]
+                or not isinstance(receipt.get("observed_at"),(int,float)) or isinstance(receipt.get("observed_at"),bool)
+                or not 0<=now-receipt["observed_at"]<=60):raise QueueError("fresh never-dispatched proof required")
+        with self.db() as d:
+            d.execute("BEGIN IMMEDIATE")
+            if self.maintenance_active(d):raise QueueError("base refresh maintenance active")
+            row=d.execute("SELECT * FROM continuous_queue WHERE id=?",(item_id,)).fetchone()
+            expected_job=f"{item_id}-a{row['attempts']}" if row else None
+            evidence=json.loads(row["evidence"]) if row and row["evidence"] else {}
+            if (not row or row["policy_fingerprint"]!=self.policy_fingerprint or row["state"]!="blocked" or row["attempts"]>=3
+                    or not row["lease_id"] or receipt["previous_lease_id"]!=row["lease_id"] or row["external_run_id"] is not None
+                    or row["external_job_id"]!=expected_job or receipt["external_job_id"]!=expected_job or row["blocker"]!="disk_start_floor"
+                    or evidence.get("blocker")!="disk_start_floor" or evidence.get("run_id") is not None or evidence.get("job_id")!=expected_job):raise QueueError("never-dispatched queue state required")
+            if any(json.loads(value[0]).get("state")=="resume_never_dispatched" for value in d.execute("SELECT event FROM continuous_attempt_events WHERE queue_id=?",(item_id,))):raise QueueError("never-dispatched resume already used")
+            has_jobs=d.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone()
+            if has_jobs and d.execute("SELECT 1 FROM jobs WHERE id=?",(expected_job,)).fetchone():raise QueueError("execution job already exists")
+            has_operations=d.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='operations'").fetchone()
+            if has_operations:
+                def contains_job(value):
+                    if isinstance(value,dict):return value.get("job_id")==expected_job or any(contains_job(item) for item in value.values())
+                    if isinstance(value,list):return any(contains_job(item) for item in value)
+                    return False
+                for operation in d.execute("SELECT key,request FROM operations"):
+                    try:value=json.loads(operation[1])
+                    except Exception:raise QueueError("operation history uncertain") from None
+                    if operation[0] in {expected_job,"continuous-"+expected_job} or contains_job(value):raise QueueError("execution operation already exists")
+            new_lease=digest({"id":item_id,"attempt":row["attempts"],"resume":1,"at":now})
+            event={"state":"resume_never_dispatched","previous_lease_id":row["lease_id"],"lease_id":new_lease,"proof":receipt,"resume_sequence":1}
+            sequence=d.execute("SELECT coalesce(max(sequence),0)+1 FROM continuous_attempt_events WHERE queue_id=?",(item_id,)).fetchone()[0]
+            d.execute("INSERT INTO continuous_attempt_events VALUES(?,?,?,?)",(item_id,sequence,canonical(event),now))
+            changed=d.execute("UPDATE continuous_queue SET state='dispatching',lease_id=?,lease_expires=?,blocker=NULL,evidence=?,updated=? WHERE id=? AND state='blocked' AND lease_id IS ?",
+                              (new_lease,now+lease_seconds,canonical({"resume_sequence":1,"resume_proof":receipt}),now,item_id,row["lease_id"]))
+            if changed.rowcount!=1:raise QueueError("never-dispatched resume raced")
+        return self.get(item_id)
+
     def retry(self,item_id,receipt):
         required={"stopped","previous_lease_id","external_run_id","external_job_id","evidence_ref","reason"}
         with self.db() as d:

@@ -26,9 +26,16 @@ def attempt_id(item):
     value=f'{item["id"]}-a{item["attempts"]}'
     if len(value)>40:raise DispatchError("attempt job id exceeds Bridge contract")
     return value
+def attempt_root(item,config):
+    root=Path(config["state_root"])/item["id"]/f'attempt-{item["attempts"]}'
+    evidence=item.get("evidence") or {};sequence=evidence.get("resume_sequence") if isinstance(evidence,dict) else None
+    if sequence is not None:
+        if sequence!=1:raise DispatchError("invalid never-dispatched resume sequence")
+        root=root/("resume-"+str(sequence))
+    return root
 def render(item,config,now):
     if item.get("state") not in {"dispatching","running"} or not DIGEST.fullmatch(str(item.get("lease_id",""))) or not SHA.fullmatch(str(item.get("base_sha",""))) or not DIGEST.fullmatch(str(item.get("template_fingerprint",""))):raise DispatchError("invalid claimed queue item")
-    defaults=config["manifest_defaults"];job=attempt_id(item);root=Path(config["state_root"])/item["id"]/f'attempt-{item["attempts"]}'
+    defaults=config["manifest_defaults"];job=attempt_id(item);root=attempt_root(item,config)
     manifest={**defaults,"template_bases":{item["template_name"]:item["base_sha"]},
       "tasks":[{"key":"continuous-"+job,"job_id":job,"template":item["template_name"],"template_fingerprint":item["template_fingerprint"]}],
       "end_at":now+item.get("job_timeout_seconds",defaults["job_timeout_seconds"])+300,
@@ -67,13 +74,16 @@ class Dispatcher:
         if current is not None:
             item=self.call("GET","/v1/queue/"+current["id"])
             if current.get("state")=="unknown":
-                state_path=Path(self.config["state_root"])/item["id"]/f'attempt-{item["attempts"]}'/"batch-state.json"
+                state_path=attempt_root(item,self.config)/"batch-state.json"
                 try:persisted=json_file(state_path)
                 except Exception:persisted={}
                 task=persisted.get("tasks",[{}])[0] if isinstance(persisted.get("tasks"),list) and persisted["tasks"] else {}
                 if persisted.get("status")=="running" and task.get("phase") in {"monitoring","reviewing"}:
-                    item=self.call("POST",f'/v1/queue/{item["id"]}/update',payload={"lease_id":item["lease_id"],"state":"running",
-                      "run_id":task.get("run_id"),"job_id":item.get("external_job_id") or attempt_id(item),"evidence_ref":str(state_path)})
+                    payload={"lease_id":item["lease_id"],"state":"running","run_id":task.get("run_id"),
+                      "job_id":item.get("external_job_id") or attempt_id(item),"evidence_ref":str(state_path)}
+                    sequence=(item.get("evidence") or {}).get("resume_sequence") if isinstance(item.get("evidence"),dict) else None
+                    if sequence is not None:payload["resume_sequence"]=sequence
+                    item=self.call("POST",f'/v1/queue/{item["id"]}/update',payload=payload)
                     resume=True
                 else:return self.reconcile(item)
             elif current.get("state")=="blocked":return self.reconcile(item)
@@ -98,22 +108,25 @@ class Dispatcher:
             if manifest_path.is_symlink() or persisted!=expected:raise DispatchError("attempt manifest conflict")
             manifest=persisted
         else:atomic_json(manifest_path,manifest)
+        resume_sequence=(item.get("evidence") or {}).get("resume_sequence") if isinstance(item.get("evidence"),dict) else None
         if item["state"]=="dispatching":
-            self.call("POST",f'/v1/queue/{item["id"]}/update',payload={"lease_id":item["lease_id"],"state":"running","job_id":attempt_id(item),"evidence_ref":str(admission_path)})
+            payload={"lease_id":item["lease_id"],"state":"running","job_id":attempt_id(item),"evidence_ref":str(admission_path)}
+            if resume_sequence is not None:payload["resume_sequence"]=resume_sequence
+            self.call("POST",f'/v1/queue/{item["id"]}/update',payload=payload)
         try:
             result=self.execute([sys.executable,"-I",self.config["night_batch_script"],"--manifest",str(manifest_path)],
                 stdin=subprocess.DEVNULL,capture_output=True,timeout=manifest["job_timeout_seconds"]+360,check=False)
         except Exception:
-            return self.call("POST",f'/v1/queue/{item["id"]}/update',payload={"lease_id":item["lease_id"],"state":"unknown","job_id":attempt_id(item),"evidence_ref":str(manifest_path),"blocker":"batch_process_unknown"})
+            return self.call("POST",f'/v1/queue/{item["id"]}/update',payload={"lease_id":item["lease_id"],"state":"unknown","job_id":attempt_id(item),"evidence_ref":str(manifest_path),"blocker":"batch_process_unknown",**({"resume_sequence":resume_sequence} if resume_sequence is not None else {})})
         try:state=json_file(manifest["state_file"])
         except Exception:
-            return self.call("POST",f'/v1/queue/{item["id"]}/update',payload={"lease_id":item["lease_id"],"state":"unknown","job_id":attempt_id(item),"evidence_ref":str(manifest_path),"blocker":"batch_state_unavailable"})
+            return self.call("POST",f'/v1/queue/{item["id"]}/update',payload={"lease_id":item["lease_id"],"state":"unknown","job_id":attempt_id(item),"evidence_ref":str(manifest_path),"blocker":"batch_state_unavailable",**({"resume_sequence":resume_sequence} if resume_sequence is not None else {})})
         task=state.get("tasks",[{}])[0] if isinstance(state.get("tasks"),list) and state["tasks"] else {}
         if result.returncode==0 and state.get("status")=="completed" and task.get("phase")=="ready_pr":
             return self.call("POST",f'/v1/queue/{item["id"]}/update',payload={"lease_id":item["lease_id"],"state":"ready_pr","job_id":attempt_id(item),"head_sha":task.get("head_sha"),"pr_url":task.get("pr_url"),"evidence_ref":str(manifest["state_file"])})
-        return self.call("POST",f'/v1/queue/{item["id"]}/update',payload={"lease_id":item["lease_id"],"state":"blocked" if state.get("status")=="blocked" else "unknown","run_id":task.get("run_id"),"job_id":attempt_id(item),"evidence_ref":str(manifest["state_file"]),"blocker":str(state.get("reason","batch_failed"))[:120]})
+        return self.call("POST",f'/v1/queue/{item["id"]}/update',payload={"lease_id":item["lease_id"],"state":"blocked" if state.get("status")=="blocked" else "unknown","run_id":task.get("run_id"),"job_id":attempt_id(item),"evidence_ref":str(manifest["state_file"]),"blocker":str(state.get("reason","batch_failed"))[:120],**({"resume_sequence":resume_sequence} if resume_sequence is not None else {})})
     def reconcile(self,item):
-        state_path=Path(self.config["state_root"])/item["id"]/f'attempt-{item["attempts"]}'/"batch-state.json"
+        state_path=attempt_root(item,self.config)/"batch-state.json"
         try:batch=json_file(state_path)
         except Exception:return {"status":"unknown","item_id":item["id"],"reason":"batch_state_unavailable"}
         task=batch.get("tasks",[{}])[0] if isinstance(batch.get("tasks"),list) and batch["tasks"] else {}
@@ -125,9 +138,11 @@ class Dispatcher:
         retryable={"job_timeout","glm_review_blocked","batch_operation_failed","completed_without_job","review_deadline","acceptance_deadline"}
         run_id=item.get("external_run_id") or task.get("run_id")
         if run_id and not item.get("external_run_id"):
-            item=self.call("POST",f'/v1/queue/{item["id"]}/update',payload={"lease_id":item["lease_id"],
-              "state":item["state"],"run_id":run_id,"job_id":item.get("external_job_id") or attempt_id(item),
-              "evidence_ref":str(state_path),"blocker":str(reason or "reconcile")[:120]})
+            payload={"lease_id":item["lease_id"],"state":item["state"],"run_id":run_id,
+              "job_id":item.get("external_job_id") or attempt_id(item),"evidence_ref":str(state_path),"blocker":str(reason or "reconcile")[:120]}
+            sequence=(item.get("evidence") or {}).get("resume_sequence") if isinstance(item.get("evidence"),dict) else None
+            if sequence is not None:payload["resume_sequence"]=sequence
+            item=self.call("POST",f'/v1/queue/{item["id"]}/update',payload=payload)
         if not run_id:return {"status":"unknown","item_id":item["id"],"reason":"run_identity_unavailable"}
         try:run=self.call("GET","/v1/runs/"+run_id)
         except Exception:return {"status":"unknown","item_id":item["id"],"reason":"stop_reconcile_failed"}
