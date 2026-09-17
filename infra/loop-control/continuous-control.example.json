@@ -1,0 +1,42 @@
+{
+  "bridge_url": "http://127.0.0.1:18770",
+  "bridge_key_file": "/etc/loop/secrets/bridge_operator",
+  "dispatch_command": [
+    "/usr/bin/ssh",
+    "-F",
+    "/etc/loop-continuous/ssh_config",
+    "loop-harper-register"
+  ],
+  "admission": {
+    "reviewer_command": [
+      "/opt/loop/continuous-proposal-review"
+    ],
+    "registrars": {
+      "bridge": [
+        "/usr/bin/sudo",
+        "-n",
+        "/usr/local/sbin/loop-continuous-register"
+      ],
+      "harper": [
+        "/usr/bin/ssh",
+        "-F",
+        "/etc/loop-continuous/ssh_config",
+        "loop-harper-register"
+      ],
+      "worker": [
+        "/usr/bin/ssh",
+        "-F",
+        "/etc/loop-continuous/ssh_config",
+        "loop-worker-register"
+      ]
+    }
+  },
+  "report": {
+    "state_file": "/var/lib/loop/continuous/report.json",
+    "command": [
+      "/opt/loop/continuous_report_sender.py",
+      "--config",
+      "/etc/loop-continuous/report.json"
+    ]
+  }
+}

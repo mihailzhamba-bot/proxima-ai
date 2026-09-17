@@ -1,0 +1,23 @@
+[Unit]
+Description=LOOP continuous reviewed WB queue tick
+After=network-online.target loop-bridge.service
+Wants=network-online.target
+
+[Service]
+Environment=LOOP_OPENAI_BROKER_URL=http://127.0.0.1:18772
+Environment=LOOP_OPENAI_BROKER_TOKEN_FILE=/etc/loop/secrets/openai_broker
+Environment=LOOP_SOURCE_REPO=/srv/loop/source/proxima-ai
+Environment=HTTPS_PROXY=http://172.30.240.1:18180
+Environment=NO_PROXY=127.0.0.1,localhost
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/bin/python3 -I /opt/loop/continuous_tick.py --config /etc/loop-continuous/control.json
+TimeoutStartSec=55min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/loop /srv/loop/work /srv/loop/evidence /etc/loop/continuous/admissions
+
+[Install]
+WantedBy=multi-user.target

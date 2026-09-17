@@ -518,3 +518,19 @@ def test_research_parser_accepts_captured_glm_usage_after_router_normalization()
     assert usage['reasoning_tokens'] == 0 and usage['cached_tokens'] == 0
     assert (model, provider, actual_route, request_hash) == (
         program.MODEL, 'z.ai', route, 'a' * 64)
+
+
+def test_unknown_read_only_retry_is_explicit_bounded_and_journaled(setup):
+    config,_repo,state,_evidence=setup;config["tasks"]=config["tasks"][:1]
+    config["unknown_retry_limit"]=1;config["unknown_retry_after_seconds"]=0
+    calls=[]
+    def transport(*_args):
+        calls.append(1)
+        if len(calls)==1:raise TimeoutError("lost")
+        return response("Recovered read-only research.")
+    assert run(config,transport)["status"]=="unknown"
+    assert run(config,transport)["status"]=="idle"
+    assert run(config,transport)["status"]=="idle"
+    events=[json.loads(line) for line in (state/"journal.jsonl").read_text().splitlines()]
+    assert [event["event"] for event in events].count("retry")==1
+    assert calls==[1,1]

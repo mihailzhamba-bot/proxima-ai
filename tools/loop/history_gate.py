@@ -15,6 +15,7 @@ import subprocess
 SCANNER = Path("/opt/loop/secret_scan.py")
 SHA = re.compile(r"[a-f0-9]{40}")
 PROTECTED = re.compile(r"(^Makefile$|^tools/|^\.github/|(^|/)(package(-lock)?\.json|pyproject\.toml|uv\.lock)$|(^|/)[^/]*config[^/]*$|/tests/|^db/)")
+POLICY_EXCEPTIONS = frozenset({"tools/wb/daily.py","tools/tests/test_wb_daily.py","infra/systemd/proxima-wb-daily.service","infra/systemd/proxima-wb-daily.timer","services/collector/tests/collect.db.test.ts","tools/loop/wb_daily_status.py","tools/tests/test_wb_daily_status.py"})
 MAX_COMMITS = 100
 MAX_OBJECTS = 50_000
 MAX_BLOB_BYTES = 5_000_000
@@ -78,7 +79,7 @@ def verify(root: Path, base: str, head: str, allowed: list[str], scanner_path: P
             if not valid_path(name):raise ValueError("candidate path is invalid")
             if scanner.FORBIDDEN_NAMES.search(name):raise ValueError("candidate history used a forbidden secret filename")
             changed.add(name)
-            if PROTECTED.search(name) or not any(name==entry or (entry.endswith("/") and name.startswith(entry)) for entry in allowed):
+            if (PROTECTED.search(name) and name not in POLICY_EXCEPTIONS) or not any(name==entry or (entry.endswith("/") and name.startswith(entry)) for entry in allowed):
                 raise ValueError("candidate history touched protected or unapproved path")
             entry=git(root,"ls-tree",commit,"--",name).strip()
             if entry and (entry.startswith("120000 ") or entry.startswith("160000 ")):

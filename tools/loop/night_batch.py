@@ -78,10 +78,12 @@ def checked(manifest):
                 'poll_seconds', 'disk_floor_bytes'}
     if (type(manifest) is not dict
             or set(manifest) - {'acceptance_command', 'runtime_owner_uid',
-                                'pause_on_completion'} != required):
+                                'pause_on_completion', 'halt_mode'} != required):
         raise BatchError('invalid_manifest')
     if type(manifest.get('pause_on_completion', True)) is not bool:
         raise BatchError('invalid_pause_on_completion')
+    if manifest.get('halt_mode', 'global') not in ('global', 'local'):
+        raise BatchError('invalid_halt_mode')
     runtime_uid = manifest.get('runtime_owner_uid', 1000)
     if type(runtime_uid) is not int or not 1 <= runtime_uid <= 2**31 - 1:
         raise BatchError('invalid_runtime_owner')
@@ -376,8 +378,13 @@ class Batch:
     def halt(self, reason, task_state=None):
         self.state['status'], self.state['reason'] = 'blocked', reason
         self.save()  # halt durable before any best-effort external effects
-        for path in ['/v1/pause', *(['/v1/runs/' + task_state['run_id'] + '/stop']
-                                  if task_state and task_state.get('run_id') else [])]:
+        global_reasons = {'disk_floor', 'disk_start_floor', 'bridge_unavailable',
+                          'batch_already_running', 'untrusted_reviewer_install'}
+        paths = ([] if self.manifest.get('halt_mode', 'global') == 'local' and reason not in global_reasons
+                 else ['/v1/pause'])
+        if task_state and task_state.get('run_id'):
+            paths.append('/v1/runs/' + task_state['run_id'] + '/stop')
+        for path in paths:
             try:
                 self.call('POST', path, payload={}, timeout=5)
             except Exception:

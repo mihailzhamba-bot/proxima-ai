@@ -1,0 +1,23 @@
+{
+  "bridge_url": "http://127.0.0.1:18771",
+  "bridge_key_file": "/etc/loop/secrets/operator",
+  "state_root": "/var/lib/loop-continuous",
+  "admission_root": "/etc/loop-review/continuous/admissions",
+  "night_batch_script": "/opt/loop/night_batch.py",
+  "manifest_defaults": {
+    "template_bases": {},
+    "job_timeout_seconds": 2700,
+    "poll_seconds": 10,
+    "disk_floor_bytes": 2147483648,
+    "evidence_root": "/srv/loop-runner/evidence",
+    "work_root": "/srv/loop-runner/work",
+    "glm_config": "/etc/loop-review/glm.json",
+    "glm_script": "/opt/loop/glm_review.py",
+    "review_receipts": "/var/lib/loop-runner/review-receipts",
+    "operator_key_file": "/etc/loop/secrets/operator",
+    "runner_key_file": "/etc/loop/secrets/runner",
+    "acceptance_command": [
+      "/opt/loop-review/continuous-acceptance"
+    ]
+  }
+}

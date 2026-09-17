@@ -116,6 +116,8 @@ class NativeControl:
                 "review_mode": review_mode}
         if projection is not None:
             result["work_program"] = decode_projection(projection[0])
+        if self.bridge.continuous is not None:
+            result["continuous_queue"] = self.bridge.continuous_status()
         return result
 
     def draft(self, payload):

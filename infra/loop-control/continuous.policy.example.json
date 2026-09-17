@@ -1,0 +1,152 @@
+{
+  "policy_id": "wb-continuous-v1",
+  "plan_fingerprint": "88bcfd75c2eed05fc2799fcebf4470a22fed398b632ffb88818b8a4fa16f86e1",
+  "requirements": {
+    "wb-daily-packaging": {
+      "objective": "Package the proven server WB daily collector chain reproducibly in the repository.",
+      "acceptance": [
+        "Collection, norm and brief run strictly sequentially; any failure stops downstream work and preserves a machine-readable failure status.",
+        "Reentrant process is rejected by a file lock; timeout stops only the owned container. Every subprocess has a timeout.",
+        "Configuration contains paths, tenant, immutable image IDs and git revision, never secret values. Credentials are mounted read-only into only the stage that needs them.",
+        "Successful status requires yesterday Moscow for data and brief, stale=false, brief status ok; require 14 of 14 norm days.",
+        "Daily timer is 05:30 Europe/Moscow, Persistent=true; two retry attempts at 15-minute intervals. Units pass systemd-analyze verify.",
+        "Use current runtime reference as behavior baseline; export import-safe run_daily(config,execute=subprocess.run) returning status; CLI --config loads JSON and returns nonzero on failure. No live calls in tests. Exactly one scoped commit.",
+        "Config JSON keys: tenant_id, runtime_root, state_root, collector_image, control_image, git_sha, network, database_container. run_daily(config, execute=subprocess.run) returns a status dict with state success/failed; tests may inject execute. No work on import."
+      ],
+      "base_sha": "0153b1605b448cd63e74819413b727f27e87761f",
+      "allowed_paths": [
+        "tools/wb/daily.py",
+        "tools/tests/test_wb_daily.py",
+        "infra/systemd/proxima-wb-daily.service",
+        "infra/systemd/proxima-wb-daily.timer"
+      ],
+      "contract_files": [
+        "AGENTS.md"
+      ],
+      "profile": "fedor",
+      "profile_id": "73bf9c3a-ab69-4b2e-a7f0-e808df8f2614",
+      "profile_revision": 0,
+      "depends_on": [],
+      "repository": "mihailzhamba-bot/proxima-ai",
+      "max_slices": 1,
+      "acceptance_profile": "wb-daily-packaging",
+      "source_evidence": [
+        {
+          "ref": "operator-reference/daily_wb_runtime.py",
+          "sha256": "0cb73bc943f1635387bb7537019afb71c6232ce36b6d0597bc16e106c4faffa3",
+          "summary": "Proven server reference serializes collect, norm and brief; uses a nonblocking file lock, per-subprocess timeouts, immutable image and git identities, private logs, and verifies yesterday Moscow plus stale=false and brief status ok. Package this behavior behind the accepted configurable run_daily interface; do not copy tenant names, secret names or installation paths."
+        },
+        {
+          "ref": "operator-reference/test_daily_wb_runtime.py",
+          "sha256": "cec26e99c703ca19c862038d52d999125e523c3fbd24d3e9d61722e207f91f3a",
+          "summary": "The proven reference has 14 tests covering the runtime chain. Repository tests must remain offline and reproduce the accepted behavior contract."
+        }
+      ],
+      "path_sets": {
+        "default": {
+          "description": "The exact bootstrap file set approved for this bounded task.",
+          "allowed_paths": [
+            "tools/wb/daily.py",
+            "tools/tests/test_wb_daily.py",
+            "infra/systemd/proxima-wb-daily.service",
+            "infra/systemd/proxima-wb-daily.timer"
+          ],
+          "contract_files": [
+            "AGENTS.md"
+          ],
+          "acceptance_profile": "wb-daily-packaging"
+        }
+      }
+    },
+    "wb-warehouse-metadata": {
+      "objective": "Make historical WB overlap replay tolerate warehouseName-only changes without corrupting immutable facts or evidence.",
+      "acceptance": [
+        "For the same tenant,srid,lastChangeDate, persisted and incoming payloads differing ONLY in existing string warehouseName are treated as replay, retaining prior row, prior full payload and prior canonical hash.",
+        "New raw artifacts remain evidence of the incoming response. Do not rewrite old hashes/payloads; do not merely exclude the field from new hashes, since that breaks legacy compatibility.",
+        "Changed numeric financial fields, dates, cancellation, identifier or any other field still raises WB_SCHEMA_DRIFT and rolls back observations.",
+        "Missing/null/non-string warehouseName on either side does not qualify for the exception. Sales rows keep strict existing comparison.",
+        "Real PostgreSQL tests cover legacy hashes, replay, tenant boundary, mixed metadata+financial drift and batch boundaries. Exactly one scoped commit."
+      ],
+      "base_sha": "0153b1605b448cd63e74819413b727f27e87761f",
+      "allowed_paths": [
+        "services/collector/src/wb/observations.ts",
+        "services/collector/tests/collect.db.test.ts"
+      ],
+      "contract_files": [
+        "AGENTS.md"
+      ],
+      "profile": "fedor",
+      "profile_id": "73bf9c3a-ab69-4b2e-a7f0-e808df8f2614",
+      "profile_revision": 0,
+      "depends_on": [],
+      "repository": "mihailzhamba-bot/proxima-ai",
+      "max_slices": 1,
+      "acceptance_profile": "wb-warehouse-metadata",
+      "source_evidence": [
+        {
+          "ref": "git:0153b16:services/collector/src/wb/observations.ts",
+          "sha256": "ccc0fcc8cb06b92849f5564eafd9c162451689c6206cceb356391326a2821784",
+          "summary": "Baseline canonicalizes every order and sale payload, hashes it, and rejects any same natural-key plus lastChangeDate row with a different canonical hash before insert. The approved exception is orders only, warehouseName only, both values existing strings; retain the stored legacy payload and hash while raw incoming evidence remains. All other drift and all sales stay strict."
+        }
+      ],
+      "path_sets": {
+        "default": {
+          "description": "The exact bootstrap file set approved for this bounded task.",
+          "allowed_paths": [
+            "services/collector/src/wb/observations.ts",
+            "services/collector/tests/collect.db.test.ts"
+          ],
+          "contract_files": [
+            "AGENTS.md"
+          ],
+          "acceptance_profile": "wb-warehouse-metadata"
+        }
+      }
+    },
+    "wb-daily-status": {
+      "objective": "Provide a small truthful read-only projection of the real daily WB collector status for Director.",
+      "acceptance": [
+        "Import-safe pure project_daily_status(snapshot,now_utc) returns only tenant_id,state,analyzed_day,collected_at,last_attempt_at,reason_code; no credentials, raw errors or arbitrary payload fields.",
+        "Completed collector snapshot succeeds only if state success, stale exactly false, last_full_day and brief_day equal yesterday Moscow, brief_status ok, norm sample_days/window_days 14/14, and timestamps are valid and not in the future.",
+        "Failure/running/missing/invalid/old snapshots cannot claim readiness; failures show fixed reason codes, not untrusted error messages.",
+        "Read-only adapter reads at most 64KiB JSON; missing file and invalid JSON become unavailable. Never runs a subprocess or writes a file.",
+        "Fixture tests cover success, stale data, midnight Moscow, missing keys, malformed/future timestamps, failure and attempted secret-field injection. Exactly one scoped commit."
+      ],
+      "base_sha": "0153b1605b448cd63e74819413b727f27e87761f",
+      "allowed_paths": [
+        "tools/loop/wb_daily_status.py",
+        "tools/tests/test_wb_daily_status.py"
+      ],
+      "contract_files": [
+        "AGENTS.md"
+      ],
+      "profile": "fedor",
+      "profile_id": "73bf9c3a-ab69-4b2e-a7f0-e808df8f2614",
+      "profile_revision": 0,
+      "depends_on": [],
+      "repository": "mihailzhamba-bot/proxima-ai",
+      "max_slices": 1,
+      "acceptance_profile": "wb-daily-status",
+      "source_evidence": [
+        {
+          "ref": "operator-reference/daily_wb_runtime.py",
+          "sha256": "0cb73bc943f1635387bb7537019afb71c6232ce36b6d0597bc16e106c4faffa3",
+          "summary": "The real daily status snapshot has running, success and failed states and verified fields for last_full_day, stale, collected_at, brief_day, brief_status, actual and norm. The projection must expose only the accepted six safe fields, calculate yesterday in Europe/Moscow, validate 14/14 norm coverage and never pass through raw errors or credentials."
+        }
+      ],
+      "path_sets": {
+        "default": {
+          "description": "The exact bootstrap file set approved for this bounded task.",
+          "allowed_paths": [
+            "tools/loop/wb_daily_status.py",
+            "tools/tests/test_wb_daily_status.py"
+          ],
+          "contract_files": [
+            "AGENTS.md"
+          ],
+          "acceptance_profile": "wb-daily-status"
+        }
+      }
+    }
+  }
+}

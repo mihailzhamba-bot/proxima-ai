@@ -33,6 +33,24 @@ ROLLBACK_ROOT = Path("/var/backups/loop-install")
 WORKER_ROOT = Path("/srv/loop-worker")
 WORKER_PROFILE_NAME = "loop-codex"
 
+CONTROL_RUNTIME_FILES = {
+    ROOT / "tools/loop/bridge.py": (Path("/opt/loop/bridge.py"), 0o644),
+    ROOT / "tools/loop/continuous_queue.py": (Path("/opt/loop/continuous_queue.py"), 0o644),
+    ROOT / "tools/loop/continuous_dispatch.py": (Path("/opt/loop/continuous_dispatch.py"), 0o755),
+    ROOT / "tools/loop/continuous_admission.py": (Path("/opt/loop/continuous_admission.py"), 0o644),
+    ROOT / "tools/loop/continuous_report.py": (Path("/opt/loop/continuous_report.py"), 0o644),
+    ROOT / "tools/loop/continuous_report_sender.py": (Path("/opt/loop/continuous_report_sender.py"), 0o755),
+    ROOT / "tools/loop/telegram.py": (Path("/opt/loop/telegram.py"), 0o644),
+    ROOT / "tools/loop/continuous_tick.py": (Path("/opt/loop/continuous_tick.py"), 0o755),
+    ROOT / "tools/loop/continuous_register.py": (Path("/opt/loop/continuous_register.py"), 0o755),
+    ROOT / "tools/loop/night_batch.py": (Path("/opt/loop/night_batch.py"), 0o755),
+    ROOT / "tools/loop/glm_review.py": (Path("/opt/loop/glm_review.py"), 0o644),
+    ROOT / "tools/loop/model_router.py": (Path("/opt/loop/model_router.py"), 0o644),
+    ROOT / "tools/loop/director_tool.py": (Path("/etc/loop/native/director_tool.py"), 0o644),
+    ROOT / "tools/loop/continuous_receiver.py": (Path("/usr/local/sbin/loop-continuous-register"), 0o755),
+    ROOT / "tools/loop/continuous_proposal_review.py": (Path("/opt/loop/continuous-proposal-review"), 0o755),
+    CONF / "continuous.policy.example.json": (Path("/etc/loop-continuous/policy.json"), 0o600),
+}
 CONTROL_FILES = {
     CONF / "compose.yaml": (Path("/opt/loop-control/compose.yaml"), 0o644),
     CONF / "10-paperclip-role.sh": (Path("/etc/loop/10-paperclip-role.sh"), 0o755),
@@ -43,13 +61,21 @@ CONTROL_FILES = {
     CONF / "openhands_relay_control.py": (Path("/usr/local/sbin/loop-openhands-relay-control"), 0o755),
     CONF / "tinyproxy.conf": (Path("/etc/loop-proxy/tinyproxy.conf"), 0o644),
     CONF / "loop-logrotate.conf": (Path("/etc/logrotate.d/loop-bootstrap"), 0o644),
+    **CONTROL_RUNTIME_FILES,
 }
 CONTROL_UNITS = [
     "loop-egress-tunnel.service", "loop-egress-proxy.service", "loop-openhands-tunnel.service",
     "loop-openhands-relay.service", "loop-network-preflight.service", "loop-control.service",
     "loop-backup.service", "loop-backup.timer", "loop-health.service", "loop-health.timer",
+    "loop-continuous.service", "loop-continuous.timer",
 ]
 WORKER_FILES = {
+    ROOT / "tools/loop/continuous_receiver.py": (Path("/usr/local/sbin/loop-continuous-register"), 0o755),
+    ROOT / "tools/loop/continuous_register.py": (Path("/opt/loop/continuous_register.py"), 0o644),
+    ROOT / "tools/loop/continuous_queue.py": (Path("/opt/loop/continuous_queue.py"), 0o644),
+    ROOT / "tools/loop/bridge.py": (Path("/opt/loop/bridge.py"), 0o644),
+    CONF / "loop-continuous-worker-sudoers": (Path("/etc/sudoers.d/loop-continuous-registrar"), 0o440),
+    CONF / "continuous.policy.example.json": (Path("/etc/loop-continuous/policy.json"), 0o600),
     ROOT / "tools/loop/worker_dispatch.py": (Path("/opt/loop/worker_dispatch.py"), 0o755),
     ROOT / "tools/loop/worker_collect.py": (Path("/opt/loop/worker_collect.py"), 0o755),
     ROOT / "tools/loop/worker_root.py": (Path("/opt/loop/worker_root.py"), 0o755),
@@ -67,6 +93,23 @@ WORKER_FILES = {
 WORKER_UNITS = ["loop-worker-volume.service", "loop-openhands-directories.service", "loop-openhands-agent-server.service"]
 RUNNER_UNITS = ["loop-runner-bridge-tunnel.service", "loop-runner.service"]
 RUNNER_FILES = {
+    ROOT / "tools/loop/continuous_receiver.py": (Path("/usr/local/sbin/loop-continuous-register"), 0o755),
+    ROOT / "tools/loop/continuous_dispatch.py": (Path("/opt/loop/continuous_dispatch.py"), 0o755),
+    ROOT / "tools/loop/continuous_admission.py": (Path("/opt/loop/continuous_admission.py"), 0o644),
+    ROOT / "tools/loop/night_batch.py": (Path("/opt/loop/night_batch.py"), 0o755),
+    ROOT / "tools/loop/glm_review.py": (Path("/opt/loop/glm_review.py"), 0o644),
+    ROOT / "tools/loop/model_router.py": (Path("/opt/loop/model_router.py"), 0o644),
+    ROOT / "tools/loop/continuous_register.py": (Path("/opt/loop/continuous_register.py"), 0o644),
+    ROOT / "tools/loop/continuous_queue.py": (Path("/opt/loop/continuous_queue.py"), 0o644),
+    CONF / "loop-continuous-runner-sudoers": (Path("/etc/sudoers.d/loop-continuous-registrar"), 0o440),
+    CONF / "continuous.policy.example.json": (Path("/etc/loop-continuous/policy.json"), 0o600),
+    ROOT / "tools/loop/continuous_acceptance.py": (Path("/opt/loop-review/continuous-acceptance"), 0o755),
+    CONF / "continuous-acceptance/migrations.json": (Path("/opt/loop-review/continuous/migrations.json"), 0o644),
+    CONF / "continuous-acceptance/generic_acceptance.py": (Path("/opt/loop-review/continuous/generic_acceptance.py"), 0o644),
+    CONF / "continuous-acceptance/warehouse-check.mts": (Path("/opt/loop-review/continuous/warehouse-check.mts"), 0o644),
+    CONF / "continuous-acceptance/warehouse-pg-acceptance.py": (Path("/opt/loop-review/continuous/warehouse-pg-acceptance.py"), 0o644),
+    CONF / "continuous-acceptance/wb_daily_acceptance.py": (Path("/opt/loop-review/continuous/wb_daily_acceptance.py"), 0o644),
+    CONF / "continuous-acceptance/wb_daily_status_acceptance.py": (Path("/opt/loop-review/continuous/wb_daily_status_acceptance.py"), 0o644),
     ROOT / "tools/loop/review_candidate.py": (Path("/opt/loop-review/review-candidate"), 0o755),
     ROOT / "tools/loop/runner.py": (Path("/opt/loop/runner.py"), 0o755),
     ROOT / "tools/loop/bridge.py": (Path("/opt/loop/bridge.py"), 0o644),

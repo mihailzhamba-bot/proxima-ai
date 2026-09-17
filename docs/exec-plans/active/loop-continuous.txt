@@ -1,0 +1,58 @@
+---
+title: 'Непрерывная очередь LOOP из согласованного плана WB'
+type: feature
+baseline_commit: '0153b1605b448cd63e74819413b727f27e87761f'
+created: '2026-09-17'
+status: in-progress
+review_loop_iteration: 0
+---
+<frozen-after-approval>
+## Intent
+Пользователь утвердил автономную разработку только из согласованного плана WB: Director выбирает и декомпозирует работу, OpenHands реализует, Harper проверяет, независимое ревью допускает конкретный commit до PR. После результата не требуется новое «гоу». Приёмка: три полезные независимые задачи подряд через реальный маршрут до PR.
+## Boundaries & Constraints
+Always: только серверные source/state; Paperclip единственный планировщик Director; одна разработка одновременно; подтверждённые base/head и фиксированные разрешённые файлы; числа считает код; история неизменяема, отменённая попытка не публикуется.
+Ask First: merge, production release, расширение продуктового плана или разрешений.
+Never: WB WRITE, Simone, копии проекта на Mac, произвольный shell от модели, сброс unknown, bypass проверки/публикации.
+## I/O & Edge-Case Matrix
+| Ситуация | Поведение |
+|---|---|
+| PR готов | Следующая независимая ready-задача запускается автоматически |
+| Зависимость только ready_pr | Ждать проверенного merge, не считать зависимость реализованной |
+| Локальный сбой | До двух новых попыток после подтверждённой остановки; затем blocked; независимая работа продолжается |
+| Потеря ответа/unknown | Сверить тот же idempotency key и внешний запуск; не дублировать работу |
+| Отмена | Сначала существующий cancel/fence; никаких PR старой попытки |
+| Диск/доступ/общий исполнитель | Остановить admission, показать конкретную причину |
+| Очередь меньше трёх | Director предлагает задачи по закреплённым требованиям; отдельная проверка и регистрация обязательны |
+</frozen-after-approval>
+## Code Map
+- tools/loop/bridge.py:189 operator_execution, :201 execution_envelope, :369 propose_job. Сохранить точный /v1/wake operator_batch envelope.
+- tools/loop/night_batch.py:387 run; :376 halt глобально pause; фиксированный manifest immutable, после completed автоматического admission нет.
+- tools/loop/night_guard.py: согласовать локальный blocked vs общий pause.
+- tools/loop/work_program.py:617-626 unknown навсегда исключён; добавить явные ограниченные попытки read-only исследования с журналом.
+- tools/loop/runner.py и history_gate.py оба запрещают tools/tests/config; разрешать только точные policy-approved продуктовые пути, никогда собственные trust/verify/runtime-control файлы.
+- native_control.py и hook/plugin: существующий /loop_status расширить очередью; planning tool передаёт только proposal и trusted run identity.
+## Tasks & Acceptance
+- [ ] Постоянная очередь в SQLite Bridge: id, requirement_id, цель, acceptance, base_sha, allowed_paths, depends_on, proposal/policy/review fingerprints, state, attempts, timestamps, external ids, evidence/PR.
+- [ ] Policy закрепляется оператором из принятого плана WB. Модель не выбирает profile, команды, секреты, каталог установки или права. Независимое ревью exact proposal + детерминированная проверка до ready.
+- [ ] Регистратор добавляет одинаковый immutable template в Bridge/Harper/worker и проверяет три receipt; частичное обновление не ready. Владельцы конфигов сохраняются; для нового template reload только idle без uncertain publication.
+- [ ] Диспетчер использует одиночные manifests existing night_batch; пять минут и completion-trigger; одиночная lease, устойчивый idempotency, recovery без двойного запуска. Действующий конечный режим сохраняется.
+- [ ] Небольшие задачи пополняются из WB, а не из произвольного текста research. Planning и execution раздельно видны; планирование Director запускается Paperclip.
+- [ ] GLM вне 09-13 МСК будни, прежние adaptive alternatives и 48 research intents/day; OpenHands Sol medium; без ultra. Явный retry unknown read-only, old event неизменен.
+- [ ] Статус и отчёт в 08:00 МСК: текущая/следующая работа, last progress, blocker, PR; без повторного спама.
+- [ ] Начальные задачи: reproducible daily WB automation+tests; warehouseName-only drift с сохранением старых payload/hashes; точный статус real WB collection для Director. Независимые allowlists, отдельные PR.
+## Verification
+Unit/integration: transitions, duplicate wake, model scope rejection, partial registration, timeout/unknown/reconcile, cancellation fencing, dependency merge, tariff edges, local vs global stop, file gate protects control authority.
+На Harper full verify + real PG + build + independent exact-head review для каждого кандидата. Live acceptance: 3 PR по очереди, сохранённые IDs/модели/commits/receipts. Без этих доказательств continuous_ready=false.
+## Design Notes
+Существующий ручной exact-template admission остаётся; новая автоматизация не выдаёт Director права менять собственную политику. GLM предложение исключить warehouseName только из нового hash несовместимо со старыми hashes; не реализовывать без теста legacy records.
+## Spec Change Log
+
+## Operational handoff
+Implementation owner: one agent writes canonical Control checkout on branch server/loop-continuous. Other agents only inspect; do not revert foreign changes.
+Source and runtime remain on servers. SSH Control: ssh -i /Users/mikezhamba/.ssh/id_ed25519_proxima_selectel_20260813 -o IdentitiesOnly=yes -o BatchMode=yes root@135.106.211.149.
+Local Python only orchestrates subprocess stdin; never save project files on Mac. Source runner tests: /srv/loop/test-venv/bin/python -m pytest tools/tests/test_loop*.py.
+Portable template fields: base_sha,prompt_sha256,allowed_paths,contract_files,profile=fedor,profile_id=73bf9c3a-ab69-4b2e-a7f0-e808df8f2614,profile_revision=0.
+Control runtime /etc/loop/bridge.json owner10001:10001 mode600; Harper /etc/loop-runner/config.json owner1000:1000 mode600; worker /etc/loop-worker/templates.json + prompts + source-integrity.json sealed with /usr/local/sbin/loop-worker-seal.
+Bridge/runner currently need idle reload; Docker single-file bind cannot see atomic replacement unless recreated. Preserve inode or recreate idle only.
+Harper available disk 2.09GiB below3GiB; do not lower floors. Parent operator handles space and runtime deployment.
+No deployment, live dispatch, push or merges by code implementer; parent coordinates after code/tests/review. Stage only your files. Commit with LOOP Operator / loop-control@localhost if identity unset.

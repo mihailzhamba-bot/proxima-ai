@@ -1,0 +1,12 @@
+[Unit]
+Description=Check LOOP continuous reviewed WB queue every five minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=10s
+Persistent=true
+Unit=loop-continuous.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,5 @@
+{
+  "role": "bridge",
+  "policy_fingerprint": "53ab3ee4a0387d13fe2f46fd1780945ca41e462963d82625f025870aeec15062",
+  "policy_file": "/etc/loop-continuous/policy.json"
+}

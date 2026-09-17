@@ -218,7 +218,8 @@ class DeliveryRunner:
         paths=self.execute([*git,"-C",str(checkout),"diff","--name-only",base,sha]).splitlines()
         allowed=template.get("allowed_paths",[])
         protected=re.compile(r"(^Makefile$|^tools/|^\.github/|(^|/)(package(-lock)?\.json|pyproject\.toml|uv\.lock)$|(^|/)[^/]*config[^/]*$|/tests/|^db/)")
-        if not paths or any(protected.search(p) or not any(p==a or (a.endswith("/") and p.startswith(a)) for a in allowed) for p in paths): raise BridgeError(409,"candidate changes protected or unapproved paths")
+        policy_exceptions={"tools/wb/daily.py","tools/tests/test_wb_daily.py","infra/systemd/proxima-wb-daily.service","infra/systemd/proxima-wb-daily.timer","services/collector/tests/collect.db.test.ts","tools/loop/wb_daily_status.py","tools/tests/test_wb_daily_status.py"}
+        if not paths or any((protected.search(p) and p not in policy_exceptions) or not any(p==a or (a.endswith("/") and p.startswith(a)) for a in allowed) for p in paths): raise BridgeError(409,"candidate changes protected or unapproved paths")
         history=json.loads(self.execute([sys.executable,"-I",self.config.get("history_gate","/opt/loop/history_gate.py"),str(checkout),base,sha,*[item for value in allowed for item in ("--allowed",value)]]))
         if history.get("status")!="pass" or history.get("base_sha")!=base or history.get("head_sha")!=sha:raise BridgeError(409,"candidate history gate incomplete")
         (self.evidence/"history-receipt.json").write_text(json.dumps(history,indent=2)+"\n")
@@ -295,9 +296,16 @@ def main():
         print(json.dumps(recover_push(bridge,args.recover_push,config["evidence_root"])));return
     if args.serve:
         # Consumer only: Paperclip remains the Director scheduler.
+        pinned_templates=dict(config.get("templates",{}))
         while True:
             job_id=None
             try:
+                fresh=json.loads(Path(args.config).read_text())
+                fresh_templates=fresh.get("templates")
+                if (not isinstance(fresh_templates,dict)
+                        or any(name not in fresh_templates or fresh_templates[name]!=definition for name,definition in pinned_templates.items())):
+                    raise ValueError("runner template registry changed existing authority")
+                pinned_templates=dict(fresh_templates);config=fresh
                 job_id=bridge.call("GET","/v1/runner/jobs/next").get("job_id")
                 if job_id: DeliveryRunner(config,bridge).run(job_id)
             except Exception:

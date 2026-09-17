@@ -1,0 +1,49 @@
+import hashlib,json,os
+import pytest
+from tools.loop.bridge import template_fingerprint
+from tools.loop.continuous_queue import digest
+from tools.loop.continuous_register import RegisterError,install
+
+def item():
+    prompt={"goal":"fixture","acceptance":["pass"]}
+    template={"base_sha":"a"*40,"prompt_sha256":hashlib.sha256((json.dumps(prompt,sort_keys=True,separators=(",",":"))+"\n").encode()).hexdigest(),"allowed_paths":["services/collector/src/wb/observations.ts"],
+      "contract_files":["AGENTS.md"],"profile":"fedor","profile_id":"73bf9c3a-ab69-4b2e-a7f0-e808df8f2614","profile_revision":0}
+    name="continuous-fixture"
+    return {"id":"fixture","template_name":name,"template_fingerprint":template_fingerprint(name,template),
+      "policy_fingerprint":"b"*64,"proposal_fingerprint":"c"*64,"review_fingerprint":"d"*64,
+      "template":template,"prompt_contract":prompt}
+def files(tmp_path):
+    config=tmp_path/"config.json";config.write_text('{"templates":{}}');config.chmod(0o600)
+    idle=tmp_path/"idle.json";idle.write_text('{"idle":true}');idle.chmod(0o600)
+    prompts=tmp_path/"prompts";prompts.mkdir()
+    return config,idle,prompts
+
+def test_register_preserves_inode_and_emits_api_receipt(tmp_path):
+    config,idle,prompts=files(tmp_path);inode=config.stat().st_ino
+    receipt=install(item(),"bridge",config,prompts,idle,os.getuid())
+    assert set(receipt)=={"target","template_fingerprint","policy_fingerprint","installed_sha256"}
+    assert config.stat().st_ino==inode and config.stat().st_mode&0o777==0o600
+    stored=json.loads(config.read_text())["templates"]["continuous-fixture"]
+    assert stored["prompt_file"]==str(prompts/"continuous-fixture.json")
+    assert (prompts/"continuous-fixture.json").stat().st_mode&0o777==0o600
+
+def test_register_requires_exact_idle_and_never_overwrites_prompt(tmp_path):
+    config,idle,prompts=files(tmp_path);idle.write_text('{"idle":false}')
+    with pytest.raises(RegisterError,match="idle"):install(item(),"worker",config,prompts,idle,os.getuid())
+    idle.write_text('{"idle":true}');first=install(item(),"worker",config,prompts,idle,os.getuid())
+    assert install(item(),"worker",config,prompts,idle,os.getuid())==first
+    (prompts/"continuous-fixture.json").write_text("changed")
+    with pytest.raises(RegisterError,match="prompt"):install(item(),"worker",config,prompts,idle,os.getuid())
+
+
+
+def test_register_rejects_template_name_path_escape_before_write(tmp_path):
+    config,idle,prompts=files(tmp_path);bad=item();bad["template_name"]="../../escape"
+    with pytest.raises(RegisterError,match="template name"):install(bad,"worker",config,prompts,idle,os.getuid())
+    assert list(prompts.iterdir())==[]
+
+
+def test_register_rejects_unfingerprinted_template_authority(tmp_path):
+    config,idle,prompts=files(tmp_path);bad=item();bad["template"]["command"]=["/bin/sh"]
+    with pytest.raises(RegisterError,match="unapproved fields"):install(bad,"worker",config,prompts,idle,os.getuid())
+    assert list(prompts.iterdir())==[]

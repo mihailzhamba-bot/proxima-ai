@@ -689,3 +689,11 @@ def test_default_completion_is_not_terminal_until_pause_confirmed(tmp_path):
     assert result['status'] == 'blocked'
     assert result['reason'] == 'final_pause_unconfirmed'
     assert result['queue_state'] == 'pause_unconfirmed'
+
+
+def test_local_halt_stops_attempt_without_global_pause(tmp_path):
+    settings=manifest(tmp_path);settings["halt_mode"]="local"
+    stage=Stage(blocked=True);result,http,_stage,_clock=execute(settings,HTTP(settings,stage),stage)
+    assert result["status"]=="blocked" and result["reason"]=="glm_review_blocked"
+    assert any(call[1].endswith("/stop") for call in http.calls)
+    assert not any(call[1]=="/v1/pause" for call in http.calls)
