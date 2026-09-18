@@ -87,6 +87,15 @@ def status_text(result):
         provider = {"openai-codex": "OpenAI", "z.ai": "Z.ai"}.get(last.get("provider"), "неизвестный provider")
         lines.append(f"Последний результат исследований: {last['task_id']}, "
                      f"{provider} / {last['model']}, {status_time(last.get('completed_at_utc'))}.")
+    queue=result.get("continuous_queue")
+    if isinstance(queue,dict):
+        current=queue.get("current");upcoming=queue.get("next")
+        if current:
+            lines.append("Текущая работа: "+str(current.get("id"))+" ("+str(current.get("state"))+").")
+            if current.get("blocker"):lines.append("Блокер: "+str(current["blocker"])[:160]+".")
+            if current.get("pr_url"):lines.append("PR: "+str(current["pr_url"]))
+        if upcoming:lines.append("Следующая работа: "+str(upcoming.get("id"))+" ("+str(upcoming.get("state"))+").")
+        if not current and not upcoming:lines.append("Непрерывная очередь: готовой работы нет.")
     review = result.get("review_mode", "independent_operator_receipt_required")
     if review == "independent_model_receipt_required":
         lines.append("Ревью: независимая модель; допуск по проверенному результату.")

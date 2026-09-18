@@ -1,0 +1,68 @@
+---
+title: 'Непрерывная очередь LOOP из согласованного плана WB'
+type: feature
+baseline_commit: '0153b1605b448cd63e74819413b727f27e87761f'
+created: '2026-09-17'
+status: in-progress
+review_loop_iteration: 0
+---
+<frozen-after-approval>
+## Intent
+Пользователь утвердил автономную разработку только из согласованного плана WB: Director выбирает и декомпозирует работу, OpenHands реализует, Harper проверяет, независимое ревью допускает конкретный commit до PR. После результата не требуется новое «гоу». Приёмка: три полезные независимые задачи подряд через реальный маршрут до PR.
+## Boundaries & Constraints
+Always: только серверные source/state; Paperclip единственный планировщик Director; одна разработка одновременно; подтверждённые base/head и фиксированные разрешённые файлы; числа считает код; история неизменяема, отменённая попытка не публикуется.
+Ask First: merge, production release, расширение продуктового плана или разрешений.
+Never: WB WRITE, Simone, копии проекта на Mac, произвольный shell от модели, сброс unknown, bypass проверки/публикации.
+## I/O & Edge-Case Matrix
+| Ситуация | Поведение |
+|---|---|
+| PR готов | Следующая независимая ready-задача запускается автоматически |
+| Зависимость только ready_pr | Ждать проверенного merge, не считать зависимость реализованной |
+| Локальный сбой | До двух новых попыток после подтверждённой остановки; затем blocked; независимая работа продолжается |
+| Потеря ответа/unknown | Сверить тот же idempotency key и внешний запуск; не дублировать работу |
+| Отмена | Сначала существующий cancel/fence; никаких PR старой попытки |
+| Диск/доступ/общий исполнитель | Остановить admission, показать конкретную причину |
+| Очередь меньше трёх | Director предлагает задачи по закреплённым требованиям; отдельная проверка и регистрация обязательны |
+</frozen-after-approval>
+## Code Map
+- tools/loop/bridge.py:189 operator_execution, :201 execution_envelope, :369 propose_job. Сохранить точный /v1/wake operator_batch envelope.
+- tools/loop/night_batch.py:387 run; :376 halt глобально pause; фиксированный manifest immutable, после completed автоматического admission нет.
+- tools/loop/night_guard.py: согласовать локальный blocked vs общий pause.
+- tools/loop/work_program.py:617-626 unknown навсегда исключён; добавить явные ограниченные попытки read-only исследования с журналом.
+- tools/loop/runner.py и history_gate.py оба запрещают tools/tests/config; разрешать только точные policy-approved продуктовые пути, никогда собственные trust/verify/runtime-control файлы.
+- native_control.py и hook/plugin: существующий /loop_status расширить очередью; planning tool передаёт только proposal и trusted run identity.
+## Tasks & Acceptance
+- [x] Постоянная очередь в SQLite Bridge: id, requirement_id, цель, acceptance, base_sha, allowed_paths, depends_on, proposal/policy/review fingerprints, state, attempts, timestamps, external ids, evidence/PR.
+- [x] Policy закрепляется оператором из принятого плана WB. Модель не выбирает profile, команды, секреты, каталог установки или права. Независимое ревью exact proposal + детерминированная проверка до ready.
+- [x] Регистратор добавляет одинаковый immutable template в Bridge/Harper/worker и проверяет три receipt; частичное обновление не ready. Владельцы конфигов сохраняются; для нового template reload только idle без uncertain publication.
+- [x] Диспетчер использует одиночные manifests existing night_batch; пять минут и completion-trigger; одиночная lease, устойчивый idempotency, recovery без двойного запуска. Действующий конечный режим сохраняется.
+- [ ] Небольшие задачи пополняются из WB, а не из произвольного текста research. Planning и execution раздельно видны; планирование Director запускается Paperclip.
+- [x] GLM вне 09-13 МСК будни, прежние adaptive alternatives и 48 research intents/day; OpenHands Sol medium; без ultra. Явный retry unknown read-only, old event неизменен.
+- [x] Статус и отчёт в 08:00 МСК: текущая/следующая работа, last progress, blocker, PR; без повторного спама.
+- [ ] Начальные задачи: reproducible daily WB automation+tests; warehouseName-only drift с сохранением старых payload/hashes; точный статус real WB collection для Director. Независимые allowlists, отдельные PR.
+## Verification
+Unit/integration: transitions, duplicate wake, model scope rejection, partial registration, timeout/unknown/reconcile, cancellation fencing, dependency merge, tariff edges, local vs global stop, file gate protects control authority.
+На Harper full verify + real PG + build + independent exact-head review для каждого кандидата. Live acceptance: 3 PR по очереди, сохранённые IDs/модели/commits/receipts. Без этих доказательств continuous_ready=false.
+
+Проверка source 2026-09-17: routing/review/night-batch/broker focused suite — 217 passed; continuous queue/dispatcher/base-refresh suites проходили после каждого recovery change, последние соответствующие прогоны — 200 и 197 passed. Independent edge review последних изменений — 0 blocker / 0 warning.
+
+Live pilot 2026-09-17:
+- T2 `wb-warehouse-metadata-slice-a1`: ready PR #147, exact head `e19d8b4c09fd91122bdbbbf4a2f82031755570b8`, изменены только `services/collector/src/wb/observations.ts` и `services/collector/tests/collect.db.test.ts`; PR открыт и не merged.
+- T3 `wb-daily-status-slice-a2`: ready PR #148, exact head `6b88f5011d4b15ea173702b7e5c9ecb645ad1d1c`, изменены только `tools/loop/wb_daily_status.py` и `tools/tests/test_wb_daily_status.py`; PR открыт и не merged.
+- T1 `wb-daily-packaging-slice`: continuous attempts исчерпаны и publication старых попыток fenced. Exact a3 candidate `324877998207ebfbd575267f127abf1ec89804ac` отдельно прошёл исправленный pinned acceptance 14/14, но отменённая попытка не переоткрывается и PR не создан. Подготовлен отдельный manual corrective fixed-template пакет; его исполнение и PR остаются pending.
+
+Live acceptance сейчас 2 из 3 ready PR; `continuous_ready=false`. Автономная очередь после bootstrap также не считается perpetual backlog: policy содержит только три начальных requirement, generic acceptance отключён, а дополнительные typed profiles ещё не установлены.
+## Design Notes
+Существующий ручной exact-template admission остаётся; новая автоматизация не выдаёт Director права менять собственную политику. GLM предложение исключить warehouseName только из нового hash несовместимо со старыми hashes; не реализовывать без теста legacy records.
+## Spec Change Log
+- 2026-09-17: код непрерывной очереди и recovery реализован; live pilot дал два ready PR из трёх. T1 остаётся manual corrective pending; perpetual typed backlog не реализован, поэтому status остаётся in-progress и continuous_ready=false.
+
+## Operational handoff
+Implementation owner: one agent writes canonical Control checkout on branch server/loop-continuous. Other agents only inspect; do not revert foreign changes.
+Source and runtime remain on servers. SSH Control: ssh -i /Users/mikezhamba/.ssh/id_ed25519_proxima_selectel_20260813 -o IdentitiesOnly=yes -o BatchMode=yes root@135.106.211.149.
+Local Python only orchestrates subprocess stdin; never save project files on Mac. Source runner tests: /srv/loop/test-venv/bin/python -m pytest tools/tests/test_loop*.py.
+Portable template fields: base_sha,prompt_sha256,allowed_paths,contract_files,profile=fedor,profile_id=73bf9c3a-ab69-4b2e-a7f0-e808df8f2614,profile_revision=0.
+Control runtime /etc/loop/bridge.json owner10001:10001 mode600; Harper /etc/loop-runner/config.json owner1000:1000 mode600; worker /etc/loop-worker/templates.json + prompts + source-integrity.json sealed with /usr/local/sbin/loop-worker-seal.
+Bridge/runner currently need idle reload; Docker single-file bind cannot see atomic replacement unless recreated. Preserve inode or recreate idle only.
+По состоянию на 2026-09-17 после уже разрешённой и завершённой очистки трёх архивированных cache на Harper свободно `6018236416` bytes; это выше start floor 3 GiB. T3 завершена; будущие claims по-прежнему обязаны проходить неизменённый 3 GiB preflight.
+No deployment, live dispatch or merge by code implementer. Обычный fast-forward push source-ветки в существующий draft PR #146 отдельно разрешён оператором 2026-09-17; force push запрещён. Stage only owned files. Commit with LOOP Operator / loop-control@localhost if identity unset.

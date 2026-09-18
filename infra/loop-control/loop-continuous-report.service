@@ -1,0 +1,17 @@
+[Unit]
+Description=LOOP continuous 08:00 Moscow queue report
+After=network-online.target loop-bridge.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment=HTTPS_PROXY=http://172.30.240.1:18180
+Environment=NO_PROXY=127.0.0.1,localhost
+ExecStart=/usr/bin/python3 -I /opt/loop/continuous_report_once.py --config /etc/loop-continuous/control.json
+TimeoutStartSec=3min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/loop

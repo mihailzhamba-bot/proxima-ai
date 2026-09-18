@@ -484,3 +484,20 @@ def test_review_parser_accepts_captured_glm_usage_after_router_normalization():
     assert usage['reasoning_tokens'] == 0 and usage['cached_tokens'] == 0
     assert (model, provider, actual_route, request_hash) == (
         reviewer.MODEL, 'z.ai', route, 'b' * 64)
+
+
+def test_openai_only_review_uses_exact_terra_medium_provenance_without_glm_key(candidate,tmp_path,monkeypatch):
+ settings=config(provider_policy='openai_only',openai_url='http://127.0.0.1:18772/v1/infer',openai_token_file='/fixture/openai')
+ monkeypatch.setattr(reviewer.model_router,'read_broker_token',lambda path:'openai-token' if path=='/fixture/openai' else pytest.fail('wrong token path'))
+ calls=[]
+ def routed(payload,glm_key,timeout,route_config,purpose,**kwargs):
+  calls.append((payload,glm_key,timeout,route_config,purpose,kwargs));route=reviewer.model_router.select_route(route_config,purpose)
+  verdict=json.dumps({'status':'pass','findings':[],'summary':'Operator selected review.'})
+  return reviewer.model_router._normalized('gpt-5.6-terra','openai-codex',verdict,None,route,reviewer.model_router.validate_broker_payload(payload,route))
+ monkeypatch.setattr(reviewer.model_router,'routed_transport',routed)
+ result=reviewer.review(settings,*candidate,tmp_path/'evidence',key_reader=lambda _path:pytest.fail('GLM key read'))
+ artifact=json.loads(Path(result['evidence_path']).read_text());route=artifact['actual_provider_route']
+ assert (artifact['model'],artifact['provider'],route['reasoning_effort'],route['reason'])==('gpt-5.6-terra','openai-codex','medium','operator_selected')
+ assert artifact['planned_provider_route']==route and artifact['actual_request_sha256']==reviewer.model_router.validate_broker_payload(calls[0][0],route)
+ assert calls[0][1] is None and calls[0][4]=='review' and calls[0][5]['glm_send'] is reviewer.transport
+ assert calls[0][0]['tool_choice']=='none' and 'tools' not in calls[0][0]

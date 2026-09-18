@@ -1,6 +1,8 @@
 import json
 import fcntl
 import os
+import subprocess
+import time
 from pathlib import Path
 import sys
 import stat
@@ -325,8 +327,9 @@ def test_acceptance_hook_before_model_and_evidence(tmp_path):
     {'sha': 'c' * 40, 'status': 'pass', 'skipped': 0},
     {'sha': 'b' * 40, 'status': 'pass', 'skipped': False},
     {'sha': 'b' * 40, 'status': 'blocked', 'skipped': 0}])
-def test_acceptance_fail_closed(tmp_path, receipt):
-    settings = manifest(tmp_path)
+def test_acceptance_fail_closed(tmp_path, receipt, monkeypatch):
+    settings = manifest(tmp_path);Path(settings['review_receipts']).mkdir()
+    monkeypatch.setattr(driver,'REVIEW_RECEIPT_UID',os.geteuid());monkeypatch.setattr(driver,'trusted_directory',lambda *_args,**_kwargs:None)
     settings['acceptance_command'] = ['/trusted/acceptance']
     class Result:
         returncode = 0
@@ -337,13 +340,15 @@ def test_acceptance_fail_closed(tmp_path, receipt):
         return Result()
     stage = driver.ReviewStage(settings, execute)
     observed = {'checkout': '/fixture/candidate', 'base_sha': 'a' * 40,
-                'head_sha': 'b' * 40, 'job_id': 'night-job-0'}
+                'head_sha': 'b' * 40, 'diff_sha256': 'c' * 64, 'job_id': 'night-job-0'}
     with pytest.raises(driver.BatchError, match='independent_acceptance_blocked'):
         stage.accept(observed, 200)
     assert calls[0][0] == ['/trusted/acceptance', '/fixture/candidate', 'a' * 40, 'b' * 40, 'night-job-0']
     assert calls[0][1]['timeout'] == 120 and 'shell' not in calls[0][1]
     evidence = next((Path(settings['evidence_root']) / 'acceptance').glob('*.json'))
-    assert json.loads(evidence.read_text())['status'] == 'blocked'
+    values=[json.loads(path.read_text()) for path in (Path(settings['evidence_root'])/'acceptance').glob('*.json')]
+    assert any(value.get('status')=='blocked' for value in values)
+    negative=json.loads((Path(settings['review_receipts'])/('b'*40+'.json')).read_text());assert negative['status']=='blocked' and negative['diff_sha256']=='c'*64
 
 
 def test_acceptance_rejection_prevents_model(tmp_path):
@@ -689,3 +694,71 @@ def test_default_completion_is_not_terminal_until_pause_confirmed(tmp_path):
     assert result['status'] == 'blocked'
     assert result['reason'] == 'final_pause_unconfirmed'
     assert result['queue_state'] == 'pause_unconfirmed'
+
+
+def test_local_halt_stops_attempt_without_global_pause(tmp_path):
+    settings=manifest(tmp_path);settings["halt_mode"]="local"
+    stage=Stage(blocked=True);result,http,_stage,_clock=execute(settings,HTTP(settings,stage),stage)
+    assert result["status"]=="blocked" and result["reason"]=="glm_review_blocked"
+    assert any(call[1].endswith("/stop") for call in http.calls)
+    assert not any(call[1]=="/v1/pause" for call in http.calls)
+
+
+def test_acceptance_rejection_unblocks_exact_head_waiter_promptly(tmp_path,monkeypatch):
+ repo=tmp_path/"candidate";repo.mkdir();subprocess.run(["git","init","-q",str(repo)],check=True)
+ subprocess.run(["git","-C",str(repo),"config","user.name","Fixture"],check=True);subprocess.run(["git","-C",str(repo),"config","user.email","fixture@invalid"],check=True)
+ (repo/"file").write_text("base");subprocess.run(["git","-C",str(repo),"add","file"],check=True);subprocess.run(["git","-C",str(repo),"commit","-qm","base"],check=True)
+ base=subprocess.check_output(["git","-C",str(repo),"rev-parse","HEAD"],text=True).strip();(repo/"file").write_text("head");subprocess.run(["git","-C",str(repo),"commit","-qam","head"],check=True)
+ head=subprocess.check_output(["git","-C",str(repo),"rev-parse","HEAD"],text=True).strip();scope=driver.fingerprint(repo,base,head)
+ settings=manifest(tmp_path);settings["acceptance_command"]=["/trusted/acceptance"];receipts=Path(settings["review_receipts"]);receipts.mkdir()
+ monkeypatch.setattr(driver,"REVIEW_RECEIPT_UID",os.geteuid());monkeypatch.setattr(driver,"trusted_directory",lambda *_args,**_kwargs:None)
+ reviewer=tmp_path/"review_candidate.py";source=(Path(__file__).parents[1]/"loop/review_candidate.py").read_text().replace("Path('/etc/loop-review/receipts')",f"Path({str(receipts)!r})");reviewer.write_text(source)
+ waiter=subprocess.Popen([sys.executable,"-I",str(reviewer),str(repo),base,head,"--wait-seconds","30"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+ time.sleep(.2)
+ class Rejected:
+  returncode=1;stdout=b'{"status":"blocked","reason":"fixture"}\nBearer fixture-private';stderr=b'acceptance failed'
+ stage=driver.ReviewStage(settings,lambda *_args,**_kwargs:Rejected());started=time.monotonic()
+ observation={"checkout":str(repo),"base_sha":base,"head_sha":head,"diff_sha256":scope["diff_sha256"],"job_id":"night-job-0"}
+ with pytest.raises(driver.BatchError,match="independent_acceptance_blocked"):stage.accept(observation,120)
+ stdout,_=waiter.communicate(timeout=3)
+ assert waiter.returncode!=0 and time.monotonic()-started<3 and json.loads(stdout)["status"]=="blocked"
+ receipt=json.loads((receipts/(head+".json")).read_text());assert receipt["status"]=="blocked" and receipt["diff_sha256"]==scope["diff_sha256"]
+ artifact=json.loads(Path(receipt["evidence_ref"]).read_text());assert Path(receipt["evidence_ref"]).stat().st_mode&0o777==0o600 and "fixture-private" not in json.dumps(artifact)
+
+
+def test_acceptance_rejection_never_overwrites_exact_positive_receipt(tmp_path,monkeypatch):
+ settings=manifest(tmp_path);receipts=Path(settings["review_receipts"]);receipts.mkdir();monkeypatch.setattr(driver,"REVIEW_RECEIPT_UID",os.geteuid());monkeypatch.setattr(driver,"trusted_directory",lambda *_a,**_k:None)
+ head="b"*40;positive={"base_sha":"a"*40,"sha":head,"diff_sha256":"c"*64,"status":"pass","skipped":0,"reviewer":"trusted","reviewed_at_utc":"fixture","evidence_ref":"fixture.json"}
+ path=receipts/(head+".json");driver.atomic_json(path,positive,mode=0o644)
+ result=SimpleNamespace(returncode=1,stdout=b"failed",stderr=b"")
+ driver.ReviewStage(settings).reject_acceptance({"base_sha":"a"*40,"head_sha":head,"diff_sha256":"c"*64},result)
+ assert json.loads(path.read_text())==positive
+ with pytest.raises(driver.BatchError,match="review_receipt_conflict"):
+  driver.ReviewStage(settings).reject_acceptance({"base_sha":"d"*40,"head_sha":head,"diff_sha256":"e"*64},result)
+
+
+def test_acceptance_timeout_writes_negative_receipt_before_preserving_deadline(tmp_path,monkeypatch):
+ settings=manifest(tmp_path);settings["acceptance_command"]=["/trusted/acceptance"];receipts=Path(settings["review_receipts"]);receipts.mkdir()
+ monkeypatch.setattr(driver,"REVIEW_RECEIPT_UID",os.geteuid());monkeypatch.setattr(driver,"trusted_directory",lambda *_a,**_k:None)
+ def timeout(*args,**kwargs):raise subprocess.TimeoutExpired(args[0],kwargs["timeout"],output=b"partial",stderr=b"late")
+ stage=driver.ReviewStage(settings,timeout);observation={"checkout":"/fixture","base_sha":"a"*40,"head_sha":"b"*40,"diff_sha256":"c"*64,"job_id":"night-job-0"}
+ with pytest.raises(subprocess.TimeoutExpired):stage.accept(observation,10)
+ receipt=json.loads((receipts/("b"*40+".json")).read_text());assert receipt["status"]=="blocked" and receipt["reason"]=="independent_acceptance_blocked"
+ artifact=json.loads(Path(receipt["evidence_ref"]).read_text());assert artifact["returncode"]==124 and artifact["stdout_tail"]=="partial"
+
+
+@pytest.mark.parametrize("mode",["blocked","timeout"])
+def test_model_review_failure_publishes_exact_negative_receipt(mode,tmp_path,monkeypatch):
+ settings=manifest(tmp_path);receipts=Path(settings["review_receipts"]);receipts.mkdir();monkeypatch.setattr(driver,"REVIEW_RECEIPT_UID",os.geteuid());monkeypatch.setattr(driver,"trusted_directory",lambda *_a,**_k:None)
+ scope={"base_sha":"a"*40,"head_sha":"b"*40,"diff_sha256":"c"*64};observation={"checkout":"/fixture",**scope};monkeypatch.setattr(driver,"fingerprint",lambda *_args:scope)
+ if mode=="timeout":
+  execute=lambda argv,**kwargs:(_ for _ in ()).throw(subprocess.TimeoutExpired(argv,kwargs["timeout"],output=b"partial review",stderr=b"timeout"))
+  expected=subprocess.TimeoutExpired
+ else:
+  execute=lambda *_args,**_kwargs:SimpleNamespace(returncode=1,stdout=b'{"reason":"provider_unavailable"}',stderr=b"review failed")
+  expected=driver.BatchError
+ stage=driver.ReviewStage(settings,execute)
+ with pytest.raises(expected):stage.review(observation,10)
+ receipt=json.loads((receipts/(scope["head_sha"]+".json")).read_text());assert receipt["status"]=="blocked" and receipt["reason"]=="independent_model_review_blocked" and receipt["diff_sha256"]==scope["diff_sha256"]
+ artifact=json.loads(Path(receipt["evidence_ref"]).read_text());assert artifact["artifact_type"]=="independent-model-review-error" and Path(receipt["evidence_ref"]).stat().st_mode&0o777==0o600
+ if mode=="timeout":assert artifact["diagnostic_reason"]=="review_deadline" and artifact["returncode"]==124

@@ -316,13 +316,13 @@ def review(config, checkout, base, head, evidence_root, send=transport, key_read
         if production:
             planned_route = model_router.select_route(config, 'review')
             if policy == 'adaptive':
-                fallback_route = model_router.select_route(
-                    config, 'review', glm_rate_limited=True)
+                fallback_route = model_router.select_route(config, 'review', glm_rate_limited=True)
                 model_router.validate_broker_payload(payload, fallback_route)
+            elif policy == 'openai_only':model_router.validate_broker_payload(payload,planned_route)
         if production and policy == 'glm_only':
             require_offpeak(config.get('timeout_seconds', 120))
-        key = key_reader(config['key_file'])
-        if production and policy == 'adaptive':
+        key = None if production and policy=='openai_only' else key_reader(config['key_file'])
+        if production and policy in {'adaptive','openai_only'}:
             openai_token = model_router.read_broker_token(config['openai_token_file'])
         if production:
             def actual_send(request_payload, glm_key, request_timeout):
@@ -357,10 +357,10 @@ def review(config, checkout, base, head, evidence_root, send=transport, key_read
                 raise ReviewError('provider_unavailable') from None
         # Never persist unknown response fields or provider errors. The exact
         # authorization value is redacted even if echoed by the provider.
-        raw = raw.replace(key.encode(), b'[redacted]')
+        if key:raw = raw.replace(key.encode(), b'[redacted]')
         (verdict, usage, actual_model, actual_provider, actual_route,
          actual_request_sha256) = parse_response(raw)
-        verdict = redact_strings(verdict, key)
+        if key:verdict = redact_strings(verdict, key)
         if openai_token:
             verdict = redact_strings(verdict, openai_token)
         if diff_digest(root, base, head) != digest:

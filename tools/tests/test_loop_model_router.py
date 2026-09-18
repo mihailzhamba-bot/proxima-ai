@@ -13,7 +13,7 @@ from tools.loop import openai_broker, openai_no_tools
 
 def config(policy='adaptive'):
     value = {'provider_policy': policy}
-    if policy == 'adaptive':
+    if policy in {'adaptive','openai_only'}:
         value.update(openai_url='http://127.0.0.1:18772/v1/infer',
                      openai_token_file='/etc/loop/secrets/openai_broker')
     return value
@@ -336,3 +336,26 @@ def test_glm_nested_usage_rejects_bool_negative_and_unknown(details):
                 'reasoning_effort': None, 'reason': 'off_peak'}
     with pytest.raises(router.RouterError, match='invalid_glm'):
         router.normalize_glm(json.dumps(raw).encode(), selected, 'a' * 64)
+
+
+def test_operator_selected_review_routes_directly_to_terra_medium_without_tariff():
+ checks=[];selected=router.select_route(config('openai_only'),'review',tariff_check=lambda **kwargs:checks.append(kwargs))
+ assert selected=={'provider':'openai-codex','model':'gpt-5.6-terra','reasoning_effort':'medium','reason':'operator_selected'}
+ assert checks==[] and router.response_route_allowed(selected,'gpt-5.6-terra','openai-codex','review')
+ with pytest.raises(router.RouterError,match='openai_only_review_required'):router.select_route(config('openai_only'),'research')
+
+
+def test_openai_only_uses_broker_with_zero_glm_transport():
+ calls=[];route_log=[];value={'ok':True,'response':'{}','model':'gpt-5.6-terra','provider':'openai-codex','usage':None}
+ payload={'messages':[{'role':'system','content':'review without tools'},{'role':'user','content':'bounded diff'}]}
+ raw=router.routed_transport(payload,'unused-glm-key',120,config('openai_only'),'review',openai_token='openai-key',
+  glm_send=lambda *_args:(_ for _ in ()).throw(AssertionError('GLM transport called')),opener=Opener(value),
+  tariff_check=lambda **_kwargs:(_ for _ in ()).throw(AssertionError('tariff called')),on_route=lambda route:route_log.append(route))
+ observed=json.loads(raw);assert observed['model']=='gpt-5.6-terra' and observed['provider']=='openai-codex'
+ assert observed['provider_route']['reason']=='operator_selected' and observed['provider_route']['reasoning_effort']=='medium'
+ assert len(route_log)==1 and observed['actual_request_sha256']==router.validate_broker_payload(payload,route_log[0])
+
+
+def test_openai_only_rejects_missing_or_untrusted_broker_config():
+ for value in ({'provider_policy':'openai_only'},{'provider_policy':'openai_only','openai_url':'http://attacker.invalid','openai_token_file':'/key'},{'provider_policy':'openai_only','openai_url':'http://127.0.0.1:18772/v1/infer','openai_token_file':'relative'}):
+  with pytest.raises(router.RouterError):router.validate_provider_config(value)

@@ -24,6 +24,8 @@ def project(tmp_path,monkeypatch):
     code="#!/usr/bin/env python3\nimport os,sys\nfrom pathlib import Path\nassert os.environ.get('CI')=='true'\nassert os.environ.get('NEXT_TELEMETRY_DISABLED')=='1'\nif os.environ.get('MUTATE')=='1':Path('source.txt').write_text('changed')\nprint(os.environ.get('PG_MARKER','pg-roundtrip: PASS'))\nprint('Bearer fixture-sensitive-value',file=sys.stderr)\nsys.exit(int(os.environ.get('EXIT_CODE','0')))\n"
     for name in ["make","npm"]:
         path=binaries/name;path.write_text(code);path.chmod(0o755)
+    if sys.version_info[:2]==(3,14):
+        (binaries/"python3.14").symlink_to(sys.executable)
     env={"PATH":str(binaries)+os.pathsep+os.environ["PATH"]}
     return root,sha,env
 

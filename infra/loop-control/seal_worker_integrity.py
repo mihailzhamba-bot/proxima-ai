@@ -23,7 +23,7 @@ PROMPT_ROOT=Path("/etc/loop-worker/prompts")
 def runtime_files(runner_uid: int) -> dict[Path,int]:
     source=Path("/srv/loop-worker/trusted-source/proxima-ai")
     return {
-        Path("/opt/loop/worker_dispatch.py"):0,Path("/opt/loop/worker_collect.py"):0,Path("/opt/loop/worker_root.py"):0,Path("/opt/loop/worker_ssh.py"):0,
+        Path("/opt/loop/worker_dispatch.py"):0,Path("/opt/loop/worker_collect.py"):0,Path("/opt/loop/worker_root.py"):0,Path("/opt/loop/worker_ssh.py"):0,Path("/opt/loop/worker_prompt.py"):0,
         Path("/opt/loop-openhands-agent/agent_server_launcher.py"):0,Path("/opt/loop-openhands-agent/bin/codex-acp"):0,Path("/etc/loop-openhands-agent/config.toml"):0,Path("/usr/local/sbin/loop-worker-volume"):0,
         source/"tools/orchestrator/bad_dev_story.sh":runner_uid,source/"tools/orchestrator/lib.sh":runner_uid,
     }

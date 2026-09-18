@@ -71,7 +71,7 @@ def _path_ok(value):
 def validate_config(config):
     required = {'enabled', 'source_repo', 'state_root', 'evidence_root',
                 'key_file', 'max_calls_per_day', 'tasks'}
-    allowed = required | {'provider_policy', 'openai_url', 'openai_token_file'}
+    allowed = required | {'provider_policy', 'openai_url', 'openai_token_file', 'unknown_retry_limit', 'unknown_retry_after_seconds'}
     if (type(config) is not dict or not required <= set(config)
             or set(config) - allowed):
         raise ProgramError('invalid_config')
@@ -83,6 +83,12 @@ def validate_config(config):
     maximum = config['max_calls_per_day']
     if type(maximum) is not int or not 1 <= maximum <= 96:
         raise ProgramError('invalid_daily_limit')
+    retry_limit=config.get('unknown_retry_limit',0)
+    retry_after=config.get('unknown_retry_after_seconds',300)
+    if type(retry_limit) is not int or not 0 <= retry_limit <= 2:
+        raise ProgramError('invalid_unknown_retry_limit')
+    if type(retry_after) is not int or not 0 <= retry_after <= 86400:
+        raise ProgramError('invalid_unknown_retry_delay')
     tasks = config['tasks']
     if type(tasks) is not list or not 1 <= len(tasks) <= MAX_TASKS:
         raise ProgramError('invalid_tasks')
@@ -316,7 +322,7 @@ def read_journal(root):
                     if len(events) > MAX_JOURNAL_EVENTS:
                         raise ProgramError('journal_too_many_events')
         if any(type(item) is not dict
-               or item.get('event') not in ('intent', 'complete', 'unknown', 'deferred', 'route')
+               or item.get('event') not in ('intent', 'complete', 'unknown', 'deferred', 'route', 'retry')
                or type(item.get('key')) is not str for item in events):
             raise ValueError()
         return events
@@ -616,16 +622,27 @@ def run_once(config, *, now=None, send=None, key_reader=None,
             key = task['id'] + ':' + content_hash
             if index.get(key) == 'complete':
                 continue
-            if index.get(key) in ('intent', 'unknown'):
+            retry_attempt = 0
+            if index.get(key) == 'intent':
                 unresolved = True
                 continue
-            selected = (task, source_sha, content_hash, context, key)
+            if index.get(key) == 'unknown':
+                retries=[event for event in events if event.get('event')=='retry' and event.get('key')==key]
+                unknowns=[event for event in events if event.get('event')=='unknown' and event.get('key')==key]
+                retry_attempt=len(retries)+1
+                try:last_unknown=datetime.fromisoformat(unknowns[-1]['created_at_utc'])
+                except Exception:
+                    unresolved=True;continue
+                if (len(retries)>=config.get('unknown_retry_limit',0)
+                        or now.timestamp()<last_unknown.timestamp()+config.get('unknown_retry_after_seconds',300)):
+                    unresolved=True;continue
+            selected = (task, source_sha, content_hash, context, key, retry_attempt)
             break
         if selected is None:
             if unresolved:
                 return save_state(state_root, 'unknown', 'unresolved_intent', enabled=True)
             return save_state(state_root, 'idle', 'no_model_work', enabled=True)
-        task, source_sha, content_hash, context, key = selected
+        task, source_sha, content_hash, context, key, retry_attempt = selected
         complexity = task.get('complexity', 'standard')
         payload = build_payload(task, source_sha, content_hash, context)
         try:
@@ -668,7 +685,7 @@ def run_once(config, *, now=None, send=None, key_reader=None,
                 append_journal(state_root, {'schema_version': 1, 'event': 'route',
                     'key': key, 'task_id': task['id'],
                     'provider_route': selected_route,
-                    'created_at_utc': datetime.now(timezone.utc).isoformat()})
+                    'created_at_utc': reservation_now.astimezone(timezone.utc).isoformat()})
             def actual_send(request_payload, glm_key, request_timeout):
                 return model_router.routed_transport(
                     request_payload, glm_key, request_timeout, config, 'research',
@@ -686,6 +703,10 @@ def run_once(config, *, now=None, send=None, key_reader=None,
             return save_state(state_root, 'idle', 'daily_quota_exhausted', enabled=True,
                               local_day=local_day)
         created_at = reservation_now.astimezone(timezone.utc).isoformat()
+        if retry_attempt:
+            append_journal(state_root, {'schema_version':1,'event':'retry','key':key,
+                'task_id':task['id'],'attempt':retry_attempt,
+                'created_at_utc':created_at})
         intent = {'schema_version': 1, 'event': 'intent', 'key': key,
                   'task_id': task['id'], 'content_hash': content_hash,
                   'source_sha': source_sha, 'local_day': local_day,
@@ -707,7 +728,7 @@ def run_once(config, *, now=None, send=None, key_reader=None,
                         'provider': actual_provider,
                         'planned_provider_route': route,
                         'actual_provider_route': actual_route,
-                        'created_at_utc': datetime.now(timezone.utc).isoformat(),
+                        'created_at_utc': reservation_now.astimezone(timezone.utc).isoformat(),
                         'planned_payload_sha256': hashlib.sha256(
                             canonical(payload)).hexdigest(),
                         'actual_request_sha256': actual_request_sha256,
@@ -719,7 +740,7 @@ def run_once(config, *, now=None, send=None, key_reader=None,
             append_journal(state_root, {'schema_version': 1, 'event': 'complete',
                            'key': key, 'task_id': task['id'],
                            'artifact': str(artifact_path),
-                           'created_at_utc': datetime.now(timezone.utc).isoformat()})
+                           'created_at_utc': reservation_now.astimezone(timezone.utc).isoformat()})
             return save_state(state_root, 'idle', 'task_completed', enabled=True,
                               task_id=task['id'], content_hash=content_hash,
                               evidence_path=str(artifact_path))
@@ -728,7 +749,7 @@ def run_once(config, *, now=None, send=None, key_reader=None,
             append_journal(state_root, {'schema_version': 1, 'event': 'deferred',
                            'key': key, 'task_id': task['id'], 'reason': error.reason,
                            'resume_at': error.resume_at, 'provider_route': deferred_route,
-                           'created_at_utc': datetime.now(timezone.utc).isoformat()})
+                           'created_at_utc': reservation_now.astimezone(timezone.utc).isoformat()})
             return save_state(state_root, 'waiting_window', error.reason, enabled=True,
                               resume_at=error.resume_at, task_id=task['id'],
                               content_hash=content_hash)
@@ -736,7 +757,7 @@ def run_once(config, *, now=None, send=None, key_reader=None,
             reason = _safe_reason(error)
             append_journal(state_root, {'schema_version': 1, 'event': 'unknown',
                            'key': key, 'task_id': task['id'], 'reason': reason,
-                           'created_at_utc': datetime.now(timezone.utc).isoformat()})
+                           'created_at_utc': reservation_now.astimezone(timezone.utc).isoformat()})
             save_state(state_root, 'unknown', reason, enabled=True,
                        task_id=task['id'], content_hash=content_hash)
             if isinstance(error, (KeyboardInterrupt, SystemExit)):
