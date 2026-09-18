@@ -7,7 +7,7 @@ ADMISSIONS=Path('/etc/loop-review/continuous/admissions')
 TESTS=Path('/opt/loop-review/continuous')
 IMAGE='localhost:5000/loop-verification/producer@sha256:cf2053695d05fc3ee894def2eee3b25f1e2c1aff252fef7e0b1038937327dd31'
 OWNER_UID=0
-PROFILES={'wb-daily-packaging':('wb_daily_acceptance.py',14),'wb-daily-status':('wb_daily_status_acceptance.py',23),'wb-warehouse-metadata':('warehouse-pg-acceptance.py',7)}
+PROFILES={'wb-daily-packaging':('wb_daily_acceptance.py',14),'wb-daily-packaging-v2':('wb_daily_acceptance.py',14),'wb-daily-status':('wb_daily_status_acceptance.py',23),'wb-warehouse-metadata':('warehouse-pg-acceptance.py',7)}
 def trusted_json(path):
  fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
  try:

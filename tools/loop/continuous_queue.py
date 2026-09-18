@@ -4,7 +4,7 @@ import hashlib, json, re, sqlite3, time
 from pathlib import PurePosixPath
 ID=re.compile(r"^[a-z0-9][a-z0-9-]{2,63}$"); SHA=re.compile(r"^[0-9a-f]{40}$"); DIGEST=re.compile(r"^[0-9a-f]{64}$")
 PROFILE_ID="73bf9c3a-ab69-4b2e-a7f0-e808df8f2614"; TARGETS={"bridge","harper","worker"}
-ACCEPTANCE_PROFILES={"wb-daily-packaging","wb-warehouse-metadata","wb-daily-status"}
+ACCEPTANCE_PROFILES={"wb-daily-packaging","wb-daily-packaging-v2","wb-warehouse-metadata","wb-daily-status"}
 CONTROL=("tools/","infra/loop-control/",".github/","db/")
 POLICY_EXCEPTIONS=frozenset({"tools/wb/daily.py","tools/tests/test_wb_daily.py","infra/systemd/proxima-wb-daily.service","infra/systemd/proxima-wb-daily.timer","services/collector/tests/collect.db.test.ts","tools/loop/wb_daily_status.py","tools/tests/test_wb_daily_status.py"})
 class QueueError(ValueError): pass

@@ -1,154 +1,174 @@
 {
-  "policy_id": "wb-continuous-v1",
-  "plan_fingerprint": "88bcfd75c2eed05fc2799fcebf4470a22fed398b632ffb88818b8a4fa16f86e1",
-  "requirements": {
-    "wb-daily-packaging": {
-      "objective": "Package the proven server WB daily collector chain reproducibly in the repository.",
-      "acceptance": [
-        "Collection, norm and brief run strictly sequentially; any failure stops downstream work and preserves a machine-readable failure status.",
-        "Reentrant process is rejected by a file lock; timeout stops only the owned container. Every subprocess has a timeout.",
-        "Configuration contains paths, tenant, immutable image IDs and git revision, never secret values. Credentials are mounted read-only into only the stage that needs them.",
-        "Successful status requires yesterday Moscow for data and brief, stale=false, brief status ok; require 14 of 14 norm days.",
-        "Daily timer is 05:30 Europe/Moscow, Persistent=true; two retry attempts at 15-minute intervals. Units pass systemd-analyze verify.",
-        "Use current runtime reference as behavior baseline; export import-safe run_daily(config,execute=subprocess.run) returning status; CLI --config loads JSON and returns nonzero on failure. No live calls in tests. Exactly one scoped commit.",
-        "Config JSON keys: tenant_id, runtime_root, state_root, collector_image, control_image, git_sha, network, database_container. run_daily(config, execute=subprocess.run) returns a status dict with state success/failed; tests may inject execute. No work on import.",
-        "Systemd retry bounding uses StartLimitBurst=3 and StartLimitIntervalSec from 43200 seconds inclusive to 86400 seconds exclusive, with RestartSec=15min, so the initial run plus two retries cannot reset indefinitely."
-      ],
-      "base_sha": "0153b1605b448cd63e74819413b727f27e87761f",
-      "allowed_paths": [
-        "tools/wb/daily.py",
-        "tools/tests/test_wb_daily.py",
-        "infra/systemd/proxima-wb-daily.service",
-        "infra/systemd/proxima-wb-daily.timer"
-      ],
-      "contract_files": [
-        "AGENTS.md"
-      ],
-      "profile": "fedor",
-      "profile_id": "73bf9c3a-ab69-4b2e-a7f0-e808df8f2614",
-      "profile_revision": 0,
-      "depends_on": [],
-      "repository": "mihailzhamba-bot/proxima-ai",
-      "max_slices": 1,
-      "acceptance_profile": "wb-daily-packaging",
-      "source_evidence": [
-        {
-          "ref": "operator-reference/daily_wb_runtime.py",
-          "sha256": "0cb73bc943f1635387bb7537019afb71c6232ce36b6d0597bc16e106c4faffa3",
-          "summary": "Proven server reference serializes collect, norm and brief; uses a nonblocking file lock, per-subprocess timeouts, immutable image and git identities, private logs, and verifies yesterday Moscow plus stale=false and brief status ok. Package this behavior behind the accepted configurable run_daily interface; do not copy tenant names, secret names or installation paths."
-        },
-        {
-          "ref": "operator-reference/test_daily_wb_runtime.py",
-          "sha256": "cec26e99c703ca19c862038d52d999125e523c3fbd24d3e9d61722e207f91f3a",
-          "summary": "The proven reference has 14 tests covering the runtime chain. Repository tests must remain offline and reproduce the accepted behavior contract."
-        }
-      ],
-      "path_sets": {
-        "default": {
-          "description": "The exact bootstrap file set approved for this bounded task.",
-          "allowed_paths": [
-            "tools/wb/daily.py",
-            "tools/tests/test_wb_daily.py",
-            "infra/systemd/proxima-wb-daily.service",
-            "infra/systemd/proxima-wb-daily.timer"
-          ],
-          "contract_files": [
-            "AGENTS.md"
-          ],
-          "acceptance_profile": "wb-daily-packaging"
-        }
-      }
-    },
-    "wb-warehouse-metadata": {
-      "objective": "Make historical WB overlap replay tolerate warehouseName-only changes without corrupting immutable facts or evidence.",
-      "acceptance": [
-        "For the same tenant,srid,lastChangeDate, persisted and incoming payloads differing ONLY in existing string warehouseName are treated as replay, retaining prior row, prior full payload and prior canonical hash.",
-        "New raw artifacts remain evidence of the incoming response. Do not rewrite old hashes/payloads; do not merely exclude the field from new hashes, since that breaks legacy compatibility.",
-        "Changed numeric financial fields, dates, cancellation, identifier or any other field still raises WB_SCHEMA_DRIFT and rolls back observations.",
-        "Missing/null/non-string warehouseName on either side does not qualify for the exception. Sales rows keep strict existing comparison.",
-        "Real PostgreSQL tests cover legacy hashes, replay, tenant boundary, mixed metadata+financial drift and batch boundaries. Exactly one scoped commit."
-      ],
-      "base_sha": "0153b1605b448cd63e74819413b727f27e87761f",
-      "allowed_paths": [
-        "services/collector/src/wb/observations.ts",
-        "services/collector/tests/collect.db.test.ts"
-      ],
-      "contract_files": [
-        "AGENTS.md"
-      ],
-      "profile": "fedor",
-      "profile_id": "73bf9c3a-ab69-4b2e-a7f0-e808df8f2614",
-      "profile_revision": 0,
-      "depends_on": [],
-      "repository": "mihailzhamba-bot/proxima-ai",
-      "max_slices": 1,
-      "acceptance_profile": "wb-warehouse-metadata",
-      "source_evidence": [
-        {
-          "ref": "git:0153b16:services/collector/src/wb/observations.ts",
-          "sha256": "ccc0fcc8cb06b92849f5564eafd9c162451689c6206cceb356391326a2821784",
-          "summary": "Baseline canonicalizes every order and sale payload, hashes it, and rejects any same natural-key plus lastChangeDate row with a different canonical hash before insert. The approved exception is orders only, warehouseName only, both values existing strings; retain the stored legacy payload and hash while raw incoming evidence remains. All other drift and all sales stay strict."
-        }
-      ],
-      "path_sets": {
-        "default": {
-          "description": "The exact bootstrap file set approved for this bounded task.",
-          "allowed_paths": [
-            "services/collector/src/wb/observations.ts",
-            "services/collector/tests/collect.db.test.ts"
-          ],
-          "contract_files": [
-            "AGENTS.md"
-          ],
-          "acceptance_profile": "wb-warehouse-metadata"
-        }
-      }
-    },
-    "wb-daily-status": {
-      "objective": "Provide a small truthful read-only projection of the real daily WB collector status for Director.",
-      "acceptance": [
-        "Import-safe pure project_daily_status(snapshot,now_utc) returns only tenant_id,state,analyzed_day,collected_at,last_attempt_at,reason_code; no credentials, raw errors or arbitrary payload fields.",
-        "Completed collector snapshot succeeds only if state success, stale exactly false, last_full_day and brief_day equal yesterday Moscow, brief_status ok, norm sample_days/window_days 14/14, and timestamps are valid and not in the future.",
-        "Failure/running/missing/invalid/old snapshots cannot claim readiness; failures show fixed reason codes, not untrusted error messages.",
-        "Read-only adapter reads at most 64KiB JSON; missing file and invalid JSON become unavailable. Never runs a subprocess or writes a file.",
-        "Fixture tests cover success, stale data, midnight Moscow, missing keys, malformed/future timestamps, failure and attempted secret-field injection. Exactly one scoped commit.",
-        "Export import-safe read_daily_status(path, now_utc) for the bounded 64KiB read-only adapter alongside project_daily_status(snapshot, now_utc)."
-      ],
-      "base_sha": "0153b1605b448cd63e74819413b727f27e87761f",
-      "allowed_paths": [
-        "tools/loop/wb_daily_status.py",
-        "tools/tests/test_wb_daily_status.py"
-      ],
-      "contract_files": [
-        "AGENTS.md"
-      ],
-      "profile": "fedor",
-      "profile_id": "73bf9c3a-ab69-4b2e-a7f0-e808df8f2614",
-      "profile_revision": 0,
-      "depends_on": [],
-      "repository": "mihailzhamba-bot/proxima-ai",
-      "max_slices": 1,
-      "acceptance_profile": "wb-daily-status",
-      "source_evidence": [
-        {
-          "ref": "operator-reference/daily_wb_runtime.py",
-          "sha256": "0cb73bc943f1635387bb7537019afb71c6232ce36b6d0597bc16e106c4faffa3",
-          "summary": "The real daily status snapshot has running, success and failed states and verified fields for last_full_day, stale, collected_at, brief_day, brief_status, actual and norm. The projection must expose only the accepted six safe fields, calculate yesterday in Europe/Moscow, validate 14/14 norm coverage and never pass through raw errors or credentials."
-        }
-      ],
-      "path_sets": {
-        "default": {
-          "description": "The exact bootstrap file set approved for this bounded task.",
-          "allowed_paths": [
-            "tools/loop/wb_daily_status.py",
-            "tools/tests/test_wb_daily_status.py"
-          ],
-          "contract_files": [
-            "AGENTS.md"
-          ],
-          "acceptance_profile": "wb-daily-status"
-        }
-      }
+ "plan_fingerprint": "88bcfd75c2eed05fc2799fcebf4470a22fed398b632ffb88818b8a4fa16f86e1",
+ "policy_id": "wb-continuous-v2",
+ "requirements": {
+  "wb-daily-packaging-v2": {
+   "acceptance": [
+    "Collection, norm and brief run strictly sequentially; any failure stops downstream work and preserves a machine-readable failure status.",
+    "Reentrant process is rejected by a file lock; timeout stops only the owned container. Every subprocess has a timeout.",
+    "Configuration contains paths, tenant, immutable image IDs and git revision, never secret values. Credentials are mounted read-only into only the stage that needs them.",
+    "Successful status requires yesterday Moscow for data and brief, stale=false, brief status ok; require 14 of 14 norm days.",
+    "Daily timer is 05:30 Europe/Moscow, Persistent=true; two retry attempts at 15-minute intervals. Units pass systemd-analyze verify.",
+    "Use current runtime reference as behavior baseline; export import-safe run_daily(config,execute=subprocess.run) returning status; CLI --config loads JSON and returns nonzero on failure. No live calls in tests. Exactly one scoped commit.",
+    "Config JSON keys: tenant_id, runtime_root, state_root, collector_image, control_image, git_sha, network, database_container. run_daily(config, execute=subprocess.run) returns a status dict with state success/failed; tests may inject execute. No work on import.",
+    "Systemd retry bounding uses StartLimitBurst=3 and StartLimitIntervalSec from 43200 seconds inclusive to 86400 seconds exclusive, with RestartSec=15min, so the initial run plus two retries cannot reset indefinitely."
+   ],
+   "acceptance_profile": "wb-daily-packaging",
+   "allowed_paths": [
+    "tools/wb/daily.py",
+    "tools/tests/test_wb_daily.py",
+    "infra/systemd/proxima-wb-daily.service",
+    "infra/systemd/proxima-wb-daily.timer"
+   ],
+   "base_sha": "01f3e2973444747ca9182155be640afec8ed4538",
+   "contract_files": [
+    "AGENTS.md"
+   ],
+   "depends_on": [],
+   "max_slices": 1,
+   "objective": "Resume and land the WB daily collector packaging runtime on the refreshed base: bring the packaged daily run, its unit file and timer through green 14-case acceptance.",
+   "path_sets": {
+    "default": {
+     "acceptance_profile": "wb-daily-packaging",
+     "allowed_paths": [
+      "tools/wb/daily.py",
+      "tools/tests/test_wb_daily.py",
+      "infra/systemd/proxima-wb-daily.service",
+      "infra/systemd/proxima-wb-daily.timer"
+     ],
+     "contract_files": [
+      "AGENTS.md"
+     ],
+     "description": "The exact bootstrap file set approved for this bounded task."
     }
+   },
+   "profile": "fedor",
+   "profile_id": "73bf9c3a-ab69-4b2e-a7f0-e808df8f2614",
+   "profile_revision": 0,
+   "repository": "mihailzhamba-bot/proxima-ai",
+   "source_evidence": [
+    {
+     "ref": "git:01f3e2973444747ca9182155be640afec8ed4538:infra/systemd/proxima-wb-daily.service",
+     "sha256": "c10414de822d0b42420c611a39230a61e81ed0caed79781274e62581ae6e0b3d",
+     "summary": "Tracked path is absent at the approved base; the bounded task may create it."
+    },
+    {
+     "ref": "git:01f3e2973444747ca9182155be640afec8ed4538:infra/systemd/proxima-wb-daily.timer",
+     "sha256": "ff667ee2ea769139fe3c24acf5a5437c26817b4a9233c1f11c307487f69fd7ac",
+     "summary": "Tracked path is absent at the approved base; the bounded task may create it."
+    },
+    {
+     "ref": "git:01f3e2973444747ca9182155be640afec8ed4538:tools/tests/test_wb_daily.py",
+     "sha256": "105a8a161cc6feb3b42fe628b71f0a411da759a9e41f772b1a4424de658a2301",
+     "summary": "Tracked path is absent at the approved base; the bounded task may create it."
+    },
+    {
+     "ref": "git:01f3e2973444747ca9182155be640afec8ed4538:tools/wb/daily.py",
+     "sha256": "6f84debe5a96583bc673b8c46651081ddb340f4a67534faba31f45e664bf1000",
+     "summary": "Tracked path is absent at the approved base; the bounded task may create it."
+    }
+   ]
+  },
+  "wb-daily-status": {
+   "acceptance": [
+    "Import-safe pure project_daily_status(snapshot,now_utc) returns only tenant_id,state,analyzed_day,collected_at,last_attempt_at,reason_code; no credentials, raw errors or arbitrary payload fields.",
+    "Completed collector snapshot succeeds only if state success, stale exactly false, last_full_day and brief_day equal yesterday Moscow, brief_status ok, norm sample_days/window_days 14/14, and timestamps are valid and not in the future.",
+    "Failure/running/missing/invalid/old snapshots cannot claim readiness; failures show fixed reason codes, not untrusted error messages.",
+    "Read-only adapter reads at most 64KiB JSON; missing file and invalid JSON become unavailable. Never runs a subprocess or writes a file.",
+    "Fixture tests cover success, stale data, midnight Moscow, missing keys, malformed/future timestamps, failure and attempted secret-field injection. Exactly one scoped commit.",
+    "Export import-safe read_daily_status(path, now_utc) for the bounded 64KiB read-only adapter alongside project_daily_status(snapshot, now_utc)."
+   ],
+   "acceptance_profile": "wb-daily-status",
+   "allowed_paths": [
+    "tools/loop/wb_daily_status.py",
+    "tools/tests/test_wb_daily_status.py"
+   ],
+   "base_sha": "01f3e2973444747ca9182155be640afec8ed4538",
+   "contract_files": [
+    "AGENTS.md"
+   ],
+   "depends_on": [],
+   "max_slices": 1,
+   "objective": "Provide a small truthful read-only projection of the real daily WB collector status for Director.",
+   "path_sets": {
+    "default": {
+     "acceptance_profile": "wb-daily-status",
+     "allowed_paths": [
+      "tools/loop/wb_daily_status.py",
+      "tools/tests/test_wb_daily_status.py"
+     ],
+     "contract_files": [
+      "AGENTS.md"
+     ],
+     "description": "The exact bootstrap file set approved for this bounded task."
+    }
+   },
+   "profile": "fedor",
+   "profile_id": "73bf9c3a-ab69-4b2e-a7f0-e808df8f2614",
+   "profile_revision": 0,
+   "repository": "mihailzhamba-bot/proxima-ai",
+   "source_evidence": [
+    {
+     "ref": "git:01f3e2973444747ca9182155be640afec8ed4538:tools/loop/wb_daily_status.py",
+     "sha256": "07041ba717f6eefffb562b722240783c91055c2fcc46c578674f4ac6baa3d97a",
+     "summary": "#!/usr/bin/python3\n\"\"\"Safe, read-only projection of the daily WB collector status file.\"\"\"\nfrom __future__ import annotations\n\nfrom datetime import date, datetime, timedelta, timezone\nimport json\nimport os\nfrom pathlib import Path\nimport re\nfrom typing import Any\nfrom zoneinfo import ZoneInfo\n\n\nMAX_STATUS_BYTES = 64 * 1024\nMOSCOW = ZoneInfo(\"Europe/Moscow\")\n_TENANT = re.compile(r\"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\")\n_OUTPUT_KEYS = (\n    \"tenant_id\",\n    \"state\",\n    \"analyzed_day\",\n    \"collected_at\",\n    \"last_attempt_at\",\n    \"reason_code\",\n)\n\n\ndef _result(\n    *,\n    tenant_id: str | None = None,\n    state: str = \"unavailable\",\n    analyzed_day: str | None = None,\n    collected_at: str | None = None,\n    last_attempt_at: str | None = None,\n    reason_code: str | None,\n) -> dict[str, str | None]:\n    values = {\n        \"tenant_id\": tenant_id,\n        \"state\": state,\n        \"analyzed_day\": analyzed_day,\n        \"collected_at\": collected_at,\n        \"last_attempt_at\": last_attempt_at,\n        \"reason_code\": reason_code,\n    }\n    return {key: values[key] for key in _OUTPUT_KEYS}\n\n\ndef _now(value: Any) -> datetime | None:\n    if not isinstance(value, datetime) or value.tzinfo is None:\n        return None\n    try:\n        return value.astimezone(timezone.utc)\n    except (OverflowError, ValueError):\n        return None\n\n\ndef _timestamp(value: Any, now: datetime) -> datetime | None:\n    if type(value) is not str or not value or len(value) > 64:\n        return None\n    candidate = value[:-1] + \"+00:00\" if value.endswith(\"Z\") else value\n    try:\n        parsed = datetime.fromisoformat(candidate)\n    except ValueError:\n        return None\n    if parsed.tzinfo is None:\n        return None\n    try:\n        parsed = parsed.astimezone(timezone.utc)\n    except (OverflowError, ValueError):\n        return None\n    if parsed > now:\n        return None\n    return parsed\n\n\ndef _tenant(snapshot: dict[str, Any]) -> str | None:\n    value = snapshot.get(\"tenant\")\n    if type(value) is str and _TENANT.fullmatch(value):\n        return value\n    return None\n\n\ndef _day(value: Any) -> str | None:\n    if type(value) is not str or len(value) != 10:\n        return None\n    try:\n        parsed = date.fromisoformat(value)\n    except ValueError:\n        return None\n    return value if parsed.isoformat() == value else None\n\n\ndef _json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:\n    value: dict[str, Any] = {}\n    for key, item in pairs:\n        if key in value:\n            raise ValueError(\"duplicate JSON key\")\n        value[key] = item\n    return value\n\n\ndef project_daily_status(snapshot: Any, now_utc: datetime) -> dict[str, str | None]:\n    \"\"\"Return the six-field fail-closed Director view of a collector snapshot.\"\"\"\n    now = _now(now_utc)\n    if now is None:\n        return _result(reason_code=\"invalid_now\")\n    if type(snapshot) is not dict:\n        return _result(reason_code=\"snapshot_missing\" if snapshot is None else \"snapshot_invalid\")\n\n    tenant = _tenant(snapshot)\n    state = snapshot.get(\"state\")\n    started_raw = snapshot.get(\"started_at\")\n    started = _timestamp(started_raw, now)\n    if tenant is None or started is None or type(state) is not str:\n        return _result(reason_code=\"snapshot_invalid\")\n\n    if state == \"running\":\n        return _result(\n            tenant_id=tenant,\n            state=\"running\",\n            last_attempt_at=started_raw,\n            reason_code=\"collector_running\",\n        )\n\n    finished_raw = snapshot.get(\"finished_at\")\n    finished = _timestamp(finished_raw, now)\n    if finished is None or finished < started:\n        return _result(tenant_id=tenant, reason_code=\"timestamp_invalid\")\n\n    if state == \"failed\":\n        return _result(\n            tenant_id=tenant,\n            state=\"failed\",\n            last_attempt_at=finished_raw,\n            reason_code=\"collector_failed\",\n        )\n    if state != \"success\":\n        return _result(tenant_id=tenant, reason_code=\"snapshot_invalid\")\n\n    verified = snapshot.get(\"verified\")\n    if type(verified) is not dict:\n        return _result(\n            tenant_id=tenant,\n            last_attempt_at=finished_raw,\n            reason_code=\"snapshot_incomplete\",\n        )\n\n    collected_raw = verified.get(\"collected_at\")\n    collected = _timestamp(collected_raw, now)\n    if collected is None or not (started <= collected <= finished):\n        return _result(\n            tenant_id=tenant,\n            last_attempt_at=finished_raw,\n            reason_code=\"timestamp_invalid\",\n        )\n\n    today_moscow = now.astimezone(MOSCOW).date()\n    expected_day = (today_moscow - timedelta(days=1)).isoformat()\n    if finished.astimezone(MOSCOW).date() != today_moscow:\n        return _result(\n            tenant_id=tenant,\n            collected_at=collected_raw,\n            last_attempt_at=finished_raw,\n            reason_code=\"snapshot_old\",\n        )\n\n    analyzed_day = _day(verified.get(\"last_full_day\"))\n    brief_day = _day(verified.get(\"brief_day\"))\n    if analyzed_day is None or brief_day is None:\n        return _result(\n            tenant_id=tenant,\n            collected_at=collected_raw,\n            last_attempt_at=finished_raw,\n            reason_code=\"snapshot_incomplete\",\n        )\n    if analyzed_day != expected_day or brief_day != expected_day:\n        return _result(\n            tenant_id=tenant,\n            analyzed_day=analyzed_day,\n            collected_at=collected_raw,\n            last_attempt_at=finished_raw,\n            reason_code=\"day_"
+    },
+    {
+     "ref": "git:01f3e2973444747ca9182155be640afec8ed4538:tools/tests/test_wb_daily_status.py",
+     "sha256": "97fe8b844e37103352ca8ea7a4ce844c71251a92123c6284d896ec791be0ec6a",
+     "summary": "from datetime import datetime, timezone\nimport importlib.util\nimport json\nfrom pathlib import Path\n\nimport pytest\n\n\nMODULE_PATH = Path(__file__).resolve().parents[1] / \"loop/wb_daily_status.py\"\nNOW = datetime(2026, 9, 17, 6, 0, tzinfo=timezone.utc)\n\n\ndef load_module():\n    spec = importlib.util.spec_from_file_location(\"wb_daily_status\", MODULE_PATH)\n    module = importlib.util.module_from_spec(spec)\n    spec.loader.exec_module(module)\n    return module\n\n\ndef snapshot(**changes):\n    value = {\n        \"tenant\": \"amirova-test\",\n        \"scope\": \"isolated rehearsal\",\n        \"state\": \"success\",\n        \"started_at\": \"2026-09-17T04:00:00+00:00\",\n        \"finished_at\": \"2026-09-17T04:05:00+00:00\",\n        \"verified\": {\n            \"last_full_day\": \"2026-09-16\",\n            \"stale\": False,\n            \"collected_at\": \"2026-09-17T04:02:00+00:00\",\n            \"brief_day\": \"2026-09-16\",\n            \"brief_status\": \"ok\",\n            \"actual\": {\"orders\": 1},\n            \"norm\": {\"sample_days\": 14, \"window_days\": 14},\n        },\n    }\n    value.update(changes)\n    return value\n\n\ndef assert_shape(result):\n    assert list(result) == [\n        \"tenant_id\", \"state\", \"analyzed_day\", \"collected_at\",\n        \"last_attempt_at\", \"reason_code\",\n    ]\n\n\ndef test_complete_current_snapshot_is_success_and_bounded():\n    result = load_module().project_daily_status(snapshot(), NOW)\n    assert result == {\n        \"tenant_id\": \"amirova-test\",\n        \"state\": \"success\",\n        \"analyzed_day\": \"2026-09-16\",\n        \"collected_at\": \"2026-09-17T04:02:00+00:00\",\n        \"last_attempt_at\": \"2026-09-17T04:05:00+00:00\",\n        \"reason_code\": None,\n    }\n\n\ndef test_midnight_uses_yesterday_in_moscow_not_utc():\n    midnight = datetime(2026, 9, 16, 21, 30, tzinfo=timezone.utc)\n    value = snapshot(\n        started_at=\"2026-09-16T21:05:00Z\",\n        finished_at=\"2026-09-16T21:10:00Z\",\n    )\n    value[\"verified\"].update(\n        last_full_day=\"2026-09-16\",\n        brief_day=\"2026-09-16\",\n        collected_at=\"2026-09-16T21:08:00Z\",\n    )\n    assert load_module().project_daily_status(value, midnight)[\"state\"] == \"success\"\n\n\n@pytest.mark.parametrize(\"mutation,reason\", [\n    (lambda value: value[\"verified\"].__setitem__(\"stale\", True), \"data_stale\"),\n    (lambda value: value[\"verified\"].__setitem__(\"stale\", 0), \"data_stale\"),\n    (lambda value: value[\"verified\"].__setitem__(\"brief_day\", \"2026-09-15\"), \"day_mismatch\"),\n    (lambda value: value[\"verified\"].__setitem__(\"brief_status\", \"blocked\"), \"brief_not_ready\"),\n    (lambda value: value[\"verified\"][\"norm\"].__setitem__(\"sample_days\", 13), \"norm_incomplete\"),\n    (lambda value: value[\"verified\"][\"norm\"].__setitem__(\"window_days\", True), \"norm_incomplete\"),\n    (lambda value: value[\"verified\"].pop(\"actual\"), \"snapshot_incomplete\"),\n    (lambda value: value[\"verified\"].pop(\"brief_day\"), \"snapshot_incomplete\"),\n    (lambda value: value[\"verified\"].__setitem__(\"last_full_day\", \"credential=do-not-expose\"), \"snapshot_incomplete\"),\n])\ndef test_incomplete_or_unverified_data_is_unavailable(mutation, reason):\n    value = snapshot()\n    mutation(value)\n    result = load_module().project_daily_status(value, NOW)\n    assert result[\"state\"] == \"unavailable\"\n    assert result[\"reason_code\"] == reason\n    assert_shape(result)\n\n\n@pytest.mark.parametrize(\"field,bad\", [\n    (\"started_at\", \"not-a-time\"),\n    (\"started_at\", \"2026-09-17T07:00:00Z\"),\n    (\"finished_at\", \"2026-09-17T07:00:00Z\"),\n])\ndef test_malformed_and_future_run_timestamps_are_rejected(field, bad):\n    value = snapshot(**{field: bad})\n    assert load_module().project_daily_status(value, NOW)[\"state\"] == \"unavailable\"\n\n\ndef test_future_collected_timestamp_is_rejected():\n    value = snapshot()\n    value[\"verified\"][\"collected_at\"] = \"2026-09-17T07:00:00Z\"\n    result = load_module().project_daily_status(value, NOW)\n    assert result[\"reason_code\"] == \"timestamp_invalid\"\n\n\ndef test_old_success_cannot_claim_readiness():\n    value = snapshot(\n        started_at=\"2026-09-16T05:00:00Z\",\n        finished_at=\"2026-09-16T05:05:00Z\",\n    )\n    value[\"verified\"][\"collected_at\"] = \"2026-09-16T05:02:00Z\"\n    result = load_module().project_daily_status(value, NOW)\n    assert result[\"state\"] == \"unavailable\"\n    assert result[\"reason_code\"] == \"snapshot_old\"\n\n\ndef test_running_and_failure_use_fixed_reasons_and_ignore_raw_error():\n    module = load_module()\n    running = snapshot(state=\"running\")\n    failed = snapshot(state=\"failed\", error=\"credential=do-not-expose\")\n    assert module.project_daily_status(running, NOW) == {\n        \"tenant_id\": \"amirova-test\",\n        \"state\": \"running\",\n        \"analyzed_day\": None,\n        \"collected_at\": None,\n        \"last_attempt_at\": \"2026-09-17T04:00:00+00:00\",\n        \"reason_code\": \"collector_running\",\n    }\n    result = module.project_daily_status(failed, NOW)\n    assert result[\"state\"] == \"failed\"\n    assert result[\"reason_code\"] == \"collector_failed\"\n    assert \"credential\" not in json.dumps(result)\n\n\ndef test_secret_and_arbitrary_field_injection_is_not_projected():\n    value = snapshot(\n        password=\"do-not-expose\",\n        error=\"do-not-expose\",\n        reason_code=\"attacker-controlled\",\n        arbitrary={\"nested\": \"do-not-expose\"},\n    )\n    value[\"verified\"][\"access_token\"] = \"do-not-expose\"\n    result = load_module().project_daily_status(value, NOW)\n    assert_shape(result)\n    assert \"do-not-expose\" not in json.dumps(result)\n    assert result[\"reason_code\"] is None\n\n\ndef test_read_adapter_handles_missing_inv"
+    }
+   ]
+  },
+  "wb-warehouse-metadata": {
+   "acceptance": [
+    "For the same tenant,srid,lastChangeDate, persisted and incoming payloads differing ONLY in existing string warehouseName are treated as replay, retaining prior row, prior full payload and prior canonical hash.",
+    "New raw artifacts remain evidence of the incoming response. Do not rewrite old hashes/payloads; do not merely exclude the field from new hashes, since that breaks legacy compatibility.",
+    "Changed numeric financial fields, dates, cancellation, identifier or any other field still raises WB_SCHEMA_DRIFT and rolls back observations.",
+    "Missing/null/non-string warehouseName on either side does not qualify for the exception. Sales rows keep strict existing comparison.",
+    "Real PostgreSQL tests cover legacy hashes, replay, tenant boundary, mixed metadata+financial drift and batch boundaries. Exactly one scoped commit."
+   ],
+   "acceptance_profile": "wb-warehouse-metadata",
+   "allowed_paths": [
+    "services/collector/src/wb/observations.ts",
+    "services/collector/tests/collect.db.test.ts"
+   ],
+   "base_sha": "01f3e2973444747ca9182155be640afec8ed4538",
+   "contract_files": [
+    "AGENTS.md"
+   ],
+   "depends_on": [],
+   "max_slices": 1,
+   "objective": "Make historical WB overlap replay tolerate warehouseName-only changes without corrupting immutable facts or evidence.",
+   "path_sets": {
+    "default": {
+     "acceptance_profile": "wb-warehouse-metadata",
+     "allowed_paths": [
+      "services/collector/src/wb/observations.ts",
+      "services/collector/tests/collect.db.test.ts"
+     ],
+     "contract_files": [
+      "AGENTS.md"
+     ],
+     "description": "The exact bootstrap file set approved for this bounded task."
+    }
+   },
+   "profile": "fedor",
+   "profile_id": "73bf9c3a-ab69-4b2e-a7f0-e808df8f2614",
+   "profile_revision": 0,
+   "repository": "mihailzhamba-bot/proxima-ai",
+   "source_evidence": [
+    {
+     "ref": "git:01f3e2973444747ca9182155be640afec8ed4538:services/collector/src/wb/observations.ts",
+     "sha256": "2243d559ae19d3b2698cb7fdbb6b99f4214bc577dea3c782c4cccf407bfeb246",
+     "summary": "/**\n * Row-level observations of WB Statistics orders/sales (Story 1.4, AD-2).\n *\n * One observation = one natural key (`srid` for orders, `saleID` for sales)\n * at one WB `lastChangeDate`. The same PK with the same canonical payload is\n * a replay and is skipped; the same PK with a different payload means WB\n * changed a \"closed\" record and the run must fail with WB_SCHEMA_DRIFT instead\n * of silently choosing a version. The bounded exception is an order whose\n * persisted and incoming payloads differ only in string `warehouseName`; the\n * original observation remains immutable. Shared by `collect` and `backfill`.\n */\nimport type { PoolClient } from 'pg';\n\nimport { canonicalJson, sha256 } from '../intake/manifest.js';\nimport { WbClientError } from './client.js';\nimport { mskInstant } from './msk-day.js';\nimport type { WbEndpointId } from './registry.js';\n\nexport type ObservationTable = 'stg_wb_orders_obs' | 'stg_wb_sales_obs';\nexport type ObservationKeyColumn = 'srid' | 'sale_id';\n\nexport interface WbObservation {\n  readonly key: string;\n  /** Instant with explicit Moscow offset, e.g. `2026-08-17T06:48:49+03:00`. */\n  readonly lastChangeAt: string;\n  readonly canonicalSha256: string;\n  readonly payload: Readonly<Record<string, unknown>>;\n}\n\nexport interface ObservationSet {\n  readonly endpointId: WbEndpointId;\n  readonly table: ObservationTable;\n  readonly keyColumn: ObservationKeyColumn;\n  /** sha256 of the raw response body these rows were parsed from. */\n  readonly contentSha256: string;\n  /** Rows as received, before in-batch replay collapse. */\n  readonly received: number;\n  readonly rows: readonly WbObservation[];\n}\n\nexport interface InsertObservationsResult {\n  readonly received: number;\n  readonly inserted: number;\n  readonly skipped: number;\n}\n\ninterface ObservationSpec {\n  readonly endpointId: WbEndpointId;\n  readonly table: ObservationTable;\n  readonly keyColumn: ObservationKeyColumn;\n  readonly keyField: 'srid' | 'saleID';\n}\n\nconst ORDERS_SPEC: ObservationSpec = { endpointId: 'statistics.orders', table: 'stg_wb_orders_obs', keyColumn: 'srid', keyField: 'srid' };\nconst SALES_SPEC: ObservationSpec = { endpointId: 'statistics.sales', table: 'stg_wb_sales_obs', keyColumn: 'sale_id', keyField: 'saleID' };\nconst TABLE_SPECS: Readonly<Record<ObservationTable, ObservationSpec>> = { stg_wb_orders_obs: ORDERS_SPEC, stg_wb_sales_obs: SALES_SPEC };\nconst SHA256_HEX = /^[0-9a-f]{64}$/;\nconst ZONELESS_DATETIME = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?$/;\n\nexport function toOrderObservations(rows: readonly unknown[], contentSha256: string): ObservationSet {\n  return toObservations(rows, contentSha256, ORDERS_SPEC);\n}\n\nexport function toSaleObservations(rows: readonly unknown[], contentSha256: string): ObservationSet {\n  return toObservations(rows, contentSha256, SALES_SPEC);\n}\n\nfunction drift(spec: ObservationSpec, message: string): WbClientError {\n  return new WbClientError('WB_SCHEMA_DRIFT', `${spec.endpointId}: ${message}`, spec.endpointId);\n}\n\nfunction toObservations(rows: readonly unknown[], contentSha256: string, spec: ObservationSpec): ObservationSet {\n  if (!SHA256_HEX.test(contentSha256)) {\n    throw new RangeError('toObservations: contentSha256 must be 64 lowercase hex chars');\n  }\n  const byPrimaryKey = new Map<string, WbObservation>();\n  rows.forEach((row, index) => {\n    if (row === null || typeof row !== 'object' || Array.isArray(row)) {\n      throw drift(spec, `row ${index} is not an object`);\n    }\n    const record = row as Record<string, unknown>;\n    const key = record[spec.keyField];\n    if (typeof key !== 'string' || key === '') {\n      throw drift(spec, `row ${index} has no usable ${spec.keyField}`);\n    }\n    const lastChangeDate = record.lastChangeDate;\n    if (typeof lastChangeDate !== 'string' || !ZONELESS_DATETIME.test(lastChangeDate)) {\n      throw drift(spec, `row ${index} (${spec.keyField} ${key}) has no zoneless lastChangeDate`);\n    }\n    const observation: WbObservation = {\n      key,\n      lastChangeAt: mskInstant(lastChangeDate),\n      canonicalSha256: sha256(canonicalJson(record)),\n      payload: record,\n    };\n    const primaryKey = `${key} ${observation.lastChangeAt}`;\n    const seen = byPrimaryKey.get(primaryKey);\n    if (seen === undefined) {\n      byPrimaryKey.set(primaryKey, observation);\n    } else if (seen.canonicalSha256 !== observation.canonicalSha256) {\n      throw drift(spec, `${spec.keyField} ${key} at ${lastChangeDate} appears twice with different payloads`);\n    }\n  });\n  return {\n    endpointId: spec.endpointId,\n    table: spec.table,\n    keyColumn: spec.keyColumn,\n    contentSha256,\n    received: rows.length,\n    rows: [...byPrimaryKey.values()],\n  };\n}\n\n/**\n * Writes an observation set inside the caller's transaction (the `work`\n * callback of `RunLedger.succeed`, whose session already carries the tenant\n * GUC). Each batch checks drift before its own insert; earlier batches may\n * already be written when a later one drifts, so \"no observations of a failed\n * run\" is guaranteed by the caller's ROLLBACK, not by this function alone.\n * Table and key column names come from the closed spec table, never from input.\n */\nexport async function insertObservations(\n  client: PoolClient,\n  tenantId: string,\n  runId: string,\n  set: ObservationSet,\n  batchSize = 5_000,\n): Promise<InsertObservationsResult> {\n  const spec = TABLE_SPECS[set.table];\n  if (spec === undefined || spec.keyColumn !== set.keyColumn) {\n    throw new RangeError(`insertObservations"
+    },
+    {
+     "ref": "git:01f3e2973444747ca9182155be640afec8ed4538:services/collector/tests/collect.db.test.ts",
+     "sha256": "24e0874301402ab26117fab6229e8ccf7a539ceab6c4ca559f47861c8d91ff3d",
+     "summary": "import assert from 'node:assert/strict';\nimport { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';\nimport { tmpdir } from 'node:os';\nimport { join } from 'node:path';\nimport test from 'node:test';\n\nimport { Client, type PoolClient } from 'pg';\n\nimport { canonicalJson, sha256 } from '../src/intake/manifest.js';\nimport { runCollect, type CollectResult } from '../src/jobs/collect.js';\nimport { WbClientError } from '../src/wb/client.js';\nimport { DEFAULT_FIXTURE_ROOT, FixtureTransport, type FixtureScript } from '../src/wb/fixture-transport.js';\nimport { insertObservations, toOrderObservations } from '../src/wb/observations.js';\nimport type { WbTransport } from '../src/wb/transport.js';\n\nconst collectorDsn = process.env.PROXIMA_TEST_DSN_COLLECTOR ?? '';\nconst postgresDsn = process.env.PROXIMA_TEST_POSTGRES_DSN ?? '';\nconst ready = collectorDsn !== '' && postgresDsn !== '';\nconst skip = ready ? false : 'PROXIMA_TEST_DSN_COLLECTOR and PROXIMA_TEST_POSTGRES_DSN must be set (run via tools/pg_local_roundtrip.sh)';\nconst tenantId = 'amirova-test';\nconst ORDERS_FIXTURE = 301;\nconst SALES_FIXTURE = 295;\n\n/** Structural read-only WB statistics JWT (category bit 5 + read-only bit 30), no real claims. */\nfunction readOnlyStatisticsJwt(): string {\n  const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');\n  const payload = Buffer.from(JSON.stringify({ s: (1 << 30) | (1 << 5), exp: 2_000_000_000 })).toString('base64url');\n  return `${header}.${payload}.fixture-signature`;\n}\n\nasync function withAdmin<T>(work: (client: Client) => Promise<T>): Promise<T> {\n  const client = new Client({ connectionString: postgresDsn });\n  await client.connect();\n  try { return await work(client); }\n  finally { await client.end(); }\n}\n\ninterface Harness {\n  db: Client;\n  /** Runs `collect` through the private-file contract and remembers the run for cleanup. */\n  collect(transport: WbTransport): Promise<CollectResult>;\n  /** Id of the most recently opened run, including one that failed. */\n  lastRunId(): string;\n  count(table: string, runId: string): Promise<number>;\n  status(runId: string): Promise<string | undefined>;\n  cleanup(): Promise<void>;\n}\n\n/**\n * The job reads its DSN and token only through private files, exactly like\n * production. The roundtrip database is shared by every *.db.test.ts file, so\n * each test deletes its own runs on exit (cascade removes observations and\n * artifacts) - the same \"deletable by run_id\" contract the janitor relies on.\n */\nasync function openHarness(harnessTenantId = tenantId): Promise<Harness> {\n  await withAdmin((client) => client.query('INSERT INTO tenants (tenant_id) VALUES ($1) ON CONFLICT DO NOTHING', [harnessTenantId]));\n  const secrets = await mkdtemp(join(tmpdir(), 'proxima-collect-secrets-'));\n  const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-collect-raw-'));\n  const uriFile = join(secrets, 'proxima_collector_uri');\n  const tokenFile = join(secrets, `${harnessTenantId}_wb_statistics_token`);\n  await writeFile(uriFile, `${collectorDsn}\\n`, { mode: 0o600 });\n  await writeFile(tokenFile, `${readOnlyStatisticsJwt()}\\n`, { mode: 0o600 });\n  const env: NodeJS.ProcessEnv = { COLLECTOR_DATABASE_URI_FILE: uriFile, PROXIMA_RAW_DIR: rawRoot };\n  const args = { tenantId: harnessTenantId, dateFrom: '2026-08-17', statisticsTokenFile: tokenFile };\n  const runIds: string[] = [];\n  const db = new Client({ connectionString: collectorDsn });\n  await db.connect();\n  await db.query(\"SELECT set_config('proxima.tenant_id', $1, false)\", [harnessTenantId]);\n  return {\n    db,\n    collect: (transport) => runCollect(args, { transport, env, onRunOpened: (runId) => { runIds.push(runId); } }),\n    lastRunId() {\n      const runId = runIds[runIds.length - 1];\n      assert.ok(runId, 'no run was opened');\n      return runId;\n    },\n    async count(table, runId) {\n      const result = await db.query<{ n: string }>(`SELECT count(*) AS n FROM ${table} WHERE run_id = $1`, [runId]);\n      return Number(result.rows[0]?.n);\n    },\n    async status(runId) {\n      const result = await db.query<{ status: string }>('SELECT status FROM collector_runs WHERE run_id = $1', [runId]);\n      return result.rows[0]?.status;\n    },\n    async cleanup() {\n      await db.end();\n      // Story 1.6: the aggregator records earlier runs as inputs with ON DELETE\n      // RESTRICT (AD-3), so drop the input edges of this harness's runs first;\n      // row order inside a single multi-row DELETE is not guaranteed.\n      await withAdmin(async (client) => {\n        await client.query('DELETE FROM collector_run_inputs WHERE run_id = ANY($1::uuid[]) OR input_run_id = ANY($1::uuid[])', [runIds]);\n        await client.query('DELETE FROM collector_runs WHERE run_id = ANY($1::uuid[])', [runIds]);\n      });\n      await rm(secrets, { recursive: true, force: true });\n      await rm(rawRoot, { recursive: true, force: true });\n    },\n  };\n}\n\nasync function ordersFixture(): Promise<Record<string, unknown>[]> {\n  return JSON.parse(await readFile(join(DEFAULT_FIXTURE_ROOT, 'statistics/orders/sample.json'), 'utf8')) as Record<string, unknown>[];\n}\n\nasync function salesFixture(): Promise<Record<string, unknown>[]> {\n  return JSON.parse(await readFile(join(DEFAULT_FIXTURE_ROOT, 'statistics/sales/sample.json'), 'utf8')) as Record<string, unknown>[];\n}\n\nfunction scriptedOrders(rows: unknown[]): FixtureTransport {\n  const script: FixtureScript = { status: 200, body: JSON.stringify(rows), headers: { 'content-type': 'application/json' "
+    }
+   ]
   }
+ }
 }
