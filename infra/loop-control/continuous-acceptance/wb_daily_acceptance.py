@@ -81,7 +81,7 @@ with tempfile.TemporaryDirectory() as td:
  results.append('cli-failure-exit')
 root=pathlib.Path('/work/infra/systemd')
 service=root/'proxima-wb-daily.service';timer=root/'proxima-wb-daily.timer'
-s=configparser.ConfigParser(interpolation=None);s.read(service)
+s=configparser.ConfigParser(interpolation=None,strict=False);s.read(service)
 t=configparser.ConfigParser(interpolation=None);t.read(timer)
 assert t['Timer']['OnCalendar'].strip()=='*-*-* 05:30:00 Europe/Moscow'
 assert t['Timer'].getboolean('Persistent')
