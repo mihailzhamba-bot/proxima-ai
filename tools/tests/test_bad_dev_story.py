@@ -22,6 +22,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.loop import worker_dispatch as worker_dispatch_module
 
 ROOT = Path(__file__).resolve().parents[2]
