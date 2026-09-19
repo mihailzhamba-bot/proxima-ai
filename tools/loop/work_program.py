@@ -450,7 +450,7 @@ def build_payload(task, source_sha, content_hash, context):
             'context': [{'path': item['path'], 'blob_sha': item['blob_sha'],
                          'sha256': item['sha256'], 'content': item['content']}
                         for item in context]}
-    return {'model': MODEL, 'stream': False, 'temperature': 0, 'max_tokens': 2048,
+    return {'model': MODEL, 'stream': False, 'temperature': 0, 'max_tokens': 8192,
             'thinking': {'type': 'disabled'}, 'response_format': {'type': 'json_object'},
             'tool_choice': 'none',
             'messages': [
@@ -482,7 +482,20 @@ def parse_response(raw):
         message = choice['message']
         if choice['finish_reason'] != 'stop' or message.get('tool_calls') or message.get('function_call'):
             raise ValueError()
-        verdict = strict_json(message['content'])
+        content = message['content']
+        if not isinstance(content, str):
+            raise ValueError()
+        try:
+            verdict = strict_json(content)
+        except Exception:
+            text = content.strip()
+            if text.startswith('```'):
+                text = re.sub(r'^```[A-Za-z0-9_-]*[ \t]*\r?\n?', '', text)
+                text = re.sub(r'\r?\n?[ \t]*```\s*$', '', text)
+            start, end = text.find('{'), text.rfind('}')
+            if start < 0 or end <= start:
+                raise
+            verdict = strict_json(text[start:end + 1])
         if type(verdict) is not dict or set(verdict) != {'summary', 'findings', 'next_steps'}:
             raise ValueError()
         if type(verdict['summary']) is not str or not 1 <= len(verdict['summary'].strip()) <= MAX_ITEM_LENGTH:
