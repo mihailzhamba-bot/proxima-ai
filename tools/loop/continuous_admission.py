@@ -29,7 +29,8 @@ class Admission:
         item=self.call("GET","/v1/queue/"+candidate["id"])
         if item["state"]=="proposed":
             existing=[self.call("GET","/v1/queue/"+value["id"]) for value in status["items"]
-                      if value["id"]!=item["id"] and value["requirement_id"]==item["requirement_id"]]
+                      if value["id"]!=item["id"] and value["requirement_id"]==item["requirement_id"]
+                      and value.get("state") in {"proposed","registering","ready","ready_pr","dispatching","running"}]
             dependencies=[self.call("GET","/v1/queue/"+dependency_id) for dependency_id in item["depends_on"]]
             receipt=command(self.config["reviewer_command"],{"proposal":item,"existing":existing,
                 "legacy_existing":status.get("existing_work",[]),"dependencies":dependencies},self.execute)
