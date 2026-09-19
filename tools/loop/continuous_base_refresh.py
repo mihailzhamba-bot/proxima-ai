@@ -346,8 +346,9 @@ class BaseRefresher:
             key="base-refresh-"+head[:12];maintenance=self.bridge("POST","/v1/queue/base-refresh/begin",payload={"key":key,"new_head":head})
         old_policy_fp=maintenance["old_policy_fingerprint"];source=Path(self.config["source_repo"])
         ref="refs/loop/base-refresh/"+head;tip_ref="refs/loop/base-refresh-tip/"+key
-        with trusted_fetch_env(self.config["github_token_file"],self.config["state_root"]) as fetch_env:
-            self.git(["-c","credential.helper=","-c","http.followRedirects=false","fetch","--no-tags","--force","https://github.com/"+REPOSITORY+".git","+refs/heads/"+BRANCH+":"+tip_ref],env=fetch_env)
+        if self.git(["rev-parse","--verify",tip_ref],check=False).strip()!=head:
+            with trusted_fetch_env(self.config["github_token_file"],self.config["state_root"]) as fetch_env:
+                self.git(["-c","credential.helper=","-c","http.followRedirects=false","fetch","--no-tags","--force","https://github.com/"+REPOSITORY+".git","+refs/heads/"+BRANCH+":"+tip_ref],env=fetch_env)
         tip=self.git(["rev-parse",tip_ref])
         self.git(["merge-base","--is-ancestor",head,tip])
         self.git(["update-ref",ref,head])
