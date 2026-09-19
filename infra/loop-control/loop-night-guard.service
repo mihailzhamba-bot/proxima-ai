@@ -1,0 +1,10 @@
+[Unit]
+Description=Check LOOP night deadline and heartbeat
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /opt/loop/night_guard.py --manifest /etc/loop-night/manifest.json
+TimeoutStartSec=55
+MemoryMax=128M
+TasksMax=16
+UMask=0077

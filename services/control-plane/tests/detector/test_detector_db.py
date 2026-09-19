@@ -153,16 +153,15 @@ def test_ok_brief_carries_ranked_schema_valid_signals_from_nm_facts(seeded: tupl
     for signal in signals:
         validator.validate(signal)
     # Платье = 1001 + 1002 + 1004: 18 -> 12 (-33.3 %, 600.00); 1001: 10 -> 5 (500.00); 1004: 8 -> 7 (100.00).
-    assert [s["rub_assessment"]["value_rub"] for s in signals] == ["600.00", "500.00", "100.00"]
-    assert [s["detection_data"]["level"]["value"] for s in signals] == ["subject", "sku", "sku"]
-    assert [s["detection_data"]["orders_deviation_pct"]["value"] for s in signals] == [-33.3, -50.0, -12.5]
-    # Story 4.2: порог из конфигурации control-plane (detector/threshold.toml) - null до Story 4.4;
-    # тройка записана в payload и в каждом сигнале, ни один кандидат ниже нормы не отсечён.
-    assert brief["payload"]["threshold"] == {"value": None, "source": None, "date": None}
+    assert [s["rub_assessment"]["value_rub"] for s in signals] == ["600.00", "500.00"]
+    assert [s["detection_data"]["level"]["value"] for s in signals] == ["subject", "sku"]
+    assert [s["detection_data"]["orders_deviation_pct"]["value"] for s in signals] == [-33.3, -50.0]
+    # Approved pilot default excludes SKU1004 (-12.5%), preserving ranked deep drops.
+    expected = {"value": -30, "source": "docs/exec-plans/active/loop-pilot.txt: план Mike 2026-09-13, порог пилота", "date": "2026-09-13"}
+    assert brief["payload"]["threshold"] == expected
     for signal in signals:
-        assert signal["detection_data"]["threshold_pct"] == {"value": None, "is_unknown": True}
-        assert signal["detection_data"]["threshold_source"] == {"value": None, "is_unknown": True}
-        assert signal["detection_data"]["threshold_date"] == {"value": None, "is_unknown": True}
+        for key, value in (("threshold_pct", expected["value"]), ("threshold_source", expected["source"]), ("threshold_date", expected["date"])):
+            assert signal["detection_data"][key] == {"value": value, "is_unknown": False}
     assert signals[1]["detection_data"]["nm_id"]["value"] == 1001
     assert signals[1]["detection_data"]["supplier_article"]["value"] == "ART-1001"
     assert signals[1]["detection_data"]["subject_name"]["value"] == "Платье"

@@ -1,0 +1,16 @@
+# Dedicated build context; overrides the root build/ exclusion.
+**
+!build/
+!build/upstream/
+!build/upstream/paperclip/
+!build/upstream/paperclip/**
+build/upstream/paperclip/**/.git
+build/upstream/paperclip/**/.git/**
+build/upstream/paperclip/**/.env
+build/upstream/paperclip/**/.env.*
+!build/upstream/paperclip/**/.env.example
+build/upstream/paperclip/**/.ssh/**
+build/upstream/paperclip/secrets/**
+build/upstream/paperclip/**/node_modules/**
+build/upstream/paperclip/**/.venv/**
+build/upstream/paperclip/**/__pycache__/**

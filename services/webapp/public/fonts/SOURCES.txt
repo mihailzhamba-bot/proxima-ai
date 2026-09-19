@@ -1,0 +1,4 @@
+Self-hosted Inter and IBM Plex Mono, same design approved 2026-08-25.
+Copied from the existing proxima-ai-harness-h0-h1 assets on 2026-09-13.
+Upstream: https://rsms.me/inter/ ; https://github.com/IBM/plex
+Licenses retained alongside this file (SIL Open Font License).

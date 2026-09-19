@@ -1,0 +1,15 @@
+{
+  "delivery_prompt_root": "/etc/loop-worker/delivery-prompts",
+  "openhands_base_url": "http://127.0.0.1:18002",
+  "openhands_key_file": "/etc/loop-worker/secrets/openhands.env",
+  "openhands_persistence_root": "/srv/loop-worker/agent-state/conversations",
+  "profile_fedor": "OPERATOR_VERIFIED_DEDICATED_PROFILE_ID",
+  "profile_fedor_revision": 0,
+  "prompt_root": "/etc/loop-worker/prompts",
+  "run_root": "/srv/loop-worker/runner-state",
+  "runtime_home": "/srv/loop-worker/runner-state",
+  "runtime_user": "loop-worker-runner",
+  "source_repo": "/srv/loop-worker/trusted-source/proxima-ai",
+  "templates": {},
+  "workspace_root": "/srv/loop-worker/workspaces"
+}

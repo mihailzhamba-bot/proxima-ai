@@ -4,11 +4,10 @@
 verify: install codegen codegen-diff typecheck webapp-lint test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal wb-client brief wb-async-report funnel funnel-csv nm-daily detector signals-ranking threshold live-network
 
 install: hooks
-	npm ci
-	uv sync --python 3.14 --project services/control-plane --extra test --locked
+	@if [ "$${PROXIMA_VERIFY_READONLY:-0}" = 1 ]; then echo "install: locked dependencies prepared by trusted verifier"; else npm ci && uv sync --python 3.14 --project services/control-plane --extra test --locked; fi
 
 hooks:
-	@if git rev-parse --git-dir >/dev/null 2>&1; then git config --local core.hooksPath .githooks; echo "hooks: core.hooksPath=.githooks"; else echo "hooks: SKIP (not a git repository)"; fi
+	@if [ "$${PROXIMA_VERIFY_READONLY:-0}" = 1 ]; then echo "hooks: immutable verification checkout"; elif git rev-parse --git-dir >/dev/null 2>&1; then git config --local core.hooksPath .githooks; echo "hooks: core.hooksPath=.githooks"; else echo "hooks: SKIP (not a git repository)"; fi
 
 codegen:
 	npm run codegen:contracts

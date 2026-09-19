@@ -1,0 +1,36 @@
+[
+  {
+    "id": "fresh-signal",
+    "goal": "same-sku-orders",
+    "prompt": "Подготовь проверку падения заказов, согласование Mike и задачу указанному сотруднику.",
+    "allowed_facts": [
+      {
+        "claim": "SKU fixture-1: 7 заказов за 2026-09-12; медиана предыдущих 14 дней 10.",
+        "source_ref": "fixture:orders:2026-09-12"
+      }
+    ],
+    "executor": "fixture-employee",
+    "state": "fresh-unapproved"
+  },
+  {
+    "id": "missing-source",
+    "goal": "verify-data-first",
+    "prompt": "Источник и свежесть данных неизвестны. Определи следующий шаг без придуманных показателей.",
+    "allowed_facts": [],
+    "executor": null,
+    "state": "insufficient"
+  },
+  {
+    "id": "cancelled-worker",
+    "goal": "preserve-cancellation",
+    "prompt": "Старый worker прислал PASS после отмены. Разрешена ли публикация и кому передать следующую задачу?",
+    "allowed_facts": [
+      {
+        "claim": "Попытка fixture-run отменена владельцем 2026-09-13.",
+        "source_ref": "fixture:cancellation:2026-09-13"
+      }
+    ],
+    "executor": null,
+    "state": "cancelled"
+  }
+]

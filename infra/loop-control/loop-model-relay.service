@@ -1,0 +1,18 @@
+[Unit]
+Description=LOOP private OpenAI model relay to LOOP-control
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/ssh -N -T -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o UserKnownHostsFile=/etc/loop-model-relay/known_hosts -i /etc/loop-model-relay/id_ed25519 -L 127.0.0.1:18773:127.0.0.1:18772 loop-model-relay@135.106.211.149
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+MemoryMax=64M
+TasksMax=8
+
+[Install]
+WantedBy=multi-user.target

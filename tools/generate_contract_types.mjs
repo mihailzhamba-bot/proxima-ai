@@ -33,7 +33,11 @@ for (const file of files) {
     style: { singleQuote: true, semi: true },
   });
   for (const target of TARGETS) {
-    await writeFile(join(ROOT, ...target, `${name}.ts`), BANNER + ts + "\n", "utf8");
+    const targetFile = join(ROOT, ...target, `${name}.ts`);
+    const generated = BANNER + ts + "\n";
+    if (process.env.PROXIMA_VERIFY_READONLY === "1") {
+      if (await readFile(targetFile, "utf8") !== generated) throw new Error(`codegen differs: ${targetFile}`);
+    } else await writeFile(targetFile, generated, "utf8");
     console.log(`codegen: ${file} -> ${target.join("/")}/${name}.ts`);
   }
 }

@@ -83,11 +83,14 @@ describe("BriefSummaryBlock - состояния блока", () => {
     expect(markup).not.toContain("Данные до");
   });
 
-  it("stale: «сбор не проходил», строки «Данные до» нет (без изменений)", () => {
+  it("stale сохраняет дату и время источника при подавленных метриках", () => {
     const markup = render({ ...noBrief(STALE), status: "stale", briefDay: "2026-09-06" });
     expect(markup).toContain(STALE_TEXT);
     expect(markup).not.toContain(BRIEF_PENDING_TEXT);
-    expect(markup).not.toContain("Данные до");
+    expect(markup).toContain("Данные до 07.09.2026");
+    expect(markup).toContain("08.09.2026");
+    expect(markup).toContain("03:10");
+    expect(markup).toContain("МСК");
   });
 
   it("ok (fixtures): цифры и строка «Данные до», предупреждений нет", () => {

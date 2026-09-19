@@ -40,7 +40,7 @@ oh_curl() {
 }
 
 conversation_status() {
-  oh_curl GET "/api/conversations?ids=$1" | python3 -c "
+  oh_curl GET "/api/conversations?ids=$1" | /usr/bin/python3 -I -c "
 import json,sys
 d=json.load(sys.stdin)
 c=d[0] if isinstance(d,list) else (d.get('items') or [d])[0]
@@ -52,7 +52,7 @@ conversation_events() {
 }
 
 agent_final_response() {
-  oh_curl GET "/api/conversations/$1/agent_final_response" | python3 -c "
+  oh_curl GET "/api/conversations/$1/agent_final_response" | /usr/bin/python3 -I -c "
 import json,sys
 raw=sys.stdin.read()
 try:

@@ -1,0 +1,6 @@
+{
+  "role": "harper",
+  "policy_fingerprint": "8d2c3ff6efb01015ef878da01e7fa582174ae14f76f536de737a845565c93acd",
+  "policy_file": "/etc/loop-continuous/policy.json",
+  "lock_file": "/etc/loop-continuous/receiver.lock"
+}

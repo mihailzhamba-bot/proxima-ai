@@ -1,0 +1,4 @@
+[safe]
+	directory = /srv/loop-worker/workspaces/*
+[core]
+	hooksPath = /dev/null

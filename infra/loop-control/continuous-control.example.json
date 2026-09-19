@@ -1,0 +1,80 @@
+{
+  "bridge_url": "http://127.0.0.1:18770",
+  "bridge_key_file": "/etc/loop/secrets/bridge_operator",
+  "dispatch_command": [
+    "/usr/bin/ssh",
+    "-F",
+    "/etc/loop-continuous/ssh_config",
+    "loop-harper-register"
+  ],
+  "admission": {
+    "reviewer_command": [
+      "/opt/loop/continuous-proposal-review"
+    ],
+    "registrars": {
+      "bridge": [
+        "/usr/bin/sudo",
+        "-n",
+        "/usr/local/sbin/loop-continuous-register"
+      ],
+      "harper": [
+        "/usr/bin/ssh",
+        "-F",
+        "/etc/loop-continuous/ssh_config",
+        "loop-harper-register"
+      ],
+      "worker": [
+        "/usr/bin/ssh",
+        "-F",
+        "/etc/loop-continuous/ssh_config",
+        "loop-worker-register"
+      ]
+    }
+  },
+  "report": {
+    "state_file": "/var/lib/loop/continuous/report.json",
+    "command": [
+      "/opt/loop/continuous_report_sender.py",
+      "--config",
+      "/etc/loop-continuous/report.json"
+    ]
+  },
+  "merge_observer": {
+    "github_url": "https://api.github.com",
+    "token_file": "/etc/loop/secrets/github_pr",
+    "repository": "mihailzhamba-bot/proxima-ai",
+    "target_branch": "feat/loop-pilot",
+    "max_polls": 4,
+    "timeout_seconds": 10,
+    "cursor_file": "/var/lib/loop/continuous/merge-observer.json"
+  },
+  "base_refresh": {
+    "repository": "mihailzhamba-bot/proxima-ai",
+    "target_branch": "feat/loop-pilot",
+    "source_repo": "/srv/loop/source/proxima-ai",
+    "policy_file": "/etc/loop-continuous/policy.json",
+    "github_token_file": "/etc/loop-continuous/github.token",
+    "state_root": "/var/lib/loop/continuous/base-refresh",
+    "max_bundle_bytes": 33554432,
+    "github_timeout_seconds": 10,
+    "receivers": {
+      "bridge": [
+        "/usr/bin/sudo",
+        "-n",
+        "/usr/local/sbin/loop-continuous-register"
+      ],
+      "harper": [
+        "/usr/bin/ssh",
+        "-F",
+        "/etc/loop-continuous/ssh_config",
+        "loop-harper-register"
+      ],
+      "worker": [
+        "/usr/bin/ssh",
+        "-F",
+        "/etc/loop-continuous/ssh_config",
+        "loop-worker-register"
+      ]
+    }
+  }
+}

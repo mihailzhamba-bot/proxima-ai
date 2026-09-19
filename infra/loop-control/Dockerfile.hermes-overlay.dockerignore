@@ -1,0 +1,21 @@
+# Dedicated build context; overrides the root build/ exclusion.
+**
+!build/
+!build/upstream/
+!build/upstream/hermes/
+!build/upstream/hermes/**
+build/upstream/hermes/**/.git
+build/upstream/hermes/**/.git/**
+build/upstream/hermes/**/.env
+build/upstream/hermes/**/.env.*
+!build/upstream/hermes/**/.env.example
+build/upstream/hermes/**/.ssh/**
+build/upstream/hermes/secrets/**
+build/upstream/hermes/**/node_modules/**
+build/upstream/hermes/**/.venv/**
+build/upstream/hermes/**/__pycache__/**
+!tools/
+!tools/loop/
+!tools/loop/bridge.py
+!tools/loop/chat_tool.py
+!tools/loop/director_tool.py

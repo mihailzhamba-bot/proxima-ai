@@ -173,6 +173,12 @@ def assert_single_transaction(statements: list[str], name: str) -> None:
 
 
 def assert_grant_matrix(candidate: str, name: str) -> None:
+    if re.fullmatch(r"GRANT USAGE ON SCHEMA webapp_auth TO proxima_auth_writer", candidate, re.IGNORECASE):
+        return
+    if re.fullmatch(r"GRANT SELECT, INSERT, UPDATE, DELETE ON webapp_auth\.auth_(user|session|account|verification) TO proxima_auth_writer", candidate, re.IGNORECASE):
+        return
+    if candidate.lower() in {"grant usage on schema webapp_auth to proxima_loop_writer", "grant select (id, name) on webapp_auth.auth_user to proxima_loop_writer", "grant usage on schema webapp_auth to proxima_loop_context", "grant select (id, name) on webapp_auth.auth_user to proxima_loop_context"}:
+        return
     match = GRANT_PARSED_PATTERN.match(candidate)
     if match is None:
         raise ValueError(f"migration contains banned GRANT form: {name}")
@@ -193,6 +199,9 @@ def assert_additive_only(sql: str, name: str) -> None:
     below) are accepted; everything else is rejected."""
     if QUOTED_SET_CONFIG_PATTERN.search(sql):
         raise ValueError(f"migration references set_config (quoted or not): {name}")
+    # Exactly the existing BetterAuth schema identifiers; no arbitrary quoted SQL.
+    for auth_table in ("user", "session", "account", "verification"):
+        sql = sql.replace(f'webapp_auth."{auth_table}"', f"webapp_auth.auth_{auth_table}")
     marked = sql.replace("'proxima.tenant_id'", "<GUC>")
     stripped = strip_sql_literals_and_comments(marked)
     if CREATE_OR_REPLACE_PATTERN.search(stripped):

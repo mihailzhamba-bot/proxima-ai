@@ -279,7 +279,8 @@ test('rls: matrix', { skip }, async () => {
       },
     );
 
-    // Every table carrying a run_id must have a janitor policy (AD-11).
+    // Every table whose run_id references collector_runs needs the collector janitor (AD-11).
+    // LOOP workflow runs preserve human decisions independently of collector cleanup.
     // business_signal_raw_artifacts predates the ledger (004) and carries no
     // tenant_id, so the canonical tenant-guard policy cannot exist there.
     const admin = new Client({ connectionString: postgresDsn });
@@ -290,7 +291,7 @@ test('rls: matrix', { skip }, async () => {
          FROM pg_class c
          JOIN pg_namespace n ON n.oid = c.relnamespace
          WHERE n.nspname = 'public' AND c.relkind = 'r'
-           AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'run_id' AND NOT a.attisdropped)
+           AND EXISTS (SELECT 1 FROM pg_constraint fk JOIN pg_attribute a ON a.attrelid=fk.conrelid AND a.attnum=ANY(fk.conkey) WHERE fk.conrelid=c.oid AND fk.contype='f' AND fk.confrelid='public.collector_runs'::regclass AND a.attname='run_id' AND NOT a.attisdropped)
            AND c.relname NOT IN ('business_signal_runs', 'business_signal_raw_artifacts')
            AND NOT EXISTS (
              SELECT 1 FROM pg_policies p
@@ -298,7 +299,7 @@ test('rls: matrix', { skip }, async () => {
                AND p.policyname LIKE '%janitor%'
            )`,
       );
-      assert.deepEqual(missing.rows.map((row) => row.relname), [], 'every ledger run_id table needs a janitor policy (AD-11)');
+      assert.deepEqual(missing.rows.map((row) => row.relname), [], 'every collector run_id FK table needs a janitor policy (AD-11)');
       const collectorRunJanitor = await admin.query<{ n: string }>(
         "SELECT count(*) AS n FROM pg_policies WHERE schemaname = 'public' AND tablename = 'collector_runs' AND policyname LIKE '%janitor%'",
       );

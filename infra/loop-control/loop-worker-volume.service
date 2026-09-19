@@ -1,0 +1,21 @@
+[Unit]
+Description=Bounded LOOP workspace filesystem on Claudette
+Before=loop-openhands-directories.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/loop-worker-volume --mount
+ExecStartPost=/usr/local/sbin/loop-worker-volume --check
+ExecStop=/usr/local/sbin/loop-worker-volume --unmount
+RemainAfterExit=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+CapabilityBoundingSet=CAP_SYS_ADMIN
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

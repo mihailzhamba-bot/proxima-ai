@@ -1,0 +1,23 @@
+[Unit]
+Description=LOOP bounded adaptive research work program
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 -I /opt/loop/work_program.py --config /etc/loop/work-program.json run
+# Projection errors do not change the research result; StopPost covers failed runs.
+ExecStartPost=-/usr/bin/python3 -I /opt/loop/work_program_status.py
+ExecStopPost=-/usr/bin/python3 -I /opt/loop/work_program_status.py
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/etc/loop/work-program.json /etc/loop/secrets/glm_program
+ReadWritePaths=/var/lib/loop-work-program /srv/loop/work-program/results
+MemoryMax=256M
+CPUQuota=50%
+TasksMax=32
+TimeoutStartSec=150s

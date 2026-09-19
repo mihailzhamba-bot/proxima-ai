@@ -1,0 +1,33 @@
+[Unit]
+Description=Harper private connection to LOOP Bridge
+Wants=network-online.target
+After=network-online.target
+Before=loop-runner.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=loop-runner-tunnel
+Group=loop-runner-tunnel
+ExecStart=/usr/bin/ssh -F /dev/null -N -T -o BatchMode=yes -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o IdentitiesOnly=yes -o IdentityAgent=none -o ForwardAgent=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/loop-runner-tunnel/known_hosts -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no -o ExitOnForwardFailure=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o GatewayPorts=no -o LogLevel=ERROR -i /var/lib/loop-runner-tunnel/id_ed25519 -L 127.0.0.1:18771:127.0.0.1:18770 loop-runner-tunnel@135.106.211.149
+Restart=always
+RestartSec=5
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+CapabilityBoundingSet=
+LockPersonality=yes
+MemoryMax=64M
+CPUQuota=20%
+TasksMax=24
+
+[Install]
+WantedBy=multi-user.target

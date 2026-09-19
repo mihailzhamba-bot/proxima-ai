@@ -1,0 +1,29 @@
+[Unit]
+Description=LOOP private tunnel to Claudette OpenHands
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=loop-openhands-tunnel
+Group=loop-openhands-tunnel
+ExecStart=/usr/bin/ssh -F /dev/null -N -T -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/loop-openhands-tunnel/known_hosts -o ExitOnForwardFailure=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o LogLevel=ERROR -i /var/lib/loop-openhands-tunnel/id_ed25519 -L 172.30.241.1:18001:127.0.0.1:18002 loop-openhands@135.106.186.210
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryMax=64M
+CPUQuota=20%
+TasksMax=24
+
+[Install]
+WantedBy=multi-user.target

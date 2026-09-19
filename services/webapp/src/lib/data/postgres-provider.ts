@@ -12,7 +12,7 @@ import type {
   SummaryStatus,
 } from "@/lib/data/view-model";
 import { anomaliesFromSignals } from "@/lib/data/anomalies";
-import { getBrief as getFixturesBrief } from "@/lib/fixtures/brief";
+import { diagnoseSignal } from "@/lib/loop/diagnosis";
 
 /*
  * Боевой источник данных (AD-9, Story 2.5 со статусом Story 1.11).
@@ -240,7 +240,7 @@ export function createPostgresProvider(
       return {
         lastFullDay: row.last_full_day ?? "",
         collectedAt: toIsoMoment(row.collected_at),
-        stale: row.stale === true,
+        stale: row.stale !== false,
       };
     });
   }
@@ -268,7 +268,7 @@ export function createPostgresProvider(
       // Читателей ровно два SELECT на отрисовку (AD-9), поэтому brief_current
       // читает только getSummary. Признак «сводка ещё не считается» страница берёт
       // из его статуса no-brief, а не из второго чтения той же строки.
-      return getFixturesBrief(variant);
+      return { variant, dateIso: "", signals: [], attentionCount: 0, digest: [], dataMode: "postgres" };
     },
 
     /** Сводка «вчера против нормы» и аномалии дня с правилом показа AD-9. */
@@ -317,7 +317,10 @@ export function createPostgresProvider(
         // Аномалии - те же цифры дня (Story 4.3): порядок payload сохраняется
         // (Story 4.2 ранжирует по деньгам), а при подавленных цифрах список пуст -
         // экран не покажет сигналы против сводки, которой нельзя верить.
-        anomalies: showNumbers ? anomaliesFromSignals(payload.signals ?? []) : [],
+        anomalies: showNumbers ? anomaliesFromSignals(payload.signals ?? []).map(a => {
+          const signal = payload.signals.find(s => s.signal_id === a.id)!;
+          return { ...a, snapshotId: signal.snapshot_id, diagnosis: diagnoseSignal(signal, row.brief_day) };
+        }) : [],
       };
     },
 
@@ -337,6 +340,7 @@ export function createPostgresProvider(
         return emptyMetrics();
       }
 
+      if (status.stale) return emptyMetrics().map(m => m.id === "freshness" ? { ...m, value: moscowMinuteOfDay(status.collectedAt), status: "red" as const } : m);
       const rows = await withClient(async (client) => {
         const result = await client.query(
           `SELECT calendar_day::text AS calendar_day, orders_count, revenue_rub::text AS revenue_rub
@@ -354,11 +358,12 @@ export function createPostgresProvider(
         const row = byDay.get(day);
         return row === undefined ? [] : [row];
       });
-      const orderPoints = days.map((day) => Number(byDay.get(day)?.orders_count ?? 0));
-      const revenuePoints = days.map((day) => {
+      const completeHistory = days.every(day => byDay.has(day));
+      const orderPoints = completeHistory ? days.map((day) => Number(byDay.get(day)!.orders_count)) : [];
+      const revenuePoints = completeHistory ? days.map((day) => {
         const row = byDay.get(day);
-        return row === undefined ? 0 : centsToRoundedRubles(parseMoneyCents(row.revenue_rub));
-      });
+        return centsToRoundedRubles(parseMoneyCents(row!.revenue_rub));
+      }) : [];
       const currentOrders = current === undefined ? null : BigInt(current.orders_count);
       const currentRevenue = current === undefined ? null : parseMoneyCents(current.revenue_rub);
 
@@ -367,13 +372,13 @@ export function createPostgresProvider(
         {
           id: "revenue-day", label: METRIC_LABELS.revenue,
           value: currentRevenue === null ? null : centsToRoundedRubles(currentRevenue), format: "rub-compact", status: null,
-          deltaPercent: currentRevenue === null ? null : deltaPercent(currentRevenue, previousRows.map((row) => parseMoneyCents(row.revenue_rub))),
+          deltaPercent: currentRevenue === null || previousRows.length !== 7 ? null : deltaPercent(currentRevenue, previousRows.map((row) => parseMoneyCents(row.revenue_rub))),
           deltaGoodWhen: "up", points: revenuePoints, fx: false,
         },
         {
           id: "orders-day", label: METRIC_LABELS.orders,
           value: currentOrders === null ? null : Number(currentOrders), format: "count", status: null,
-          deltaPercent: currentOrders === null ? null : deltaPercent(currentOrders, previousRows.map((row) => BigInt(row.orders_count))),
+          deltaPercent: currentOrders === null || previousRows.length !== 7 ? null : deltaPercent(currentOrders, previousRows.map((row) => BigInt(row.orders_count))),
           deltaGoodWhen: "up", points: orderPoints, fx: false,
         },
         { id: "oos-risks", label: METRIC_LABELS.oos, value: null, format: "count", status: null, deltaPercent: null, deltaGoodWhen: null, points: [], fx: false },

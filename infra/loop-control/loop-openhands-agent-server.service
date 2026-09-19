@@ -1,0 +1,62 @@
+[Unit]
+Description=Dedicated LOOP OpenHands Agent Server 1.44.0
+Wants=network-online.target
+Requires=dutch-tunnel.service
+Requires=loop-openhands-directories.service
+After=network-online.target dutch-tunnel.service loop-openhands-directories.service
+
+[Service]
+Type=simple
+User=loop-oh-agent
+Group=loop-oh-agent
+SupplementaryGroups=loop-worker-shared
+WorkingDirectory=/srv/loop-worker/workspaces
+Environment=HOME=/srv/loop-worker/agent-home
+Environment=CODEX_HOME=/srv/loop-worker/codex-home
+Environment=OH_PERSISTENCE_DIR=/srv/loop-worker/agent-state/openhands
+Environment=TMPDIR=/srv/loop-worker/agent-state/tmp
+Environment=GIT_CONFIG_GLOBAL=/etc/loop-openhands-agent/gitconfig
+Environment=GIT_CONFIG_NOSYSTEM=1
+Environment=GIT_TERMINAL_PROMPT=0
+Environment=PATH=/opt/loop-openhands-agent/node_modules/.bin:/opt/loop-openhands-agent/venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HTTPS_PROXY=http://127.0.0.1:1081
+Environment=HTTP_PROXY=http://127.0.0.1:1081
+Environment=ALL_PROXY=http://127.0.0.1:1081
+Environment=NO_PROXY=localhost,127.0.0.1,::1
+StandardInput=file:/etc/loop-openhands-agent/server-config.private.json
+LimitCORE=0
+ExecStart=/opt/loop-openhands-agent/venv/bin/python -I /opt/loop-openhands-agent/agent_server_launcher.py --host 127.0.0.1 --port 18002
+Restart=on-failure
+RestartSec=10
+UMask=0007
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateIPC=yes
+ProtectSystem=strict
+ProtectHome=yes
+InaccessiblePaths=/srv/openhands /srv/proxima-ai /etc/proxima-ai /home/openhands-agent /var/lib/loop-oh-agent /srv/loop-worker/trusted-source -/var/lib/loop-worker-runner -/var/lib/loop-worker-gateway /etc/loop-worker /opt/loop /etc/loop-openhands-agent/server-config.private.json
+ReadWritePaths=/srv/loop-worker/agent-home /srv/loop-worker/agent-state /srv/loop-worker/codex-home /srv/loop-worker/workspaces /srv/loop-worker/worktrees
+InaccessiblePaths=/srv/loop-worker/runner-state /srv/loop-worker/transfer /srv/loop-worker/gateway /srv/loop-worker/collector-home
+BindReadOnlyPaths=/etc/loop-openhands-agent/config.toml:/srv/loop-worker/codex-home/config.toml
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectProc=invisible
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+IPAddressDeny=any
+IPAddressAllow=localhost
+MemoryMax=3G
+CPUQuota=200%
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target

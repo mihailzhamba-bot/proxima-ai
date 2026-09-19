@@ -1,0 +1,26 @@
+[Unit]
+Description=Validate fail-closed LOOP private Docker networks
+Requires=docker.service
+After=docker.service
+Before=loop-control.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/loop-network-preflight --ensure
+RemainAfterExit=no
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
