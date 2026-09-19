@@ -102,6 +102,28 @@ def test_blocked_semantic_review_is_persisted_and_does_not_register():
     assert any(path.endswith("/reject") for path,_ in calls)
 
 
+def test_admission_reviewer_existing_excludes_dead_same_requirement_items():
+    proposal={"id":"live-new","requirement_id":"req","state":"proposed","depends_on":[],"proposal_fingerprint":"d"*64}
+    running={"id":"live-running","requirement_id":"req","state":"running","depends_on":[]}
+    dead=[{"id":"dead-rejected","requirement_id":"req","state":"rejected","depends_on":[]},
+          {"id":"dead-cancelled","requirement_id":"req","state":"cancelled","depends_on":[]},
+          {"id":"dead-merged","requirement_id":"req","state":"merged","depends_on":[]}]
+    status={"current":None,"shared_executor_busy":False,"observed_at":1,"policy_fingerprint":"a"*64,
+            "items":[proposal,running]+dead}
+    seen={}
+    def api(method,path,payload=None):
+        if path=="/v1/queue":return status
+        if path=="/v1/queue/live-new":return proposal
+        if path=="/v1/queue/live-running":return running
+        if path.endswith("/reject"):return {"id":"live-new","state":"rejected","blocker":payload["blocker"]}
+        raise AssertionError(path)
+    receipt={"proposal_fingerprint":"d"*64,"verdict":"block","reviewer":"terra","checks":{},"blocker":"test"}
+    def execute(argv,**kwargs):seen.update(json.loads(kwargs["input"]));return SimpleNamespace(returncode=0,stdout=json.dumps(receipt).encode())
+    config={"reviewer_command":["/trusted/reviewer"],"registrars":{k:["/trusted/"+k] for k in ("bridge","harper","worker")}}
+    assert Admission(config,api,execute).run_once()["status"]=="rejected"
+    assert [value["id"] for value in seen["existing"]]==["live-running"]
+
+
 def test_receiver_rejects_template_different_from_valid_execution_policy():
     scope={"description":"one","allowed_paths":["services/x.py"],"contract_files":["AGENTS.md"],"acceptance_profile":"wb-generic"}
     requirement={"repository":"acme/repo","max_slices":2,"objective":"WB","acceptance":["pass"],"source_evidence":[],
