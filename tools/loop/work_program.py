@@ -450,7 +450,7 @@ def build_payload(task, source_sha, content_hash, context):
             'context': [{'path': item['path'], 'blob_sha': item['blob_sha'],
                          'sha256': item['sha256'], 'content': item['content']}
                         for item in context]}
-    return {'model': MODEL, 'stream': False, 'temperature': 0, 'max_tokens': 2048,
+    return {'model': MODEL, 'stream': False, 'temperature': 0, 'max_tokens': 8192,
             'thinking': {'type': 'disabled'}, 'response_format': {'type': 'json_object'},
             'tool_choice': 'none',
             'messages': [
