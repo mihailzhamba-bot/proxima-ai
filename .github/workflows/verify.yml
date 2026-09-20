@@ -4,11 +4,6 @@ on:
   pull_request:
   push:
 
-# D40: диета workflows - один прогон на ref, отменяем устаревшие
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
 
@@ -27,7 +22,7 @@ jobs:
       - name: Lint shell scripts
         run: shellcheck tools/morning_run.sh tools/proxima_alert.sh tools/restore_check.sh
       - name: Check morning command rendering
-        run: tools/morning_run.sh pilot-tenant --dry-run
+        run: tools/morning_run.sh amirova-test --dry-run
 
   verify:
     runs-on: ubuntu-24.04
