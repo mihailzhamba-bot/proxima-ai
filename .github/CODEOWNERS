@@ -1,0 +1,22 @@
+# Владельцы путей: их одобрение обязательно для мержа в main (ruleset main-protected,
+# правило «Require review from Code Owners», действует на GitHub Pro; D34).
+# Автор PR не может одобрить собственный PR, поэтому одобрение владельца репо нужно всегда.
+
+*                                           @mihailzhamba-bot
+
+# Зоны аналитика (хартия docs/agent-system/roles/analyst-vladislav.md §5):
+# агенты их не трогают, а если PR их задевает - Владислав запрашивается на ревью автоматически.
+/verification/                              @vladis-vlasis @mihailzhamba-bot
+/docs/analytics/                            @vladis-vlasis @mihailzhamba-bot
+/docs/state/SHADOW-RECONCILIATION.md        @vladis-vlasis @mihailzhamba-bot
+/docs/state/CABINET-RECONCILIATION.md       @vladis-vlasis @mihailzhamba-bot
+/docs/state/RETRO-ALARM-LABELS.md           @vladis-vlasis @mihailzhamba-bot
+/docs/state/SM3-BASELINE.md                 @vladis-vlasis @mihailzhamba-bot
+/tools/retro_alarms.py                      @vladis-vlasis @mihailzhamba-bot
+
+# Только владелец: гейты, миграции, контракты, CI.
+/.github/                                   @mihailzhamba-bot
+/db/migrations/                             @mihailzhamba-bot
+/contracts/                                 @mihailzhamba-bot
+/tools/verify_*.py                          @mihailzhamba-bot
+/tools/verify_shadow.py                     @vladis-vlasis @mihailzhamba-bot
