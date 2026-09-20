@@ -29,7 +29,7 @@ from proxima_control_plane.norm.cli import main as norm_main
 ROOT = Path(__file__).resolve().parents[4]
 OWNER_DSN = os.environ.get("PROXIMA_TEST_POSTGRES_DSN", "")
 NORM_DSN = os.environ.get("PROXIMA_TEST_DSN_NORM", "")
-TENANT = "amirova-test"
+TENANT = "pilot-tenant"
 # «Вчера» по календарю Europe/Moscow (AD-7): data_status_current свежий без подделки времени.
 BRIEF_DAY = datetime.now(ZoneInfo("Europe/Moscow")).date() - timedelta(days=1)
 # nm_id -> (заказы окна, заказы дня, выручка окна, выручка дня, предмет). Суммы по

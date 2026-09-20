@@ -15,7 +15,7 @@ const collectorDsn = process.env.PROXIMA_TEST_DSN_COLLECTOR ?? '';
 const postgresDsn = process.env.PROXIMA_TEST_POSTGRES_DSN ?? '';
 const ready = collectorDsn !== '' && postgresDsn !== '';
 const skip = ready ? false : 'PROXIMA_TEST_DSN_COLLECTOR and PROXIMA_TEST_POSTGRES_DSN must be set (run via tools/pg_local_roundtrip.sh)';
-const tenantId = 'amirova-test';
+const tenantId = 'pilot-tenant';
 const ORDERS_FIXTURE = 301;
 const SALES_FIXTURE = 295;
 
@@ -55,7 +55,7 @@ async function openHarness(): Promise<Harness> {
   const secrets = await mkdtemp(join(tmpdir(), 'proxima-collect-secrets-'));
   const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-collect-raw-'));
   const uriFile = join(secrets, 'proxima_collector_uri');
-  const tokenFile = join(secrets, 'amirova-test_wb_statistics_token');
+  const tokenFile = join(secrets, 'pilot-tenant_wb_statistics_token');
   await writeFile(uriFile, `${collectorDsn}\n`, { mode: 0o600 });
   await writeFile(tokenFile, `${readOnlyStatisticsJwt()}\n`, { mode: 0o600 });
   const env: NodeJS.ProcessEnv = { COLLECTOR_DATABASE_URI_FILE: uriFile, PROXIMA_RAW_DIR: rawRoot };

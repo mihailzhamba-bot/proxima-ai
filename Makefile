@@ -1,7 +1,7 @@
-.PHONY: agent-toolset apply-migrations architecture boundary brief business-signal ci-parity codegen codegen-diff collect-wb-analytics contracts detector funnel funnel-csv hooks install live-network migrations nm-daily pg-roundtrip probe-wb-api provenance secrets signals-ranking test test-db-refresh threshold typecheck verify vps wb-async-report wb-client webapp-build webapp-lint
+.PHONY: agent-toolset apply-migrations architecture boundary brief business-signal ci-parity codegen codegen-diff collect-wb-analytics contracts detector funnel funnel-csv hooks install live-network migrations nm-daily pg-roundtrip probe-wb-api provenance secrets signals-ranking test test-db-refresh threshold typecheck verify vps wb-async-report wb-client webapp-build webapp-lint hygiene
 
 
-verify: install codegen codegen-diff typecheck webapp-lint test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal wb-client brief wb-async-report funnel funnel-csv nm-daily detector signals-ranking threshold live-network
+verify: install codegen codegen-diff typecheck webapp-lint test contracts migrations pg-roundtrip provenance architecture boundary secrets hygiene vps business-signal wb-client brief wb-async-report funnel funnel-csv nm-daily detector signals-ranking threshold live-network
 
 install: hooks
 	npm ci
@@ -53,7 +53,7 @@ provenance:
 	uv run --python 3.14 python tools/verify_provenance.py
 
 architecture:
-	npm run architecture:render
+	@if [ ! -d docs/architecture ]; then echo "architecture: SKIP (docs/ отсутствует - публичное дерево без ops-композита)"; else npm run architecture:render; fi
 
 boundary:
 	uv run --python 3.14 python tools/verify_runtime_boundary.py
@@ -62,14 +62,17 @@ secrets:
 	uv run --python 3.14 python tools/secret_scan.py --self-test
 	uv run --python 3.14 python tools/secret_scan.py
 
+hygiene:
+	uv run --python 3.14 python tools/verify_public_hygiene.py
+
 vps:
-	uv run --python 3.14 python tools/verify_vps_contract.py
+	@if [ ! -f infra/vps-contract.json ]; then echo "vps: SKIP (infra/vps-contract.json отсутствует - приватный контракт сервера, живёт в ops-репо)"; else uv run --python 3.14 python tools/verify_vps_contract.py; fi
 
 business-signal:
 	uv run --python 3.14 python tools/verify_business_signal.py
 
 agent-toolset:
-	uv run --python 3.14 python tools/verify_agent_toolset.py
+	@if [ ! -f docs/operations/agent-toolset.md ]; then echo "agent-toolset: SKIP (docs/ отсутствует)"; else uv run --python 3.14 python tools/verify_agent_toolset.py; fi
 
 probe-wb-api:
 	uv run --python 3.14 --project services/control-plane --extra test python tools/wb_api_probe.py --env-file .env
@@ -81,10 +84,10 @@ apply-migrations:
 	uv run --python 3.14 --project services/control-plane --extra test python tools/apply_migrations.py --env-file $(ENV_FILE)
 
 collect-wb-analytics:
-	uv run --python 3.14 --project services/control-plane --extra test python tools/wb_async_report.py --env-file .env --tenant-id amirova-test --period latest-closed-week
+	uv run --python 3.14 --project services/control-plane --extra test python tools/wb_async_report.py --env-file .env --tenant-id pilot-tenant --period latest-closed-week
 
 wb-client:
-	uv run --python 3.14 python tools/verify_wb_client.py
+	@if [ ! -f docs/state/API-FACTS.md ]; then echo "wb-client: SKIP (docs/state/API-FACTS.md отсутствует - публичное дерево без ops-композита)"; else uv run --python 3.14 python tools/verify_wb_client.py; fi
 
 brief:
 	uv run --python 3.14 --project services/control-plane --extra test python tools/verify_brief.py

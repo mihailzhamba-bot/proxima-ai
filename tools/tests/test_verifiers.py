@@ -15,6 +15,17 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
+# D40: публичное дерево без ops-композита не содержит приватный контракт сервера
+# и agent-конфигов - соответствующие гейты там skip-аются и в Makefile.
+VPS_CONTRACT_PRESENT = (ROOT / "infra" / "vps-contract.json").exists()
+CODEX_CONFIG_PRESENT = (ROOT / ".codex" / "config.toml").exists()
+needs_vps_contract = pytest.mark.skipif(
+    not VPS_CONTRACT_PRESENT, reason="infra/vps-contract.json живёт в ops-репо (D40)"
+)
+needs_codex_config = pytest.mark.skipif(
+    not CODEX_CONFIG_PRESENT, reason=".codex/config.toml живёт в ops-репо (D40)"
+)
+
 
 def load_module(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -131,6 +142,7 @@ def test_secret_scanner_reads_staged_blob_when_worktree_is_safe(tmp_path: Path) 
     assert result == ["index:probe.txt:1: openai-key"]
 
 
+@needs_vps_contract
 def test_vps_contract_is_fail_closed() -> None:
     vps = load_tool("verify_vps_contract")
     vps.verify()
@@ -257,6 +269,7 @@ def test_wb_client_gate_rejects_wb_host_fragment_in_cli_source() -> None:
         drift.write_text(original, encoding="utf-8")
 
 
+@needs_codex_config
 def test_agent_toolset_contract_is_fail_closed() -> None:
     toolset = load_tool("verify_agent_toolset")
     toolset.verify_static()
@@ -299,6 +312,7 @@ def monitor_samples(monitor, count: int, *, cpu: float, memory: float, disk: flo
     ]
 
 
+@needs_vps_contract
 def test_host_monitor_requires_sustained_cpu_and_memory_pressure() -> None:
     monitor = load_module(ROOT / "infra" / "monitoring" / "host_monitor.py", "host_monitor")
     contract = json.loads((ROOT / "infra" / "vps-contract.json").read_text(encoding="utf-8"))
@@ -315,6 +329,7 @@ def test_host_monitor_requires_sustained_cpu_and_memory_pressure() -> None:
     assert monitor.classify(short_history, thresholds, contract["monitoring"]["sustained_seconds"], contract["monitoring"]["interval_seconds"]) == []
 
 
+@needs_vps_contract
 def test_host_monitor_thresholds_are_strict() -> None:
     monitor = load_module(ROOT / "infra" / "monitoring" / "host_monitor.py", "host_monitor_strict_thresholds")
     contract = json.loads((ROOT / "infra" / "vps-contract.json").read_text(encoding="utf-8"))
@@ -327,6 +342,7 @@ def test_host_monitor_thresholds_are_strict() -> None:
     assert {(alert.metric, alert.severity) for alert in alerts} == {("disk_used_percent", "warning")}
 
 
+@needs_vps_contract
 def test_host_monitor_does_not_join_pressure_across_timer_gap() -> None:
     monitor = load_module(ROOT / "infra" / "monitoring" / "host_monitor.py", "host_monitor_timer_gap")
     contract = json.loads((ROOT / "infra" / "vps-contract.json").read_text(encoding="utf-8"))
@@ -339,6 +355,7 @@ def test_host_monitor_does_not_join_pressure_across_timer_gap() -> None:
     assert alerts == []
 
 
+@needs_vps_contract
 def test_host_monitor_escalates_and_recommends_without_resizing() -> None:
     monitor = load_module(ROOT / "infra" / "monitoring" / "host_monitor.py", "host_monitor_escalation")
     contract = json.loads((ROOT / "infra" / "vps-contract.json").read_text(encoding="utf-8"))

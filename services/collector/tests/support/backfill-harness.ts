@@ -7,7 +7,7 @@ import { Client } from 'pg';
 import { runBackfill, type BackfillResult } from '../../src/jobs/backfill.js';
 import { importCasArtifact } from '../../src/wb/cas-artifact.js';
 
-export const tenantId = 'amirova-test';
+export const tenantId = 'pilot-tenant';
 
 /** Structural nmId dictionary keys of the synthetic observations (anonymised shape of the fixtures). */
 export function sku(index: number): { nmId: number; subject: string; category: string; brand: string; supplierArticle: string } {

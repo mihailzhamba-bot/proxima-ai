@@ -12,10 +12,10 @@ import type { WbTransport } from '../src/wb/transport.js';
 test('backfill args separate artifact and live modes', () => {
   const sales = 'a'.repeat(64);
   const orders = 'b'.repeat(64);
-  assert.deepEqual(parseBackfillArgs(['--tenant', 'amirova-test', '--source', `artifact:${sales},${orders}`]), { tenantId: 'amirova-test', mode: 'artifact', artifactShas: [sales, orders] });
-  assert.deepEqual(parseBackfillArgs(['--tenant', 'amirova-test', '--from', '2026-08-30', '--resume', '--statistics-token-file', '/token']), { tenantId: 'amirova-test', mode: 'live', from: '2026-08-30', resume: true, statisticsTokenFile: '/token' });
-  assert.throws(() => parseBackfillArgs(['--tenant', 'amirova-test', '--from', '2026-08-30']), /statistics-token-file/);
-  assert.throws(() => parseBackfillArgs(['--tenant', 'amirova-test', '--from', '2026-08-30', '--source', `artifact:${sales},${orders}`]), /exactly one/);
+  assert.deepEqual(parseBackfillArgs(['--tenant', 'pilot-tenant', '--source', `artifact:${sales},${orders}`]), { tenantId: 'pilot-tenant', mode: 'artifact', artifactShas: [sales, orders] });
+  assert.deepEqual(parseBackfillArgs(['--tenant', 'pilot-tenant', '--from', '2026-08-30', '--resume', '--statistics-token-file', '/token']), { tenantId: 'pilot-tenant', mode: 'live', from: '2026-08-30', resume: true, statisticsTokenFile: '/token' });
+  assert.throws(() => parseBackfillArgs(['--tenant', 'pilot-tenant', '--from', '2026-08-30']), /statistics-token-file/);
+  assert.throws(() => parseBackfillArgs(['--tenant', 'pilot-tenant', '--from', '2026-08-30', '--source', `artifact:${sales},${orders}`]), /exactly one/);
 });
 
 test('cas_import stores immutable bytes and manifest outside Git', async () => {

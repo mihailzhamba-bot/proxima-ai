@@ -22,7 +22,7 @@ from proxima_control_plane.norm.cli import main as norm_main
 OWNER_DSN = os.environ.get("PROXIMA_TEST_POSTGRES_DSN", "")
 NORM_DSN = os.environ.get("PROXIMA_TEST_DSN_NORM", "")
 WEBAPP_DSN = os.environ.get("PROXIMA_TEST_DSN_WEBAPP", "")
-TENANT = "amirova-test"
+TENANT = "pilot-tenant"
 # «Вчера» по календарю Europe/Moscow (AD-7): тогда data_status_current честно
 # свежий (stale = false) относительно часов кластера, без подделки времени.
 BRIEF_DAY = datetime.now(ZoneInfo("Europe/Moscow")).date() - timedelta(days=1)

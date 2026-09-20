@@ -55,8 +55,8 @@ test('funnel_csv parser fails closed on malformed identity, date, counts and mon
 });
 
 test('funnel_csv CLI accepts one tenant and rejects ambiguous input', () => {
-  assert.deepEqual(parseFunnelCsvArgs(['--tenant', 'amirova-test']), { tenantId: 'amirova-test' });
+  assert.deepEqual(parseFunnelCsvArgs(['--tenant', 'pilot-tenant']), { tenantId: 'pilot-tenant' });
   assert.throws(() => parseFunnelCsvArgs([]), /usage/);
   assert.throws(() => parseFunnelCsvArgs(['--tenant', 'INVALID']), /must match/);
-  assert.throws(() => parseFunnelCsvArgs(['--tenant', 'amirova-test', '--extra']), /usage/);
+  assert.throws(() => parseFunnelCsvArgs(['--tenant', 'pilot-tenant', '--extra']), /usage/);
 });

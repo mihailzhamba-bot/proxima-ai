@@ -19,7 +19,7 @@ import { FIXTURE_BRIEF_SIGNALS } from "@/lib/fixtures/brief";
  * (`status = 'ok' AND stale IS FALSE AND brief_day = last_full_day`).
  */
 
-const TENANT = "amirova-test";
+const TENANT = "pilot-tenant";
 
 const FRESH_STATUS = {
   last_full_day: "2026-08-29",
@@ -123,7 +123,7 @@ describe("provider: tenant validation (AD-9)", () => {
   it("невалидный tenant не подходит под шаблон AD-9", () => {
     expect(() =>
       createPostgresProvider(
-        { WEBAPP_TENANT_ID: "Amirova Test", WEBAPP_DATA_DATABASE_URI_FILE: writeUriFile() },
+        { WEBAPP_TENANT_ID: "Pilot Tenant", WEBAPP_DATA_DATABASE_URI_FILE: writeUriFile() },
         { createPool: () => stubPool(rows, { queries: [], connectHooks: [] }) },
       ),
     ).toThrow(/не подходит/);

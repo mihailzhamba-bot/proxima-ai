@@ -45,19 +45,19 @@ function driftCode(error: unknown): boolean {
 }
 
 test('funnel args: tenant and analytics token file are required; run-day and read-write opt-in are optional', () => {
-  assert.deepEqual(parseFunnelV3Args(['--tenant', 'amirova-test', '--analytics-token-file', '/run/secrets/token']), {
-    tenantId: 'amirova-test', analyticsTokenFile: '/run/secrets/token', allowAnalyticsReadWrite: false,
+  assert.deepEqual(parseFunnelV3Args(['--tenant', 'pilot-tenant', '--analytics-token-file', '/run/secrets/token']), {
+    tenantId: 'pilot-tenant', analyticsTokenFile: '/run/secrets/token', allowAnalyticsReadWrite: false,
   });
-  assert.deepEqual(parseFunnelV3Args(['--allow-analytics-read-write', '--tenant', 'amirova-test', '--run-day', '2026-08-31', '--analytics-token-file', 'f']), {
-    tenantId: 'amirova-test', analyticsTokenFile: 'f', runDay: '2026-08-31', allowAnalyticsReadWrite: true,
+  assert.deepEqual(parseFunnelV3Args(['--allow-analytics-read-write', '--tenant', 'pilot-tenant', '--run-day', '2026-08-31', '--analytics-token-file', 'f']), {
+    tenantId: 'pilot-tenant', analyticsTokenFile: 'f', runDay: '2026-08-31', allowAnalyticsReadWrite: true,
   });
-  assert.throws(() => parseFunnelV3Args(['--tenant', 'amirova-test']), /required option: --analytics-token-file/);
+  assert.throws(() => parseFunnelV3Args(['--tenant', 'pilot-tenant']), /required option: --analytics-token-file/);
   assert.throws(() => parseFunnelV3Args(['--analytics-token-file', 'f']), /required option: --tenant/);
-  assert.throws(() => parseFunnelV3Args(['--tenant', 'Amirova', '--analytics-token-file', 'f']), /--tenant must match/);
-  assert.throws(() => parseFunnelV3Args(['--tenant', 'amirova-test', '--analytics-token-file', 'f', '--run-day', '31.08.2026']), /--run-day must be YYYY-MM-DD/);
-  assert.throws(() => parseFunnelV3Args(['--tenant', 'amirova-test', '--analytics-token-file', 'f', '--run-day', '2026-02-30']), /calendar date/);
-  assert.throws(() => parseFunnelV3Args(['--tenant', 'amirova-test', '--statistics-token-file', 'f']), /unknown option --statistics-token-file/);
-  assert.throws(() => parseFunnelV3Args(['--tenant', 'amirova-test', '--tenant', 'x', '--analytics-token-file', 'f']), /given twice/);
+  assert.throws(() => parseFunnelV3Args(['--tenant', 'Petrova', '--analytics-token-file', 'f']), /--tenant must match/);
+  assert.throws(() => parseFunnelV3Args(['--tenant', 'pilot-tenant', '--analytics-token-file', 'f', '--run-day', '31.08.2026']), /--run-day must be YYYY-MM-DD/);
+  assert.throws(() => parseFunnelV3Args(['--tenant', 'pilot-tenant', '--analytics-token-file', 'f', '--run-day', '2026-02-30']), /calendar date/);
+  assert.throws(() => parseFunnelV3Args(['--tenant', 'pilot-tenant', '--statistics-token-file', 'f']), /unknown option --statistics-token-file/);
+  assert.throws(() => parseFunnelV3Args(['--tenant', 'pilot-tenant', '--tenant', 'x', '--analytics-token-file', 'f']), /given twice/);
   assert.throws(() => parseFunnelV3Args(['--tenant', '--analytics-token-file']), /requires a value/);
 });
 
@@ -195,7 +195,7 @@ test('funnel_v3: a read-write or multi-category analytics token fails closed bef
     await writeFile(uriFile, 'postgresql://unused@127.0.0.1:1/unused\n', { mode: 0o600 });
     const env = { COLLECTOR_DATABASE_URI_FILE: uriFile, PROXIMA_RAW_DIR: dir };
     const transport = () => { throw new Error('network must not be touched'); };
-    const args = (tokenFile: string, allowAnalyticsReadWrite = false) => ({ tenantId: 'amirova-test', runDay: '2026-08-31', analyticsTokenFile: tokenFile, allowAnalyticsReadWrite });
+    const args = (tokenFile: string, allowAnalyticsReadWrite = false) => ({ tenantId: 'pilot-tenant', runDay: '2026-08-31', analyticsTokenFile: tokenFile, allowAnalyticsReadWrite });
 
     const readWrite = join(dir, 'rw');
     await writeFile(readWrite, `${jwt(1 << 2)}\n`, { mode: 0o600 });

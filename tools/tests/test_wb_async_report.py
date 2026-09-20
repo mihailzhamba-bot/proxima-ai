@@ -37,7 +37,7 @@ def zip_bytes() -> bytes:
 
 
 class FakeRepository:
-    def __init__(self, collector, *, quota_used: int = 0, tenants: tuple[str, ...] = ("amirova-test",)) -> None:
+    def __init__(self, collector, *, quota_used: int = 0, tenants: tuple[str, ...] = ("pilot-tenant",)) -> None:
         self.collector = collector
         self.quota_used = quota_used
         self.tenants = set(tenants)
@@ -232,7 +232,7 @@ def test_waiting_processing_retry_are_polled_without_retry_post(tmp_path: Path) 
     delays: list[float] = []
     runner, client = make_runner(collector, tmp_path, repository, handler, delays)
     try:
-        result = runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO)
+        result = runner.collect("pilot-tenant", PERIOD_FROM, PERIOD_TO)
     finally:
         client.close()
 
@@ -272,7 +272,7 @@ def test_three_404s_replay_create_with_same_uuid(tmp_path: Path) -> None:
 
     runner, client = make_runner(collector, tmp_path, repository, handler, [])
     try:
-        result = runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO)
+        result = runner.collect("pilot-tenant", PERIOD_FROM, PERIOD_TO)
     finally:
         client.close()
 
@@ -304,7 +304,7 @@ def test_failed_uses_official_regenerate_but_retry_status_only_waits(tmp_path: P
 
     runner, client = make_runner(collector, tmp_path, repository, handler, [])
     try:
-        result = runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO)
+        result = runner.collect("pilot-tenant", PERIOD_FROM, PERIOD_TO)
     finally:
         client.close()
 
@@ -332,7 +332,7 @@ def test_download_without_csv_blocks_with_parse_error(tmp_path: Path) -> None:
     runner, client = make_runner(collector, tmp_path, repository, handler, [])
     try:
         with pytest.raises(collector.WbAsyncReportError, match="exactly one CSV"):
-            runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO)
+            runner.collect("pilot-tenant", PERIOD_FROM, PERIOD_TO)
     finally:
         client.close()
 
@@ -360,7 +360,7 @@ def test_row_count_mismatch_blocks_task_instead_of_reporting_success(tmp_path: P
     runner, client = make_runner(collector, tmp_path, repository, handler, [])
     try:
         with pytest.raises(collector.RowCountMismatch):
-            runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO)
+            runner.collect("pilot-tenant", PERIOD_FROM, PERIOD_TO)
     finally:
         client.close()
 
@@ -401,7 +401,7 @@ def test_raw_is_spooled_and_committed_before_invalid_json_is_parsed(tmp_path: Pa
     runner, client = make_runner(collector, tmp_path, repository, handler, [])
     try:
         with pytest.raises(collector.WbAsyncReportError, match="not valid JSON"):
-            runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO)
+            runner.collect("pilot-tenant", PERIOD_FROM, PERIOD_TO)
     finally:
         client.close()
 
@@ -413,7 +413,7 @@ def test_raw_is_spooled_and_committed_before_invalid_json_is_parsed(tmp_path: Pa
 def test_database_failure_leaves_durable_spool_for_idempotent_recovery(tmp_path: Path) -> None:
     collector = load_collector()
     repository = FakeRepository(collector)
-    task, _ = repository.reserve_task("amirova-test", PERIOD_FROM, PERIOD_TO, PERIOD_TO, uuid.uuid4())
+    task, _ = repository.reserve_task("pilot-tenant", PERIOD_FROM, PERIOD_TO, PERIOD_TO, uuid.uuid4())
     repository.fail_persist_once = True
     recorder = collector.DurableRawRecorder(tmp_path / "spool", repository)
     response = httpx.Response(200, content=b'{"data":"Created"}')
@@ -440,7 +440,7 @@ def test_quota_exhaustion_happens_before_uuid_or_network_request(tmp_path: Path)
     runner, client = make_runner(collector, tmp_path, repository, handler, [])
     try:
         with pytest.raises(collector.QuotaExhausted):
-            runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO)
+            runner.collect("pilot-tenant", PERIOD_FROM, PERIOD_TO)
     finally:
         client.close()
 
@@ -497,12 +497,12 @@ def test_analytics_rw_token_requires_explicit_opt_in() -> None:
         collector.validate_analytics_token(token(rw_analytics, acc=1), now=NOW, allow_read_write=True)
     with pytest.raises(collector.WbAsyncReportError, match="expired"):
         collector.validate_analytics_token(token(rw_analytics, exp=1), now=NOW, allow_read_write=True)
-    args = collector.parse_args(["--tenant-id", "amirova-test"])
+    args = collector.parse_args(["--tenant-id", "pilot-tenant"])
     assert args.allow_analytics_read_write is False
-    enabled = collector.parse_args(["--tenant-id", "amirova-test", "--allow-analytics-read-write"])
+    enabled = collector.parse_args(["--tenant-id", "pilot-tenant", "--allow-analytics-read-write"])
     assert enabled.allow_analytics_read_write is True
     with pytest.raises(SystemExit):
-        collector.parse_args(["--tenant-id", "amirova-test", "--allow"])
+        collector.parse_args(["--tenant-id", "pilot-tenant", "--allow"])
 
 
 # --- Story 3.2: run ledger, tenant fail-closed, explicit period, daily guard ---
@@ -559,14 +559,14 @@ def test_run_is_opened_running_and_closed_succeeded(tmp_path: Path, capsys: pyte
     repository = FakeRepository(collector)
     runner, client = make_runner(collector, tmp_path, repository, happy_path_handler(repository), [])
     try:
-        result = runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO, git_sha="0902688", image_id="sha256:fixture")
+        result = runner.collect("pilot-tenant", PERIOD_FROM, PERIOD_TO, git_sha="0902688", image_id="sha256:fixture")
     finally:
         client.close()
 
     assert result.lifecycle_status == "DOWNLOADED"
     assert len(repository.runs) == 1
     run = repository.runs[0]
-    assert run["tenant_id"] == "amirova-test"
+    assert run["tenant_id"] == "pilot-tenant"
     assert run["kind"] == "funnel_csv_download"
     assert run["status"] == "SUCCEEDED"
     assert run["finished_at"] is not None
@@ -598,7 +598,7 @@ def test_failed_run_is_closed_failed_and_the_original_error_surfaces(tmp_path: P
     runner, client = make_runner(collector, tmp_path / "first", repository, denied_create, [])
     try:
         with pytest.raises(collector.WbAsyncReportError, match="create failed with HTTP 403"):
-            runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO)
+            runner.collect("pilot-tenant", PERIOD_FROM, PERIOD_TO)
     finally:
         client.close()
     assert [run["status"] for run in repository.runs] == ["FAILED"]
@@ -613,7 +613,7 @@ def test_failed_run_is_closed_failed_and_the_original_error_surfaces(tmp_path: P
     runner, client = make_runner(collector, tmp_path / "second", stuck, denied_create, [])
     try:
         with pytest.raises(collector.WbAsyncReportError, match="create failed with HTTP 403"):
-            runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO)
+            runner.collect("pilot-tenant", PERIOD_FROM, PERIOD_TO)
     finally:
         client.close()
     assert [run["status"] for run in stuck.runs] == ["RUNNING"]
@@ -648,7 +648,7 @@ def test_second_run_in_a_day_does_not_create_a_report(tmp_path: Path, capsys: py
     first = FakeRepository(collector)
     runner, client = make_runner(collector, tmp_path / "first", first, handler, [], now=today)
     try:
-        downloaded = runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO)
+        downloaded = runner.collect("pilot-tenant", PERIOD_FROM, PERIOD_TO)
     finally:
         client.close()
     assert downloaded.lifecycle_status == "DOWNLOADED"
@@ -659,7 +659,7 @@ def test_second_run_in_a_day_does_not_create_a_report(tmp_path: Path, capsys: py
     other_from, other_to = date.fromisoformat("2026-08-10"), date.fromisoformat("2026-08-16")
     runner, client = make_runner(collector, tmp_path / "second", second, handler, [], now=today)
     try:
-        guarded = runner.collect("amirova-test", other_from, other_to)
+        guarded = runner.collect("pilot-tenant", other_from, other_to)
     finally:
         client.close()
     assert create_posts == 1
@@ -676,7 +676,7 @@ def test_second_run_in_a_day_does_not_create_a_report(tmp_path: Path, capsys: py
     clock["now"] = today + timedelta(days=1)
     runner, client = make_runner(collector, tmp_path / "third", second, handler, [], now=clock["now"])
     try:
-        resumed = runner.collect("amirova-test", other_from, other_to)
+        resumed = runner.collect("pilot-tenant", other_from, other_to)
     finally:
         client.close()
     assert resumed.lifecycle_status == "DOWNLOADED"
@@ -710,7 +710,7 @@ def test_unreadable_downloads_list_fails_closed_without_creating(tmp_path: Path)
         runner, client = make_runner(collector, tmp_path / name, repository, handler, [])
         try:
             with pytest.raises(collector.WbAsyncReportError, match=message):
-                runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO)
+                runner.collect("pilot-tenant", PERIOD_FROM, PERIOD_TO)
         finally:
             client.close()
         assert posts == 0, name
@@ -733,7 +733,7 @@ def test_unreadable_downloads_list_fails_closed_without_creating(tmp_path: Path)
     delays: list[float] = []
     runner, client = make_runner(collector, tmp_path / "rate-limited", repository, rate_limited_once, delays)
     try:
-        result = runner.collect("amirova-test", PERIOD_FROM, PERIOD_TO)
+        result = runner.collect("pilot-tenant", PERIOD_FROM, PERIOD_TO)
     finally:
         client.close()
     assert result.lifecycle_status == "DOWNLOADED"
@@ -746,26 +746,26 @@ def test_reports_created_on_reads_utc_timestamps_into_the_moscow_day() -> None:
     collector = load_collector()
     body = json.loads(DOWNLOADS_LIST_FIXTURE.read_text(encoding="utf-8"))
     # Reports made by another consumer never consume Proxima's daily guard.
-    assert collector.reports_created_on(body, date.fromisoformat("2026-08-30"), "amirova-test") == 0
-    own = {"data": [{"id": "x", "name": "proxima-amirova-test-2026-08-03-2026-08-09", "createdAt": "2026-08-30 04:17:23"}]}
-    assert collector.reports_created_on(own, date.fromisoformat("2026-08-30"), "amirova-test") == 1
-    assert collector.reports_created_on(own, date.fromisoformat("2026-08-29"), "amirova-test") == 0
+    assert collector.reports_created_on(body, date.fromisoformat("2026-08-30"), "pilot-tenant") == 0
+    own = {"data": [{"id": "x", "name": "proxima-pilot-tenant-2026-08-03-2026-08-09", "createdAt": "2026-08-30 04:17:23"}]}
+    assert collector.reports_created_on(own, date.fromisoformat("2026-08-30"), "pilot-tenant") == 1
+    assert collector.reports_created_on(own, date.fromisoformat("2026-08-29"), "pilot-tenant") == 0
     # 21:30 UTC (D20 reads createdAt as UTC) is already the next Moscow day
-    late = {"data": [{"id": "x", "name": "proxima-amirova-test-period", "createdAt": "2026-08-29 21:30:00"}]}
-    assert collector.reports_created_on(late, date.fromisoformat("2026-08-30"), "amirova-test") == 1
-    assert collector.reports_created_on(late, date.fromisoformat("2026-08-29"), "amirova-test") == 0
-    explicit = {"data": [{"id": "x", "name": "proxima-amirova-test-period", "createdAt": "2026-08-30T00:30:00+03:00"}]}
-    assert collector.reports_created_on(explicit, date.fromisoformat("2026-08-30"), "amirova-test") == 1
-    assert collector.reports_created_on(explicit, date.fromisoformat("2026-08-29"), "amirova-test") == 0
+    late = {"data": [{"id": "x", "name": "proxima-pilot-tenant-period", "createdAt": "2026-08-29 21:30:00"}]}
+    assert collector.reports_created_on(late, date.fromisoformat("2026-08-30"), "pilot-tenant") == 1
+    assert collector.reports_created_on(late, date.fromisoformat("2026-08-29"), "pilot-tenant") == 0
+    explicit = {"data": [{"id": "x", "name": "proxima-pilot-tenant-period", "createdAt": "2026-08-30T00:30:00+03:00"}]}
+    assert collector.reports_created_on(explicit, date.fromisoformat("2026-08-30"), "pilot-tenant") == 1
+    assert collector.reports_created_on(explicit, date.fromisoformat("2026-08-29"), "pilot-tenant") == 0
     mixed = {"data": [own["data"][0], {"name": "detail_history_report", "createdAt": "2026-08-30 05:00:00"}]}
-    assert collector.reports_created_on(mixed, date.fromisoformat("2026-08-30"), "amirova-test") == 1
-    assert collector.reports_created_on({"data": []}, date.fromisoformat("2026-08-30"), "amirova-test") == 0
+    assert collector.reports_created_on(mixed, date.fromisoformat("2026-08-30"), "pilot-tenant") == 1
+    assert collector.reports_created_on({"data": []}, date.fromisoformat("2026-08-30"), "pilot-tenant") == 0
     with pytest.raises(collector.WbAsyncReportError, match="schema drift"):
-        collector.reports_created_on({"data": "x"}, date.fromisoformat("2026-08-30"), "amirova-test")
+        collector.reports_created_on({"data": "x"}, date.fromisoformat("2026-08-30"), "pilot-tenant")
     with pytest.raises(collector.WbAsyncReportError, match="schema drift"):
-        collector.reports_created_on(["not", "an", "object"], date.fromisoformat("2026-08-30"), "amirova-test")
+        collector.reports_created_on(["not", "an", "object"], date.fromisoformat("2026-08-30"), "pilot-tenant")
     with pytest.raises(collector.WbAsyncReportError, match="no readable createdAt"):
-        collector.reports_created_on({"data": [{"name": "proxima-amirova-test-period", "createdAt": "yesterday"}]}, date.fromisoformat("2026-08-30"), "amirova-test")
+        collector.reports_created_on({"data": [{"name": "proxima-pilot-tenant-period", "createdAt": "yesterday"}]}, date.fromisoformat("2026-08-30"), "pilot-tenant")
 
 
 def test_parse_period_accepts_explicit_closed_range_and_keeps_latest_closed_week() -> None:
@@ -788,5 +788,5 @@ def test_parse_period_accepts_explicit_closed_range_and_keeps_latest_closed_week
             collector.parse_period(value, NOW)
     with pytest.raises(collector.WbAsyncReportError, match="timezone-aware"):
         collector.parse_period("2026-08-03..2026-08-09", datetime.fromisoformat("2026-08-13T12:00:00"))
-    assert collector.parse_args(["--tenant-id", "amirova-test", "--period", "2026-08-03..2026-08-09"]).period == "2026-08-03..2026-08-09"
-    assert collector.parse_args(["--tenant-id", "amirova-test"]).period == "latest-closed-week"
+    assert collector.parse_args(["--tenant-id", "pilot-tenant", "--period", "2026-08-03..2026-08-09"]).period == "2026-08-03..2026-08-09"
+    assert collector.parse_args(["--tenant-id", "pilot-tenant"]).period == "latest-closed-week"
