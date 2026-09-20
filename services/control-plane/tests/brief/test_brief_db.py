@@ -129,6 +129,7 @@ def test_ok_day_writes_a_contract_payload_with_expected_deviations(seeded: str) 
         "sample_days": 14,
     }
     assert payload["deviation_pct"] == {"orders": -21.7, "revenue": 18.9}
+    assert payload["threshold"] == {"value": None, "source": None, "date": None}  # Story 4.2: null до Story 4.4
     assert payload["signals"] == []
     assert payload["source_refs"]
     # data_status скопирован из view на момент записи (AD-9): collect был только что.
@@ -199,6 +200,8 @@ def test_insufficient_norm_status_copies_into_brief_status(seeded: str) -> None:
     assert result["payload"]["norm"]["sample_days"] == 9
     assert result["payload"]["deviation_pct"] is None
     assert result["payload"]["actual"]["orders"] == ACTUAL_ORDERS
+    assert result["payload"]["threshold"] == {"value": None, "source": None, "date": None}
+    assert result["payload"]["signals"] == []
 
 
 def test_missing_norm_versions_block_the_day(seeded: str) -> None:
@@ -211,6 +214,8 @@ def test_missing_norm_versions_block_the_day(seeded: str) -> None:
     assert result["payload"]["norm"] is None
     assert result["payload"]["deviation_pct"] is None
     assert result["payload"]["reason"]
+    assert result["payload"]["threshold"] == {"value": None, "source": None, "date": None}
+    assert result["payload"]["signals"] == []
 
 
 def test_webapp_role_sees_brief_current_only_with_tenant_guc(seeded: str) -> None:

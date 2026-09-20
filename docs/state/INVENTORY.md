@@ -1,6 +1,6 @@
 # INVENTORY - сервер 135.106.186.210 (claudette)
 
-**Дата:** 30.08.2026, 05:55-06:10 UTC. **Статус:** финал Сессии 1b (30.08.2026). Часть «сервер» - Этап 1.2; часть «код» - §5 (сводка из `MIGRATION-GAPS.md`, `WEB-STATE.md`, `API-FACTS.md`). База регрессии - `WORKS-TODAY.md` (33/33).
+**Дата:** 30.08.2026, 05:55-06:10 UTC. **Статус:** финал Сессии 1b (30.08.2026). Часть «сервер» - Этап 1.2. База регрессии - `WORKS-TODAY.md` (33/33). Раздел «Код» (§5) обновлён 09.09.2026 по `main` `d533fee` (полный SHA `d533feefdd3d88b0d0dc43b2e5625c56d5e0abec`, PR #121); серверные разделы - по перепроверке 08.09 13:09-13:12 UTC (`RELEASE-READINESS-1.14.md` §5).
 **Метод:** только чтение по `ssh -o BatchMode=yes proxima '<cmd>'` под `sudo`. Секреты не читались: для них путь/mode/owner/size/дата и sha256 (A3). Роль Postgres из `/run/secrets/postgres_user` в выводе заменена на `<pg_user>`.
 **Не покрыто:** содержимое OpenHands `settings.json`/`secrets.json`, содержимое `.env`-файлов (только имена переменных), бэклог Jira (см. `BACKLOG-REVIEW.md`).
 
@@ -62,8 +62,8 @@
 
 1. **Незапушенная работа PA-50 - ЗАКРЫТ 30.08 (D11):** ветка спасена в `origin/ai/pa-50` @ `d8c912c`, workspace не тронут. Осталось решение «мержить или нет».
    Исходная запись: Workspace `26fa6b87…` (0700, openhands-agent): `ai/pa-50` @ `d8c912c`, 4 коммита над `db56429` (`4f5d6c1 feat(webapp): провайдер данных и полная карточка сигнала`, `d4febf5`, `68785d8`, `d8c912c docs: доказательство make verify`). В GitHub ветки `ai/pa-50` нет (`git ls-remote --heads origin`, с мака). Единственная копия - на сервере.
-2. **Схема БД отстаёт от кода на 4 миграции.** `schema_migrations` в `proxima`: версии 1-6, последняя `raw_artifact_headers` 14.08 17:53. В main `db/migrations` = 001-010 (007 quality_lineage, 008 release_records, 009 runtime_roles, 010 client_passport). `/srv/proxima-ai/repo` (initdb-mount compose) содержит только 001-006.
-3. **Данные не обновляются.** Последний WB-ответ: `raw_wb_analytics_responses.persisted_at` = 25.08 16:33, `stg_wb_nm_report_rows` 1220 строк (staged 25.08). Business-signal: 14.08 19:37. `data/day1-wb-api` и `data/wb-analytics-spool` пусты. Расписания сбора нет: ни cron, ни timer (только monitor, backup, zone-check). 5 дней без данных на 30.08.
+2. **Схема БД отстаёт от кода на 4 миграции** *(30.08; на 08.09.2026 13:09 UTC - на 12, `RELEASE-READINESS-1.14.md` §5, NW-3)*. `schema_migrations` в `proxima`: версии 1-6, последняя `raw_artifact_headers` 14.08 17:53. В main `db/migrations` = 001-010 (007 quality_lineage, 008 release_records, 009 runtime_roles, 010 client_passport). `/srv/proxima-ai/repo` (initdb-mount compose) содержит только 001-006. **Перепроверено 08.09.2026 13:09 UTC (D35):** не изменилось по сути - схема боевой базы по-прежнему `6`, чекаут `/srv/proxima-ai/repo` - по-прежнему `006_raw_artifact_headers.sql`, но в `main` теперь 001-018: отставание 12 миграций (007-018) - ожидаемое состояние до релиза 1.14 (вт 15.09 по D33/D35), накатываются только разделом §2 runbook; ручных накаток не было (дерево чекаута чистое). Не чинить руками.
+3. **Данные не обновляются.** Последний WB-ответ: `raw_wb_analytics_responses.persisted_at` = 25.08 16:33, `stg_wb_nm_report_rows` 1220 строк (staged 25.08). Business-signal: 14.08 19:37. `data/day1-wb-api` и `data/wb-analytics-spool` пусты. Расписания сбора нет: ни cron, ни timer (только monitor, backup, zone-check). 5 дней без данных на 30.08. **Перепроверено 08.09.2026 13:09 UTC (`RELEASE-READINESS-1.14.md` §5, NW-2):** расписание сбора по-прежнему отсутствует - единственный proxima-таймер на сервере `proxima-host-monitor.timer`; юнитов `proxima-morning@`/`proxima-restore-check@`/`proxima-alert@` в `/etc/systemd/system/` нет; последние данные WB - те же 25.08 16:33 UTC. По D35 сбор запускается только релизом 1.14 после слова «деплой»; до него цепочка гоняется репетицией в одноразовом compose-проекте `proxima-rehearsal` (`tools/rehearsal_run.sh`), боевой контур не трогается.
 4. **Пять копий кода разъехались.** `~/proxima-ai` `db56429` (main) | `/srv/proxima-ai/repo` `fd95fcb` (25.08, detached, remote нет) | `~/proxima-webapp-staging/repo` `bae976c` (26.08, remote → отсутствующий `/tmp/pa49-head.bundle`, `?? Dockerfile.staging`) | OpenHands `tasks/pa-50` `db56429` | OpenHands `26fa…` `d8c912c`. Compose пилота монтирует миграции из самой старой копии.
 5. **Веб-морда не соответствует main и запущена вручную.** Образ `proxima-webapp-staging:bae976c` собран из ветки PA-49 (26.08), тогда как PA-49 в main = `8dfa101`; контейнер без compose-label, без env_file, `WEBAPP_REQUIRE_AUTH=false`, `NODE_ENV=production`. `infra/webapp.compose.yaml` (auth=true, Caddy, домен `WEBAPP_DOMAIN`) в main - не развёрнут, Caddy на сервере нет.
 6. **D8 не реализован на хосте.** Коммит `8dfa101 feat(infra): postgres bridge binding 172.17.0.1:5432` есть в main (`~/proxima-ai/infra/compose.yaml:19`), но `/srv` compose без этой строки и `ss` показывает 5432 только на 127.0.0.1. Sandbox-путь к `proxima_test`/`proxima_dev` через bridge отсутствует; вместо него в зоне живёт отдельный rootless Postgres 16.15 с пустой базой.
@@ -120,10 +120,12 @@ Rootless docker (UID 1002): `proxima-dev` postgres:16-alpine up ~1h, ports не�
 
 ### c) Расписание
 
-`systemctl list-timers --all`: `proxima-host-monitor.timer` (OnBootSec=2min, OnUnitActiveSec=1min, Persistent) - последний запуск 05:57:00; остальные системные (apt-daily, logrotate, man-db, e2scrub, privoxy-cleanup, …). User-timers обоих юзеров: только `launchpadlib-cache-clean.timer`.
-`sudo ls /etc/cron.d`: `e2scrub_all`, `openhands-zone-check` (`*/5 * * * * root /usr/local/sbin/openhands-zone-check.sh`), `proxima-pg-backup` (`0 3 * * * root /usr/local/bin/proxima-pg-backup.sh >> /var/log/proxima-backup.log`). `/var/spool/cron/crontabs` пуст; `crontab -l` для proxima-admin/openhands-agent/root - нет.
+**Дата:** 30.08.2026, 05:55-06:10 UTC; перепроверено 08.09.2026 13:09-13:12 UTC (`RELEASE-READINESS-1.14.md` §5).
+
+`systemctl list-timers --all`: `proxima-host-monitor.timer` (OnBootSec=2min, OnUnitActiveSec=1min, Persistent) - последний запуск 05:57:00; остальные системные (apt-daily, logrotate, man-db, e2scrub, privoxy-cleanup, …). User-timers обоих юзеров: только `launchpadlib-cache-clean.timer`. **08.09:** `systemctl list-timers --all | grep -i proxima` → по-прежнему единственный `proxima-host-monitor.timer` (last 13:09:34 UTC); утренних таймеров нет (NW-2, WT-34/WT-38 `NOT APPLICABLE`).
+`sudo ls /etc/cron.d`: `e2scrub_all`, `openhands-zone-check` (`*/5 * * * * root /usr/local/sbin/openhands-zone-check.sh`), `proxima-pg-backup` (`0 3 * * * root /usr/local/bin/proxima-pg-backup.sh >> /var/log/proxima-backup.log`). `/var/spool/cron/crontabs` пуст; `crontab -l` для proxima-admin/openhands-agent/root - нет. **08.09:** `/etc/cron.d/` без изменений - те же три файла (NW-2).
 `proxima-host-monitor.service`: `User=proxima-monitor`, `EnvironmentFile=/etc/proxima-ai/monitor.env` (переменные `PROXIMA_MONITOR_CONTRACT`, `PROXIMA_MONITOR_STATE_FILE`, `PROXIMA_TELEGRAM_TOKEN_FILE`, `PROXIMA_TELEGRAM_CHAT_ID_FILE`), `ExecStart=/usr/bin/python3 /usr/local/lib/proxima-ai/host_monitor.py`, hardening (ProtectSystem=strict, ProtectHome, NoNewPrivileges), `ReadWritePaths=/var/lib/proxima-ai-monitor`.
-`proxima-pg-backup.sh` (1599 B, 0750 root, 29.08 12:31): `pg_dump` `proxima` через `docker exec proxima-ai-postgres-1` → `/var/backups/proxima/<date>-proxima.sql.gz`, age-шифрование (`backup_age_recipient`) → `s3cmd put s3://proxima-backups/YYYY-MM/…`; retention local 14 дн; затем `proxima_dev` из rootless `proxima-dev` (`pg_dump -U proxima_dev`). Лог 30.08: `OK local proxima (64K)`, `OK s3`, `OK local proxima_dev (4.0K)`, `OK s3`.
+`proxima-pg-backup.sh` (1599 B, 0750 root, 29.08 12:31): `pg_dump` `proxima` через `docker exec proxima-ai-postgres-1` → `/var/backups/proxima/<date>-proxima.sql.gz`, age-шифрование (`backup_age_recipient`) → `s3cmd put s3://proxima-backups/YYYY-MM/…`; retention local 14 дн; затем `proxima_dev` из rootless `proxima-dev` (`pg_dump -U proxima_dev`). Лог 30.08: `OK local proxima (64K)`, `OK s3`, `OK local proxima_dev (4.0K)`, `OK s3`. **08.09:** cron действует - лог 08.09 03:00:02-03: `OK local proxima (64K)`, `OK s3 2026-09-08-proxima.sql.gz.age`, `OK local proxima_dev`, `OK s3 …proxima_dev`; S3 - только дампы, копии артефактов бэкфилла там нет (B6 readiness).
 `openhands-zone-check.sh` (1984 B, 29.08 18:56): проверяет agent-canvas/docker-rootless active, диск >75% / <20GB, память `user@1002` >7.3GB, контейнеров в зоне >2, dutch-tunnel/1080/privoxy/1081, ufw не пускает 8000/1800x, 8000 слушает; алерт в Telegram через `telegram_bot_token`/`telegram_chat_id`. Лог: 7 ALERT (29.08 12:32 «port 8000 answers externally: 200»; 18:35-18:55 ×4 «zone memory 37xx MB near 4G limit»; ещё 2 - не выведены), сейчас `ok`.
 
 ### d) Базы данных
@@ -220,27 +222,84 @@ sha256 (первые 12): `wb_analytics_token` etc `90ff3aec07ed` / signal-input
 ### j) Тесты и Makefile (`~/proxima-ai`)
 
 `find services db tools -name "*test*" -o -name "*.spec.*" | grep -v node_modules`: Python 21 файлов `test_*.py` - `services/control-plane/tests/{diagnosis/ (9), evals/, unit/, e2e/, test_boundary.py}`, `tools/tests/{test_verifiers,test_wb_async_report,test_wb_api_probe,test_runtime_roles_schema,test_wb_async_report_postgres}.py`; TS 12 файлов `*.test.ts` - `services/collector/tests/` (7: imported-boundary, manual-wb-xlsx-intake, business-signal ×3, client-passport-config, intake-contract), `services/webapp/src/tests/` (5: brief-fixtures, metrics, rub, gyr, fx). Это соответствует «48 py + 43 TS тестов» из handoff 14.08 только по файлам; число тест-кейсов не считалось.
-`grep -E '^[a-z-]+:' Makefile`: `verify: install codegen typecheck test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal`; цели `install codegen typecheck test webapp-lint webapp-build contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal agent-toolset probe-wb-api apply-migrations collect-wb-analytics`.
+`grep -E '^[a-z-]+:' Makefile`: `verify: install codegen typecheck test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal`; цели `install codegen typecheck test webapp-lint webapp-build contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal agent-toolset probe-wb-api apply-migrations collect-wb-analytics`. *(Снимок 30.08.2026 с чекаута `db56429`; цепочка `verify:` в `main` на 09.09.2026 длиннее - см. §5.1.)*
 На сервере `make verify` не запускался в `~/proxima-ai`: нет `node_modules`, `.venv`, `uv`; лог `verify-acceptance-migration-docs.log` (17K, 29.08 16:58) лежит в `/srv/openhands/logs/` - verify гонялся внутри зоны OpenHands.
 
-## 5. Код: вердикты (сводка 1b, 30.08.2026)
+## 5. Код: вердикты
 
-Итог сервера по §1: 15 компонентов работает, 3 полуготово, 2 мёртвое, 3 «не понял», 1 отсутствует (Caddy). Живого больше половины.
+Итог сервера по §1 (30.08.2026): 15 компонентов работает, 3 полуготово, 2 мёртвое, 3 «не понял», 1 отсутствует (Caddy). Живого больше половины. Раздел обновлён 09.09.2026 по `main` `d533fee` (`d533feefdd3d88b0d0dc43b2e5625c56d5e0abec`, PR #121); серверные факты кода - по перепроверке 08.09.2026 13:09-13:12 UTC (`RELEASE-READINESS-1.14.md` §5, `WORKS-TODAY.md` NW-2/NW-3, D35 «Диагноз»).
+
+### 5.1. Состояние кода в `main` на 09.09.2026 (`d533fee`)
+
+**Миграции `db/migrations` = 001-018** (18 файлов, полный список):
+
+| # | Файл | # | Файл |
+|---|---|---|---|
+| 001 | `001_bootstrap.sql` | 010 | `010_client_passport_supply_plan.sql` |
+| 002 | `002_intake_metadata.sql` | 011 | `011_run_ledger.sql` |
+| 003 | `003_wb_analytics_raw.sql` | 012 | `012_stg_wb_orders_sales.sql` |
+| 004 | `004_business_signal_slice.sql` | 013 | `013_fact_cabinet_daily.sql` |
+| 005 | `005_wb_analytics_staging.sql` | 014 | `014_norm_daily.sql` |
+| 006 | `006_raw_artifact_headers.sql` | 015 | `015_brief_daily.sql` |
+| 007 | `007_quality_lineage_facts.sql` | 016 | `016_delete_run_support.sql` |
+| 008 | `008_release_records.sql` | 017 | `017_funnel.sql` |
+| 009 | `009_runtime_roles.sql` | 018 | `018_nm_daily.sql` |
+
+Схема боевой базы на сервере - **6** (перепроверено 08.09.2026 13:09 UTC, `SELECT max(version) FROM schema_migrations`): отставание **12 миграций** (007-018) - ожидаемое состояние до релиза 1.14; накатываются только разделом §2 runbook после слова «деплой» (D35, NW-3; чекаут `/srv/proxima-ai/repo` остаётся на `006_raw_artifact_headers.sql`, `fd95fcb`).
+
+**Гейт `make verify`** (цепочка целей из `Makefile`, `verify:`):
+
+```
+install → codegen → codegen-diff → typecheck → webapp-lint → test → contracts →
+migrations → pg-roundtrip → provenance → architecture → boundary → secrets → vps →
+business-signal → wb-client → brief → wb-async-report → funnel → funnel-csv →
+nm-daily → detector → signals-ranking → live-network
+```
+
+`install` = `npm ci` + `uv sync --python 3.14 --project services/control-plane --extra test --locked` (и `core.hooksPath=.githooks`); каждый следующий шаг - свой верификатор из `tools/verify_*.py` либо workspace-тесты; `pg-roundtrip` без локального Postgres даёт `SKIP` с exit 0.
+
+**Джобы коллектора** (`services/collector/src/jobs/`, запуск `npm run <job>` в workspace `@proxima/collector`):
+
+| Джоба | Что делает | Источник |
+|---|---|---|
+| `collect` | утренний сбор: `statistics.orders` + `statistics.sales` → `stg_wb_*_obs` → `fact_cabinet_daily` + `fact_nm_daily`; живая сеть только при `WB_ALLOW_LIVE_NETWORK=1` (AD-4, флаг несёт сервис `collector` в `infra/compose.yaml`) | D35 «Диагноз»; `infra/compose.yaml` 35-52 (B7, PR #110) |
+| `backfill` | режим артефактов без сети: источник строго `artifact:<sha256>,<sha256>` из CAS | `services/collector/src/jobs/backfill.ts:22` (readiness §1 G2) |
+| `funnel-v3` | воронка v3; под PA-13 принимает read-write analytics-токен только через drop-in `proxima-funnel-v3@.service.d/10-analytics-read-write.conf` | D35; AGENTS.md pitfalls |
+| `funnel-csv-promote` | продвижение durable CSV-строк в общие факты воронки с реплеем после удаления | `Makefile` `funnel-csv` (Story 3.3) |
+
+**Шаги control-plane** (`services/control-plane`, утренняя цепочка `tools/morning_run.sh`: `collect → norm → brief`, AD-6):
+
+- `norm` - `python -m proxima_control_plane.norm run --tenant <tenant>`: норма дня = медиана окна 14 календарных дней до оцениваемого дня по заказам без отмен и по выручке (AD-8); без `--date` день берётся из `data_status_current.last_full_day` (AD-7); пишёт `norm_daily` (014) с ledger-событиями.
+- `brief` - `python -m proxima_control_plane.brief run --tenant <tenant>`: собирает сводку и **внутри себя запускает шаг детектора** (`detector.step.run_step`, порог из `detector/threshold.toml`), пишет `brief_daily` (015) с ledger-событиями `detector`/`brief`.
+
+**systemd-юниты в репо** (`infra/systemd/`, 14 файлов; на сервере из них установлен только `proxima-host-monitor.*` - он живёт в `/etc/systemd/system/`, в репо отсутствует; остальные ждут релиза 1.14):
+
+| Файл | Назначение |
+|---|---|
+| `proxima-morning@.timer` / `proxima-morning@.service` | утро 05:30 Europe/Moscow; `.service` = `tools/morning_run.sh <tenant>`, `TimeoutStartSec=55min` (дедлайн 06:30 МСК, FR-22), `OnFailure=proxima-alert@%n.service` (PA-65) |
+| `proxima-funnel-v3@.timer` / `proxima-funnel-v3@.service` (+ drop-in `proxima-funnel-v3@.service.d/10-analytics-read-write.conf`) | воронка 06:15 Europe/Moscow; drop-in - временный, до ротации PA-13 |
+| `proxima-funnel-csv@.timer` / `proxima-funnel-csv@.service` | CSV-промоушен воронки |
+| `proxima-conductor.timer` / `proxima-conductor.service`, `proxima-conductor-digest.timer` / `proxima-conductor-digest.service` | дирижёр: tick каждые 15 мин, дайджест; на сервере `codex-conductor.timer` disabled/inactive (D31/D35) |
+| `proxima-restore-check@.timer` / `proxima-restore-check@.service` | проверка восстановления из дампа, пн 06:00 МСК (runbook §5) |
+| `proxima-alert@.service` | шаблонный алерт, цель `OnFailure` (`OnFailure=proxima-alert@%n.service`) |
+
+Статус установки на сервере (08.09.2026 13:09 UTC, readiness §5): в `/etc/systemd/system/` из proxima-юнитов есть только `proxima-host-monitor.service`, `proxima-host-monitor.timer`, `proxima-tg-bot.service`; ни одного юнита из `infra/systemd/` не установлено (`proxima-morning@`, `proxima-restore-check@`, `proxima-alert@` отсутствуют) - устанавливаются релизом 1.14 (NW-2, WT-34…WT-40 `NOT APPLICABLE` до релиза).
+
+**Webapp-режимы** (`services/webapp`, `src/lib/data/provider.ts`): `WEBAPP_DATA_MODE=fixtures\|postgres`, выбор провайдера по переменной; fail-closed - неизвестное значение это ошибка, пустое/ненабранное = `fixtures`. Контейнер staging на сервере работает в fixtures-режиме (`WEBAPP_REQUIRE_AUTH=false`, 30.08); перевод витрины в postgres - релиз 2.6 (runbook-черновик `docs/operations/release-m03.md`, G5/D36).
+
+**Тесты и инструменты (`main`, 09.09.2026).** Collector: node:test через `tsx` (`services/collector/tests/`), включая db-тесты по образцу `collect.db.test.ts`; webapp: vitest + lint + typecheck (входят в `make verify`); control-plane/tools: pytest (`services/control-plane/tests`, `tools/tests`) через `uv run --python 3.14 --project services/control-plane --extra test`; CLI-джобы - `python -m proxima_control_plane.{norm,brief,detector,diagnosis}`.
+
+### 5.2. Вердикты по компонентам кода
 
 | Компонент кода | Где | Вердикт | Чем подтверждено |
 |---|---|---|---|
-| Collector (TS): интейк WB-аналитики, business-signal, seed-CLI | `services/collector` | работает | `make verify` PASS на маке 30.08 (52/52 TS-тестов, `tsc` 0); 182/0 битых импортов (MIGRATION-GAPS §7.1) |
-| Control-plane (Python): диагноз PMM-5, верификаторы | `services/control-plane`, `tools` | работает | pytest 202 passed / 4 skipped; 8 верификаторов passed (WORKS-TODAY) |
-| Инструменты WB API | `tools/wb_api_probe.py`, `tools/wb_async_report.py` | работает, но только 7-дневное окно под stockout-сигнал | API-FACTS §D; `orders` и v3-воронка нигде не собираются |
-| Миграции 001-006 | `db/migrations` | работает (= 13 таблиц в БД) | MIGRATION-GAPS §7.6 |
-| Миграции 007-010 | `db/migrations` | полуготово: в коде есть, в БД нет; писатели 5 таблиц 007 - только на ветках PA-03-02/pa41; писателей 008 нет нигде | MIGRATION-GAPS §4, §7.7 |
-| Веб-морда | `services/webapp` | полуготово: сборка/26 тестов зелёные, 100% fixtures, auth без БД, 3 из 4 экранов заглушки | WEB-STATE; рекомендация «доделывать» |
+| Collector (TS): джобы `collect`, `backfill`, `funnel-v3`, `funnel-csv-promote`; интейк WB-аналитики, business-signal, seed-CLI | `services/collector` | работает в `main`; на сервере не запущен ни разу до репетиции 08.09 | `make verify` PASS; репетиция `proxima-rehearsal` 13:10-13:11 UTC: `backfill → collect → norm → brief` все SUCCEEDED, живой хвост = 2 read-вызова (readiness §4/B8, D35) |
+| Control-plane (Python): `norm`, `brief` (+ детектор внутри), диагноз PMM-5, верификаторы | `services/control-plane`, `tools` | работает в `main`; на сервере не запущен | pytest в `make verify`; `norm`/`brief` - шаги `tools/morning_run.sh`; репетиция 08.09 - SUCCEEDED |
+| Миграции 001-006 | `db/migrations` | работает (= схема 6 в БД пилота) | `schema_migrations` = 6 (readiness §5, 08.09 13:09 UTC) |
+| Миграции 007-018 | `db/migrations` | полуготово: в `main` есть, в боевой БД нет; накат - только §2 runbook релиза 1.14; инкрементальный накат поверх живой схемы 6 с данными пилота нигде не прогонялся (репетиция и CI стартуют с пустого тома) | NW-3; readiness §1 T1, §6 п. 4 |
+| Веб-морда | `services/webapp` | работает в `main` (fixtures + postgres-провайдер, режимы `WEBAPP_DATA_MODE`); на сервере - старый образ `bae976c` в fixtures, не соответствует `main` | §1 №4; B9/B10 readiness (блокеры 2.6, в работе 08.09) |
 | Интейк ручного XLSX | `services/collector/src/intake` | работает, но пишет манифесты в ФС; таблицы `source_artifacts/artifact_manifests/intake_attempts` пусты | MIGRATION-GAPS §3.4, §7.7 |
-| 7 незамерженных веток (~1.5k строк) | `origin/ai/pa-50`, `pmm29-contracts`, `PA-03-02-promotion`, `pa41-full-w2-phase3`, `pmm-20-scn-001`, `now-orchestrator`, `pa-9`, `stash/pa-27-snapshot` | полуготово: код есть, ревью/мерж нет; коллизия трёх `010_*.sql` | MIGRATION-GAPS §4 |
-| Никогда не существовало | `tools/node_repl_server.js`, `services/webapp/drizzle/`, писатели `release_*`, `docs/evidence/` | писать заново или списать | MIGRATION-GAPS §5 |
-| Расписание сбора данных | нигде | отсутствует - никогда не было | INVENTORY §4.3 |
-
-Секреты в истории git: не найдены (276 коммитов, 12 паттернов, MIGRATION-GAPS §6). Потери при переезде: 0.
+| Секреты в истории git | - | не найдены (276 коммитов, 12 паттернов на 30.08; потери при переезде - 0) | MIGRATION-GAPS §6 |
 
 ## Доступы, выданные людям (с 08.09.2026)
 

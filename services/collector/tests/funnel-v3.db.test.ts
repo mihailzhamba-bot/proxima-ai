@@ -165,12 +165,12 @@ test('funnel_v3: 21 observations and 21 current rows, replay 0, changed payload 
     const transport = new FixtureTransport();
     const first = await h.run(transport.transport);
     assert.equal((await h.run_(first.runId)).status, 'SUCCEEDED');
-    assert.deepEqual(first.window, { runDay: RUN_DAY, start: '2026-08-25', end: '2026-08-30' });
+    assert.deepEqual(first.window, { runDay: RUN_DAY, start: '2026-08-25', end: RUN_DAY });
     assert.equal(first.activeNmIds, 3, 'stale and run-day orders do not make an nmId active');
-    assert.deepEqual(first.batches, [{ batch: 1, nmIds: 3, received: FIXTURE_OBSERVATIONS, inserted: FIXTURE_OBSERVATIONS, skipped: 0 }]);
+    assert.deepEqual(first.batches, [{ batch: 1, nmIds: 3, received: FIXTURE_OBSERVATIONS, inserted: FIXTURE_OBSERVATIONS, skipped: 0, missingNmIds: [] }]);
     assert.deepEqual(first.facts, { versions: FIXTURE_OBSERVATIONS, inputRuns: 0 });
     const request = transport.recordedRequests()[0];
-    assert.deepEqual(request?.body, { selectedPeriod: { start: '2026-08-25', end: '2026-08-30' }, nmIds: FIXTURE_NM_IDS, aggregationLevel: 'day' });
+    assert.deepEqual(request?.body, { selectedPeriod: { start: '2026-08-25', end: '2026-08-31' }, nmIds: FIXTURE_NM_IDS, aggregationLevel: 'day' });
     assert.equal(await h.count('stg_wb_funnel_obs', "run_id = $1 AND source = 'v3'", [first.runId]), FIXTURE_OBSERVATIONS);
     assert.equal(await h.count('fact_funnel_daily', 'run_id = $1', [first.runId]), FIXTURE_OBSERVATIONS);
     assert.equal(await h.count('fact_funnel_daily_current', 'run_id = $1', [first.runId]), FIXTURE_OBSERVATIONS);
@@ -219,11 +219,11 @@ test('funnel_v3: 21 observations and 21 current rows, replay 0, changed payload 
     assert.equal(await h.count('fact_funnel_daily_current', 'run_id = $1', [late.runId]), FIXTURE_OBSERVATIONS);
     assert.equal(await h.count('collector_run_inputs', 'run_id = $1', [late.runId]), 1, 'unchanged product-days still rest on the first run');
 
-    // run_day is never versioned: on 2026-08-30 the fixture's 08-30 records are outside the window
+    // run_day is observed but never versioned.
     const closing = await h.run(new FixtureTransport().transport, '2026-08-30');
     assert.equal((await h.run_(closing.runId)).status, 'SUCCEEDED');
-    assert.deepEqual(closing.window, { runDay: '2026-08-30', start: '2026-08-24', end: '2026-08-29' });
-    assert.deepEqual(closing.observations, { received: FIXTURE_OBSERVATIONS, inserted: 0, skipped: 18 });
+    assert.deepEqual(closing.window, { runDay: '2026-08-30', start: '2026-08-24', end: '2026-08-30' });
+    assert.deepEqual(closing.observations, { received: FIXTURE_OBSERVATIONS, inserted: 0, skipped: FIXTURE_OBSERVATIONS });
     assert.equal(closing.facts.versions, 18);
     assert.equal(await h.count('fact_funnel_daily', "run_id = $1 AND calendar_day = DATE '2026-08-30'", [closing.runId]), 0);
     assert.equal(await h.count('fact_funnel_daily_current', "calendar_day = DATE '2026-08-30' AND run_id = $1", [late.runId]), 3, 'the 08-30 versions stay with the run that observed them');
@@ -240,6 +240,30 @@ test('funnel_v3: 21 observations and 21 current rows, replay 0, changed payload 
     await h.db.query("SELECT set_config('proxima.tenant_id', $1, false)", ['funnel-other']);
     assert.equal(await h.count('fact_funnel_daily_current', 'true'), 0, 'another tenant sees nothing');
     await h.db.query("SELECT set_config('proxima.tenant_id', $1, false)", [tenantId]);
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('funnel_v3: an active nmId absent from WB is noted and skipped without blocking SUCCEEDED', { skip }, async () => {
+  const missingNmId = 12345004;
+  const h = await openHarness([...FIXTURE_NM_IDS, missingNmId]);
+  try {
+    const result = await h.run(new FixtureTransport().transport, RUN_DAY);
+    const run = await h.run_(result.runId);
+    assert.equal(run.status, 'SUCCEEDED');
+    assert.deepEqual(JSON.parse(run.notes ?? '{}'), { missing_nm_ids: [missingNmId] });
+    assert.deepEqual(result.batches, [{
+      batch: 1,
+      nmIds: 4,
+      received: FIXTURE_OBSERVATIONS,
+      inserted: FIXTURE_OBSERVATIONS,
+      skipped: 0,
+      missingNmIds: [missingNmId],
+    }]);
+    assert.equal(result.facts.versions, FIXTURE_OBSERVATIONS);
+    assert.equal(await h.count('fact_funnel_daily', 'run_id = $1', [result.runId]), FIXTURE_OBSERVATIONS);
+    assert.equal(await h.count('fact_funnel_daily', 'run_id = $1 AND nm_id = $2', [result.runId, missingNmId]), 0);
   } finally {
     await h.cleanup();
   }
@@ -276,9 +300,10 @@ test('funnel_v3: a failed batch keeps the received batches committed, no version
     const recovered = await h.run(scripted(okScript(zeroHistory(nmIds.slice(0, 20), days)), okScript(zeroHistory(nmIds.slice(20), days))).transport, RUN_DAY, clock);
     assert.equal((await h.run_(recovered.runId)).status, 'SUCCEEDED');
     assert.deepEqual(recovered.observations, { received: 21 * days.length, inserted: days.length, skipped: 20 * days.length });
-    assert.deepEqual(recovered.facts, { versions: 21 * days.length, inputRuns: 1 });
+    // run_day is observed but never versioned: versions exist for the six days before it.
+    assert.deepEqual(recovered.facts, { versions: 21 * (days.length - 1), inputRuns: 1 });
     assert.equal(await h.count('collector_run_inputs', 'run_id = $1 AND input_run_id = $2', [recovered.runId, runId]), 1, 'the failed run is evidence the recovered versions depend on');
-    assert.equal(await h.count('fact_funnel_daily_current', 'run_id = $1', [recovered.runId]), 21 * days.length);
+    assert.equal(await h.count('fact_funnel_daily_current', 'run_id = $1', [recovered.runId]), 21 * (days.length - 1));
   } finally {
     await h.cleanup();
   }

@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createFixturesProvider } from "@/lib/data/fixtures-provider";
 import {
   createPostgresProvider,
-  POSTGRES_PROVIDER_NOT_IMPLEMENTED,
   type DatabasePool,
 } from "@/lib/data/postgres-provider";
 import { DATA_MODE_ENV, getDataProvider, resetDataProvider, resolveDataMode } from "@/lib/data";
@@ -111,16 +110,21 @@ describe("fixtures-провайдер — форма данных стабиль
     const metrics = await createFixturesProvider().getMetrics();
     expect(metrics.length).toBe(5);
   });
+
+  it("метрики дашборда поддерживаются: шелл рисует полосу", () => {
+    expect(createFixturesProvider().supportsMetrics).toBe(true);
+  });
 });
 
-describe("postgres-провайдер — сводка по AD-9, метрики дашборда ещё нет", () => {
+describe("postgres-провайдер — сводка и метрики по AD-9", () => {
   it("создание без tenant роняется явно: конфиг не может притвориться поднявшимся webapp", () => {
     expect(() => createPostgresProvider({}, { createPool: stubPool })).toThrow(/WEBAPP_TENANT_ID/);
   });
 
-  it("метрики дашборда в postgres-режиме пока не реализованы и падают явно", async () => {
+  it("метрики дашборда поддерживаются обоими провайдерами", () => {
     const provider = createPostgresProvider(postgresEnv(), { createPool: stubPool });
-    await expect(provider.getMetrics()).rejects.toThrow(POSTGRES_PROVIDER_NOT_IMPLEMENTED);
+    expect(provider.supportsMetrics).toBe(true);
+    expect(createFixturesProvider().supportsMetrics).toBe(true);
   });
 
   it("сводка требует файл URI: без него первый запрос падает с именем переменной", async () => {

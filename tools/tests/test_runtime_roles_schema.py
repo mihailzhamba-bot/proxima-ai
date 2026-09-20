@@ -122,6 +122,26 @@ def test_runtime_roles_exist_with_expected_grant_matrix() -> None:
         assert not can("proxima_webapp_readonly", "SELECT", "fact_funnel_daily_current")
         assert not can("proxima_run_janitor", "INSERT", "stg_wb_funnel_obs")
 
+        # nmId grain (Story 4.0, AD-19/AD-11): the collector writes the dictionary and the
+        # daily rows in the cabinet run; norm reads both for the detector adapter (4.1);
+        # the webapp has no grant (AD-9); the janitor deletes through its LOGIN role.
+        assert can("proxima_job_collector", "INSERT", "dim_nm_subject")
+        assert can("proxima_job_collector", "INSERT", "fact_nm_daily")
+        assert can("proxima_job_collector", "SELECT", "dim_nm_subject_current")
+        assert can("proxima_job_collector", "SELECT", "fact_nm_daily_current")
+        assert can("proxima_job_norm", "SELECT", "dim_nm_subject")
+        assert can("proxima_job_norm", "SELECT", "dim_nm_subject_current")
+        assert can("proxima_job_norm", "SELECT", "fact_nm_daily")
+        assert can("proxima_job_norm", "SELECT", "fact_nm_daily_current")
+        assert not can("proxima_job_collector", "UPDATE", "dim_nm_subject")
+        assert not can("proxima_job_collector", "UPDATE", "fact_nm_daily")
+        assert not can("proxima_job_norm", "INSERT", "dim_nm_subject")
+        assert not can("proxima_job_norm", "INSERT", "fact_nm_daily")
+        assert not can("proxima_webapp_readonly", "SELECT", "dim_nm_subject_current")
+        assert not can("proxima_webapp_readonly", "SELECT", "fact_nm_daily_current")
+        assert not can("proxima_run_janitor", "INSERT", "dim_nm_subject")
+        assert not can("proxima_run_janitor", "INSERT", "fact_nm_daily")
+
 
 @pytest.mark.skipif(not os.environ.get("PROXIMA_TEST_POSTGRES_DSN"), reason="dedicated PostgreSQL DSN not configured")
 def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
@@ -149,6 +169,8 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         "brief_daily",
         "stg_wb_funnel_obs",
         "fact_funnel_daily",
+        "dim_nm_subject",
+        "fact_nm_daily",
     }
     with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as connection:
         secured = {
@@ -161,7 +183,7 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
         policy_count = connection.execute(
             "SELECT count(*) AS n FROM pg_policies WHERE schemaname = 'public'"
         ).fetchone()["n"]
-        assert policy_count == 52
+        assert policy_count == 58
         janitor_tables = {
             row["tablename"]
             for row in connection.execute(
@@ -181,6 +203,8 @@ def test_phase3_tables_have_row_level_security_with_tenant_policies() -> None:
             "brief_daily",
             "stg_wb_funnel_obs",
             "fact_funnel_daily",
+            "dim_nm_subject",
+            "fact_nm_daily",
         }
         non_invoker_views = [
             row["relname"]

@@ -329,8 +329,8 @@ def parse_created_at(value: object) -> datetime | None:
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
-def reports_created_on(body: object, day: date) -> int:
-    """Reports in a `GET nm-report/downloads` body created on the Moscow `day`.
+def reports_created_on(body: object, day: date, tenant_id: str) -> int:
+    """Proxima tenant reports created on the Moscow ``day``.
 
     Fail-closed on shape: a body without a `data` list, or a non-empty list
     where no entry carries a readable `createdAt`, is schema drift, because a
@@ -339,16 +339,23 @@ def reports_created_on(body: object, day: date) -> int:
     data = body.get("data") if isinstance(body, dict) else None
     if not isinstance(data, list):
         raise WbAsyncReportError("downloads list schema drift")
+    own_prefix = f"proxima-{tenant_id}-"
+    own_reports = 0
     readable = 0
     created_today = 0
     for item in data:
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+            continue
+        if not item["name"].startswith(own_prefix):
+            continue
+        own_reports += 1
         created_at = parse_created_at(item.get("createdAt")) if isinstance(item, dict) else None
         if created_at is None:
             continue
         readable += 1
         if created_at.astimezone(MOSCOW).date() == day:
             created_today += 1
-    if data and readable == 0:
+    if own_reports and readable == 0:
         raise WbAsyncReportError("downloads list schema drift: no readable createdAt")
     return created_today
 
@@ -939,7 +946,7 @@ class AsyncReportCollector:
                 self.repository.record_error(task.task_id, code)
                 raise WbAsyncReportError(f"downloads list failed with HTTP {response.status_code}")
             try:
-                return reports_created_on(json_body(response, "list"), self._quota_date())
+                return reports_created_on(json_body(response, "list"), self._quota_date(), task.tenant_id)
             except WbAsyncReportError:
                 self.repository.record_error(task.task_id, "LIST_SCHEMA_DRIFT")
                 raise

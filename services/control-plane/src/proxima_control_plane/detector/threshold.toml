@@ -1,0 +1,21 @@
+# Порог тревоги детектора SCN-001 - значение конфигурации control-plane
+# (решение 6а, D25; PRD FR-34; Story 4.2 / Story 4.4). Читает
+# proxima_control_plane.detector.threshold.load_alert_threshold; путь можно
+# переопределить переменной PROXIMA_THRESHOLD_CONFIG_FILE (путь к файлу) или
+# флагом --threshold-config у `python -m proxima_control_plane.brief run`.
+#
+# Story 4.2: порог не применяется - ключи не заданы (TOML не знает null:
+# отсутствующий ключ = null). brief_daily.payload.threshold = {null, null, null},
+# каждый кандидат ниже нормы остаётся в signals[], порядок - по деньгам под риском.
+#
+# Story 4.4 задаёт значение одной записью в DECISIONS.md: все три ключа вместе,
+# порог без источника и даты не применяется (ошибка конфигурации). Порог
+# односторонний: только падение, число строго отрицательное; кандидат остаётся,
+# если хотя бы одна упавшая метрика отклонилась на порог или глубже
+# (deviation_pct <= alert_threshold_pct); рост тревогой не помечается.
+#
+# Образец для 4.4 (значение и источник - из DECISIONS.md, дата - дата записи):
+#   alert_threshold_pct = -30
+#   threshold_source = "DECISIONS.md D25 решение 6а: ретро-прогон 184 дней фикстур 01.03-31.08 (снимки 30.08/31.08)"
+#   threshold_date = 2026-09-02
+[threshold]

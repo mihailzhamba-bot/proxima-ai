@@ -1,7 +1,7 @@
-.PHONY: agent-toolset apply-migrations architecture boundary brief business-signal codegen codegen-diff collect-wb-analytics contracts funnel funnel-csv hooks install migrations pg-roundtrip probe-wb-api provenance secrets test test-db-refresh typecheck verify vps wb-async-report wb-client webapp-build webapp-lint
+.PHONY: agent-toolset apply-migrations architecture boundary brief business-signal ci-parity codegen codegen-diff collect-wb-analytics contracts detector funnel funnel-csv hooks install live-network migrations nm-daily pg-roundtrip probe-wb-api provenance secrets signals-ranking test test-db-refresh threshold typecheck verify vps wb-async-report wb-client webapp-build webapp-lint
 
 
-verify: install codegen codegen-diff typecheck webapp-lint test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal wb-client brief wb-async-report funnel funnel-csv
+verify: install codegen codegen-diff typecheck webapp-lint test contracts migrations pg-roundtrip provenance architecture boundary secrets vps business-signal wb-client brief wb-async-report funnel funnel-csv nm-daily detector signals-ranking threshold live-network
 
 install: hooks
 	npm ci
@@ -42,6 +42,9 @@ migrations:
 
 pg-roundtrip:
 	bash tools/pg_local_roundtrip.sh
+
+ci-parity:
+	bash tools/ci_parity.sh
 
 test-db-refresh:
 	bash tools/test_db_refresh.sh
@@ -96,3 +99,22 @@ funnel:
 # Story 3.3: durable CSV rows promote into shared funnel facts and replay after deletion.
 funnel-csv:
 	uv run --python 3.14 python tools/verify_funnel_csv.py
+
+# Story 4.0 (AD-19): `order-counts: per-nm sums vs cabinet` - the node:test on the fixtures plus the 018/writer pins.
+nm-daily:
+	uv run --python 3.14 python tools/verify_nm_daily.py
+
+detector:
+	uv run --python 3.14 --project services/control-plane --extra test python tools/verify_detector.py
+
+# Story 4.2 (decision 6a): `brief: signals sorted by rub_assessment` - ranking by money at risk, threshold from configuration.
+signals-ranking:
+	uv run --python 3.14 --project services/control-plane --extra test python tools/verify_signals_ranking.py
+
+# Story 4.4: configured one-sided threshold filters signals and carries its decision metadata.
+threshold:
+	uv run --python 3.14 --project services/control-plane --extra test python tools/verify_threshold.py
+
+# AD-4: live WB network is opted in by the collector job container only (infra/compose.yaml) - never by jobs.env, units or tests.
+live-network:
+	uv run --python 3.14 python tools/verify_live_network.py

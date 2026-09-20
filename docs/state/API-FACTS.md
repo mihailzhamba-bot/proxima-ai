@@ -141,6 +141,158 @@ nmIDs - топ-3 по числу строк в фикстуре `supplier-sales`
 
 Импорт в CAS - `tools/cas_import.ts` в Story 1.14 (runbook). `run_day` = дата `retrieved_at` артефакта; бэкфилл берёт самую свежую пару (31.08: sales 8.8 МБ, orders 10.9 МБ, оба ряда по-прежнему с 2026-03-01). Снапшот 31.08 снят как страховка непрерывности ряда до запуска ежедневного сбора.
 
+## Эталоны недельных сумм W10/W35 (CAP-2, Story 1.14 §4 runbook)
+
+Записано 08.09.2026 (runbook drift, `docs/state/RELEASE-READINESS-1.14.md` T5): AC Story 1.14 сверяет «W10 и W35 с API-FACTS», а в этом файле чисел до сих пор не было - они жили в `_bmad-output/specs/spec-wb-morning-brief/SPEC.md:33` (CAP-2 success) и `_bmad-output/planning-artifacts/epics.md:29` (FR3), оба от 30.08.2026 (коммит `d6a558a`), с формулировкой «недельные суммы совпадают с фикстурами 30.08». Здесь - те же числа с источником; до 08.09 в этом файле они не пересчитывались (пересчёт по формулам глоссария - раздел «Репетиция цепочки 1.14 на VPS» ниже).
+
+| Неделя (ISO, Story 6.1 Given: «нумерация недель ISO для W10/W35») | Дни (`calendar_day`) | Заказы | Выручка, ₽ | Источник, дата |
+|---|---|---|---|---|
+| W10 | 2026-03-02 … 2026-03-08 | 649 | 700 860.50 | `SPEC.md:33`, `epics.md:29` - 30.08.2026 (там «700 860», округлено до рубля); копейки - пересчёт 08.09 по фикстуре 30.08, раздел «Репетиция…» ниже |
+| W35 | 2026-08-24 … 2026-08-30 | 225 | 263 089 | те же; с 08.09 (~13:40 UTC, решение Mike) гейт §4 сумму W35 не сверяет - правило по дням в разделе «Что означают эталоны» ниже |
+
+Метод сверки в релизе (runbook `docs/operations/release-m01.md` §4): для W10 - `sum(orders_count)`, `sum(revenue_rub)` из `fact_cabinet_daily_current` тенанта `amirova-test` за дни недели; для W35 с 08.09 - по дням (раздел «Что означают эталоны» ниже); формулы дня - `_bmad-output/specs/spec-wb-morning-brief/glossary.md` (конвенции D27). Полные фикстуры, по которым числа получены, - вне git (`~/signal-inputs/fixtures/wb-api/`, D15); по обезличенным фикстурам репозитория суммы невоспроизводимы (`epics.md`, Epic 6, коэффициент 0.8-1.2).
+
+`UNKNOWN` (закрыть до или в день релиза): (1) чем именно считались числа 30.08 - скрипт/запрос эталона в репозитории не лежит, Story 6.1 создаёт `verification/golden/`; (2) входит ли в эталон W35 день 30.08 и в каком объёме: снимок 30.08 снят в 05:59-06:01 UTC (день 30.08 неполный: `lastChangeDate` до `2026-08-30T07:01:10`), а релиз 1.14 грузит пару 31.08 (полный 30.08) и переписывает дни с 27.08 живым хвостом. W10 от этого не зависит. Если в релизе разошёлся только W35 при сошедшемся W10 - сверять дни 24-29.08 по отдельности и решать с Mike/Владиславом (Story 6.1/6.4), не откатывать по умолчанию. Оба пункта закрыты 08.09 на репетиции - см. конец раздела «Репетиция цепочки 1.14 на VPS» ниже.
+
+## Репетиция цепочки 1.14 на VPS (08.09.2026, D35)
+
+Стенд: compose-проект `proxima-rehearsal` (`infra/compose.yaml` + `infra/compose.rehearsal.yaml`), свой postgres на `127.0.0.1:5434`, корень `~/orca/rehearsal`; код `main` `1c5e256`, скрипт `tools/rehearsal_run.sh` (PR #111), команда `all --live`. Боевой проект `proxima-ai` не трогался (`proxima-ai-postgres-1` рядом, аптайм 9 дней). Прогон 13:10:14Z → 13:11:55Z, `exit=1` только из-за гейта §4 (разбор ниже); все четыре прогона ledger - `SUCCEEDED`. Время везде UTC 08.09.2026, источник - лог прогона и `collector_runs` стенда.
+
+| Шаг | Факт |
+|---|---|
+| `up` | образы `collector`, `control-plane`, `control-plane-admin` собраны; `apply-migrations` через `control-plane-admin` → `migrations: already current` (свежий том: initdb-mount применил 001-018); `schema_migrations` count=18, max=18 |
+| `provision-runtime-roles.sh` ×2 | оба `ok (5 login roles, database proxima_test)`, WARNING нет; второй проход - только `NOTICE … has already been granted membership` (идемпотентен) |
+| CAS-импорт пары 31.08 | `content_sha256` `d2f1dc95…` (sales), `0c0318ff…` (orders), `retrieved_at 2026-08-31T15:53:41Z`; `raw/` - `1010:1010` |
+| `backfill` | run `9c1a9d1a-9b93-44b8-9a6e-e5c583a014b8`, SUCCEEDED, ledger 13:11:37.886 → 13:11:38.651 (событие `run-ledger:succeeded` 13:11:48.569: `finished_at` = `CURRENT_TIMESTAMP` транзакции, закрывающей прогон, т.е. её начало - `run-ledger.ts:79`); `run_day 2026-08-31`, `floor 2026-03-01`, 183 дня; orders 13 386 received / 13 386 inserted / 0 skipped, sales 10 675 / 10 675 / 0; `nm_daily` 201 subjects, 36 783 rows; `per_nm_sums_vs_cabinet` PASS (183 дня, 0 расхождений) |
+| `tail --live` (`collect`) | run `c583eb57-3da6-473d-b26a-7899b5cee3cb`, SUCCEEDED, ledger 13:11:49.748 → 13:11:50.407 (`run-ledger:succeeded` 13:11:51.407); `--date-from 2026-08-27`, `source: flag`, `run_day 2026-09-08`; два read-вызова (лог ниже); orders 570 received / 353 inserted / 217 skipped, sales 406 / 215 / 191; версии 12 дней (27.08-07.09), `input_runs 1` (бэкфилл); `nm_daily` 203 subjects, 2 436 rows; `per_nm_sums_vs_cabinet` PASS (12 дней). Все 353 вставленных наблюдения новее пары 31.08 (`last_change_at` 2026-08-31 17:22:54Z … 2026-09-08 13:02:53Z), 50 из них с `date` раньше `dateFrom` (фильтр по `lastChangeDate`, как в факте flag=0 выше); 217 skipped = уже были в паре |
+| токен | боевой statistics-токен (копия в `secrets/amirova-test_wb_statistics_token`, 422 байта, 0600 1010:1010) прошёл `assertLeastPrivilegeToken(token, 'statistics')` (`services/collector/src/jobs/collect.ts:132`): бит read-only и единственная категория statistics, срок не истёк. Проверка стоит до открытия прогона и fail-closed, отдельной строки в лог не пишет - SUCCEEDED прогона и есть факт прохождения |
+| `norm` | run `86d83caf-3897-4369-90b3-2e5961591fe2`, SUCCEEDED, 13:11:53.017 → 13:11:53.019; `evaluation_day=2026-09-07 sample_days=14/14 status=ok`; `norm_daily_current` - 2 строки (`orders` 26.50, `revenue` 35 465.56), обе `ok`, `window_days 14` |
+| `brief` | run `24482522-eec1-4223-bdb3-ae66ac1739e3`, SUCCEEDED, 13:11:54.561 → 13:11:54.758; `brief_day=2026-09-07 status=ok, orders 30 vs norm 26.50 (13.2%), signals 15 (sku 203, insufficient 186, threshold not applied)`; `brief_current` = `2026-09-07`, `ok`, этот run_id |
+| `data_status_current` | `last_full_day 2026-09-07`, `collected_at 2026-09-08 13:11:50.406776+00`, `stale = false` |
+| `collector_run_inputs` | `collect ← backfill`; `norm ← backfill, collect`; `brief ← norm, backfill, collect` - цепочка для транзитивного удаления по AD-3 записана |
+
+Ledger `git_sha` / `image_id`: у всех четырёх прогонов `git_sha = 1c5e25646d8da5e8fe74d0a05397dbb431d51e52` (полный SHA `main`; скрипт передаёт `-e PROXIMA_GIT_SHA=$(git rev-parse HEAD)`), `image_id = NULL` у всех четырёх - `rehearsal_run.sh` не передаёт `PROXIMA_IMAGE_ID` (в релизе его ставит `tools/morning_run.sh:46,69` из `docker image inspect`, AD-6; на 15.09 проверить, что колонка заполнена). `notes`: `NULL` у `backfill`/`collect`, `evaluation_day=2026-09-07` у `norm`, `brief_day=2026-09-07` у `brief`.
+
+### Лог двух живых вызовов (UTC 08.09.2026, исключение D35)
+
+Время - события `fetched` в логе прогона `c583eb57…` (`collect.log` в корне стенда принадлежит root и здесь не читался); байты не логируются; ответы легли в CAS стенда `~/orca/rehearsal/raw/objects/sha256/`, в фикстуры `~/signal-inputs/` не копировались.
+
+| Время | Эндпоинт | Параметры | Код | Строк (distinct) |
+|---|---|---|---|---|
+| 13:11:50.149 | GET statistics `supplier/orders` | dateFrom=2026-08-27&flag=0 | 200 | 570 (570) |
+| 13:11:50.405 | GET statistics `supplier/sales` | dateFrom=2026-08-27&flag=0 | 200 | 406 (406) |
+
+### Гейт §4: W10 сошёлся до копейки, W35 - вопрос определения эталона
+
+`check` напечатал `W10 649 / 700860.50` против ожидаемых `649 / 700860.00` и `W35 228 / 282836.08` против `225 / 263089.00` - FAIL по обеим, `exit=1`. Разбор по фикстурам (`jq`, формулы `glossary.md`: заказы = строки `orders` с `isCancel == false` по `date[0:10]`; выручка = `sum(finishedPrice)` строк `sales` с `saleID` на `S`) и по стенду:
+
+**W10 (02.03-08.03) сходится; расхождение - в точности записи.** Фикстура 30.08 (`supplier-orders/20260830T060041Z…`, `supplier-sales/20260830T055939Z…`) → **649** заказов и **700 860.50** ₽; пара 31.08 → те же 649 и 700 860.50 (март вне окна изменений); БД стенда - 649 / 700 860.50. Значит числа 30.08 считались этими же формулами, а «700 860» в `SPEC.md:33` / `epics.md:29` записано с округлением до рубля; `rehearsal_run.sh` кодировал его как `700860.00` и честно дал FAIL. Эталон в таблице выше уточнён до копеек, константа скрипта `W10_EXPECTED` - тоже; SPEC и epics оставлены в округлённой форме (планировочные артефакты 30.08 не правятся).
+
+**W35 (24.08-30.08) не сходится, и конвейер здесь ни при чём.**
+
+- Выручка: 282 836.08 в БД = пара 31.08 той же формулой (282 836.08). Снимок 30.08 даёт 263 088.84 = записанные «263 089» (округление до рубля). Вся разница - день 30.08: в снимке 05:59 UTC он держит 3 продажи на 2 620 ₽, в паре 31.08 и в БД - 31 продажу на 22 367.24 ₽; дни 24-29.08 по выручке совпадают во всех трёх источниках копейка в копейку (62 146.87 / 29 247.90 / 44 956.00 / 50 789.89 / 32 187.38 / 41 140.80).
+- Заказы: 228 в БД, 225 - снимок 30.08 (день 30.08 в нём - 1 заказ), 254 - пара 31.08. По дням, `ok/cancel` по `isCancel`:
+
+| День | Снимок 30.08 | Пара 31.08 | `stg_wb_orders_latest` стенда (последнее наблюдение) | `fact_cabinet_daily_current`: `orders_count`/`cancelled_count` | Версия факта |
+|---|---|---|---|---|---|
+| 24.08 | 57/2 | 55/6 | 55/8 | 55/6 | `backfill` |
+| 25.08 | 39/6 | 40/7 | 39/10 | 40/7 | `backfill` |
+| 26.08 | 29/2 | 28/4 | 23/10 | 28/4 | `backfill` |
+| 27.08 | 36/0 | 36/0 | 33/5 | 33/5 | `collect` |
+| 28.08 | 36/6 | 36/7 | 25/18 | 25/18 | `collect` |
+| 29.08 | 27/0 | 27/0 | 21/8 | 21/8 | `collect` |
+| 30.08 | 1/0 | 32/0 | 26/6 | 26/6 | `collect` |
+
+Дни 24-26.08 в фактах = пара 31.08 точь-в-точь (у них одна версия - прогон `backfill`). Дни 27-30.08 переписаны живым хвостом (две версии, `_current` - прогон `collect`) и равны последним наблюдениям точь-в-точь: `isCancel` продолжает переключаться после снимка (28.08: 36/7 в паре 31.08 → 25/18 к 08.09; 25.08 между снимками - и вверх, 39 → 40: строки дня дописываются задним числом, 45 → 47 строк). `_latest` → факт → сумма без потерь: конвейер согласован.
+
+Свойство определения, не дефект: для 24-26.08 staging стенда уже держит более поздние отмены (55/8, 39/10, 23/10 - те самые наблюдения хвоста с `date` раньше `dateFrom`), но факты остаются 55/6, 40/7, 28/4, потому что окно перезаписи хвоста начинается с `--date-from 2026-08-27` (AD-2: `run_day − 3` артефакта; агрегатор версионирует только `[floor, run_day − 1]`). Факт дня T - «заказы, какими их видел прогон утра T+3»; позже он меняется только явным `--date-from` глубже. Что считать эталоном W35 - решено Mike 08.09 (~13:40 UTC), раздел «Что означают эталоны» ниже; когда день «замораживается» (ширина окна перезаписи) - открытый вопрос Story 6.1/6.3, там же, кода не меняет.
+
+### Что означают эталоны (уточнение таблицы «Эталоны недельных сумм», 08.09.2026)
+
+| Неделя | Заказы | Выручка, ₽ | Что это | Правило гейта §4 (решение Mike в чате, 08.09 ~13:40 UTC) |
+|---|---|---|---|---|
+| W10 | 649 | 700 860.50 | фикстура 30.08, пересчёт 08.09 по формулам глоссария; пара 31.08 и БД стенда дают то же | сумма недели, равенство копейка в копейку (`W10_EXPECTED` в `rehearsal_run.sh`) |
+| W35 | 225 | 263 089 | снимок 30.08 05:59 UTC с неполным днём 30.08 (1 заказ, 3 продажи на 2 620 ₽); после пары 31.08 + живого хвоста невоспроизводим (стенд 08.09: 228 / 282 836.08) | сумма недели **не сверяется**; вместо неё - по дням: 24-26.08 равны паре 31.08 точь-в-точь (таблица ниже), 27-30.08 равны последним наблюдениям самой базы (правило ниже); любое расхождение = гейт не пройден |
+
+**Дни 24-26.08 (до окна живого хвоста `--date-from 2026-08-27`): равенство паре 31.08 точь-в-точь.** Константы - пересчёт пары 31.08 (`supplier-orders/20260831T155341Z…`, sha256 `0c0318ff…`; `supplier-sales/20260831T155341Z…`, sha256 `d2f1dc95…`) 08.09 по формулам глоссария через `jq`: `orders_count` = строки `orders` с `isCancel == false` по `date[0:10]`, `cancelled_count` = с `isCancel == true`, `revenue_rub` = `sum(finishedPrice)` строк `sales` с `saleID` на `S` по `date[0:10]`; `fact_cabinet_daily_current` стенда 08.09 (единственная версия - прогон `backfill`) дала те же значения. Скрипт держит их в `W35_DAYS_EXPECTED` (`tools/rehearsal_run.sh`), runbook §4 - в ожидаемом выводе SQL.
+
+| `calendar_day` | `orders_count` | `cancelled_count` | `revenue_rub`, ₽ | Источник |
+|---|---|---|---|---|
+| 2026-08-24 | 55 | 6 | 62 146.87 | пара 31.08 (`jq`, 08.09); БД стенда 08.09 - то же |
+| 2026-08-25 | 40 | 7 | 29 247.90 | те же |
+| 2026-08-26 | 28 | 4 | 44 956.00 | те же |
+
+**Дни 27-30.08 (переписаны живым хвостом): внутренняя согласованность, внешней константы нет.** WB переключает `isCancel` неделями (28.08: 7 → 18 отмен между 31.08 и 08.09), поэтому заказы этих дней в релизе 15.09 будут другими, чем на репетиции, и сравнивать их не с чем, кроме самой базы. Правило: `fact_cabinet_daily_current.orders_count` / `cancelled_count` дня равны счёту строк `stg_wb_orders_latest` за московский день `payload->>'date'` (первые 10 символов бесзонного текста WB - `services/collector/src/wb/msk-day.ts`, AD-7) с `isCancel` не-true / true (так считает `services/collector/src/facts/cabinet-daily.ts`). На стенде 08.09 обе проекции дали 33/5, 25/18, 21/8, 26/6. SQL - runbook §4; `rehearsal_run.sh check` делает то же для дней `DATE_FROM..2026-08-30`.
+
+`UNKNOWN` из раздела «Эталоны»: (1) закрыт - числа 30.08 воспроизводятся формулами глоссария по фикстуре 30.08 (скрипта эталона в репозитории по-прежнему нет, `verification/golden/` - Story 6.1); (2) закрыт - день 30.08 в эталон W35 входит в объёме снимка 05:59 UTC (1 заказ, 3 продажи на 2 620 ₽), поэтому эталон W35 после полной пары 31.08 не воспроизводится по построению.
+
+**Открытый вопрос для Story 6.1/6.3 - определение `orders_count` («заказы на момент `run_day − 3`»).** Факт дня T - заказы, какими их видел прогон утра T+3: окно перезаписи AD-2 (`dateFrom = run_day − 3`, версионируются только дни `[floor, run_day − 1]`) замораживает день, а отмены, проставленные WB позже, в факт не попадают, пока день не переписан явным `--date-from` глубже. Числа стенда 08.09: 28.08 - 7 → 18 отмен между 31.08 и 08.09; дни 24-26.08 в фактах 55/40/28 «ok», тогда как последние наблюдения `stg_wb_orders_latest` уже дают 55/39/23 «ok» (55/8, 39/10, 23/10 ok/cancel). Определение записано в глоссарий («Заказы»); ширина окна - три дня или больше, и что тогда считать эталоном недели - вопрос Владиславу в Story 6.1/6.3 с этими числами; кода не меняет (решение Mike 08.09, ~13:40 UTC).
+
+## Репетиция наката миграций 007-018 поверх боевого дампа (09.09.2026, M1/D37)
+
+Закрывает `docs/state/RELEASE-READINESS-1.14.md` §6 п. 4: до 09.09 миграции 007-018 нигде не накатывались поверх живой схемы 6 с данными - репетиция D35, CI `apply-migrations-in-container` (`images.yml`) и `pg-roundtrip` стартуют с пустого тома. Стенд одноразовый и отдельный: compose-проект `proxima-migtest` (postgres `127.0.0.1:5435`, своя сеть `proxima-migtest-private`, свой том и свой каталог секретов, корень `~/orca/migtest`); override `compose.migtest.yaml` снимает монтирование `db/migrations` в `docker-entrypoint-initdb.d` (`volumes: !override`) - иначе initdb поднял бы сразу схему 18 и проверять было бы нечего. Боевой `proxima-ai-postgres-1` не трогался. Все числа ниже сняты read-only (`docker exec … psql -tA`, только SELECT) 09.09.2026 10:15-10:25 UTC; сверка - против стенда `proxima-rehearsal` (D35), собранного с нуля.
+
+**Порядок.** (1) поднять пустой postgres; (2) восстановить ночной дамп `/var/backups/proxima/2026-09-09-proxima.sql.gz` (64 565 байт gz, 620 297 байт SQL, снят 03:00 UTC); (3) `docker compose --profile jobs run --rm control-plane-admin make apply-migrations ENV_FILE=infra/jobs.env` - exit 0, 007…018 одним проходом; (4) `infra/bootstrap/provision-runtime-roles.sh` дважды; (5) сверка структуры со стендом из нуля.
+
+Что копия действительно боевая, видно по самому ledger: у миграций 1-6 в `schema_migrations` стоят боевые `applied_at` - `2026-08-13 09:06:35.795692+00` … `2026-08-14 17:53:26.058255+00`; они пережили restore. Миграции 7-18 легли `2026-09-09 10:15:17.228679+00` → `10:15:17.518809+00`, то есть весь накат - один проход в 0.29 с. Для сравнения: на стенде из нуля все 18 строк датированы `2026-09-08 13:11:23`.
+
+### До и после
+
+| Что | База из дампа (схема 6) | После 007-018 | Как получено |
+|---|---|---|---|
+| `schema_migrations` | 6 строк, max 6 | **18 строк, max 18** | `SELECT count(*), max(version)` |
+| объекты в `public` | 13 таблиц, 0 вьюх | **48** = 35 таблиц + 13 вьюх | `information_schema.tables` |
+| политики RLS | 0 | **58** на 24 таблицах | `pg_policies`; сумма `CREATE POLICY` в 007-018 - те же 58 |
+| роли `proxima*` | 2 (`proxima`, `proxima_diagnostics`) | **10** после миграций, **15** после `provision-runtime-roles` | `pg_roles`; 8 NOLOGIN-групп создают 009 и 011, 5 LOGIN-ролей - скрипт provision |
+
+Состав 13 таблиц дампа = ровно то, что создают 001-006: `artifact_manifests`, `business_signal_raw_artifacts`, `business_signal_runs`, `dim_product`, `dim_warehouse_map`, `intake_attempts`, `raw_wb_analytics_responses`, `schema_migrations`, `source_artifacts`, `stg_wb_nm_report_rows`, `tenants`, `wb_analytics_quota_events`, `wb_analytics_report_tasks`. Ни вьюх, ни политик, ни ролей в 001-006 нет - отсюда нули в левой колонке.
+
+### Данные пилота: ни одна строка не изменилась
+
+| Таблица | Строк до | Строк после |
+|---|---|---|
+| `stg_wb_nm_report_rows` | 1220 | 1220 |
+| `dim_warehouse_map` | 60 | 60 |
+| `business_signal_raw_artifacts` | 27 | 27 |
+| `business_signal_runs` | 11 | 11 |
+| `dim_product` | 9 | 9 |
+| `raw_wb_analytics_responses` | 7 | 7 |
+| `tenants` | 2 | 2 |
+
+Новые таблицы лестницы созданы и пусты: `collector_runs`, `stg_wb_orders_obs`, `fact_cabinet_daily`, `norm_daily`, `brief_daily`, `fact_nm_daily`, `fact_funnel_daily` - все 0 строк. `provision-runtime-roles.sh` прошёл дважды с exit 0; второй проход отличается только пятью `NOTICE: role … has already been granted membership` - по числу членств, которые скрипт выдаёт (`proxima_collector → proxima_job_collector`, `proxima_collector → proxima_source_publisher`, `proxima_norm → proxima_job_norm`, `proxima_webapp → proxima_webapp_readonly`, `proxima_janitor → proxima_run_janitor`; все пять на стенде есть).
+
+### Обновлённая схема структурно совпадает со схемой из нуля
+
+Сравнение инвентарей `proxima-migtest` (дамп + 007-018) и `proxima-rehearsal` (initdb 001-018), схема `public`:
+
+| Инвентарь | migtest | rehearsal | Расхождений |
+|---|---|---|---|
+| колонки (`information_schema.columns`: тип, длина, nullable, default) | 429 | 429 | **0** |
+| индексы (`pg_indexes`, полный `indexdef`) | 86 | 86 | **0** |
+| политики (`pg_policies`: cmd, `qual`, `with_check`, роли) | 58 | 58 | **0** |
+| таблицы + вьюхи | 48 | 48 | **0** |
+| гранты на таблицы (`information_schema.role_table_grants`) | 505 | 457 | **48**, все - лишние в migtest |
+
+Порядок наката 6 → 18 даёт ту же схему, что и сборка с нуля: ни одной колонки, ни одного индекса, ни одной политики в разнице. Единственное расхождение - гранты, и оно объясняется целиком одной строкой боевой базы (ниже).
+
+### Находка 1: обычный дамп базы несёт GRANT'ы, но не роли
+
+Первый restore упал: `ERROR: role "proxima_diagnostics" does not exist`. `pg_dump` одной базы (не `pg_dumpall`) выгружает `GRANT … TO proxima_diagnostics`, но сами роли живут в кластере и в дамп не попадают. Лечится созданием роли-заглушки `NOLOGIN` до restore; со второго раза восстановление прошло без единой ошибки. Для релиза 15.09 накат идёт по живой базе, где роли на месте, так что прямого пути это не касается - но касается **отката §7 и `restore_check.sh`**: восстановление боевого дампа в чистый кластер требует, чтобы все роли-грантополучатели существовали заранее.
+
+### Находка 2: `proxima_diagnostics` бесшумно получает SELECT на новые таблицы
+
+Все 48 «лишних» грантов в обновлённой копии - `SELECT` роли `proxima_diagnostics`, ровно по одному на каждый из 48 объектов `public`; в обратную сторону (только в rehearsal) - ноль строк. Причина видна в `pg_default_acl` боевой копии: две записи `proxima_diagnostics=r/proxima` (объекты `r` - таблицы и `S` - последовательности, схема `public`), то есть на боевой базе когда-то выполнили `ALTER DEFAULT PRIVILEGES FOR ROLE proxima GRANT SELECT ON TABLES/SEQUENCES TO proxima_diagnostics`. На стенде из нуля `pg_default_acl` пуст. Из 48 объектов 13 получили грант вместе с дампом, а 35 - все таблицы и вьюхи, созданные 007-018, - автоматически в момент создания.
+
+Что это даёт на практике, проверено на стенде: `proxima_diagnostics` - `NOLOGIN`, `NOBYPASSRLS`, и **ни одна из 58 политик её не называет**. Под `SET LOCAL ROLE proxima_diagnostics` она читает `tenants` (2 строки - на этой таблице RLS не включён) и получает **0 строк** из `stg_wb_nm_report_rows`, `raw_wb_analytics_responses`, `business_signal_runs`. То есть право есть, данных нет: расширение видимости ожидаемое и безвредное, отдельной правки не требует. Заметить его стоит в двух местах - при аудите грантов после релиза (сверка «схема как из нуля» покажет ровно эти 48 строк) и в Story 6.4, если роль аналитика когда-нибудь захотят строить поверх `proxima_diagnostics`.
+
+Побочно из того же инвентаря: `proxima_sandbox` - единственная не-владельческая роль с `rolbypassrls = true` (роль песочницы Story 1.8; `provision-runtime-roles.sh` отзывает у неё `CONNECT` к `postgres`/`template0`/`template1` и выдаёт только к `proxima_test`). На обоих стендах одинаково, к накату отношения не имеет.
+
+### Открытые вопросы репетиции
+
+- Идемпотентность `provision-runtime-roles.sh` подтверждена прогоном оркестратора (два раза exit 0); при перепроверке фактов скрипт повторно не запускался - это запись, а не чтение. Косвенно её держат пять членств выше.
+- Точный текст строки `migrations: 007_…, …, 018_nm_daily.sql` и сообщение первого упавшего restore - из вывода оркестратора; `~/orca/migtest/logs/` пуст, файла лога не осталось. Косвенное подтверждение наката одним проходом - разброс `applied_at` у 007-018 в 0.29 с.
+- `pg_default_acl` самой боевой базы напрямую не читался (`proxima-ai-postgres-1` не трогался) - находка 2 доказана на её восстановленной копии.
+
 ## Формат бэкапа (31.08.2026, факт)
 
 `/var/backups/proxima/YYYY-MM-DD-{proxima,proxima_dev}.sql.gz` - локально **plain gzip, без age**; age-ключи (`backup_age_key.txt` 0600 root, `backup_age_recipient` 0644) используются скриптом только для S3-копии. `proxima-pg-backup.sh` снят в `infra/backup/` (sha256 `d29feb24…`). Для `proxima-restore-check@` локальный дамп: `gunzip | psql` без age; AD-17 уточнён.
@@ -171,6 +323,24 @@ nmIDs - топ-3 по числу строк в фикстуре `supplier-sales`
 | 13:10:44 | POST analytics `nm-report/downloads` | `STOCK_HISTORY_DAILY_CSV`, `params: {currentPeriod: {start: 2026-08-26, end: 2026-09-01}, stockType: "", skipDeletedNm: true}` | 200 `{"data": "Началось формирование файла/отчета"}` | 0.87 s | 77 | `analytics/nm-report-downloads/20260902T131044Z__create_stock_history_v2.json` |
 | 13:11:50 | GET analytics `nm-report/downloads` | - | 200; задача `SUCCESS` через ~65 с | 0.51 s | 568 | `analytics/nm-report-downloads/20260902T131150Z__list_after_create.json` |
 | 13:11:51 | GET analytics `nm-report/downloads/file/{id}` | - | 200, `application/zip` | 0.59 s | 12 203 | `analytics/nm-report-downloads/20260902T131151Z__download_stock_history.bin` |
+
+## async CSV глубина (проба Story 3.0, 08.09.2026)
+
+Выполнено оркестратором с VPS по исключению из решения 7а (D32), analytics-токен read-write (`wb_analytics_token`), ответы и заголовки сохранены в `~/signal-inputs/fixtures/wb-api/analytics/nm-report-downloads/20260908T06*__probe30_*`. Запросов всего 6: список до создания, create с телом без `id` (400), create, два status, file; отчётов создано 1 (квота D20: 1 из 20 в сутки).
+
+| Факт | Значение | Источник |
+|---|---|---|
+| `POST nm-report/downloads` без клиентского `id` | **400** `{"title":"Invalid request body","detail":"invalid: id (field required)"}` - `id` (UUID клиента) обязателен, как в `tools/wb_async_report.py` `build_request` | `20260908T061830Z__probe30_create.json` |
+| Максимальный `startDate` для `DETAIL_HISTORY_REPORT` | **6 месяцев принято**: `startDate: 2026-03-08`, `endDate: 2026-09-07`, `aggregationLevel: day`, `nmIDs: []` → 200 `{"data":"Началось формирование файла/отчета"}`; спека «до года» глубже не проверялась | `20260908T062012Z__probe30_create2.request.json`, `…__probe30_create2.json` |
+| Время готовности | `SUCCESS` через **≈95 с** после создания (создан 06:20:12, первый status 06:21:48 уже SUCCESS) | `…__probe30_status1.json` |
+| Размер | ZIP **289 118 байт**, один CSV `<id>.csv`, **32 172 строки** данных, **184 дня** (2026-03-08..2026-09-07), **328 nmId** | `…__probe30_file.bin` |
+| Колонки CSV (`DETAIL_HISTORY_REPORT`, day) | `nmID, dt, openCardCount, addToCartCount, ordersCount, ordersSumRub, buyoutsCount, buyoutsSumRub, cancelCount, cancelSumRub, addToCartConversion, cartToOrderConversion, buyoutPercent, addToWishlist, currency` - длинный формат (строка на nmId × день), в отличие от широкого `STOCK_HISTORY_DAILY_CSV` (02.09) | заголовок CSV в `…__probe30_file.bin` |
+| Поле `name` в списке | равно `userReportName` запроса (`proxima-probe30-2026-03-08-2026-09-07`); отчёты внешнего потребителя называются `detail_history_report` → guard Story 3.2 по префиксу `proxima-<tenant>-` возможен | `…__probe30_status1.json` |
+| Часовой пояс `createdAt` | **UTC**: `createdAt: 2026-09-08 06:20:12` при create в 06:20:13Z; чтение D20 (UTC → день МСК) подтверждено | `…__probe30_status1.json` + журнал `logs/day-2026-09-08/probe-3.0.log` |
+| Лимиты | `x-ratelimit-limit: 3`, `remaining: 2` на всех вызовах (3/мин, как 30.08 и 02.09) | заголовки `.headers` |
+| Внешний потребитель | в списке до создания 2 отчёта `detail_history_report` за 2026-09-03..08 (создан 2026-09-08 00:50:38 UTC) и 09-02..07 - продолжает ежедневно (D20, OQ-10) | `20260908T061829Z__probe30_list_before.json` |
+
+Следствия: Story 3.3 - `CSV_COLUMN_MAP` переводится на реальные имена (`openCardCount → open_card`, `addToCartCount → cart`, `ordersCount → orders`, `ordersSumRub → orders_sum_rub`, `buyoutsCount → buyouts`, `buyoutsSumRub → buyouts_sum_rub`; `cancelCount`/`cancelSumRub`/конверсии/`addToWishlist`/`currency` - в payload); Story 3.2 - guard по префиксу и трактовка `createdAt` как UTC подтверждены; бэкфилл воронки на 6 месяцев одним отчётом реалистичен (CAP-6). Не проверено: глубина больше 6 месяцев; `STOCK_HISTORY_DAILY_CSV` глубина `currentPeriod`.
 
 ### Дневная история остатков - подтверждено (второй заход, 3 вызова по отдельному ок Mike)
 

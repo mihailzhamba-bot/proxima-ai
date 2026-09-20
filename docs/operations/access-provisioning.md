@@ -39,14 +39,30 @@ scp -r proxima:signal-inputs/fixtures/wb-api/analytics                  ./fixtur
 
 ## Доступ к боевой базе на чтение
 
-**Состояние на 03.09.2026: выдать нечем.** На боевой базе применены миграции по шестую, защита по кабинетам выключена, ролей из архитектуры не существует. Единственная действующая роль только для чтения - диагностическая, её пароль лежит под root, а обёртка требует запуска от root: выдать её человеку значит выдать сервер целиком.
+Роль `proxima_analyst` - отдельная LOGIN-роль без наследования и членства в групповых ролях. Она получает только `CONNECT`, `USAGE` и прямой `SELECT` на все существующие и будущие таблицы и представления `public`; `default_transaction_read_only` и таймауты дополнительно ограничивают сессию. Скрипт не создаёт RLS-политик: до миграции 011 чтение не фильтруется, после 011 таблицы с политиками возвращают роли ноль строк без установленного `proxima.tenant_id`.
 
-Порядок, когда роль заводится (единица работы - Story 6.4):
+### Состав грантов
 
-1. Архитектура предлагает состав прав: чтение наблюдений, фактов, нормы, сводки и реестра артефактов - ровно то, что нужно для независимого пересчёта.
-2. Роль создаётся по образцу `infra/bootstrap/provision-postgres-diagnostics.sh`: со входом, без суперправ, `default_transaction_read_only = on`, таймауты на запрос, блокировку и простаивающую транзакцию; права `CONNECT`, `USAGE` на схему, `SELECT` на таблицы и на будущие таблицы.
-3. Файл подключения кладётся в каталог секретов с правами `0600`; значение передаётся вне переписки.
-4. Строка о выдаче с датой и владельцем записывается в `docs/state/INVENTORY.md`.
+| Данные | Объекты | Условие видимости |
+|---|---|---|
+| Наблюдения orders/sales | `stg_wb_orders_obs`, `stg_wb_sales_obs`, `stg_wb_orders_latest`, `stg_wb_sales_latest` | через RLS по `tenant_id`; без `set_config` - без строк |
+| Дневные факты кабинета | `fact_cabinet_daily`, `fact_cabinet_daily_current` | через RLS по `tenant_id`; без `set_config` - без строк |
+| Факты по артикулам | `fact_nm_daily`, `fact_nm_daily_current`, `dim_nm_subject`, `dim_nm_subject_current` | через RLS по `tenant_id`; без `set_config` - без строк |
+| Воронка | `stg_wb_funnel_obs`, `stg_wb_funnel_latest`, `fact_funnel_daily`, `fact_funnel_daily_current` | через RLS по `tenant_id`; без `set_config` - без строк |
+| Норма и сводка | `norm_daily`, `norm_daily_current`, `brief_daily`, `brief_current` | через RLS по `tenant_id`; без `set_config` - без строк |
+| Реестр прогонов и сырья | `collector_runs`, `collector_run_inputs`, `wb_raw_artifacts` | через RLS по `tenant_id`; без `set_config` - без строк |
+| Статус данных | `data_status_current` | security-invoker view над RLS-таблицами; без `set_config` - без строк |
+| Справочники и ledger | `tenants`, `schema_migrations` | без tenant-фильтра; только `SELECT` |
+
+Технически роль получает `SELECT ON ALL TABLES IN SCHEMA public`, поэтому видит также прочие существующие и будущие объекты схемы. Это необходимо для `security_invoker`-представлений: грант на view не заменяет права на базовые таблицы. Прав `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `CREATE`, выполнения функций или доступа к sequence роль не получает.
+
+### Процедура выдачи
+
+1. После миграций релиза 1.14 и `provision-runtime-roles.sh` Mike на сервере выполняет `sudo bash infra/bootstrap/provision-analyst-role.sh`.
+2. Скрипт печатает только пути `/etc/proxima-ai/secrets/proxima_analyst_password` и `/etc/proxima-ai/secrets/proxima_analyst_uri`. Mike читает URI-файл и передаёт его Владиславу вне чата; значение не выводится в логи или переписку.
+3. Через туннель `ssh -N proxima-db` Владислав проверяет `psql "$DATABASE_URI" -c "SELECT 1"`; попытка `INSERT` должна завершиться `permission denied`.
+4. После миграции 011 первый statement каждой сессии: `SELECT set_config('proxima.tenant_id', 'amirova-test', false)`. Без него защищённые RLS объекты возвращают ноль строк, а не ошибку доступа.
+5. Строка о выдаче с датой и владельцем записывается в `docs/state/INVENTORY.md`.
 
 Как человек делает запрос:
 
@@ -60,7 +76,7 @@ psql "$DATABASE_URI" -c "SELECT count(*) FROM collector_runs;"
 
 ## Что не выдаётся никогда
 
-Роль-владелец базы и её строка подключения; пароль диагностической роли; строка подключения песочницы (она про тестовую базу); любые токены WB, Telegram, ключ шифрования бэкапов, ключи объектного хранилища; права `sudo` на сервере; права записи где-либо на сервере.
+Роль-владелец базы и её строка подключения; пароль диагностической роли; строка подключения песочницы (она про тестовую базу); любые токены WB и Telegram; ключ шифрования бэкапов; ключи и учётные данные S3/объектного хранилища; права `sudo` на сервере; права записи где-либо; ssh-доступ к серверу.
 
 ## Отзыв доступа
 

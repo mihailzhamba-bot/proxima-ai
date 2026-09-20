@@ -15,6 +15,7 @@
 
 import type { GyrStatus } from "@/lib/gyr";
 import type { BriefV1 } from "@/lib/contracts/brief";
+import type { SignalV1 } from "@/lib/contracts/signal";
 
 /** Откуда UI берёт данные. Переключается конфигом, не правкой компонентов. */
 export type DataMode = "fixtures" | "postgres";
@@ -113,8 +114,52 @@ export type SummaryMetric = {
   deviationPct: number | null;
 };
 
-/** Почему на экране нет (или есть) цифры: статусы `brief_daily` + режим «только статус» (AD-9). */
-export type SummaryStatus = "ok" | "insufficient" | "blocked" | "no-brief";
+/**
+ * Почему на экране нет (или есть) цифры: статусы `brief_daily` + два состояния
+ * провайдера (AD-9): `no-brief` - строки в `brief_current` нет вовсе (режим
+ * «только статус»), `stale` - сводка формально ok, но верить цифрам нельзя
+ * (сбор stale или `brief_day` уже не последний полный день).
+ */
+export type SummaryStatus = "ok" | "insufficient" | "blocked" | "no-brief" | "stale";
+
+/** Уровень аномалии детектора SCN-001 (AD-19): SKU по `nm_id` или предмет (категория) по `subject_name`. */
+export type AnomalyLevel = "sku" | "subject";
+
+/** Метрика, по которой ряд ушёл ниже нормы (`detection_data.triggered_by`, D32). */
+export type AnomalyMetric = "orders" | "revenue";
+
+/**
+ * Строка блока «Аномалии» на /brief (Story 4.3): один элемент `signals[]` брифа
+ * (signal v1, AD-10) в форме экрана. Всё, что детектор пометил `is_unknown`, здесь
+ * null - экран не достраивает значения. Деньги остаются строкой AD-10.
+ */
+export type BriefAnomaly = {
+  /** `signal_id` - ключ строки. */
+  id: string;
+  scenarioCode: SignalV1["scenario_code"];
+  level: AnomalyLevel;
+  /** nmId для SKU; у предметной строки null. */
+  nmId: number | null;
+  /** Артикул продавца из словаря; null - словарь его не знает. */
+  supplierArticle: string | null;
+  /** Предмет (категория); null - `UNKNOWN`: у SKU нет строки словаря (D32). */
+  subjectName: string | null;
+  /** Сколько SKU в ряду: 1 у SKU, число участников у предмета. */
+  skuCount: number | null;
+  triggeredBy: readonly AnomalyMetric[];
+  /** Заказы: факт дня / норма-медиана / отклонение %; null - ряд без факта. */
+  orders: SummaryMetric | null;
+  /** Выручка: факт дня / норма-медиана / отклонение %; null - ряд без факта. */
+  revenue: SummaryMetric | null;
+  /** `rub_assessment.value_rub` строкой AD-10 (знак значим, D32); null - оценки нет. */
+  moneyAtRisk: string | null;
+  moneyMethod: "revenue" | "profit" | null;
+  /** Порог, с которым считался сигнал (`threshold_pct`); null - порог не применялся (Story 4.2). */
+  thresholdPct: number | null;
+  /** Доказательства сигнала (AD-1) - показываются по раскрытию строки. */
+  sourceRefs: readonly string[];
+  trust: SignalV1["trust_marking"];
+};
 
 export type BriefSummary = {
   status: SummaryStatus;
@@ -129,6 +174,14 @@ export type BriefSummary = {
    * сбор не проходил никогда; тогда цифр на экране не бывает.
    */
   dataStatus: DataStatusInfo | null;
+  /** Конфигурация порога из `payload.threshold`; доступна независимо от статуса и списка сигналов. */
+  threshold: BriefV1["threshold"];
+  /**
+   * Аномалии дня из `payload.signals[]` в порядке payload (деньги под риском по
+   * убыванию, Story 4.2). Пусто и когда аномалий нет, и когда цифры не показываются
+   * (AD-9: только при `status = ok`); различает эти случаи `status`.
+   */
+  anomalies: readonly BriefAnomaly[];
 };
 
 export type DataStatusInfo = {
@@ -150,4 +203,6 @@ export type Metric = {
   deltaPercent: number | null;
   deltaGoodWhen: "up" | "down" | null;
   points: readonly number[];
+  /** Маркер демонстрационного значения: только такие карточки получают FX-бейдж. */
+  fx: boolean;
 };
