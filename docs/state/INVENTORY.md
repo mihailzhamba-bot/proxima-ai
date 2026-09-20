@@ -301,3 +301,9 @@ nm-daily → detector → signals-ranking → live-network
 | Интейк ручного XLSX | `services/collector/src/intake` | работает, но пишет манифесты в ФС; таблицы `source_artifacts/artifact_manifests/intake_attempts` пусты | MIGRATION-GAPS §3.4, §7.7 |
 | Секреты в истории git | - | не найдены (276 коммитов, 12 паттернов на 30.08; потери при переезде - 0) | MIGRATION-GAPS §6 |
 
+## Доступы, выданные людям (с 08.09.2026)
+
+| Дата | Кому | Что | Ограничение | Источник |
+|---|---|---|---|---|
+| 02.09.2026 | Владислав (аналитик) | боевые read-only ключи WB: Statistics, Analytics, Finance | сырые ответы только локально под NDA; отзыв при выдаче роли БД (Story 6.4) | PMM-58 (правка 02.09), D33 |
+| до 08.09.2026 | Владислав | GitHub `vladis-vlasis`, write; Jira PA+PMM | мерж делает Mike; статусы историй двигает конвейер | D26, D33 |
