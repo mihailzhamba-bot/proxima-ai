@@ -1,7 +1,7 @@
 [Unit]
 Description=LOOP morning report through existing native notifier
 Wants=docker.service
-After=docker.service loop-control.service
+After=docker.service
 
 [Service]
 Type=oneshot
