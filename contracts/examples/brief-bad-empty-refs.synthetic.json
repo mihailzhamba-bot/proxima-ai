@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "evaluation_day": "2026-08-29",
+  "data_status": {
+    "last_full_day": "2026-08-29",
+    "collected_at": "2026-08-30T02:41:12Z",
+    "stale": false
+  },
+  "actual": { "orders": 21, "revenue": "31280.00" },
+  "norm": { "orders": "58.50", "revenue": "83125.50", "window_days": 14, "sample_days": 14 },
+  "deviation_pct": { "orders": -64.1, "revenue": -62.4 },
+  "threshold": { "value": null, "source": null, "date": null },
+  "signals": [],
+  "source_refs": []
+}

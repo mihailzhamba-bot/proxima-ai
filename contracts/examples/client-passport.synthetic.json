@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "passport_id": "passport:synthetic:001",
+  "tenant_id": "synthetic_tenant",
+  "effective_from": "2026-08-28",
+  "timezone": "Europe/Moscow",
+  "sales_drop_threshold_pct": 20,
+  "days_cover_threshold_days": 21,
+  "lead_time_days": 60,
+  "safety_buffer_days": 15,
+  "cogs_status": "top_sku",
+  "priority_categories": ["synthetic_category"],
+  "warehouses": ["synthetic_warehouse"],
+  "weekend_days": ["sat", "sun"],
+  "contacts": [{ "role": "owner", "channel": "telegram", "value": "@synthetic_contact" }]
+}

@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# test-ai-os — AI OS self-test. Safe: runs in a disposable temp directory.
+#   scripts/agent/test-ai-os [--fail-closed]
+# --fail-closed (canary): proves that a FAILING verify blocks complete-task (no DONE, no TASKS update, no false evidence).
+# Also runs the positive path: passing verify allows DONE with evidence.
+set -uo pipefail
+CANARY=1
+[ "${1:-}" = "--fail-closed" ] && CANARY=1 || true
+HERE="$(cd "$(dirname "$0")" && pwd)"
+CT="$HERE/complete-task"
+[ -x "$CT" ] || { echo "test-ai-os: complete-task not found/executable next to me"; exit 1; }
+
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/aios-canary.XXXXXX")"
+trap 'rm -rf "$TMP"' EXIT
+
+# --- build disposable mini-repo ---
+mkdir -p "$TMP/scripts/agent" "$TMP/docs/agent-system"
+cat > "$TMP/docs/agent-system/TASKS.md" <<'EOF'
+# TASKS
+
+## CANARY-1 — canary task
+
+Status: IN_PROGRESS
+EOF
+# canary verify: always fails (simulates red verify)
+cat > "$TMP/scripts/agent/verify" <<'EOF'
+#!/usr/bin/env bash
+echo "==> canary check (intentional failure)"
+echo "FAIL: simulated broken build"
+exit 1
+EOF
+chmod +x "$TMP/scripts/agent/verify"
+cp "$CT" "$TMP/scripts/agent/complete-task"
+git -C "$TMP" init -q 2>/dev/null; git -C "$TMP" add -A 2>/dev/null; git -C "$TMP" -c user.email=canary@local -c user.name=canary commit -qm canary 2>/dev/null
+
+FAIL_RC=0; OUT="$(cd "$TMP" && ./scripts/agent/complete-task CANARY-1 --trivial 2>&1)" || FAIL_RC=$?
+TASKS_NOW="$(cat "$TMP/docs/agent-system/TASKS.md")"
+EV_COUNT="$(ls "$TMP/docs/agent-system/evidence" 2>/dev/null | wc -l | tr -d ' ')"
+
+echo "--- canary output (expect block) ---"; echo "$OUT"; echo "---"
+
+BLOCKED=0
+[ "$FAIL_RC" -ne 0 ] || { echo "test-ai-os: FAIL — complete-task returned 0 with failing verify"; BLOCKED=1; }
+echo "$TASKS_NOW" | grep -q "Status: IN_PROGRESS" || { echo "test-ai-os: FAIL — TASKS.md was updated despite failing verify"; BLOCKED=1; }
+echo "$TASKS_NOW" | grep -q "Status:.*DONE" && { echo "test-ai-os: FAIL — task became DONE with failing verify"; BLOCKED=1; }
+[ "$EV_COUNT" -eq 0 ] || { echo "test-ai-os: FAIL — false evidence created ($EV_COUNT files)"; BLOCKED=1; }
+[ "$FAIL_RC" -ne 0 ] && echo "$OUT" | grep -qi "VERIFY FAILED" || { echo "test-ai-os: FAIL — no explicit VERIFY FAILED message"; BLOCKED=1; }
+
+if [ "$BLOCKED" -ne 0 ]; then echo "test-ai-os --fail-closed: FAIL (gate did not hold)"; exit 1; fi
+echo "canary negative path: OK (failing verify blocks DONE, no false evidence)"
+
+# --- positive path: green verify allows DONE + evidence ---
+cat > "$TMP/scripts/agent/verify" <<'EOF'
+#!/usr/bin/env bash
+echo "==> canary check"
+echo "OK"
+echo "VERIFY: PASS"
+exit 0
+EOF
+git -C "$TMP" add -A; git -C "$TMP" -c user.email=canary@local -c user.name=canary commit -qm green 2>/dev/null
+OK_RC=0; OUT2="$(cd "$TMP" && ./scripts/agent/complete-task CANARY-1 --trivial 2>&1)" || OK_RC=$?
+EV_COUNT2="$(ls "$TMP/docs/agent-system/evidence" 2>/dev/null | wc -l | tr -d ' ')"
+grep -q "Status:.*DONE" "$TMP/docs/agent-system/TASKS.md" || { echo "test-ai-os: FAIL — green verify did not produce DONE"; exit 1; }
+[ "$EV_COUNT2" -ge 1 ] || { echo "test-ai-os: FAIL — no evidence written on green path"; exit 1; }
+[ "$OK_RC" -eq 0 ] || { echo "test-ai-os: FAIL — green path exited non-zero: $OUT2"; exit 1; }
+echo "canary positive path: OK (green verify -> DONE with evidence)"
+
+echo "test-ai-os --fail-closed: PASS"
+exit 0

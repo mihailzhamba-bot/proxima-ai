@@ -1,0 +1,116 @@
+{
+  "request": {
+    "actor": "ai-operations",
+    "correlation_id": "corr-scn-008-partial",
+    "client_id": "SYNTH-LAB-01",
+    "cabinet_id": "SYNTH-CAB-WB-01",
+    "snapshot_id": "SYNTH-SNAP-0001",
+    "mode": "shadow",
+    "scenario_ids": ["SCN-001", "SCN-003", "SCN-008"],
+    "workflow_version": "SYNTH-WORKFLOW-0.1"
+  },
+  "global_knowledge": {
+    "version": "SYNTH-METHODOLOGY-0.1",
+    "values": {
+      "scope": "engineering_only"
+    }
+  },
+  "client_context": {
+    "version": "SYNTH-PASSPORT-0.1",
+    "client_id": "SYNTH-LAB-01",
+    "cabinet_id": "SYNTH-CAB-WB-01",
+    "passport_version": "SYNTH-PASSPORT-0.1",
+    "values": {
+      "scope": ["shadow_read_only_analytics", "internal_decision_drafts"],
+      "policy_version": "SYNTH-POLICY-0.1"
+    }
+  },
+  "operational_data": [
+    {
+      "source_ref_id": "ref-quality-partial",
+      "client_id": "SYNTH-LAB-01",
+      "cabinet_id": "SYNTH-CAB-WB-01",
+      "snapshot_id": "SYNTH-SNAP-0001",
+      "source": "data_quality",
+      "retrieved_at": "2026-08-09T20:59:59Z",
+      "period": "2026-08-09",
+      "locator": "analytics.v_data_freshness:report_code=sales_daily",
+      "value": {
+        "root_issue": "partial_snapshot",
+        "blast_radius": ["SCN-001", "SCN-003"]
+      },
+      "quality": "partial",
+      "run_id": "SYNTH-RUN-PARTIAL",
+      "lineage_checksum": "lineage-quality-partial"
+    },
+    {
+      "source_ref_id": "ref-sales-current",
+      "client_id": "SYNTH-LAB-01",
+      "cabinet_id": "SYNTH-CAB-WB-01",
+      "snapshot_id": "SYNTH-SNAP-0001",
+      "source": "sales_current",
+      "retrieved_at": "2026-08-09T20:59:59Z",
+      "period": "2026-08-09",
+      "locator": "analytics.v_sku_daily:metric_date=2026-08-09",
+      "value": 80,
+      "quality": "fresh",
+      "run_id": "SYNTH-RUN-PARTIAL",
+      "lineage_checksum": "lineage-sales-current-partial"
+    }
+  ],
+  "scenario_policies": [
+    {
+      "scenario_id": "SCN-001",
+      "version": "SYNTH-POLICY-0.1",
+      "formula_version": "SYNTH-FORMULA-0.1",
+      "permission_version": "SYNTH-PERMISSION-0.1",
+      "source_ref_ids": ["ref-quality-partial"],
+      "required_sources": ["sales_current", "sales_baseline"],
+      "parameters": {
+        "trigger_ratio_lte": -0.1
+      },
+      "risk_level": "R0",
+      "owner": "account-manager",
+      "review_at": "2026-08-10T09:00:00Z",
+      "recommendation_code": "REVIEW_SALES_DROP",
+      "do_nothing": "Keep the frozen baseline unchanged"
+    },
+    {
+      "scenario_id": "SCN-003",
+      "version": "SYNTH-POLICY-0.1",
+      "formula_version": "SYNTH-FORMULA-0.1",
+      "permission_version": "SYNTH-PERMISSION-0.1",
+      "source_ref_ids": ["ref-quality-partial"],
+      "required_sources": ["revenue", "cogs", "marketplace_commission", "logistics", "paid_storage", "advertising_spend", "returns_cost"],
+      "parameters": {
+        "trigger_ratio_lte": -0.1
+      },
+      "risk_level": "R0",
+      "owner": "account-manager",
+      "review_at": "2026-08-10T09:00:00Z",
+      "recommendation_code": "REVIEW_CONTRIBUTION_PROFIT",
+      "do_nothing": "Wait for a complete P&L snapshot"
+    },
+    {
+      "scenario_id": "SCN-008",
+      "version": "SYNTH-POLICY-0.1",
+      "formula_version": "SYNTH-FORMULA-0.1",
+      "permission_version": "SYNTH-PERMISSION-0.1",
+      "source_ref_ids": ["ref-quality-partial"],
+      "required_sources": ["data_quality"],
+      "parameters": {},
+      "risk_level": "R2",
+      "owner": "ai-operations",
+      "review_at": "2026-08-10T09:00:00Z",
+      "recommendation_code": "RECOVER_PUBLISHED_SNAPSHOT",
+      "do_nothing": "Keep dependent scenarios blocked"
+    }
+  ],
+  "methodology_version": "SYNTH-METHODOLOGY-0.1",
+  "kpi_formula_version": "SYNTH-FORMULA-0.1",
+  "permission_version": "SYNTH-PERMISSION-0.1",
+  "tool_versions": {
+    "analytics_reader": "0.1",
+    "scenario_engine": "0.1"
+  }
+}

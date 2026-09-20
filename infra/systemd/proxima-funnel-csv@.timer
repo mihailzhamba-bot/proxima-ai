@@ -1,0 +1,10 @@
+[Unit]
+Description=Run PROXIMA AI weekly WB funnel CSV job for tenant %i
+
+[Timer]
+OnCalendar=Mon *-*-* 06:30:00 Europe/Moscow
+Persistent=true
+Unit=proxima-funnel-csv@%i.service
+
+[Install]
+WantedBy=timers.target

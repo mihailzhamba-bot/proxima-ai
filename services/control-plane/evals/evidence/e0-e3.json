@@ -1,0 +1,162 @@
+{
+  "record_version": "1.0",
+  "generated_at": "2026-08-11T17:03:54Z",
+  "phase": "03",
+  "candidate_version": "03-02-offline-boundary-unregistered",
+  "preflight_evidence": {
+    "g0_decision_locator": null,
+    "g0_evidence_locator": null,
+    "phase2_release_locator": null,
+    "client_passport_locator": null,
+    "validated_at": null
+  },
+  "gates": [
+    {
+      "gate_id": "E0",
+      "status": "BLOCKED",
+      "checks": [
+        {"check_id": "REFERENCE_SCHEMA_FROZEN", "status": "PASS", "evidence_locators": ["evals/reference/schema.json"]},
+        {"check_id": "SCN_001_008_COVERAGE", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "PRACTITIONER_LABELS", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "INDEPENDENT_SECOND_REVIEW", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "DISAGREEMENTS_VISIBLE", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "DEIDENTIFICATION_COMPLETE", "status": "MISSING", "evidence_locators": []}
+      ],
+      "blockers": [
+        {
+          "code": "REFERENCE_PRACTITIONER_CASES_MISSING",
+          "owner": "Кристина",
+          "next_evidence": "Freeze deidentified SCN-001..008 cases with practitioner labels, independent second review, visible disagreement and SourceRefs."
+        }
+      ],
+      "evaluated_at": "2026-08-11T17:03:54Z",
+      "evaluator": "deterministic-gate-validator",
+      "validator_version": "03-03.v1"
+    },
+    {
+      "gate_id": "E1",
+      "status": "BLOCKED",
+      "checks": [
+        {"check_id": "CONTRACT_TESTS", "status": "FAIL", "evidence_locators": ["src/proxima/evals/gate_validator.py"]},
+        {"check_id": "FORMULA_TESTS", "status": "PASS", "evidence_locators": ["tests/unit/application/test_scenario_engine.py"]},
+        {"check_id": "TENANT_TESTS", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "QUALITY_TESTS", "status": "PASS", "evidence_locators": ["tests/unit/application/test_scenario_engine.py"]},
+        {"check_id": "DEDUP_TESTS", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "AUTONOMY_TESTS", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "AUDIT_TESTS", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "REFUSAL_INCOMPLETE_TESTS", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "CF-01_FAIL_CLOSED", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "CF-02_FAIL_CLOSED", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "CF-03_FAIL_CLOSED", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "CF-04_FAIL_CLOSED", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "CF-05_FAIL_CLOSED", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "CF-06_FAIL_CLOSED", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "CF-07_FAIL_CLOSED", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "CF-08_FAIL_CLOSED", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "CF-09_FAIL_CLOSED", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "CF-10_FAIL_CLOSED", "status": "MISSING", "evidence_locators": []}
+      ],
+      "blockers": [
+        {
+          "code": "CODE_REVIEW_BLOCKERS_OPEN",
+          "owner": "Mike",
+          "next_evidence": "Close CR-01..CR-14 and WR-01..WR-04, rerun exact scoped tests, then regenerate E1."
+        }
+      ],
+      "evaluated_at": "2026-08-11T17:03:54Z",
+      "evaluator": "deterministic-gate-validator",
+      "validator_version": "03-03.v1"
+    },
+    {
+      "gate_id": "E2",
+      "status": "BLOCKED",
+      "checks": [
+        {"check_id": "FROZEN_REGRESSION_REPORT", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "FROZEN_HOLDOUT_REPORT", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "CANDIDATE_BASELINE_COMPARISON", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "HUMAN_ADJUDICATION", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "JUDGE_CALIBRATION_NON_AUTHORITATIVE", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "HOLDOUT_ISOLATION", "status": "PASS", "evidence_locators": ["tests/evals/reference/test_reference_replay.py#test_holdout_cannot_be_loaded_for_tuning"]},
+        {"check_id": "PROVIDER_MODEL_APPROVED", "status": "MISSING", "evidence_locators": []}
+      ],
+      "blockers": [
+        {
+          "code": "GOLDEN_SET_AND_HOLDOUT_MISSING",
+          "owner": "Кристина",
+          "next_evidence": "Approve frozen regression and holdout labels, then adjudicate candidate-versus-baseline results."
+        },
+        {
+          "code": "PROVIDER_MODEL_APPROVAL_MISSING",
+          "owner": "UNASSIGNED - provider/legal approver",
+          "next_evidence": "Name the provider/legal approver and attach provider, model, region, retention and legal-basis decisions."
+        }
+      ],
+      "evaluated_at": "2026-08-11T17:03:54Z",
+      "evaluator": "deterministic-gate-validator",
+      "validator_version": "03-03.v1"
+    },
+    {
+      "gate_id": "E3",
+      "status": "BLOCKED",
+      "checks": [
+        {"check_id": "E0_E2_READY", "status": "FAIL", "evidence_locators": ["evals/evidence/e0-e3.json#E0-E2"]},
+        {"check_id": "REAL_G0", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "PHASE2_RELEASE", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "OPERATIONAL_CLIENT_PASSPORT", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "THREE_CLIENT_READINESS", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "NO_WRITE_SURFACE", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "ONLINE_VALIDATORS", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "POSTGRES_AUDIT_RECONSTRUCTION", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "METRICS_DASHBOARD", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "INCIDENT_OWNER", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "INCIDENT_RUNBOOK", "status": "MISSING", "evidence_locators": []},
+        {"check_id": "SHADOW_BASELINE_28_DAYS", "status": "MISSING", "evidence_locators": []}
+      ],
+      "blockers": [
+        {"code": "E0_E2_NOT_READY", "owner": "Mike", "next_evidence": "Close E0 and E2 with approved expert and provider evidence; Mike acts only as interim technical coordinator."},
+        {"code": "REAL_G0_MISSING", "owner": "UNASSIGNED - operational approval", "next_evidence": "Attach an approved real G0 decision and its source evidence."},
+        {"code": "PHASE2_RELEASE_MISSING", "owner": "UNASSIGNED - Phase 2 release owner", "next_evidence": "Attach the Phase 2 release locator after Phase 2 verification."},
+        {"code": "OPERATIONAL_CLIENT_PASSPORT_MISSING", "owner": "Кристина", "next_evidence": "Approve an operational real-client passport with sources, policy and permissions."},
+        {"code": "THREE_CLIENT_READINESS_MISSING", "owner": "UNASSIGNED - operational readiness", "next_evidence": "Name the operational owner and attach readiness evidence for three approved clients."},
+        {"code": "NO_WRITE_SURFACE_EVIDENCE_MISSING", "owner": "Mike", "next_evidence": "Attach a real executable test node proving the runtime has no write surface."},
+        {"code": "INCIDENT_OWNER_APPROVAL_MISSING", "owner": "Mike", "next_evidence": "Attach an approved external incident-owner record through the allowlisted evidence resolver."},
+        {"code": "SHADOW_BASELINE_28_DAYS_MISSING", "owner": "UNASSIGNED - shadow operations", "next_evidence": "Complete and approve the 28-day baseline/shadow evidence; no threshold is inferred here."}
+      ],
+      "evaluated_at": "2026-08-11T17:03:54Z",
+      "evaluator": "deterministic-gate-validator",
+      "validator_version": "03-03.v1"
+    }
+  ],
+  "thresholds": [
+    {"name": "signal_recall_by_scenario"},
+    {"name": "false_positive_rate_by_scenario"},
+    {"name": "diagnosis_agreement"},
+    {"name": "recommendation_acceptance"},
+    {"name": "judge_human_agreement"},
+    {"name": "review_rework_time"},
+    {"name": "latency_tokens_cost_envelope"},
+    {"name": "monitoring_drift_and_sampling"},
+    {"name": "shadow_duration_client_scenario_coverage"}
+  ],
+  "critical_failures": [
+    {"failure_id": "CF-01", "occurrences": 0, "evidence_locators": []},
+    {"failure_id": "CF-02", "occurrences": 0, "evidence_locators": []},
+    {"failure_id": "CF-03", "occurrences": 0, "evidence_locators": []},
+    {"failure_id": "CF-04", "occurrences": 0, "evidence_locators": []},
+    {"failure_id": "CF-05", "occurrences": 0, "evidence_locators": []},
+    {"failure_id": "CF-06", "occurrences": 0, "evidence_locators": []},
+    {"failure_id": "CF-07", "occurrences": 0, "evidence_locators": []},
+    {"failure_id": "CF-08", "occurrences": 0, "evidence_locators": []},
+    {"failure_id": "CF-09", "occurrences": 0, "evidence_locators": []},
+    {"failure_id": "CF-10", "occurrences": 0, "evidence_locators": []}
+  ],
+  "incident_readiness": {
+    "incident_owner": "Mike",
+    "owner_source_ref": "conversation:2026-08-11#interim-technical-incident-owner",
+    "runbook_version": "03-03.v1",
+    "runbook_locator": "src/proxima/evals/gate_validator.py"
+  },
+  "phase3_exit": "BLOCKED",
+  "g1_owner": "Mike",
+  "g1_decision_locator": null
+}

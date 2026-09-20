@@ -1,0 +1,46 @@
+name: verify
+
+on:
+  pull_request:
+  push:
+
+# D40: диета workflows - один прогон на ref, отменяем устаревшие
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  systemd-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+      - name: Verify systemd units
+        run: systemd-analyze verify infra/systemd/*.service infra/systemd/*.timer
+      - name: Check bash syntax
+        run: bash -n tools/morning_run.sh tools/proxima_alert.sh tools/restore_check.sh infra/backup/proxima-pg-backup.sh
+      - name: Lint shell scripts
+        run: shellcheck tools/morning_run.sh tools/proxima_alert.sh tools/restore_check.sh
+      - name: Check morning command rendering
+        run: tools/morning_run.sh pilot-tenant --dry-run
+
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-16
+      - run: make verify

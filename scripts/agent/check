@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# check — fast dev-loop check (structural). Full Definition of Done = scripts/agent/verify.
+set -uo pipefail
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"; cd "$ROOT"
+rc=0
+say() { printf '%s\n' "$*"; }
+for f in AGENTS.md CLAUDE.md docs/agent-system/TASKS.md docs/agent-system/HANDOFF.md scripts/agent/verify; do
+  [ -f "$f" ] && say "OK   $f" || { say "MISS $f"; rc=1; }
+done
+grep -q "AGENTS.md" CLAUDE.md 2>/dev/null && say "OK   CLAUDE.md adapter" || { say "WARN CLAUDE.md does not reference AGENTS.md"; }
+if grep -q "Updated" docs/agent-system/HANDOFF.md 2>/dev/null; then say "OK   HANDOFF updated-marker"; else say "WARN HANDOFF missing Updated marker"; fi
+dirty="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+say "INFO dirty files: $dirty"
+[ $rc -eq 0 ] && say "CHECK: PASS" || say "CHECK: FAIL"
+exit $rc

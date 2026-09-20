@@ -1,0 +1,9 @@
+[Unit]
+Description=Run PROXIMA AI PostgreSQL backup nightly
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 Europe/Moscow
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "signal_id": "fixture-signal-bad-diagnosis-refs",
+  "primary_cause": "Синтетическая причина.",
+  "alternatives": ["Синтетическая альтернатива один.", "Синтетическая альтернатива два."],
+  "unknowns": [],
+  "source_refs": ["artifact://fixture-diagnosis-bad-refs/2026-08-28"],
+  "confidence_note": "Синтетическая заметка уверенности.",
+  "reviewer": { "verdict": "pass", "model": "fixture-reviewer-v1" }
+}

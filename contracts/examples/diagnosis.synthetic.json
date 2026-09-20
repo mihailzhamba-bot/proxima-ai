@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "signal_id": "fixture-signal-001",
+  "primary_cause": "Наблюдается синтетический сигнал снижения продаж.",
+  "alternatives": ["Изменился синтетический трафик.", "Недостаточно синтетических данных о запасе."],
+  "unknowns": ["Причина изменения качества данных не установлена."],
+  "source_refs": [
+    "artifact://fixture-signal-001/2026-08-28",
+    "table://fixture-traffic/2026-08-28",
+    "table://fixture-stock/2026-08-28",
+    "artifact://fixture-quality/2026-08-28"
+  ],
+  "confidence_note": "Вывод ограничен синтетическим срезом.",
+  "reviewer": { "verdict": "pass", "model": "fixture-reviewer-v1" }
+}

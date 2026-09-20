@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "signal_id": "fixture-signal-bad-refs",
+  "scenario_code": "SCN-005",
+  "snapshot_id": "SYNTH-SNAP-BAD-002",
+  "tenant_id": "fixture-tenant-001",
+  "created_at": "2026-08-28T09:00:00Z",
+  "trust_marking": "unreleased",
+  "rub_assessment": null,
+  "source_refs": [],
+  "detection_data": {}
+}

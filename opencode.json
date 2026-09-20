@@ -1,0 +1,24 @@
+{
+  "$schema": "https://opencode.ai/schema.json",
+  "mcp": {
+    "jira-atlassian": {
+      "type": "local",
+      "command": [
+        "/Users/mikezhamba/.local/bin/npx",
+        "-y",
+        "mcp-remote@0.1.38",
+        "https://mcp.atlassian.com/v1/mcp"
+      ],
+      "environment": {
+        "PATH": "/Users/mikezhamba/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+      }
+    },
+    "node_repl": {
+      "type": "local",
+      "command": [
+        "node",
+        "tools/node_repl_server.js"
+      ]
+    }
+  }
+}

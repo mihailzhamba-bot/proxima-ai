@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "evaluation_day": "2026-08-29",
+  "data_status": {
+    "last_full_day": "2026-08-29",
+    "collected_at": "2026-08-30T02:41:12Z",
+    "stale": false
+  },
+  "actual": { "orders": 21, "revenue": "31280.00" },
+  "norm": { "orders": "58.50", "revenue": "83125.50", "window_days": 14, "sample_days": 14 },
+  "deviation_pct": { "orders": -64.1, "revenue": -62.4 },
+  "threshold": { "value": -30, "source": null, "date": null },
+  "signals": [
+    {
+      "schema_version": 1,
+      "signal_id": "fixture-signal-001",
+      "scenario_code": "SCN-001",
+      "snapshot_id": "SYNTH-SNAP-001",
+      "tenant_id": "fixture-tenant-001",
+      "created_at": "2026-08-30T02:45:00Z",
+      "trust_marking": "unreleased",
+      "rub_assessment": { "value_rub": "51845.50", "method": "revenue" },
+      "source_refs": ["artifact://business-signal/sha256/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"],
+      "detection_data": {
+        "orders_actual": { "value": 21, "is_unknown": false },
+        "orders_norm_median": { "value": 58.5, "is_unknown": false },
+        "orders_baseline_window": { "value": null, "is_unknown": true }
+      }
+    }
+  ],
+  "source_refs": [
+    "table://fact_cabinet_daily/2026-08-29",
+    "table://norm_daily/2026-08-29"
+  ]
+}

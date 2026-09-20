@@ -1,0 +1,41 @@
+{
+  "name": "@proxima/collector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "types": "./dist/index.d.ts",
+    "import": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "discover-founder-chat": "node dist/cli/discover-founder-chat.js",
+    "manual-wb-xlsx-intake": "node dist/cli/manual-wb-xlsx-intake.js",
+    "seed-signal-config": "node dist/cli/seed-signal-config.js",
+    "validate-signal-inputs": "node dist/cli/validate-signal-inputs.js",
+    "stockout-signal": "node dist/cli/stockout-signal.js",
+    "collect": "node dist/jobs/collect.js",
+    "backfill": "node dist/jobs/backfill.js",
+    "funnel-v3": "node dist/jobs/funnel-v3.js",
+    "funnel-csv-promote": "node dist/jobs/funnel-csv-promote.js",
+    "test": "tsx --test $(ls tests/*.test.ts | grep -v '\\.db\\.test\\.ts$' | tr '\\n' ' ') && npm run build && node --input-type=module --eval \"import('@proxima/collector').then((module) => { if (typeof module.redactValue !== 'function' || typeof module.intakeManualWbXlsx !== 'function') process.exit(1) })\"",
+    "typecheck": "tsc --noEmit",
+    "test:db": "tsx --test --test-concurrency=1 tests/*.db.test.ts"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "csv-parse": "6.1.0",
+    "decimal.js": "10.6.0",
+    "pg": "8.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.30",
+    "@types/pg": "8.15.5",
+    "tsx": "4.20.3",
+    "typescript": "5.8.3"
+  }
+}

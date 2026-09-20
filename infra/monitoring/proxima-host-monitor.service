@@ -1,0 +1,26 @@
+[Unit]
+Description=PROXIMA AI host capacity monitor
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=proxima-monitor
+Group=proxima-monitor
+UMask=0077
+EnvironmentFile=/etc/proxima-ai/monitor.env
+ExecStart=/usr/bin/python3 /usr/local/lib/proxima-ai/host_monitor.py
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/var/lib/proxima-ai-monitor
+ReadOnlyPaths=/etc/proxima-ai

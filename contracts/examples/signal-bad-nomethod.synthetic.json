@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "signal_id": "fixture-signal-bad-method",
+  "scenario_code": "SCN-001",
+  "snapshot_id": "SYNTH-SNAP-BAD-001",
+  "tenant_id": "fixture-tenant-001",
+  "created_at": "2026-08-28T09:00:00Z",
+  "trust_marking": "unreleased",
+  "rub_assessment": { "value_rub": 10 },
+  "source_refs": ["artifact://fixture-bad-method/2026-08-28"],
+  "detection_data": {}
+}

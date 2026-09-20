@@ -1,0 +1,12 @@
+[Unit]
+Description=PROXIMA AI conductor heartbeat every 15 minutes
+Documentation=file:///srv/proxima-ai/repo/docs/agent-system/ORCHESTRATOR.md
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

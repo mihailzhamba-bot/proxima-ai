@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "supply_id": "supply:synthetic:001",
+  "tenant_id": "synthetic_tenant",
+  "nm_id": "1234567",
+  "quantity": 500,
+  "order_date": "2026-08-01",
+  "expected_arrival_date": "2026-10-01",
+  "status": "PLAN",
+  "entered_by": "synthetic_am",
+  "entered_at": "2026-08-01T09:00:00Z"
+}

@@ -1,0 +1,10 @@
+{
+  "stop": [
+    {
+      "matcher": "*",
+      "hooks": [
+        { "command": ".openhands/hooks/verify-gate.sh", "timeout": 1800 }
+      ]
+    }
+  ]
+}

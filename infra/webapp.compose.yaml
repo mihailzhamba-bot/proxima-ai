@@ -1,0 +1,42 @@
+# Overlay web-контура (PA-49/PA-55): публичный UI за Caddy + авто-HTTPS.
+# Применяется поверх основного стека:
+#   docker compose -f compose.yaml -f webapp.compose.yaml up -d webapp caddy
+# Основной compose.yaml не меняется: boundary-гейт проверяет его построчно.
+# Порты 80/443 открываются в firewall Selectel ТОЛЬКО с подтверждения Mike (деплой-сессия PA-49).
+
+services:
+  webapp:
+    build:
+      context: ..
+      dockerfile: services/webapp/Dockerfile
+    environment:
+      WEBAPP_REQUIRE_AUTH: "true"
+      # Секреты приходят из /etc/proxima-ai/secrets/ через env_file на VPS (в Git их нет).
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set in .env on VPS}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?set in .env on VPS}
+      WEBAPP_AUTH_DATABASE_URI: ${WEBAPP_AUTH_DATABASE_URI:?set in .env on VPS}
+      WEBAPP_DATA_DATABASE_URI: ${WEBAPP_DATA_DATABASE_URI:?set in .env on VPS}
+    networks:
+      - proxima-ai-private
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      WEBAPP_DOMAIN: ${WEBAPP_DOMAIN:?set in .env on VPS}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - webapp
+    networks:
+      - proxima-ai-private
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

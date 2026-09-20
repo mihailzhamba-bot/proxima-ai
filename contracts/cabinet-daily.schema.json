@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proxima.local/contracts/cabinet-daily/v1",
+  "title": "CabinetDailyV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tenant_id",
+    "calendar_day",
+    "orders_count",
+    "cancelled_count",
+    "sales_count",
+    "returns_count",
+    "revenue_rub",
+    "forpay_rub",
+    "source_refs"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "tenant_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{2,63}$" },
+    "calendar_day": {
+      "type": "string",
+      "format": "date",
+      "description": "Moscow calendar day of the WB `date` field (AD-7, mskDay)."
+    },
+    "orders_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "WB Statistics `orders` rows for the day by `date`, excluding `isCancel` (glossary: Заказы)."
+    },
+    "cancelled_count": { "type": "integer", "minimum": 0 },
+    "sales_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "`sales` rows with saleID on `S` for the day (glossary: Продажи)."
+    },
+    "returns_count": { "type": "integer", "minimum": 0 },
+    "revenue_rub": {
+      "type": "string",
+      "pattern": "^-?[0-9]+\\.[0-9]{2}$",
+      "description": "Money as a string with exactly two decimal places (AD-10); sum of finishedPrice over `S` sales."
+    },
+    "forpay_rub": {
+      "type": "string",
+      "pattern": "^-?[0-9]+\\.[0-9]{2}$",
+      "description": "Money as a string with exactly two decimal places (AD-10)."
+    },
+    "source_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Evidence pointers (AD-1): content_sha256 of the raw artifacts the day was folded from; never empty."
+    }
+  }
+}
