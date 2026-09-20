@@ -325,6 +325,8 @@ class Bridge:
         return self._cancel(op_id)
 
     def _cancel(self, op_id):
+        import traceback as _tb
+        print(json.dumps({"cancel_called": op_id, "caller": "".join(_tb.format_stack()[-5:-1])[-700:]}), flush=True)
         # Fence and revoke queued/active jobs BEFORE any network call.
         with self.cancel_request_guard: self.cancel_requests.add(op_id)
         with self.publication_gate:
@@ -941,7 +943,9 @@ def server(bridge, config):
                     op=bridge.get(match[2])
                     if match[1]=="hermes/v1" and op["kind"]!="hermes": raise BridgeError(404,"run unavailable")
                     action=match[4]
-                    if self.command=="POST" and action=="stop": result=bridge.cancel(match[2])
+                    if self.command=="POST" and action=="stop":
+                        print(json.dumps({"stop_request": match[2], "client": self.client_address[0], "ua": self.headers.get("User-Agent", "")}), flush=True)
+                        result=bridge.cancel(match[2])
                     elif self.command=="POST" and action=="adopt" and match[1]=="v1": result=bridge.adopt(match[2],payload["external_id"])
                     elif self.command=="GET" and action=="events" and match[1]=="hermes/v1":
                         # Hermes SSE has no replay. This is a current status snapshot;
