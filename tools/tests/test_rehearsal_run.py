@@ -242,6 +242,10 @@ def test_root_guards(root: str, message: str) -> None:
     assert message in result.stderr
 
 
+@pytest.mark.skipif(
+    not (ROOT / "docs" / "state" / "API-FACTS.md").exists(),
+    reason="docs/state/API-FACTS.md живёт в ops-репо (D40) - сверка эталонов недоступна",
+)
 def test_check_embeds_the_api_facts_reference_sums() -> None:
     """The expected values in the script are the API-FACTS tables, not a copy that can
     drift silently: W10 from «Эталоны недельных сумм» (week sum, kopecks since 08.09) and
