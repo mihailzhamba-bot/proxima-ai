@@ -91,13 +91,35 @@ def verify_static(root: Path = ROOT) -> dict[str, Integration]:
     require(set(jira.get("enabled_tools", [])) == JIRA_READ_TOOLS, "Jira MCP must expose only the read allowlist", errors)
 
     node_repl = servers.get("node_repl", {})
-    require(node_repl.get("required") is True, "node_repl must fail closed when Chrome diagnostics are unavailable", errors)
     require(node_repl.get("enabled_tools") == ["js"], "node_repl must expose only js", errors)
+    # 2026-09-20 (PR #155 follow-up): required=false is allowed only with the
+    # repo-shipped shim transport, so the js tool keeps working on fresh hosts.
+    # The repo must carry the shim file - fail-closed moves there.
+    if node_repl.get("required") is not True:
+        require(
+            node_repl.get("command") == "node" and node_repl.get("args") == [".codex/mcp-node-repl.mjs"],
+            "node_repl with required=false must use the repo shim transport (node .codex/mcp-node-repl.mjs)",
+            errors,
+        )
+        require((root / ".codex" / "mcp-node-repl.mjs").is_file(), "node_repl shim .codex/mcp-node-repl.mjs must exist in the repo", errors)
 
-    forbidden_config_keys = {"args", "bearer_token_env_var", "command", "env", "env_http_headers", "http_headers", "url"}
+    # Auth and environment fields stay out of the repo config (user-level only).
+    forbidden_auth_keys = {"bearer_token_env_var", "env", "env_http_headers", "http_headers"}
+    # Transports are allowed (2026-09-20, portable fresh-host loads) but only as
+    # bare executable names, repo-relative args and https URLs without credentials.
     for server_name, server in servers.items():
-        leaked = forbidden_config_keys.intersection(server)
-        require(not leaked, f"{server_name}: project config must not duplicate auth or transport fields: {sorted(leaked)}", errors)
+        leaked = forbidden_auth_keys.intersection(server)
+        require(not leaked, f"{server_name}: project config must not carry auth or environment fields: {sorted(leaked)}", errors)
+        command = server.get("command")
+        if command is not None:
+            require(isinstance(command, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", command) is not None, f"{server_name}: command must be a bare executable name, got {command!r}", errors)
+        url_value = server.get("url")
+        if url_value is not None:
+            require(isinstance(url_value, str) and url_value.startswith("https://") and "@" not in url_value, f"{server_name}: url must be https without embedded credentials", errors)
+        args_value = server.get("args")
+        if args_value is not None:
+            require(isinstance(args_value, list) and all(isinstance(item, str) for item in args_value), f"{server_name}: args must be a list of strings", errors)
+            require(all(not item.startswith("/") for item in args_value), f"{server_name}: args must stay repo-relative or bare values, no absolute paths", errors)
 
     inventory = parse_inventory(root / INVENTORY_PATH)
     validate_inventory(inventory, errors)
