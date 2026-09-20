@@ -1,4 +1,4 @@
-# Caddy: авто-HTTPS от Let's Encrypt на домене Mike (A-запись -> 135.106.186.210).
+# Caddy: авто-HTTPS от Let's Encrypt на домене владельца (A-запись настраивается при деплое; значение - в ops-репозитории).
 # Домен приходит переменной WEBAPP_DOMAIN из окружения compose.
 
 {$WEBAPP_DOMAIN} {

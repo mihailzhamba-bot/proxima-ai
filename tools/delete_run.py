@@ -55,7 +55,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     # Not argparse-required on purpose: a missing --tenant must reach the
     # closure guard and die with the "0 строк для run_id" wording (the GUC is
     # never set, so RLS hides the run), instead of a usage error.
-    parser.add_argument("--tenant", help="tenant ID, e.g. amirova-test")
+    parser.add_argument("--tenant", help="tenant ID, e.g. pilot-tenant")
     parser.add_argument("--run", required=True, help="run UUID (collector_runs.run_id)")
     parser.add_argument(
         "--dry-run",

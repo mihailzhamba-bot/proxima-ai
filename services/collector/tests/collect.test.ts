@@ -27,15 +27,15 @@ function driftCode(error: unknown): boolean {
 }
 
 test('collect args: date-from is optional; tenant and statistics token file are required', () => {
-  const args = parseCollectArgs(['--tenant', 'amirova-test', '--date-from', '2026-08-28', '--statistics-token-file', '/run/secrets/token']);
-  assert.deepEqual(args, { tenantId: 'amirova-test', dateFrom: '2026-08-28', statisticsTokenFile: '/run/secrets/token' });
-  assert.equal(parseCollectArgs(['--tenant', 'amirova-test', '--date-from', '2026-08-28T00:00:00', '--statistics-token-file', 'f']).dateFrom, '2026-08-28T00:00:00');
-  assert.throws(() => parseCollectArgs(['--tenant', 'amirova-test', '--date-from', '2026-08-28']), /required option: --statistics-token-file/);
-  assert.deepEqual(parseCollectArgs(['--tenant', 'amirova-test', '--statistics-token-file', 'f']), { tenantId: 'amirova-test', statisticsTokenFile: 'f' });
+  const args = parseCollectArgs(['--tenant', 'pilot-tenant', '--date-from', '2026-08-28', '--statistics-token-file', '/run/secrets/token']);
+  assert.deepEqual(args, { tenantId: 'pilot-tenant', dateFrom: '2026-08-28', statisticsTokenFile: '/run/secrets/token' });
+  assert.equal(parseCollectArgs(['--tenant', 'pilot-tenant', '--date-from', '2026-08-28T00:00:00', '--statistics-token-file', 'f']).dateFrom, '2026-08-28T00:00:00');
+  assert.throws(() => parseCollectArgs(['--tenant', 'pilot-tenant', '--date-from', '2026-08-28']), /required option: --statistics-token-file/);
+  assert.deepEqual(parseCollectArgs(['--tenant', 'pilot-tenant', '--statistics-token-file', 'f']), { tenantId: 'pilot-tenant', statisticsTokenFile: 'f' });
   assert.throws(() => parseCollectArgs(['--endpoint', 'statistics.orders']), /unknown option --endpoint/);
-  assert.throws(() => parseCollectArgs(['--tenant', 'Amirova', '--date-from', '2026-08-28', '--statistics-token-file', 'f']), /--tenant must match/);
-  assert.throws(() => parseCollectArgs(['--tenant', 'amirova-test', '--date-from', '28.08.2026', '--statistics-token-file', 'f']), /--date-from must be/);
-  assert.throws(() => parseCollectArgs(['--tenant', 'amirova-test', '--tenant', 'x', '--date-from', '2026-08-28', '--statistics-token-file', 'f']), /given twice/);
+  assert.throws(() => parseCollectArgs(['--tenant', 'Petrova', '--date-from', '2026-08-28', '--statistics-token-file', 'f']), /--tenant must match/);
+  assert.throws(() => parseCollectArgs(['--tenant', 'pilot-tenant', '--date-from', '28.08.2026', '--statistics-token-file', 'f']), /--date-from must be/);
+  assert.throws(() => parseCollectArgs(['--tenant', 'pilot-tenant', '--tenant', 'x', '--date-from', '2026-08-28', '--statistics-token-file', 'f']), /given twice/);
   assert.throws(() => parseCollectArgs(['--tenant', '--date-from']), /requires a value/);
 });
 
@@ -101,7 +101,7 @@ test('collect: a read-write or multi-category statistics token fails closed befo
     await writeFile(uriFile, 'postgresql://unused@127.0.0.1:1/unused\n', { mode: 0o600 });
     const env = { COLLECTOR_DATABASE_URI_FILE: uriFile, PROXIMA_RAW_DIR: dir };
     const transport = () => { throw new Error('network must not be touched'); };
-    const args = (tokenFile: string) => ({ tenantId: 'amirova-test', dateFrom: '2026-08-17', statisticsTokenFile: tokenFile });
+    const args = (tokenFile: string) => ({ tenantId: 'pilot-tenant', dateFrom: '2026-08-17', statisticsTokenFile: tokenFile });
 
     const readWrite = join(dir, 'rw');
     await writeFile(readWrite, `${jwt(1 << 5)}\n`, { mode: 0o600 });

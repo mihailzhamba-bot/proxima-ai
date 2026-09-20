@@ -79,7 +79,7 @@ def test_invalid_run_uuid_refuses() -> None:
 def test_missing_uri_configuration_refuses_with_the_wording_of_the_convention(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("JANITOR_DATABASE_URI_FILE", raising=False)
     monkeypatch.delenv("JANITOR_DATABASE_URI", raising=False)
-    assert delete_run.main(["--tenant", "amirova-test", "--run", str(RUN)]) == 1
+    assert delete_run.main(["--tenant", "pilot-tenant", "--run", str(RUN)]) == 1
     err = capsys.readouterr().err
     assert "JANITOR_DATABASE_URI_FILE" in err
 
@@ -171,7 +171,7 @@ def test_zero_rows_wording_is_the_contract_error(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(delete_run.psycopg, "connect", lambda *args, **kwargs: FakeConnection())
     monkeypatch.setenv("JANITOR_DATABASE_URI", "postgresql://janitor@h/db")
-    assert delete_run.main(["--tenant", "amirova-test", "--run", str(RUN)]) == 1
+    assert delete_run.main(["--tenant", "pilot-tenant", "--run", str(RUN)]) == 1
     err = capsys.readouterr().err
     assert "0 строк для run_id" in err
     assert str(RUN) in err

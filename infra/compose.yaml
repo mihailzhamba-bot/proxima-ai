@@ -46,8 +46,8 @@ services:
       WB_ALLOW_LIVE_NETWORK: "1"
     secrets:
       - proxima_collector_uri
-      - amirova-test_wb_statistics_token
-      - amirova-test_wb_analytics_token
+      - pilot-tenant_wb_statistics_token
+      - pilot-tenant_wb_analytics_token
     env_file:
       - jobs.env
     volumes:
@@ -96,11 +96,11 @@ services:
       POSTGRES_USER_FILE: /run/secrets/postgres_user
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       PROXIMA_RAW_DIR: /srv/proxima-ai/raw
-      WB_ANALYTICS_TOKEN_FILE: /run/secrets/amirova-test_wb_analytics_token
+      WB_ANALYTICS_TOKEN_FILE: /run/secrets/pilot-tenant_wb_analytics_token
     secrets:
       - postgres_user
       - postgres_password
-      - amirova-test_wb_analytics_token
+      - pilot-tenant_wb_analytics_token
     env_file:
       - jobs.env
     volumes:
@@ -126,7 +126,7 @@ secrets:
     file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/proxima_collector_uri
   proxima_norm_uri:
     file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/proxima_norm_uri
-  amirova-test_wb_statistics_token:
-    file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/amirova-test_wb_statistics_token
-  amirova-test_wb_analytics_token:
-    file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/amirova-test_wb_analytics_token
+  pilot-tenant_wb_statistics_token:
+    file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/pilot-tenant_wb_statistics_token
+  pilot-tenant_wb_analytics_token:
+    file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/pilot-tenant_wb_analytics_token

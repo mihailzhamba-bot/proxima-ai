@@ -21,3 +21,19 @@ fixtures/wb-api/
 _bmad/*.bak
 _bmad/config.user.yaml
 .claude/bad-session-state.json
+
+# --- D40: приватные документы живут в proxima-ai-ops (композит через симлинки) ---
+docs/
+_bmad/
+_bmad-output/
+.agents/
+.opencode/
+.claude/
+.codex/
+.autopilot/
+STATE.md
+DECISIONS.md
+ARCHITECTURE.md
+CHANGELOG.md
+CLAUDE.md
+infra/hermes/

@@ -19,7 +19,7 @@ from proxima_control_plane.norm.cli import main
 
 OWNER_DSN = os.environ.get("PROXIMA_TEST_POSTGRES_DSN", "")
 NORM_DSN = os.environ.get("PROXIMA_TEST_DSN_NORM", "")
-TENANT = "amirova-test"
+TENANT = "pilot-tenant"
 EVALUATION_DAY = date(2026, 8, 29)
 # Заказы окна: два средних значения 34 и 35, поэтому норма = 34.5 (D27).
 ORDERS = (28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41)

@@ -17,7 +17,7 @@ import type { ClientPassportConfig, ProductConfig, RawArtifactRecord, SignalCand
 import { WbSignalClient } from '../src/business-signal/wb-client.js';
 
 const product: ProductConfig = {
-  tenantId: 'amirova-test',
+  tenantId: 'pilot-tenant',
   nmId: 1001n,
   internalArticle: 'SKU-1',
   cogsRub: new Decimal('300.10'),
@@ -26,7 +26,7 @@ const product: ProductConfig = {
   effectiveFrom: '2026-01-01',
 };
 const warehouse: WarehouseMap = {
-  tenantId: 'amirova-test',
+  tenantId: 'pilot-tenant',
   salesWarehouseName: 'Коледино',
   stockWarehouseName: 'КОЛЕДИНО ',
   canonicalWarehouse: 'Коледино & центр',
@@ -97,7 +97,7 @@ test('BLOCKED aborts sibling branches: sockets close, requests stop, no rows aft
     const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-signal-cancel-'));
     const repository = new TimedRepository();
     const result = await runBusinessSignal(repository, {
-      tenantId: 'amirova-test', repositoryRoot: resolve('.'), rawRoot,
+      tenantId: 'pilot-tenant', repositoryRoot: resolve('.'), rawRoot,
       statisticsToken: jwt(5), analyticsToken: jwt(2), financeToken: jwt(13),
       now: new Date('2026-08-13T10:00:00Z'), httpTransport: transport,
     });
@@ -166,7 +166,7 @@ test('a successful run is unaffected by the finally abort', async () => {
     return { status: 204, retrievedAt: new Date('2026-08-13T11:00:01Z'), body: Buffer.alloc(0) };
   };
   const result = await runBusinessSignal(repository, {
-    tenantId: 'amirova-test', repositoryRoot: resolve('.'), rawRoot,
+    tenantId: 'pilot-tenant', repositoryRoot: resolve('.'), rawRoot,
     statisticsToken: jwt(5), analyticsToken: jwt(2), financeToken: jwt(13),
     now: new Date('2026-08-13T10:00:00Z'), httpTransport: bodies,
     sleep: async () => {},

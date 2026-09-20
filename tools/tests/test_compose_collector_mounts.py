@@ -38,8 +38,8 @@ def test_collector_receives_only_runtime_secrets_and_raw_mount() -> None:
     collector = service("collector")
     assert secret_names(collector) == {
         "proxima_collector_uri",
-        "amirova-test_wb_statistics_token",
-        "amirova-test_wb_analytics_token",
+        "pilot-tenant_wb_statistics_token",
+        "pilot-tenant_wb_analytics_token",
     }
     assert "postgres_" not in collector
     assert "_owner_uri" not in collector
@@ -49,8 +49,8 @@ def test_collector_receives_only_runtime_secrets_and_raw_mount() -> None:
 
 def test_admin_gets_only_the_extra_files_needed_by_csv_download() -> None:
     admin = service("control-plane-admin")
-    assert secret_names(admin) == {"postgres_user", "postgres_password", "amirova-test_wb_analytics_token"}
-    assert "amirova-test_wb_statistics_token" not in admin
+    assert secret_names(admin) == {"postgres_user", "postgres_password", "pilot-tenant_wb_analytics_token"}
+    assert "pilot-tenant_wb_statistics_token" not in admin
     assert "${PROXIMA_RAW_DIR:?set PROXIMA_RAW_DIR}:/srv/proxima-ai/raw" in admin
 
 
@@ -66,11 +66,26 @@ def test_runners_use_container_paths_and_host_checks_use_secrets_dir() -> None:
 
 def test_example_and_runbook_match_the_compose_contract() -> None:
     example = (ROOT / "infra" / "local.env.example").read_text(encoding="utf-8")
-    runbook = (ROOT / "docs" / "operations" / "release-m01.md").read_text(encoding="utf-8")
+    runbook_path = ROOT / "docs" / "operations" / "release-m01.md"
+    if not runbook_path.exists():
+        # D40: публичное дерево без ops-композита - runbook живёт в proxima-ai-ops.
+        example_only = "\n".join(
+            [
+                "PROXIMA_SECRETS_DIR=/etc/proxima-ai/secrets",
+                "PROXIMA_RAW_DIR=/srv/proxima-ai/raw",
+                "WB_STATISTICS_TOKEN_FILE=/run/secrets/pilot-tenant_wb_statistics_token",
+                "WB_ANALYTICS_TOKEN_FILE=/run/secrets/pilot-tenant_wb_analytics_token",
+            ]
+        )
+        for required in example_only.splitlines():
+            assert required in example
+        assert "Пока ноль" not in example
+        return
+    runbook = runbook_path.read_text(encoding="utf-8")
     assert "PROXIMA_SECRETS_DIR=/etc/proxima-ai/secrets" in example
     assert "PROXIMA_RAW_DIR=/srv/proxima-ai/raw" in example
-    assert "WB_STATISTICS_TOKEN_FILE=/run/secrets/amirova-test_wb_statistics_token" in example
-    assert "WB_ANALYTICS_TOKEN_FILE=/run/secrets/amirova-test_wb_analytics_token" in example
+    assert "WB_STATISTICS_TOKEN_FILE=/run/secrets/pilot-tenant_wb_statistics_token" in example
+    assert "WB_ANALYTICS_TOKEN_FILE=/run/secrets/pilot-tenant_wb_analytics_token" in example
     assert "-v /srv/proxima-ai/raw:/srv/proxima-ai/raw" not in runbook
-    assert "-v /etc/proxima-ai/secrets/amirova-test_wb_statistics_token" not in runbook
+    assert "-v /etc/proxima-ai/secrets/pilot-tenant_wb_statistics_token" not in runbook
     assert "Пока ноль" not in runbook

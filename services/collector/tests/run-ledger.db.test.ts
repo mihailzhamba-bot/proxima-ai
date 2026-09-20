@@ -13,7 +13,7 @@ import { RunLedger } from '../src/wb/run-ledger.js';
 const collectorDsn = process.env.PROXIMA_TEST_DSN_COLLECTOR ?? '';
 const postgresDsn = process.env.PROXIMA_TEST_POSTGRES_DSN ?? '';
 const ready = collectorDsn !== '' && postgresDsn !== '';
-const tenantId = 'amirova-test';
+const tenantId = 'pilot-tenant';
 
 async function seedTenant(): Promise<void> {
   const client = new Client({ connectionString: postgresDsn });

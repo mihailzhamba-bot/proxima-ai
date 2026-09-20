@@ -69,7 +69,7 @@ def test_compose_rejects_the_flag_on_control_plane_services(tmp_path: Path) -> N
 
     admin = compose_copy(
         tmp_path,
-        lambda text: text.replace("      WB_ANALYTICS_TOKEN_FILE: /run/secrets/amirova-test_wb_analytics_token\n", "      WB_ANALYTICS_TOKEN_FILE: /run/secrets/amirova-test_wb_analytics_token\n" + FLAG_LINE),
+        lambda text: text.replace("      WB_ANALYTICS_TOKEN_FILE: /run/secrets/pilot-tenant_wb_analytics_token\n", "      WB_ANALYTICS_TOKEN_FILE: /run/secrets/pilot-tenant_wb_analytics_token\n" + FLAG_LINE),
     )
     with pytest.raises(AssertionError, match="`control-plane-admin` must not set"):
         gate.check_compose(compose=admin)

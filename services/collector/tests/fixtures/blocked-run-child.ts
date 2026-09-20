@@ -17,11 +17,11 @@ function jwt(categoryBit: number): string {
 }
 
 const product: ProductConfig = {
-  tenantId: 'amirova-test', nmId: 1001n, internalArticle: 'SKU-1', cogsRub: new Decimal('300.10'),
+  tenantId: 'pilot-tenant', nmId: 1001n, internalArticle: 'SKU-1', cogsRub: new Decimal('300.10'),
   leadTimeDays: 40, safetyBufferDays: 5, effectiveFrom: '2026-01-01',
 };
 const warehouse: WarehouseMap = {
-  tenantId: 'amirova-test', salesWarehouseName: 'Коледино', stockWarehouseName: 'КОЛЕДИНО ',
+  tenantId: 'pilot-tenant', salesWarehouseName: 'Коледино', stockWarehouseName: 'КОЛЕДИНО ',
   canonicalWarehouse: 'Коледино', effectiveFrom: '2026-01-01',
 };
 
@@ -61,7 +61,7 @@ const transport: HttpTransport = async (request) => {
 
 const rawRoot = await mkdtemp(join(tmpdir(), 'proxima-signal-child-'));
 const result = await runBusinessSignal(new ChildRepository(), {
-  tenantId: 'amirova-test', repositoryRoot: resolve('.'), rawRoot,
+  tenantId: 'pilot-tenant', repositoryRoot: resolve('.'), rawRoot,
   statisticsToken: jwt(5), analyticsToken: jwt(2), financeToken: jwt(13),
   now: new Date('2026-08-13T10:00:00Z'), httpTransport: transport,
 });

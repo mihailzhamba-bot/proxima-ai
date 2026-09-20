@@ -27,7 +27,7 @@ function postgresEnv(): Record<string, string> {
   const dir = mkdtempSync(join(tmpdir(), "proxima-webapp-test-"));
   const path = join(dir, "webapp_uri");
   writeFileSync(path, "postgresql://webapp:secret@127.0.0.1:1/proxima", { mode: 0o600 });
-  return { WEBAPP_TENANT_ID: "amirova-test", WEBAPP_DATA_DATABASE_URI_FILE: path };
+  return { WEBAPP_TENANT_ID: "pilot-tenant", WEBAPP_DATA_DATABASE_URI_FILE: path };
 }
 
 afterEach(() => {
@@ -61,7 +61,7 @@ describe("getDataProvider — выбор провайдера", () => {
 
   it("режим postgres отдаёт postgres-провайдер без правки вызывающего кода", () => {
     process.env[DATA_MODE_ENV] = "postgres";
-    process.env.WEBAPP_TENANT_ID = "amirova-test";
+    process.env.WEBAPP_TENANT_ID = "pilot-tenant";
     resetDataProvider();
     expect(getDataProvider().mode).toBe("postgres");
   });
@@ -128,7 +128,7 @@ describe("postgres-провайдер — сводка и метрики по AD
   });
 
   it("сводка требует файл URI: без него первый запрос падает с именем переменной", async () => {
-    const provider = createPostgresProvider({ WEBAPP_TENANT_ID: "amirova-test" }, { createPool: stubPool });
+    const provider = createPostgresProvider({ WEBAPP_TENANT_ID: "pilot-tenant" }, { createPool: stubPool });
     await expect(provider.getSummary()).rejects.toThrow(/WEBAPP_DATA_DATABASE_URI_FILE/);
   });
 });

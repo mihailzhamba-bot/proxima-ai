@@ -1,4 +1,4 @@
-"""CLI: python -m proxima_control_plane.brief run --tenant amirova-test [--date YYYY-MM-DD].
+"""CLI: python -m proxima_control_plane.brief run --tenant pilot-tenant [--date YYYY-MM-DD].
 
 Один прогон = одна сводка на день (AD-9). Без `--date` днём сводки берётся
 `last_full_day` из `data_status_current` - последний полный день (AD-7); норма
