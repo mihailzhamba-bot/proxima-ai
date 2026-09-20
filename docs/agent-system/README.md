@@ -27,7 +27,9 @@ Mapping of the AI Operating System roles to this repository's existing documents
 | Tools, access, dangerous ops | `docs/agent-system/TOOLS.md` | |
 | Orca coordinator playbook (supervised orchestration) | `docs/agent-system/ORCHESTRATION.md` + release-critic agent `.opencode/agents/release-critic.md` | Contract summary in AGENTS.md «Orca coordinator protocol»; Release Gate: `docs/release-gates/README.md` |
 | Big-task living plans | `docs/exec-plans/active/` → `completed/` | |
-| Operations runbooks | `docs/operations/` | `dev-onboarding.md` (human entry point), `access-provisioning.md`, `observability.md`, `incident-runbook.md`, `business-signal-runbook.md`, `agent-toolset.md`; the release runbook is still pending (Story 1.13) |
+| Release runbooks (one per release) | `docs/operations/release-m01.md` (M-01, 15.09.2026), `docs/operations/release-m03.md` (2.6 / M-03, 22.09.2026 — draft) | Executed by Claude after Mike says «деплой» (D7); the M-03 file is a draft until reconciled with `main` before 22.09 |
+| Release journals and changelog | `docs/operations/releases/` (journals per release, kept by the release executor per runbook §8) + `CHANGELOG.md` (repo root, Keep a Changelog 1.1) | Landed 08.09.2026; release journal skeleton: `2026-09-15-m01.md` |
+| Operations runbooks | `docs/operations/` | `dev-onboarding.md` (human entry point), `access-provisioning.md`, `observability.md`, `incident-runbook.md`, `business-signal-runbook.md`, `agent-toolset.md`; release runbooks landed 08.09.2026 — see the row above (Story 1.13 done) |
 | Data dictionary (tables, writers, readers, retention) | `docs/state/DATA-DICTIONARY.md` | Covers migrations 001-011 and the planned 012-016 |
 | Conductor / Hermes pipeline | `docs/agent-system/ORCHESTRATOR.md`, `tools/orchestrator/`, `infra/hermes/` | Landed 01.09.2026; not yet reflected in the architecture spine |
 | Known failures and workflow notes | `docs/agent-system/KNOWN_FAILURES.md`, `docs/agent-system/WORKFLOW.md`, `docs/agent-system/PROJECT.md` | |

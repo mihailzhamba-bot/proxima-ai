@@ -31,7 +31,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 19:45
-last_updated: 09-07-2026 17:52
+last_updated: 09-08-2026 12:49
 project: PROXIMA AI
 project_key: NOKEY
 tracking_system: file-system
@@ -49,7 +49,7 @@ development_status:
   1-8-тестовая-база-и-сандбокс-openhands: done
   1-9-образы-compose-и-staging-overlay: done
   1-10-принять-провайдер-данных-webapp-из-ветки-ai-pa-50: done
-  1-11-статус-данных-на-brief: backlog
+  1-11-статус-данных-на-brief: done
   1-12-планировщик-алерт-и-бэкап-в-git: done
   1-13-runbook-первого-релиза: done
   1-14-первый-релиз-m-01-на-сервере-claude: backlog
@@ -72,11 +72,11 @@ development_status:
   3-4-релиз-воронки-claude-октябрь-d23: backlog
   epic-3-retrospective: optional
 
-  epic-4: backlog
-  4-0-измерение-sku-и-категории-для-аномалий: backlog
-  4-1-детектор-нормы-на-реальных-фактах: backlog
-  4-2-порог-тревоги-и-ранжирование-по-деньгам: backlog
-  4-3-аномалии-на-brief-в-разрезе-sku-и-категории: backlog
+  epic-4: in-progress
+  4-0-измерение-sku-и-категории-для-аномалий: done
+  4-1-детектор-нормы-на-реальных-фактах: done
+  4-2-порог-тревоги-и-ранжирование-по-деньгам: done
+  4-3-аномалии-на-brief-в-разрезе-sku-и-категории: done
   4-4-порог-тревоги-как-значение-конфигурации-с-источником-и-датой: backlog
   epic-4-retrospective: optional
 

@@ -59,7 +59,30 @@ export interface BriefV1 {
     revenue: number;
   } | null;
   /**
-   * Anomalies ranked by money (AD-10 signal v1); empty until M-04 (AD-9).
+   * Alert threshold configuration as applied to this brief (decision 6a, D25; PRD FR-34; Story 4.2/4.4): alert_threshold_pct, threshold_source, threshold_date from the control-plane configuration (detector/threshold.toml). Written in every status - it is configuration, not a computed value - and mirrored into each signal's detection_data as threshold_pct, threshold_source, threshold_date. Absence of a threshold is written as nulls, never as a missing key.
+   */
+  threshold:
+    | {
+        value: null;
+        source: null;
+        date: null;
+      }
+    | {
+        /**
+         * alert_threshold_pct: one-sided drop threshold in percent of deviation_pct (PRD FR-34, decision 6a: -30 preliminary). A candidate stays in signals[] when at least one of its dropping metrics has deviation_pct at or below this value; growth never alerts. Negative by construction.
+         */
+        value: number;
+        /**
+         * threshold_source: where the value comes from, as written in DECISIONS.md (decision 6a: the retro run of 184 fixture days 01.03-31.08). A threshold without a source is not applied.
+         */
+        source: string;
+        /**
+         * threshold_date: the day the value was decided (the DECISIONS.md entry).
+         */
+        date: string;
+      };
+  /**
+   * Anomalies ranked by money at risk: rub_assessment.value_rub descending (CAP-7, Story 4.2); ties broken by the deepest deviation_pct first, then SKU before subject, then nm_id / subject_name. Only candidates below the norm (D32: orders or revenue) and, when threshold.value is set, at or beyond it; growth is reported as a number in deviation_pct / detection_data and never becomes a signal (PRD FR-34). Empty unless brief_daily.status = ok (PRD FR-7). Items are signal v1 (AD-10).
    */
   signals: SignalV1[];
   /**

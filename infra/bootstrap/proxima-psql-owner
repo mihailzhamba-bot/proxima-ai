@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Owner psql inside the production PostgreSQL container, used by
+# provision-runtime-roles.sh --psql. The release operator installs this file
+# as /usr/local/sbin/proxima-psql-owner, owned by root:root with mode 0755.
+# The password is read from /run/secrets/postgres_password in the container
+# (backed by /etc/proxima-ai/secrets/postgres_password on the host) and never
+# leaves the container or its root-owned source file.
+set -euo pipefail
+
+exec docker exec -i proxima-ai-postgres-1 sh -c \
+  'PGPASSWORD="$(cat /run/secrets/postgres_password)" exec psql "$@"' sh "$@"

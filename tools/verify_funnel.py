@@ -20,7 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +29,7 @@ PARSER = ROOT / "services" / "collector" / "src" / "wb" / "funnel-v3.ts"
 FACTS = ROOT / "services" / "collector" / "src" / "facts" / "funnel-daily.ts"
 JOB = ROOT / "services" / "collector" / "src" / "jobs" / "funnel-v3.ts"
 SERVICE = ROOT / "infra" / "systemd" / "proxima-funnel-v3@.service"
+SERVICE_DROP_IN = ROOT / "infra" / "systemd" / "proxima-funnel-v3@.service.d" / "10-analytics-read-write.conf"
 TIMER = ROOT / "infra" / "systemd" / "proxima-funnel-v3@.timer"
 RUNNER = ROOT / "tools" / "funnel_v3_run.sh"
 MORNING = ROOT / "tools" / "morning_run.sh"
@@ -94,11 +95,11 @@ def check_migration() -> None:
 
 def check_job() -> None:
     parser = read(PARSER)
-    require("FUNNEL_WINDOW_START_OFFSET = 6" in parser and "end: shiftDay(runDay, -1)" in parser, "window must be [run_day-6, run_day-1] (AC, API-FACTS)")
+    require("FUNNEL_WINDOW_START_OFFSET = 6" in parser and "end: runDay" in parser, "window must be WB [run_day-6, run_day] (Mike 08.09, API-FACTS)")
     require("maxPerPage ?? 20" in parser and "FUNNEL_BATCH_SIZE" in parser, "batches must be capped at 20 nmIds (AD-4)")
     require("ACTIVE_NM_ID_DAYS = 30" in parser, "active nmIds come from the last 30 days (AC)")
     require("ON CONFLICT (tenant_id, nm_id, calendar_day, source, canonical_sha256) DO NOTHING" in parser, "replay of the same canonical payload is a no-op (AD-5)")
-    require("if (day > window.end) return;" in parser, "records on or after run_day are never observed (AD-7)")
+    require("if (day > window.end) return;" in parser, "records after run_day are never observed")
     facts = read(FACTS)
     require("JOIN stg_wb_funnel_latest l" in facts and "INSERT INTO fact_funnel_daily" in facts, "versions are built from stg_wb_funnel_latest (AD-5)")
     require("INSERT INTO collector_run_inputs" in facts, "versions record their input runs (AD-3)")
@@ -107,7 +108,8 @@ def check_job() -> None:
     require("ledger.succeed(tenantId, runId, async (session) => {" in job and "versionFunnelDaily(session" in job, "versions and SUCCEEDED share one transaction (AD-3)")
     require("FROM stg_wb_orders_latest" in job, "active nmIds are read from stg_wb_orders_latest (AC)")
     require("new WbArtifactSink(" in job and "new WbClient(" in job, "every response is recorded through the single WB client (AD-1/AD-4)")
-    require("assertBatchCoverage(parsed.rows, nmIds, window)" in job, "a day counts as collected only with full coverage (AC)")
+    require("const missing = assertBatchCoverage(parsed.rows, nmIds, window)" in job, "received batches must identify active nmIds absent from WB")
+    require("missing_nm_ids" in job and "UPDATE collector_runs SET notes" in job, "missing nmIds must be logged and retained in SUCCEEDED notes (Mike 08.09)")
     require("'--analytics-token-file'" in job and "readPrivateSecret" in job, "the analytics token arrives as a private file path (Conventions)")
     require("'x-ratelimit-limit'" in job, "the live rate limit must be logged from the response headers (PRD 4.0)")
     require("class FunnelCoverageError" in job and "error.notes" in job, "an incomplete run is FAILED with its coverage summary in notes")
@@ -121,8 +123,12 @@ def check_units() -> None:
     require("OnFailure=proxima-alert@%n.service" in service, "service needs its own OnFailure alert (AC, AD-6)")
     require("ExecStart=/usr/bin/env bash /srv/proxima-ai/repo/tools/funnel_v3_run.sh %i" in service, "service must run tools/funnel_v3_run.sh")
     require("Type=oneshot" in service and "ProtectHome=true" in service, "service is a one-shot like proxima-morning@ (AD-6)")
+    require("PROXIMA_FUNNEL_V3_ALLOW_ANALYTICS_READ_WRITE" not in service, "PA-13 exception must not enter the base unit")
+    drop_in = read(SERVICE_DROP_IN)
+    require("[Service]" in drop_in and "Environment=PROXIMA_FUNNEL_V3_ALLOW_ANALYTICS_READ_WRITE=1" in drop_in, "temporary PA-13 drop-in must opt the runner into the read-write token")
     runner = read(RUNNER)
     require("npm run funnel-v3 --" in runner and "_wb_analytics_token" in runner, "runner must start the funnel-v3 job with the tenant analytics token")
+    require('PROXIMA_FUNNEL_V3_ALLOW_ANALYTICS_READ_WRITE:-' in runner, "runner must consume the temporary PA-13 drop-in environment")
     require("funnel" not in read(MORNING).lower(), "funnel_v3 must not be a morning_run.sh step (CR to AD-6, decision 4a)")
 
 
@@ -160,22 +166,21 @@ def replay_fixture() -> tuple[int, int, bool, int]:
     latest = max((key for key in store if key[0] == changed[0]["product"]["nmId"] and key[1] == record["date"]), key=lambda key: store[key]["openCount"])
     require(store[latest]["openCount"] == record["openCount"], "the newest observation must carry the changed payload")
 
-    # `= run_day` is never versioned: on 2026-08-30 the window ends on 08-29.
+    # `= run_day` is observed but never versioned (AD-7).
     run_day = date.fromisoformat(payload[0]["history"][-1]["date"])
-    window_end = run_day - timedelta(days=1)
-    in_window = sum(1 for product in payload for entry in product["history"] if date.fromisoformat(entry["date"]) <= window_end)
-    require(in_window == FIXTURE_NM_IDS * (FIXTURE_DAYS - 1), "the run day must fall outside the window")
-    return observations, replay, versions, in_window
+    versionable = sum(1 for product in payload for entry in product["history"] if date.fromisoformat(entry["date"]) < run_day)
+    require(versionable == FIXTURE_NM_IDS * (FIXTURE_DAYS - 1), "the run day must not be versionable")
+    return observations, replay, versions, versionable
 
 
 def main() -> None:
     check_migration()
     check_job()
     check_units()
-    observations, replay, versions, in_window = replay_fixture()
+    observations, replay, versions, versionable = replay_fixture()
     require(replay == 0, f"replay must add nothing, added {replay}")
     require(versions, "changed payload must become a new version")
-    require(in_window == 18, "run day exclusion drifted")
+    require(versionable == 18, "run day version exclusion drifted")
     print(f"funnel_v3: {observations} obs, replay {replay}, changed payload versions")
 
 

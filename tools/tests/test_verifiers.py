@@ -524,6 +524,39 @@ def test_wb_async_report_gate_rejects_tenant_autocreate_and_lost_tests(tmp_path:
         gate.verify(makefile=unwired)
 
 
+def test_nm_daily_gate_is_fail_closed() -> None:
+    gate = load_tool("verify_nm_daily")
+    days, nm_ids, rows, passed = gate.verify(node_test=False)
+    assert (days, nm_ids, rows, passed) == (13, 97, 13 * 97, 0)
+
+
+def test_nm_daily_gate_rejects_webapp_grant_and_missing_cascade(tmp_path: Path) -> None:
+    gate = load_tool("verify_nm_daily")
+    original = (ROOT / "db" / "migrations" / "018_nm_daily.sql").read_text(encoding="utf-8")
+
+    leaked = tmp_path / "webapp.sql"
+    leaked.write_text(original.replace("GRANT SELECT ON fact_nm_daily TO proxima_job_norm;", "GRANT SELECT ON fact_nm_daily TO proxima_job_norm;\nGRANT SELECT ON fact_nm_daily TO proxima_webapp_readonly;"), encoding="utf-8")
+    with pytest.raises(AssertionError, match="webapp gets no grant"):
+        gate.check_migration(leaked)
+
+    restricted = tmp_path / "restrict.sql"
+    restricted.write_text(original.replace("REFERENCES collector_runs(run_id) ON DELETE CASCADE", "REFERENCES collector_runs(run_id) ON DELETE RESTRICT", 1), encoding="utf-8")
+    with pytest.raises(AssertionError, match="cascade from collector_runs"):
+        gate.check_migration(restricted)
+
+
+def test_nm_daily_gate_rejects_a_second_run_inputs_writer(tmp_path: Path) -> None:
+    gate = load_tool("verify_nm_daily")
+    writer = tmp_path / "nm-daily.ts"
+    writer.write_text(
+        (ROOT / "services" / "collector" / "src" / "facts" / "nm-daily.ts").read_text(encoding="utf-8")
+        + "\nconst DRIFT = 'INSERT INTO collector_run_inputs (tenant_id, run_id, input_run_id) VALUES (1, 2, 3)';\nvoid DRIFT;\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="collector_run_inputs is written once"):
+        gate.check_writer(writer=writer)
+
+
 def test_makefile_wires_codegen_diff_immediately_after_codegen() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     verify_line = next(line for line in makefile.splitlines() if line.startswith("verify:"))

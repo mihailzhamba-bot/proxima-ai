@@ -25,12 +25,13 @@ function timeLabel(isoMoment: string): string {
 }
 
 /** Норма приходит строкой AD-10: «34.50» -> «34,5», без лишних нулей. */
-function normLabel(value: string): string {
+export function normLabel(value: string): string {
   const parsed = Number(value);
   return parsed.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 }
 
-function deviationLabel(deviationPct: number): string {
+/** Отклонение уже округлено control-plane (D27): «−21,7 %», знак typographic. */
+export function deviationLabel(deviationPct: number): string {
   const sign = deviationPct > 0 ? "+" : deviationPct < 0 ? "−" : "";
   return `${sign}${Math.abs(deviationPct).toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
 }
@@ -67,7 +68,8 @@ function MetricLine({
   );
 }
 
-function WarningLine({ children }: { children: React.ReactNode }) {
+/** Строка-предупреждение вместо цифр (AC 1.11); общая для сводки и блока аномалий. */
+export function WarningLine({ children }: { children: React.ReactNode }) {
   return (
     <p role="note" className="rounded-sm bg-muted/60 px-2 py-1 text-sm text-muted-foreground">
       {children}
@@ -75,12 +77,38 @@ function WarningLine({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Текст-предупреждение вместо цифр; по AC 1.11 stale и пустой view звучат одинаково. */
-function numbersWarning(status: SummaryStatus, normProgress: BriefSummary["normProgress"]): string {
+/**
+ * Сводки ещё нет при свежем сборе (no-brief с живым `data_status_current`,
+ * режим «только статус» Story 1.11). Полную фразу «ждём первый утренний прогон»
+ * несёт дайджест (/brief, page.tsx) - здесь короткая форма, чтобы одно
+ * предложение не стояло на странице дважды.
+ */
+export const BRIEF_PENDING_TEXT = "Сводка ещё не считается";
+
+/**
+ * Текст-предупреждение вместо цифр; по AC 1.11 stale и пустой view звучат одинаково.
+ * Исключение - сводки нет, а сбор свежий: «сбор не проходил» рядом со строкой
+ * «Данные до …» противоречил бы сам себе, поэтому - «сводка ещё не считается».
+ */
+export function numbersWarning(
+  status: SummaryStatus,
+  normProgress: BriefSummary["normProgress"],
+  dataStatus: BriefSummary["dataStatus"],
+  briefDay?: BriefSummary["briefDay"],
+): string {
+  if (status === "blocked") {
+    return "Данных за день нет";
+  }
   if (status === "insufficient") {
     return normProgress
       ? `Норма копится: ${normProgress.sampleDays}/${normProgress.windowDays} дней`
       : "Норма копится: окно неполное";
+  }
+  if (status === "no-brief" && dataStatus !== null && !dataStatus.stale) {
+    return BRIEF_PENDING_TEXT;
+  }
+  if (status === "stale" && dataStatus !== null && !dataStatus.stale && briefDay && briefDay !== dataStatus.lastFullDay) {
+    return `Сводка за ${dayLabel(briefDay)}, данные уже за ${dayLabel(dataStatus.lastFullDay)}`;
   }
   return "Сбор не проходил больше суток";
 }
@@ -120,7 +148,7 @@ export function BriefSummaryBlock({ summary }: BriefSummaryBlockProps) {
           />
         </>
       ) : (
-        <WarningLine>{numbersWarning(summary.status, summary.normProgress)}</WarningLine>
+        <WarningLine>{numbersWarning(summary.status, summary.normProgress, dataStatus, summary.briefDay)}</WarningLine>
       )}
       {dataStatus !== null && !dataStatus.stale ? (
         <p className="text-xs text-muted-foreground">

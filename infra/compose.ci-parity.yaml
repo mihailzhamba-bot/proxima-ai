@@ -1,0 +1,17 @@
+# Disposable Docker PostgreSQL for tools/ci_parity.sh.  The explicit names and
+# overridden port keep this stack separate from production and rehearsal.
+name: proxima-ciparity
+
+services:
+  postgres:
+    restart: "no"
+    ports: !override
+      - "127.0.0.1:${PROXIMA_CI_PARITY_PORT:-5436}:5432"
+
+networks:
+  private:
+    name: proxima-ciparity-private
+
+volumes:
+  postgres-data:
+    name: proxima-ciparity-postgres-data

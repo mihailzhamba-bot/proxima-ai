@@ -8,7 +8,8 @@
  * parsing (Story 1.3), parse into observations, then write observations and
  * SUCCEEDED in one transaction. Any failure rolls that transaction back and
  * marks the run FAILED in a separate autocommit, so partial observations never
- * exist.
+ * exist. The same transaction versions the cabinet day (Story 1.6) and, from
+ * the same _latest rows, the nmId dictionary and daily rows (Story 4.0, AD-19).
  *
  * Secrets follow the spine Conventions: the database URI comes from the file
  * named by COLLECTOR_DATABASE_URI_FILE, the WB token from --statistics-token-file.
@@ -19,7 +20,8 @@ import { Pool } from 'pg';
 
 import { BusinessSignalRawStore } from '../business-signal/raw-store.js';
 import { assertLeastPrivilegeToken, readPrivateSecret } from '../business-signal/secrets.js';
-import { aggregateCabinetDaily, type AggregateCabinetDailyResult } from '../facts/cabinet-daily.js';
+import { aggregateCabinetDaily, loadLatestObservations, type AggregateCabinetDailyResult } from '../facts/cabinet-daily.js';
+import { writeNmDaily, type WriteNmDailyResult } from '../facts/nm-daily.js';
 import { sha256 } from '../intake/manifest.js';
 import { WbClient, WbClientError, parseJsonArray, type Clock } from '../wb/client.js';
 import { logRunStep } from '../wb/log.js';
@@ -65,6 +67,7 @@ export interface CollectResult {
   orders: InsertObservationsResult;
   sales: InsertObservationsResult;
   aggregate: AggregateCabinetDailyResult;
+  nmDaily: WriteNmDailyResult;
 }
 
 export function parseCollectArgs(argv: readonly string[]): CollectArgs {
@@ -133,7 +136,7 @@ export async function runCollect(args: CollectArgs, deps: CollectDeps): Promise<
     const ledger = new RunLedger(pool);
     const runId = await ledger.open({ tenantId, kind: RUN_KIND, gitSha: env.PROXIMA_GIT_SHA, imageId: env.PROXIMA_IMAGE_ID });
     deps.onRunOpened?.(runId);
-    const log = (step: string, msg: string, extra: Record<string, unknown> = {}, level: 'info' | 'error' = 'info'): void =>
+    const log = (step: string, msg: string, extra: Record<string, unknown> = {}, level: 'info' | 'warn' | 'error' = 'info'): void =>
       logRunStep({ level, run_id: runId, tenant_id: tenantId, kind: RUN_KIND, step, msg, ...extra });
     try {
       const selected = selectCollectDateFrom(args.dateFrom, args.dateFrom === undefined ? await ledger.lastFullDay(tenantId) : null, new Date(deps.clock?.now() ?? Date.now()));
@@ -163,6 +166,8 @@ export async function runCollect(args: CollectArgs, deps: CollectDeps): Promise<
         sales_skipped: written.sales.skipped,
       });
       log('aggregate', 'cabinet daily versions written', { floor: mskDay(dateFrom), run_day: runDay, days: written.aggregate.days, input_runs: written.aggregate.inputRuns });
+      log('nm-daily', 'nm daily versions written', { floor: mskDay(dateFrom), run_day: runDay, subjects: written.nmDaily.subjects, rows: written.nmDaily.rows, days: written.nmDaily.days });
+      logQualityCheck(log, written.nmDaily);
       return { runId, tenantId, ...written };
     } catch (error) {
       log('failed', 'run failed; marking FAILED', { code: errorCode(error) }, 'error');
@@ -179,7 +184,13 @@ export async function runCollect(args: CollectArgs, deps: CollectDeps): Promise<
   }
 }
 
-/** Observations and the SUCCEEDED flip share one transaction (AD-3). */
+/** The AD-17 line of the non-blocking check `per_nm_sums_vs_cabinet` (AD-19): a MISMATCH is logged, never a failed run. */
+function logQualityCheck(log: (step: string, msg: string, extra?: Record<string, unknown>, level?: 'info' | 'warn' | 'error') => void, nmDaily: WriteNmDailyResult): void {
+  const passed = nmDaily.check.status === 'PASS';
+  log('quality_check', passed ? 'per-nm sums equal the cabinet day' : 'per-nm sums differ from the cabinet day (threshold UNKNOWN until OQ-7)', { ...nmDaily.check }, passed ? 'info' : 'warn');
+}
+
+/** Observations, versions and the SUCCEEDED flip share one transaction (AD-3). */
 async function writeObservations(
   ledger: RunLedger,
   tenantId: string,
@@ -188,25 +199,29 @@ async function writeObservations(
   sales: ObservationSet,
   floor: string,
   runDay: string,
-): Promise<{ orders: InsertObservationsResult; sales: InsertObservationsResult; aggregate: AggregateCabinetDailyResult }> {
+): Promise<{ orders: InsertObservationsResult; sales: InsertObservationsResult; aggregate: AggregateCabinetDailyResult; nmDaily: WriteNmDailyResult }> {
   let ordersResult: InsertObservationsResult | undefined;
   let salesResult: InsertObservationsResult | undefined;
   let aggregateResult: AggregateCabinetDailyResult | undefined;
+  let nmDailyResult: WriteNmDailyResult | undefined;
   await ledger.succeed(tenantId, runId, async (client) => {
     ordersResult = await insertObservations(client, tenantId, runId, orders);
     salesResult = await insertObservations(client, tenantId, runId, sales);
-    aggregateResult = await aggregateCabinetDaily(client, { tenantId, runId, floor, runDay });
+    // One SELECT of the _latest views feeds both writers (AD-19).
+    const observations = await loadLatestObservations(client, tenantId);
+    aggregateResult = await aggregateCabinetDaily(client, { tenantId, runId, floor, runDay, observations });
+    nmDailyResult = await writeNmDaily(client, { tenantId, runId, floor, runDay, observations });
   });
-  if (ordersResult === undefined || salesResult === undefined || aggregateResult === undefined) {
+  if (ordersResult === undefined || salesResult === undefined || aggregateResult === undefined || nmDailyResult === undefined) {
     throw new Error('collect: observations were not written inside the run transaction');
   }
-  return { orders: ordersResult, sales: salesResult, aggregate: aggregateResult };
+  return { orders: ordersResult, sales: salesResult, aggregate: aggregateResult, nmDaily: nmDailyResult };
 }
 
 async function main(): Promise<void> {
   const args = parseCollectArgs(process.argv.slice(2));
   const result = await runCollect(args, { transport: networkTransport() });
-  process.stdout.write(`${JSON.stringify({ run_id: result.runId, tenant_id: result.tenantId, kind: RUN_KIND, orders: result.orders, sales: result.sales, aggregate: result.aggregate })}\n`);
+  process.stdout.write(`${JSON.stringify({ run_id: result.runId, tenant_id: result.tenantId, kind: RUN_KIND, orders: result.orders, sales: result.sales, aggregate: result.aggregate, nm_daily: result.nmDaily })}\n`);
 }
 
 if (process.argv[1] && /[\\/]collect\.(?:ts|js)$/.test(process.argv[1])) {

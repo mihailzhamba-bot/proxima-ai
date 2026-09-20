@@ -2,6 +2,10 @@
 
 > Snapshot of task state in this repo. Full backlog lives in Jira project PA (zhamba.atlassian.net); this file mirrors only what an agent needs to resume work.
 
+## Дневной прогон 08.09.2026 - выполнен (D32)
+
+Epic 4 стартовал: AD-19 (#87), Stories 4.0 (#95), 4.1 (#100 + #102), 4.2 (#104), 4.3 (#106) в `main`; follow-ups 3.1/3.2/3.3 (#90, #97), проба 3.0 (#91), runbook 1.14 (#99), compose-fix блокера релиза (#103), чек-лист готовности (#93), таблица версий (#92), Jira-журнал (#94). Отчёт, инциденты и что держит релизы - `HANDOFF.md`, раздел «День 08.09.2026». Трек сбора данных (D35, с ~10:30 UTC): девять PR #108-#116 в `main`, репетиция цепочки 1.14 на VPS - 4× SUCCEEDED - раздел «Active main task» ниже; 4.4 (разметка Владислава, PMM-126) и Epic 5 заморожены до трёх SUCCEEDED утр; релизы 1.14/2.6 - по D33 (#89, параллельная сессия) с Владиславом и словом «деплой».
+
 ## Ночной прогон 07-08.09.2026 - выполнен (D31)
 
 Семь единиц смержены в `main`: 1.8 (#73), KF-3 (#75), 3.2 (#76), 3.1 (#78), PA-65 (#80), 3.3 (#82), гигиена M-01 (#85, Q21a); мост #81, D31 #72. `blocked` нет. Отчёт, инциденты, таблица синхронизации Jira и рекомендации - `HANDOFF.md`, раздел «Ночь 07-08.09.2026». Ждёт Mike: approve таблицы Jira; решения по открытым вопросам 3.1/3.2/3.3 (в PR); включение `codex-conductor.timer` после обновления его чекаута; следующий шаг - AD для Story 4.0.
@@ -30,6 +34,59 @@ BLOCKED: 3.1 держит ротация токена (OQ-10) и PA-64; 1.14 и 
 
 ## Active main task
 
+### Дневной прогон 09.09.2026: M1-M5 (D37) - active
+
+Решение Mike 09.09 (~06:15 UTC, `DECISIONS.md` D37) после ночного отчёта: «запускаем задачи дальше в работу»; заморозка D35 снята, в работе все четыре трека. **Приёмка временная: CI лежит с 18:34 UTC 08.09 - все задания GitHub Actions падают мгновенно, без шагов и логов (вероятно исчерпаны минуты Actions, биллинг проверяет Mike), поэтому единица принимается по локальному `make verify` (ровно один `SKIP` - `pg-roundtrip`), мерж выполняет оркестратор; возврат к «мерж только по зелёному CI» - в тот же день, когда CI оживёт, с прогоном CI на `main` по накопленным мержам.** Без CI не проверяются: тесты с базой (`*.db.test.ts`, `test_*_postgres.py`), `apply-migrations-in-container`, `systemd-analyze verify` юнитов, сборка образов.
+
+- **M1** репетиция наката миграций 007-018 поверх копии боевой схемы 6 из свежего дампа `/var/backups/proxima/2026-09-09-proxima.sql.gz` на одноразовом compose-проекте; боевая база не трогается; закрывает последний непроверенный шаг релиза 1.14 (`docs/state/RELEASE-READINESS-1.14.md` §6 п. 4) - **оркестратор**.
+- **M2** Story 4.4, обвязка порога: значение остаётся незаданным (все три поля `null`) до разметки Владислава (Story 6.3), но появляются гейт `threshold: -31 signals, -29 silent, payload carries source` и подпись порога с источником и датой на `/brief` - **Codex**.
+- **M3** подготовка Epic 5: черновик AD для Story 5.0 (`decision_records`, роль `proxima_webapp_writer` только INSERT, RLS `WITH CHECK`, атомарный коммит до закрытия экрана, пометка `orphaned` при откате, синтетический прогон `kind = decision`); принятие AD остаётся за Mike - **Claude-субагент по скиллу `bmad-architecture`**.
+- **M4** разведка «Источники v2»: черновик эпика по остаткам и финансовому отчёту из уже собранных фактов проб (`docs/state/API-FACTS.md`, разделы про остатки 02.09 и async CSV), без единого живого вызова WB - **GLM**. Черновик: `_bmad-output/planning-artifacts/epics-sources-v2-draft.md` (эпик «Источники v2: остатки и финансовый отчёт»: срез остатков, CSV-история, реестр+гейт, разведка финансового; решение о заведении - за Mike, `DECISIONS.md` пишет Mike).
+- **M5** шаг воронки в runbook 2.6: раздел в `docs/operations/release-m03.md` (включение `proxima-funnel-v3@`, временный drop-in до ротации PA-13, недельный `proxima-funnel-csv@`, проверки) - по D33 воронка едет тем же тегом 22.09, своей единицы не имеет - **GLM**.
+
+Уборка диска 06:00-06:30 UTC (оркестратор): `node_modules` и 48 слитых рабочих копий (32 ГБ), висячие образы и кэш сборки Docker (2 ГБ), 25 песочниц OpenHands завершённых бесед моста (27 ГБ), три зависших дерева процессов Codex; занятость диска с 96 % до 56 %. Стенд `proxima-rehearsal` сохранён - нужен для M1.
+
+### Ночной прогон 08-09.09.2026: релизный трек (D36) - выполнен (#119-#130)
+
+Решение Mike 08.09 (~15:00 UTC, `DECISIONS.md` D36): ночь без человека в контуре, только единицы критического пути релизов 1.14 (вт 15.09) и 2.6 (вт 22.09) от `main` `aa32feb`; Codex (`fedor`, один воркер) - код по порядку, GLM - документация параллельно, Claude-субагенты - резерв. Прогон: первый диспатч 15:39 UTC, очередь исчерпана 18:30 UTC того же дня - одиннадцать единиц в `main`, `blocked` ни одной, файл STOP не создавался, 12-часовое окно (до 03:39 UTC 09.09) не выбрано; деплоя, живых вызовов WB, записей в Jira и правок `.github/workflows` не было. Отчёт, инциденты, «Что вошло» и проверка стенда - `HANDOFF.md`, раздел «Ночь 08-09.09.2026» (смержен PR #130).
+
+Код (Codex, профиль `fedor`, по порядку):
+
+- C1 - **done**, PR #119 `fix/compose-provenance-env`: `PROXIMA_GIT_SHA`/`PROXIMA_IMAGE_ID` в `environment:` сервисов `collector`/`control-plane`/`control-plane-admin`, пустое значение → SQL `NULL`, тест `tools/tests/test_compose_collector_mounts.py`; закрыт пункт provenance readiness §6.
+- C2 - **done**, PR #121 `feat/analyst-role-provision`: `infra/bootstrap/provision-analyst-role.sh` (read-only LOGIN `proxima_analyst`, таймауты, гранты, файлы секретов `0600 root`, идемпотентность) + таблица грантов и порядок выдачи в `docs/operations/access-provisioning.md` + шаг runbook §1.4 + тест. Блокер B5 ждёт только шага Mike на сервере.
+- C3 - **done**, PR #123 `feat/webapp-metrics-postgres`: `orders-day`/`revenue-day` из `fact_cabinet_daily_current`, `freshness` из `data_status_current`; `signals`/`oos-risks` скрыты, `FxBadge` только в fixtures, 2 SELECT на полосу, AD-9 в memlog.
+- C4 - **done**, PR #124 `fix/webapp-brief-wording-states`: тексты `/brief` для `blocked` («Данных за день нет») и несовпадения дня сводки.
+- C5 - **done**, PR #126 `feat/backup-systemd-units`: `infra/systemd/proxima-pg-backup.{service,timer}` (03:00 МСК, `PROXIMA_RAW_DIR`, `OnFailure`), guard в скрипте, шаг установки в runbook, тест. **2 фикс-раунда**: красный `systemd-verify` (`ExecStart` на отсутствующий в раннере `/usr/local/bin/proxima-pg-backup.sh`), раунд 1 без коммитов, раунд 2 - `/usr/bin/env bash` из чекаута, как у соседних юнитов.
+- C6 - **done**, PR #128 `chore/psql-owner-bootstrap`: `infra/bootstrap/proxima-psql-owner` из heredoc runbook §1.4 + `infra/bootstrap/README.md` + тест.
+
+Документация (GLM, при срыве - Claude-субагент):
+
+- G1 - **done**, PR #120 `docs/releases-changelog-skeleton` (GLM): `docs/operations/releases/` (README, TEMPLATE, заготовка `2026-09-15-m01.md`) + `CHANGELOG.md` (Keep a Changelog, Unreleased за 07-08.09).
+- G2 - **done**, PR #122 `docs/data-dictionary-012-018` (GLM): миграции 012-018 как существующие таблицы, таблица трёх состояний схемы; строки воронки (017) вернул оркестратор.
+- G3 - **done**, PR #125 `docs/inventory-refresh-2026-09-08` (GLM): раздел кода приведён к `main` 018, серверные факты - с датой перепроверки 08.09.
+- G4 - **done**, PR #129 `docs/agent-memory-tools-drift` (Claude-субагент; попытка GLM - таймаут exit 5, 90 мин без коммитов, беседа `1d1c1143-777c-54ce-b660-f3fb6dc122f7` осталась запущенной, закрыть в UI OpenHands): цепочка verify, CAS-путь `/srv/proxima-ai/raw`, имена токенов, `apply-migrations` через `control-plane-admin`, новые артефакты репозитория.
+- G5 - **done**, PR #127 `docs/release-m03-runbook-draft` (Claude-субагент, резерв): `docs/operations/release-m03.md` - черновик runbook 2.6 (§0 предусловия … §6 журнал), одиннадцать пунктов `UNKNOWN`.
+
+Осталось до 1.14 (вт 15.09): Story 6.1 Владислава в `main` до пт 11.09 (CP-12); слово «деплой» от Mike + шаги runbook §1 на сервере (переименование токенов, `.env`, raw-каталог); создание роли аналитика на сервере (скрипт C2 готов, запускает Mike); B6 копия артефактов в S3 - `UNKNOWN`.
+До 2.6 (вт 22.09): ротация analytics-токена PA-13; конфликт порта 3000 с ручным контейнером `proxima-webapp-staging` (нужно решение Mike); шаг воронки едет тем же тегом, своей единицы не имеет; форма релизного тега 2.6 не определена; окно наблюдения расходится - D33 даёт 23-29.09, AC Story 2.6 - 24-30.09.
+Стенд `proxima-rehearsal` (postgres 5434, webapp 3434) работает и ждёт Mike: после C3 полоса метрик проверена на живых данных, `/brief` в postgres-режиме - гибрид (сводка, аномалии, полоса настоящие; дайджест, вердикт, сигналы, подпись переключателя кабинетов - FX-фикстуры до Epic 5). Уборка - `bash tools/rehearsal_run.sh down --root ~/orca/rehearsal && sudo rm -rf ~/orca/rehearsal` (`rm -rf` - с подтверждения Mike).
+Заморожено (D35): Story 4.4, Epic 5, «Источники v2». Не в очереди: `tools/verify_shadow.py` (ждёт эталоны 6.1), тела деплоя 2.6/3.4, S3/токены/накат поверх дампа.
+
+### Запуск сбора данных на сервере: подготовка релиза 1.14 (D35) - выполнен 08.09 (#108-#117)
+
+Решение Mike 08.09 (~10:30 UTC, `DECISIONS.md` D35, + «Дополнения по репетиции» ~13:40 UTC): конвейер сбора построен в `main`, но на сервере не запускался ни разу (схема 6 против 18, `collector_runs` нет, таймеров нет, данные WB - 25.08); плюс баг релизного пути - `WB_ALLOW_LIVE_NETWORK=1` не выставлен нигде в контуре деплоя. Октябрь заморожен, все исполнители - на трек запуска. Единицы (все в `main` 08.09):
+
+- U-A1 - **done**, PR #110 `fix/live-network-env`: `WB_ALLOW_LIVE_NETWORK=1` у сервиса `collector` в `infra/compose.yaml` + гейт `tools/verify_live_network.py` (`make live-network`) + runbook §3/§5.
+- U-A2 - **done**, PR #111 `feat/rehearsal-stack`: `infra/compose.rehearsal.yaml` + `tools/rehearsal_run.sh`, compose-проект `proxima-rehearsal`, postgres `127.0.0.1:5434`, runbook «Репетиция на VPS (D35, не деплой)»; боевая база и `/srv/proxima-ai` не тронуты.
+- U-A3 - **done**, PR #113 `docs/readiness-1.14-v2`: `docs/state/RELEASE-READINESS-1.14.md` v2 (блокеры B1-B10) + блок конвейера в `docs/state/WORKS-TODAY.md` + исполнитель runbook по D7.
+- U-A4 - **done**, PR #109 `chore/story-1.11-done`: Story 1.11 `done`, объём отгружен в 2.5 (CP-5).
+- Репетиция на VPS с живым хвостом - **проведена** 13:10:14-13:11:55 UTC на `main` `1c5e256`: `backfill`/`collect`/`norm`/`brief` SUCCEEDED, ровно 2 read-вызова на боевом statistics-токене (прошёл `assertLeastPrivilegeToken`), W10 649 | 700 860.50 сошёлся с пересчётом фикстуры, W35 по дням 8/8 PASS; факты - PR #112 (`API-FACTS.md`), правило гейта §4 + определение заказов + дополнение D35 - PR #116; отчёт - `HANDOFF.md`, «Трек сбора данных (08.09, после D35)». Стенд `proxima-rehearsal` (`~/orca/rehearsal`, webapp `:3434`) работает, пока Mike не посмотрит `/brief`; уборка - `bash tools/rehearsal_run.sh down --root ~/orca/rehearsal && sudo rm -rf ~/orca/rehearsal` (`rm -rf` - с подтверждения Mike), остановить при уборке и превью на фикстурах `127.0.0.1:3100`.
+- Находки репетиции - **done**: PR #114 (`MetricStrip` скрыт при `supportsMetrics=false`, postgres-режим давал 500; текст «Сводка ещё не считается», пока первой сводки нет), PR #115 (секрет webapp `1001:1001` в provision, `init` репетиции, runbook §1.2/§1.4, memlog). D35 - PR #108.
+
+Осталось до релиза 1.14 (вт 15.09, D33): B1 Story 6.1 Владислава в `main` до пт 11.09 (CP-12, waiver D26 не пишется); B2 слово «деплой» от Mike + runbook §1 на сервере (токены под AD-13, `.env`, raw-каталог) - Mike или Claude по слову «деплой»; B5 LOGIN-роль аналитика (Story 6.4, состав грантов не предложен); B6 копия артефактов в S3 - `UNKNOWN`, за Mike.
+До 2.6 (вт 22.09): настоящие метрики дашборда в postgres-режиме (follow-up к Story 2.5); ротация analytics-токена PA-13.
+Кандидаты в единицы (не запланированы, readiness §6): `PROXIMA_GIT_SHA`/`PROXIMA_IMAGE_ID` через `environment:` compose (provenance ledger на сервере будет `NULL`); инкрементальный накат 007-018 на дамп боевой базы в репетиционном проекте; противоречивые тексты `/brief` для `blocked` и несовпадения дня; `proxima-psql-owner` в `infra/bootstrap/`, `docs/operations/releases/`, `CHANGELOG.md` - не созданы.
+Заморожено до трёх SUCCEEDED утр подряд на сервере (D35): Story 4.4, Epic 5; «Источники v2» (остатки, финотчёт, реклама, цены) - после первого утра, эпик не создан.
 ### Аналитик, неделя 2 (08.09.2026, D33)
 
 Владислав: Epic PMM-123 «Верификационный контур» - Story 6.1 (PMM-124) до пт 11.09 как предусловие релиза 1.14 (вт 15.09), 6.2 до пн 14.09, 6.3 до 21.09; задачи PMM-129..132 (сверка с кабинетом, SM-3, API-FACTS, OQ-10); долг DoD недели 1 - PR по PMM-58/59. Журнал Jira - `docs/state/JIRA-SYNC-2026-09-08.md`; материал созвона - артефакт «Владислав · неделя 2». Второй пакет Jira (ответы на его вопросы) - после подтверждения Mike.

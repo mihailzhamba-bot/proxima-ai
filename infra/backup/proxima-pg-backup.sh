@@ -1,6 +1,14 @@
 #!/bin/bash
 # Nightly pg_dump: pilot proxima + proxima_dev -> local (retention 14d) + age-encrypted -> S3 proxima-backups (ru-3)
 set -uo pipefail
+
+fail() {
+  printf '%s\n' "proxima-pg-backup: $*" >&2
+  exit 1
+}
+
+[[ -n "${PROXIMA_RAW_DIR:-}" ]] || fail "PROXIMA_RAW_DIR is required"
+
 SEC=/etc/proxima-ai/secrets
 PGUSER=$(cat $SEC/postgres_user)
 AGE_PUB=$(cat $SEC/backup_age_recipient)
