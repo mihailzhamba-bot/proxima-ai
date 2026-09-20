@@ -1,6 +1,6 @@
 [Unit]
 Description=LOOP continuous 08:00 Moscow queue report
-After=network-online.target loop-bridge.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]
