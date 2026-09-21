@@ -1,0 +1,30 @@
+[Unit]
+Description=LOOP OpenHands relay inside Bridge namespace
+Requires=loop-openhands-tunnel.service
+After=docker.service loop-openhands-tunnel.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/docker inspect loop-control-bridge-1
+ExecStartPre=/usr/local/sbin/loop-openhands-relay-control stop
+ExecStart=/usr/bin/docker exec loop-control-bridge-1 python3 /opt/loop/openhands_relay.py
+ExecStop=/usr/local/sbin/loop-openhands-relay-control stop
+Restart=always
+RestartSec=5
+SuccessExitStatus=SIGTERM 143
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryMax=64M
+CPUQuota=20%
+TasksMax=24
+
+[Install]
+WantedBy=multi-user.target

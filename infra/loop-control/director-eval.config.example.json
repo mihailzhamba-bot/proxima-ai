@@ -1,0 +1,11 @@
+{
+  "candidates": [],
+  "timeout_seconds": 300,
+  "candidate_fields": [
+    "name",
+    "model_id",
+    "gateway_url",
+    "token_file"
+  ],
+  "note": "Configure distinct authorized isolated Hermes model profiles. Do not use production Director state or inherited OAuth."
+}

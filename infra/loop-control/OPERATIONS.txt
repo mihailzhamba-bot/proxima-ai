@@ -1,0 +1,375 @@
+LOOP: подготовка и эксплуатация пилота
+План Mike от 13.09.2026. На 14.09.2026 управляющий стенд работает на отдельном VPS;
+это ещё не означает приёмку полного маршрута до ready PR или production deploy.
+
+Размещение и границы
+Отдельный VPS LOOP-control 135.106.211.149: Paperclip, Hermes Director, Bridge,
+Telegram ingress и собственный PostgreSQL. Конфигурация: 4 vCPU, 8 GB RAM,
+80 GB SSD, Ubuntu 24.04. Simone исключён;
+память, OAuth, сессии и боты существующего Hermes не переносятся.
+Claudette сохраняет PROXIMA AI, данные WB, webapp и существующий OpenHands.
+Harper выполняет сборки, тесты и независимую проверку. Конечный результат разработки
+- готовый PR. Merge и production deploy подтверждает Mike. Записи в WB выполняют
+сотрудники; этот код не отправляет мутирующие запросы в кабинет WB.
+
+Подготовка образов на Harper
+1. Запустить prepare_upstream.py с --destination build/upstream и фактическим
+   --harper-hostname. Он проверяет hostname и exact commit из versions.lock.json,
+   не перезаписывает существующие каталоги. Paperclip: release v2026.831.1,
+   commit 65ec059bde30d98c92165b24a30a540800dd1f6f. Hermes: release v2026.9.11,
+   commit 939e45c91d751fadd94dcd1b873ac3cb44846213.
+2. Собирать Dockerfile.paperclip и Dockerfile.hermes-overlay с корнем репозитория
+   в качестве context. Их отдельные .dockerignore включают build/upstream и нужные
+   Markdown/HTML assets, исключают .git и runtime secrets. Общий .dockerignore
+   производственных образов PROXIMA менять не требуется.
+3. Paperclip использует Node 24.11.0 и pnpm9.15.4. Hermes - Python 3.12 и закреплённые
+   extras sms/mcp. Образы upstream с root-entrypoint не используются.
+4. Собрать Dockerfile.bridge и расширение доверенного verifier через
+   Dockerfile.verification. Записать полученные registry digests в versions.lock.json
+   и deployment environment. Сборки на LOOP-control не выполняются.
+5. Отдельно проверить доставку образов в выбранный приватный registry. Digest образа
+   в локальном registry Harper сам по себе не подтверждает доступ нового VPS.
+
+Новый управляющий VPS
+После разрешения deploy оператор устанавливает Docker, ограничивает
+SSH/admin ingress утверждёнными адресами и создаёт отдельные каталоги /etc/loop,
+служебные учётные записи и новые volumes. Через compose публикуются только локальные
+127.0.0.1:3100 и 127.0.0.1:18770; PostgreSQL не публикует host port. Между серверами
+используется HTTPS/проверенная приватная сеть. Реальный ingress принимается отдельно.
+
+prepare_credentials.py создаёт только новые локальные capability keys. Файлы mode0600:
+Paperclip работает как UID 1000, Hermes UID 10000, Bridge/Telegram UID 10001. PostgreSQL
+получает секреты с владельцем UID его фактического образа. Каждый сервис монтирует
+только нужные файлы. bridge_director и hermes_bridge_director - разные файлы для
+разных UID, содержащие один Director credential. Ключи Board, runner, OpenHands,
+GitHub и operator в Hermes не монтируются. Provider/Board/GitHub/Telegram credentials
+выдаёт оператор отдельно; генератор не создаёт авторизацию во внешних сервисах.
+
+Compose задаёт отдельные лимиты памяти/CPU/PIDs: PostgreSQL 1GiB/0.5/128,
+Paperclip 2GiB/1.5/256, Hermes 2GiB/1/128, Bridge 256MiB/0.5/64,
+Telegram 128MiB/0.25/32. Все Docker logs ротируются: local, 10MB x3.
+Bridge запрещает новый dispatch при свободном месте менее 512MiB в его volume.
+Достаточность стартового VPS проверяется на реальных управляющих задачах.
+
+PostgreSQL и персональный доступ
+Собственный PostgreSQL 16.6 хранится в отдельном volume. 10-paperclip-role.sh создаёт
+paperclip_runtime без superuser/CREATEROLE/CREATEDB. DATABASE_URL в приватном
+paperclip.env указывает на postgres:5432/paperclip с этой ролью. Пароли admin и runtime
+раздельны. Paperclip HOME/PAPERCLIP_HOME: /paperclip; PAPERCLIP_CONFIG:
+/paperclip/instances/default/config.json. Используется отдельный persistent volume.
+
+Webapp первого кабинета работает в WEBAPP_DATA_MODE=postgres; WEBAPP_TENANT_ID выбирает
+кабинет. Нужны WEBAPP_DATA_DATABASE_URI_FILE, WEBAPP_LOOP_DATABASE_URI_FILE,
+WEBAPP_AUTH_DATABASE_URI_FILE, BETTER_AUTH_SECRET и BETTER_AUTH_URL. Отдельные DB login
+roles наследуют proxima_auth_writer и proxima_loop_writer. Миграции 019-021 additive:
+схема auth/queue, native BetterAuth issuer, read-only role proxima_loop_context.
+Исходные имена auth user/session/account/verification сохранены. Read-only осмотр
+13.09.2026 не обнаружил auth-таблиц в live/rehearsal DB; production migration не выполнялась.
+
+Оператор создаёт личные аккаунты, регистрирует workflow_runs command='provision'
+и явно добавляет cabinet_memberships: Mike как owner, конкретные сотрудники как employee.
+Регистрация аккаунта не выдаёт membership. Сервер проверяет настоящую BetterAuth-сессию,
+её срок и активное членство на каждом запросе. Сотрудник видит только свои задачи.
+Подтверждение решения Mike и создание задачи атомарны; повтор возвращает прежнюю задачу.
+
+Для read-only контекста Director задать WEBAPP_LOOP_CONTEXT_DATABASE_URI_FILE и
+WEBAPP_LOOP_CONTEXT_TOKEN_FILE; соответствующий webapp_context secret получает только
+Bridge. /api/loop/context выбирает кабинет из server config, не из запроса клиента.
+Текст записей и evidence остаётся недоверенными данными, а не инструкциями для Director.
+
+Paperclip и Hermes
+В Paperclip создать одного Director с официальным hermes_gateway и конфигом
+paperclip-director.example.json. Поле apiBaseUrl указывает на Bridge /hermes.
+dangerouslyAllowInsecureRemoteHttp относится только к http://bridge:18770 внутри
+Docker-сети одного сервера; внешний HTTP этим флагом не разрешается. Gateway key
+выдаётся через secret store. Routines задаются только в Paperclip; интервал 900 секунд
+является стартовой настройкой, а не измеренным SLA.
+
+Hermes получает новый HERMES_HOME, отдельный API_SERVER_KEY и provider environment
+в director.env. Использовать hermes.example.yaml: platform api_server с toolset loop
+и stdio MCP /opt/loop/director_tool.py. Проверить фактический deferred tool catalog:
+только loop_read_context и loop_propose_job за штатными метаинструментами Hermes.
+Terminal/process/cron/browser/delegation не должны появляться в доступном каталоге.
+Один /health или список /v1/toolsets этой проверки не заменяет. Telegram polling
+существующего Hermes не включается. Paperclip - единственный планировщик Director.
+
+Harper и OpenHands
+Установить bridge.py, runner.py, publication.py, push_gate.py, loopctl.py,
+verify_candidate.py, history_gate.py и pinned secret_scan.py
+вместе в /opt/loop на Harper. На Claudette установить root-owned worker_dispatch.py,
+worker_collect.py, worker_root.py и worker_ssh.py в /opt/loop, а также isolated
+agent_server_launcher.py и codex_acp_clean.py; forced SSH не даёт shell/SFTP и вызывает
+только точный dispatch/fetch через worker_root.py. На Claudette
+запускается отдельный Agent Server 1.44.0 из loop-openhands-agent-server.service:
+user loop-oh-agent, HOME /srv/loop-worker/agent-home, порт 127.0.0.1:18002, собственный
+root-only private config через StandardInput и CODEX_HOME /srv/loop-worker/codex-home. Профиль, OAuth, persistence
+и env существующего openhands-agent не копируются. LOOP-key обязан получать 401 на
+старом :18000, а старый Canvas key - 401 на новом :18002. Systemd закрывает новому
+процессу /home/openhands-agent, /srv/openhands, /srv/proxima-ai, /etc/proxima-ai,
+/srv/loop-worker/trusted-source, /srv/loop-worker/runner-state, /srv/loop-worker/gateway,
+/etc/loop-worker и /opt/loop. Launcher ставит PR_SET_DUMPABLE=0, закрывает secret fd,
+а ACP wrapper удаляет server-only keys из child env и legacy sandboxPolicy из ACP
+turn/start, заменяет thread config полным permission contract и помечает project
+untrusted. Модель пишет только в workspaces, worktrees и свой state. Отдельный
+loop-worker-runner выполняет pinned wrapper из /srv/loop-worker/trusted-source/proxima-ai
+и хранит private run state в /srv/loop-worker/runner-state.
+Trusted configs, templates, prompt_file, reviewer и fixtures хранятся вне worker
+checkout; credential-free loop-bundle-collector создаёт только raw bundle, а root-owned
+outbox и receipts лежат в /srv/loop-worker/gateway. Установить
+97-loop-worker-sshd.conf и до reload проверить sshd -t и effective sshd -T -C
+user=loop-worker,host=claudette,addr=135.106.211.64: ForceCommand,
+DisableForwarding, publickey-only и PermitTTY=no обязательны. Harper использует
+явные worker_host, worker_identity_file, github_publish_identity_file и единый
+pinned known_hosts; SSH aliases и agent forwarding не используются.
+Agent state, CODEX_HOME, trusted source, runner/collector state, transfer, gateway,
+workspaces и worktrees монтируются loop-worker-volume.service из отдельного ext4 image
+8 GiB с nodev,nosuid,noatime; проверка df на Claudette 14.09.2026: 54 GiB свободно. Dispatch
+останавливается при остатке менее 512 MiB. Размер пересматривается после реальных
+пилотных задач; общий /srv production не используется для неограниченной записи.
+Профиль loop-codex обязан иметь mcp_server_refs=[], acp_args=[],
+acp_session_mode=agent и acp_command только
+/opt/loop-openhands-agent/bin/codex-acp. Real binary остаётся pinned
+/opt/loop-openhands-agent/node_modules/.bin/codex-acp; wrapper не принимает secrets.
+Installer и каждый dispatch проверяют Codex 0.151.0, codex-acp 1.1.7 и четыре
+OpenHands distributions 1.44.0; version drift блокирует работу.
+Личные приватные ключи Mac на серверы не переносятся; ForwardAgent отключён.
+Runner получает свой Bridge credential; worker/model не получают runner/Git credentials.
+
+Service UID/GID Harper должен совпадать с UID 1000 verification image, либо образ
+собирается под выбранный отдельный service UID. Каталоги не делаются world-writable.
+Worker устанавливается в два прохода. Первый install.py --role worker --apply создаёт
+и монтирует bounded volume, но возвращает pending на пустом source-integrity.json.
+Оператор размещает approved source, prompts и templates, затем запускает
+/usr/local/sbin/loop-worker-seal и повторяет install.py --role worker --apply.
+Шаблон задаёт проверенные base_sha, точный непустой allowed_paths, prompt_file и
+prompt_sha256. Sealer записывает status=ready и exact hashes всего wrapper-set и prompts;
+неполный manifest блокирует старт. Installer добавляет stable id/revision активного
+loop-codex во все templates. Полученные definitions копируются без изменений в Bridge
+и Harper: id/revision входят в общий fingerprint, смена live-профиля блокирует dispatch.
+Повтор dispatch сначала возвращает атомарный root-owned receipt и тот же bundle;
+потеря SSH-ответа не создаёт второй workspace. reviewer_command - доверенный абсолютный executable
+вне candidate workspace; его ответ относится к точному SHA и не содержит пропусков.
+Conversation сначала создаётся idle без prompt; сохранённый launched_agent_profile
+обязан совпасть с approved id/revision, и только после этого message запускает модель.
+Self-report OpenHands не считается результатом проверки. API count=200 отдельно не
+подтверждает proxy, OAuth или модель; их подтверждает bounded E2E worker task.
+
+loop-runner.service запускает runner.py --config <trusted file> --serve на Harper.
+Он потребляет утверждённые задания, не планирует Director. Для одного задания:
+runner.py --config <trusted file> --job <job ID>. Bridge допускает одну тяжёлую работу;
+неопределённая работа требует сверки до следующего dispatch.
+
+Проверка кандидата и публикация
+Порядок: prepare, immutable verify, immutable build, independent review,
+begin-publication, gated push, finish-publication. Кандидат проверяется по blob каждого
+tracked-файла и точному SHA; source и .git монтируются read-only. Изменения защищённых
+tests/config/контрактов в worker-кандидате запрещены. Mountpoints создаются заранее;
+tracked coverage, symlink, выход за checkout и неожиданные файлы отклоняются.
+
+Producer использует только доверенные /opt/offline/npm и /opt/offline/uv, копирует их
+в writable /tmp и явно запрещает сеть/download Python. CI=true включает существующий puppeteer.ci.json для Chromium внутри изоляции Docker;
+NEXT_TELEMETRY_DISABLED=1 запрещает telemetry сборки. Python 3.14 заранее установлен
+в verification image. HOME - scratch; USER/LOGNAME берутся из фактического UID.
+Prepare устанавливает locked dependencies, затем package-файлы становятся read-only.
+Отдельно доступны writable build outputs, .vite-temp/.vite caches и build-only overlay
+next-env.d.ts. PROXIMA_VERIFY_READONLY включает сравнение codegen без записи исходников.
+make verify обязан пройти настоящий pg-roundtrip: PASS. Логи и SHA-bound receipts
+сохраняются вне candidate mounts в приватном evidence directory с редактированием секретов.
+
+Push запускается через доверенный Python -I -S wrapper. Родитель сохраняет PID/start,
+PGID/SID/boot ID и release intent с fsync до отправки разрешающего байта. Если родитель
+падает раньше, EOF запрещает exec. Дочерний процесс начинает новую session; recovery
+проверяет всех её живых участников, включая SSH/helper после смерти лидера Git.
+GIT_SSH_COMMAND отключает ControlMaster/ControlPersist. Timeout сигналит owned group;
+оставшийся участник session не даёт подтвердить остановку.
+
+Управление и восстановление
+loopctl.py поддерживает status/wake/pause/resume/stop/events/recover-pr и явную сверку.
+Wake идёт через Paperclip. Повтор и потеря ответа не создают вторую работу.
+Неопределённый dispatch не повторяется даже после истечения 24h native idempotency Hermes.
+Оператор сверяет remote run list и принимает подтверждённый external ID.
+Hermes после restart переводит незавершённый run в interrupted; SSE не имеет replay,
+поэтому состояние читается polling. Cursor событий Paperclip хранится постоянно.
+
+Pause сохраняет queued job и уже выданный publication permit для продолжения после
+resume. Отмена немедленно меняет generation и запрещает новые публикации. Paperclip
+cancel требует Board и сам не останавливает Hermes: Bridge отдельно останавливает
+Hermes и ставит OpenHands на паузу, затем проверяет их состояния. Пока подтверждения
+нет или publisher может работать, отображается CANCELLING, а не подтверждённая остановка.
+Поздний child отменённого parent не получает lease. Подтверждённо отозванный или аварийно завершённый
+parent переводит ещё не отправленную работу в quarantine.
+
+Потерянный worker receipt: /usr/bin/python3 -I /opt/loop/loopctl.py --config <operator-config>
+recover-worker --id <job> --input-file <receipt>
+проверяет известный OpenHands CID и продолжает сбор bundle без второго dispatch.
+Проверки ancestry/SHA/paths остаются обязательными. Перед публикацией повторно читается
+Paperclip, включая отмену напрямую в upstream.
+
+Потерянный push: runner.py --config <file> --recover-push <private publisher.json>.
+Journal evidence/<job>/<attempt>/publisher.json имеет mode0600 и содержит permit;
+не включать его содержимое в логи, prompts или PR. Живой процесс/session запрещает
+settlement. Старый неполный journal без доказательства no-exec остаётся UNKNOWN.
+Finished journal повторяет сохранённый receipt; умерший незавершённый publisher
+фиксирует unknown outcome, после чего нужна внешняя сверка.
+
+Оператор: loopctl.py --config <file> settle-publication --id <job>
+--evidence-ref <inspection reference>. Проверяются destination branch SHA и все
+подходящие PR. Эта операция не создаёт PR, не повторяет push и не удаляет branch.
+Иной SHA или недоступная проверка оставляют permit активным. recover-pr принимает
+только существующий PR с точным SHA и также требует доказанной остановки publisher.
+
+Telegram и модели
+Новый отдельный Telegram bot запускается только с заполненными allowlists user IDs
+и chat IDs. Update ID/cursor записываются до обработки; свободный текст не выдаёт
+разрешения. delivery_unknown и execution_unknown различаются; потерянный ответ
+sendMessage не вызывает слепую повторную отправку. Для точно отклонённого update:
+telegram.py --config <file> --retry-update <ID>; сохраняется исходный idempotency key.
+JsonHTTP принимает uncertain:false только от настроенного trusted Bridge, включая
+известный 503 до dispatch. Vendor5xx остаётся неопределённым исходом.
+
+Для выбора Director настроить минимум две отдельно авторизованные модели в
+director-eval.config.example.json. Запуск на Harper: evaluate_director.py --config
+<file> --cases infra/loop-control/director-eval-cases.json --output <report.json>.
+Проверяются цель, источники, неопределённость, выбор исполнителя, подтверждение Mike
+и публикация. В native request передаётся нужная модель. Requested identity и
+наблюдаемая identity раздельны; status.model=hermes-agent не доказывает provider/model.
+Отсутствующий usage остаётся UNKNOWN. Числа вне точных SourceRef и повторение одного
+факта не получают полный grounding score. Пустой config не запускает оценивание.
+
+Backup, rollback и приёмка
+Перед deploy сохранить mode0600 зашифрованные backups PostgreSQL, Bridge SQLite,
+отдельного Hermes state и Paperclip storage. SQLite копируется через backup API,
+не cp работающего файла; Bridge использует DELETE journal. Перед rollback прекратить
+новый dispatch, остановить активные попытки и сохранить unknown intents. Восстановить
+совместимые версии/schema в отдельном volume; проверить integrity и число записей.
+Не удалять решения и uncertain runs ради разблокировки очереди.
+
+Установить backup.py и health.py как /usr/local/sbin/loop-backup и loop-health,
+затем loop-backup.service/.timer и loop-health.service/.timer. Backup идёт ежедневно
+в 00:30 UTC с jitter, health - каждые 5 минут. Шифрование использует отдельный
+/etc/loop/secrets/backup_encryption; ключ не входит в архив. Обязательны native
+pg_dump, online backup всех Bridge/Hermes SQLite, Paperclip master/decision keys,
+Hermes OAuth и idempotency state. Последний архив проверяется HMAC, расшифровкой и
+restore в отдельном volume; копия архива и ключа хранится вне VPS.
+
+На LOOP-control установить loop-egress-tunnel.service, loop-egress-proxy.service
+и tinyproxy.conf. Создать отдельных loop-tunnel/loop-proxy, mode0600 tunnel key,
+pinned known_hosts для home.main :65022 и включить оба unit. tinyproxy 1.11.1
+слушает только gateway 172.30.240.1 и принимает только Hermes 172.30.240.2.
+
+Hermes подключается только к internal loop-hermes-private и выходит к OpenAI через
+loop-egress-tunnel.service + loop-egress-proxy.service. OpenHands доступен Bridge
+как localhost:18000 через loop-openhands-tunnel.service и relay в namespace Bridge.
+Туннельный SSH user разрешает только local forward к Claudette 127.0.0.1:18002;
+shell, SFTP и reverse forwarding запрещены. Установить network_preflight.py как
+/usr/local/sbin/loop-network-preflight и включить loop-network-preflight.service.
+Он создаёт отсутствующие internal сети только с точными subnet/gateway и блокирует
+старт при drift существующей сети. Контейнеры имеют restart=no; Compose работает
+foreground через loop-control.service и повторяет preflight в ExecStartPre при каждом
+restart/reboot. Остановка tunnel должна давать отказ без прямого fallback.
+
+Выполнение задачи подтверждает сотрудник с evidence. Mike отдельно сверяет эффект
+после горизонта наблюдения. Сравниваются orders/revenue того же SKU; неподдержанный
+category target остаётся unknown. Достижение цели не доказывает причинность действия.
+
+Отдельные приёмки: код/PR; управляющий стенд на новом VPS; ежедневная работа кабинета.
+Для live-стенда ещё нужны новый VPS, credentials и model selection, registry delivery,
+private ingress, membership, реальный маршрут Paperclip/Hermes/OpenHands/Harper/PR,
+отмена/restart и restore backup. Unit/DB/browser и component smoke не заменяют эту
+сквозную приёмку. Merge и production deploy остаются решением Mike.
+
+Harper: private Bridge connection (15.09.2026)
+Receiver on LOOP-control: loop-runner-tunnel, home /var/lib/loop-runner-tunnel,
+shell /usr/sbin/nologin. Install 96-loop-runner-tunnel-sshd.conf after comparing
+existing admin sshd -T output; run sshd -t before reload. authorized_keys restricts
+from=135.106.211.64, port-forwarding and permitopen=127.0.0.1:18770.
+Harper runs loop-runner-bridge-tunnel.service as a separate service account.
+Its key is /var/lib/loop-runner-tunnel/id_ed25519 (owner, 0600); pinned host keys
+are /etc/loop-runner-tunnel/known_hosts (root, 0644). Bridge URL is
+http://127.0.0.1:18771. Direct public Bridge access is not required.
+Existing verifier /home/verifier and /bin/bash are preserved; the LOOP unit sets
+HOME=/var/lib/loop-runner and ProtectHome=yes. Historical verification trees are
+not migrated or cleaned. Installer probes Docker, exact image offline caches,
+Bridge auth, worker forced SSH and GitHub dry-run push as verifier, not root.
+Manual review gate: /opt/loop-review/review-candidate requires a separate root-owned
+/etc/loop-review/receipts/<head-sha>.json with base_sha, sha, diff_sha256, status=pass,
+skipped=0, reviewer, reviewed_at_utc and evidence_ref. A missing receipt blocks PR;
+--wait-seconds can wait up to 1800 seconds for independent review of that candidate.
+Native Hermes Telegram (15.09.2026)
+===================================
+
+Local incoming voice: configure_local_stt.py --assets IMMUTABLE_ASSET_DIRECTORY
+adds offline faster-whisper STT to this same isolated Hermes only. Install Linux
+CPython 3.12 wheels at the versions pinned in local-stt.lock.json, place the
+model and model-manifest.json alongside python-deps, and verify transfer hashes
+before configuring. No compilation or runtime model download is required.
+The multilingual base model runs on CPU/int8; OMP_NUM_THREADS=2 and the existing
+container CPU/memory limits remain in force. The model unloads after 60 seconds
+idle. This config does not enable TTS, microphone capture, cloud STT, or the queue.
+Native STT enriches voice text after command dispatch; a spoken /loop_confirm
+does not become an owner control command. Validate through the real
+tools.transcription_tools.transcribe_audio(file_path, source='gateway'), then
+through a new owner voice message. Configuration/decoded audio are not proof of
+an intelligible transcript or a delivered Telegram answer.
+
+Native conversation uses the existing Hermes home/OAuth and separate Telegram
+session routing. Do not start tools/loop/telegram.py for the same bot: exactly
+one Telegram poller owns its updates. API-session MCP tools stay configured as
+before; Telegram uses [loop_chat, no_mcp]. The no_mcp sentinel is mandatory to
+prevent global MCP servers from being appended to the chat tool surface.
+
+Runtime extension:
+- tools/loop/native_plugin.py is a read-only Hermes user plugin (loop-chat).
+- native_startup.py is a native gateway:startup hook. Plugin register() must be
+  synchronous and cannot assume an asyncio loop; notifier starts via the pinned
+  gateway _spawn_supervised coroutine factory after adapters connect.
+- Native tools are loop_get_status and loop_prepare_action. They hold only the
+  chat credential. Trusted Telegram pre-dispatch handles /loop_status,
+  /loop_review DRAFT_ID, /loop_confirm DRAFT_ID, /loop_stop RUN_ID with a separate
+  ingress credential; sender AND private chat must match the configured owner.
+- Model drafts never launch work. The trusted preview includes the actual fixed
+  edit, expected result, base SHA and paths. Confirm requires a nonce-bound
+  successful Telegram message receipt; preview expires after 15 minutes.
+- Confirmed requests enter Paperclip. Bridge fences job_id/template/fingerprint
+  against the owner confirmation and requires an acknowledged Paperclip parent.
+  An unknown dispatch is reconciled, never blindly resubmitted.
+
+Bridge API additions (all private; no public listener):
+chat credential: GET /v1/chat/status, POST /v1/chat/drafts {template}.
+native_ingress credential: POST /v1/native/preview, /preview-receipt, /confirm,
+/stop; GET /v1/native/notifications; POST notifications/{id}/claim or /settle.
+Native mutations validate user_id/chat_id/chat_type from the trusted ingress;
+these fields are never accepted from model tool arguments. Notifications are
+claimed durably before delivery. A lost acknowledgement is delivery_unknown,
+not an automatic resend; /loop_status remains the recovery view.
+
+Install on the existing dedicated control host only:
+python3 infra/loop-control/configure_native_telegram.py --source CHECKOUT
+This prepares a disabled-owner configuration and private rollback snapshot.
+Activation additionally requires --user-id NUMERIC_ID --token-file PRIVATE_FILE.
+The bot token must come from a new dedicated bot and a mode-0600 file. It is read
+by native_gateway.py at process startup, never placed in Docker environment
+inspection, command arguments, source, logs, or conversation text.
+
+The installer preserves existing Compose limits/networks, Hermes API config and
+model login. It installs read-only runtime overlays on the pinned images and
+does not restart or change queue/Director pause. Validate Docker Compose, then
+explicitly recreate only bridge and hermes (use --force-recreate because
+replacing a bind-mounted file does not update the old container inode).
+After changes to loop-egress PermitOpen, reconnect the SSH tunnel for the new
+key restrictions to take effect. Permit only api.telegram.org:443 in addition
+to the previously admitted model destinations; retain the private network.
+
+Rollback: use /var/backups/loop-native/TIMESTAMP/configuration.tar.gz and its
+receipt hash; restore the previous Compose/hermes/Bridge config and prior
+overlay files, then recreate the same two services. SQLite snapshots accompany
+the config backup, but do not restore an older DB over newer jobs merely to
+roll back code. Newly created inactive files can remain in place. VPN SSH config
+has its own /var/backups/loop-egress/telegram-TIMESTAMP snapshot; restore only
+the dedicated LOOP account restrictions and validate sshd before reload.
+
+Acceptance levels are distinct: code tests; installed plugin/role/network
+smoke; a real owner Telegram conversation across restart; a confirmed task to
+PR with its native result notification. Missing bot/owner credentials block
+the last two. A healthy process or Telegram getMe response does not prove a
+successful user conversation. Do not enable work merely to enable chat.

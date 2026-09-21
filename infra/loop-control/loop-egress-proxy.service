@@ -1,0 +1,36 @@
+[Unit]
+Description=LOOP Hermes private HTTP-to-SSH proxy
+Requires=loop-egress-tunnel.service docker.service
+After=network-online.target docker.service loop-egress-tunnel.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=loop-proxy
+Group=loop-proxy
+RuntimeDirectory=loop-proxy
+RuntimeDirectoryMode=0750
+ExecStart=/usr/bin/tinyproxy -d -c /etc/loop-proxy/tinyproxy.conf
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+MemoryMax=64M
+CPUQuota=25%
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,4 @@
+{
+  "bot_token_file": "/etc/loop/secrets/hermes_telegram_bot",
+  "chat_id": 6491826517
+}

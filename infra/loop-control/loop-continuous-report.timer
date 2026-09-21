@@ -1,0 +1,11 @@
+[Unit]
+Description=Send LOOP continuous queue report at 08:00 Moscow
+
+[Timer]
+OnCalendar=*-*-* 08:00:00 Europe/Moscow
+AccuracySec=10s
+Persistent=true
+Unit=loop-continuous-report.service
+
+[Install]
+WantedBy=timers.target

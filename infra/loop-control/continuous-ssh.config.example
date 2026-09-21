@@ -1,0 +1,17 @@
+Host loop-harper-register
+  HostName 135.106.211.64
+  User loop-register
+  IdentityFile /etc/loop/continuous/registration_ed25519
+  UserKnownHostsFile /etc/loop/continuous/known_hosts
+  IdentitiesOnly yes
+  BatchMode yes
+  StrictHostKeyChecking yes
+
+Host loop-worker-register
+  HostName 135.106.186.210
+  User loop-register
+  IdentityFile /etc/loop/continuous/registration_ed25519
+  UserKnownHostsFile /etc/loop/continuous/known_hosts
+  IdentitiesOnly yes
+  BatchMode yes
+  StrictHostKeyChecking yes

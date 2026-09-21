@@ -1,0 +1,36 @@
+{
+  "bind": "0.0.0.0",
+  "port": 18770,
+  "database": "/var/lib/loop/bridge/bridge.sqlite",
+  "director_id": "OPERATOR_ASSIGNED_DIRECTOR_ID",
+  "credential_files": {
+    "operator": "/run/secrets/bridge_operator",
+    "gateway": "/run/secrets/bridge_gateway",
+    "director": "/run/secrets/bridge_director",
+    "runner": "/run/secrets/bridge_runner"
+  },
+  "hermes": {
+    "url": "http://hermes:8642",
+    "token_file": "/run/secrets/hermes_api"
+  },
+  "paperclip": {
+    "url": "http://paperclip:3100",
+    "token_file": "/run/secrets/paperclip_board"
+  },
+  "openhands": {
+    "url": "http://127.0.0.1:18000",
+    "token_file": "/run/secrets/openhands_api",
+    "header": "X-Session-API-Key"
+  },
+  "github": {
+    "url": "https://api.github.com",
+    "token_file": "/run/secrets/github_pr",
+    "repository": "mihailzhamba-bot/proxima-ai"
+  },
+  "templates": {},
+  "disk_floor_bytes": 536870912,
+  "webapp_context": {
+    "url": "https://OPERATOR_PILOT_WEBAPP_ENDPOINT",
+    "token_file": "/run/secrets/webapp_context"
+  }
+}

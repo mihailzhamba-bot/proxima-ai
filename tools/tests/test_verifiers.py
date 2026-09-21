@@ -146,56 +146,71 @@ def test_wb_client_contract_is_fail_closed() -> None:
     wb_client.verify()
 
 
-def test_wb_client_gate_rejects_forbidden_endpoint_in_registry() -> None:
-    wb_client = load_tool("verify_wb_client")
-    registry = ROOT / "services" / "collector" / "src" / "wb" / "registry.ts"
-    original = registry.read_text(encoding="utf-8")
+@pytest.fixture
+def isolated_wb_client(tmp_path: Path):
+    """Mutate disposable inputs; the candidate under verification stays untouched."""
+    relative_paths = (
+        "services/collector/src/wb/registry.ts",
+        "services/collector/src/wb/client.ts",
+        "services/collector/src/cli/wb-collect.ts",
+    )
+    originals = {name: (ROOT / name).read_bytes() for name in relative_paths}
+    root = tmp_path / "repository"
+    shutil.copytree(ROOT / "services/collector/src", root / "services/collector/src")
+    (root / "tools").mkdir()
+    for name in ("verify_wb_client.py", "verify_business_signal.py", "record_fixture.ts"):
+        shutil.copyfile(ROOT / "tools" / name, root / "tools" / name)
+    # Loading the copy also binds the verifier's default paths to this fixture.
+    wb_client = load_module(root / "tools/verify_wb_client.py", "isolated_wb_client")
+    wb_client.verify()
     try:
-        registry.write_text(
-            original.replace(
-                "https://statistics-api.wildberries.ru/api/v1/supplier/orders",
-                "https://statistics-api.wildberries.ru/api/v1/supplier/stocks",
-            ),
-            encoding="utf-8",
-        )
-        with pytest.raises(ValueError, match="forbidden endpoint|URL set differs"):
-            wb_client.verify()
+        yield wb_client, root
     finally:
-        registry.write_text(original, encoding="utf-8")
+        for name, original in originals.items():
+            assert (ROOT / name).read_bytes() == original, f"test mutated candidate: {name}"
 
 
-def test_wb_client_gate_rejects_budget_drift() -> None:
-    wb_client = load_tool("verify_wb_client")
-    registry = ROOT / "services" / "collector" / "src" / "wb" / "registry.ts"
+def test_wb_client_gate_rejects_forbidden_endpoint_in_registry(isolated_wb_client) -> None:
+    wb_client, root = isolated_wb_client
+    registry = root / "services" / "collector" / "src" / "wb" / "registry.ts"
     original = registry.read_text(encoding="utf-8")
-    try:
-        assert "limitPerMinute: 1," in original
-        registry.write_text(
-            original.replace("limitPerMinute: 1,", "limitPerMinute: 5,", 1),
-            encoding="utf-8",
-        )
-        with pytest.raises(ValueError, match="budget mismatch"):
-            wb_client.verify()
-    finally:
-        registry.write_text(original, encoding="utf-8")
+    registry.write_text(
+        original.replace(
+            "https://statistics-api.wildberries.ru/api/v1/supplier/orders",
+            "https://statistics-api.wildberries.ru/api/v1/supplier/stocks",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="forbidden endpoint|URL set differs"):
+        wb_client.verify()
 
 
-def test_wb_client_gate_rejects_url_outside_registry() -> None:
-    wb_client = load_tool("verify_wb_client")
-    client = ROOT / "services" / "collector" / "src" / "wb" / "client.ts"
+def test_wb_client_gate_rejects_budget_drift(isolated_wb_client) -> None:
+    wb_client, root = isolated_wb_client
+    registry = root / "services" / "collector" / "src" / "wb" / "registry.ts"
+    original = registry.read_text(encoding="utf-8")
+    assert "limitPerMinute: 1," in original
+    registry.write_text(
+        original.replace("limitPerMinute: 1,", "limitPerMinute: 5,", 1),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="budget mismatch"):
+        wb_client.verify()
+
+
+def test_wb_client_gate_rejects_url_outside_registry(isolated_wb_client) -> None:
+    wb_client, root = isolated_wb_client
+    client = root / "services" / "collector" / "src" / "wb" / "client.ts"
     original = client.read_text(encoding="utf-8")
-    try:
-        client.write_text(
-            original.replace(
-                "import { endpointLimit, WB_ENDPOINTS } from './registry.js';",
-                "import { endpointLimit, WB_ENDPOINTS } from './registry.js';\nconst DRIFT = 'https://statistics-api.wildberries.ru/api/v1/supplier/incomes';\nvoid DRIFT;",
-            ),
-            encoding="utf-8",
-        )
-        with pytest.raises(ValueError, match="WB URL literal outside the registry"):
-            wb_client.verify()
-    finally:
-        client.write_text(original, encoding="utf-8")
+    client.write_text(
+        original.replace(
+            "import { endpointLimit, WB_ENDPOINTS } from './registry.js';",
+            "import { endpointLimit, WB_ENDPOINTS } from './registry.js';\nconst DRIFT = 'https://statistics-api.wildberries.ru/api/v1/supplier/incomes';\nvoid DRIFT;",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="WB URL literal outside the registry"):
+        wb_client.verify()
 
 
 def test_wb_client_gate_rejects_fifth_endpoint_with_duplicated_url() -> None:
@@ -236,25 +251,22 @@ def test_wb_client_gate_rejects_fifth_endpoint_with_duplicated_url() -> None:
             )
 
 
-def test_wb_client_gate_rejects_wb_host_fragment_in_cli_source() -> None:
+def test_wb_client_gate_rejects_wb_host_fragment_in_cli_source(isolated_wb_client) -> None:
     """Regression: `.wildberries` reached through string concatenation anywhere
     in collector src (incl. cli/) must fail, not just full URL literals."""
-    wb_client = load_tool("verify_wb_client")
-    drift = ROOT / "services" / "collector" / "src" / "cli" / "wb-collect.ts"
+    wb_client, root = isolated_wb_client
+    drift = root / "services" / "collector" / "src" / "cli" / "wb-collect.ts"
     original = drift.read_text(encoding="utf-8")
-    try:
-        drift.write_text(
-            original.replace(
-                "export function parseWbCollectArgs",
-                "const HOST_SUFFIX = '.wildberries' + '.ru/api/v1/supplier/incomes';\nvoid HOST_SUFFIX;\n\nexport function parseWbCollectArgs",
-                1,
-            ),
-            encoding="utf-8",
-        )
-        with pytest.raises(ValueError, match="WB host fragment outside the registry"):
-            wb_client.verify()
-    finally:
-        drift.write_text(original, encoding="utf-8")
+    drift.write_text(
+        original.replace(
+            "export function parseWbCollectArgs",
+            "const HOST_SUFFIX = '.wildberries' + '.ru/api/v1/supplier/incomes';\nvoid HOST_SUFFIX;\n\nexport function parseWbCollectArgs",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="WB host fragment outside the registry"):
+        wb_client.verify()
 
 
 def test_agent_toolset_contract_is_fail_closed() -> None:

@@ -20,7 +20,18 @@ let cached: DataProvider | undefined;
  */
 export function getDataProvider(): DataProvider {
   if (!cached) {
-    cached = FACTORIES[resolveDataMode()]();
+    const provider = FACTORIES[resolveDataMode()]();
+    if (provider.mode === "postgres") {
+      const authorize = async () => {
+        const { currentMember } = await import("@/lib/loop/access");
+        await currentMember();
+      };
+      cached = { ...provider,
+        async getBrief(v) { await authorize(); return provider.getBrief(v); },
+        async getSummary(v) { await authorize(); return provider.getSummary(v); },
+        async getMetrics() { await authorize(); return provider.getMetrics(); },
+      };
+    } else cached = provider;
   }
   return cached;
 }

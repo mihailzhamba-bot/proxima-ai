@@ -5,7 +5,9 @@
  * at one WB `lastChangeDate`. The same PK with the same canonical payload is
  * a replay and is skipped; the same PK with a different payload means WB
  * changed a "closed" record and the run must fail with WB_SCHEMA_DRIFT instead
- * of silently choosing a version. Shared by `collect` and `backfill` jobs.
+ * of silently choosing a version. The bounded exception is an order whose
+ * persisted and incoming payloads differ only in string `warehouseName`; the
+ * original observation remains immutable. Shared by `collect` and `backfill`.
  */
 import type { PoolClient } from 'pg';
 
@@ -132,10 +134,20 @@ export async function insertObservations(
     throw new RangeError('insertObservations: batchSize must be a positive integer');
   }
   const { table, keyColumn } = spec;
+  // Keep hashing the complete payload for compatibility with existing rows.
+  // IS NOT TRUE makes missing, JSON null and non-string values fail closed.
+  const replayExceptionSql = spec === ORDERS_SPEC
+    ? ` AND (` +
+      `jsonb_typeof(s.payload->'warehouseName') = 'string'` +
+      ` AND jsonb_typeof(v.payload->'warehouseName') = 'string'` +
+      ` AND s.payload->'warehouseName' <> v.payload->'warehouseName'` +
+      ` AND s.payload - 'warehouseName' = v.payload - 'warehouseName'` +
+      `) IS NOT TRUE`
+    : '';
   const driftSql =
-    `SELECT v.key FROM jsonb_to_recordset($2::jsonb) AS v(key text, last_change_at timestamptz, canonical_sha256 text)` +
+    `SELECT v.key FROM jsonb_to_recordset($2::jsonb) AS v(key text, last_change_at timestamptz, canonical_sha256 text, payload jsonb)` +
     ` JOIN ${table} s ON s.tenant_id = $1 AND s.${keyColumn} = v.key AND s.last_change_at = v.last_change_at` +
-    ` WHERE s.canonical_sha256 <> v.canonical_sha256 LIMIT 5`;
+    ` WHERE s.canonical_sha256 <> v.canonical_sha256${replayExceptionSql} LIMIT 5`;
   const insertSql =
     `INSERT INTO ${table} (tenant_id, ${keyColumn}, last_change_at, run_id, content_sha256, canonical_sha256, payload)` +
     ` SELECT $1, v.key, v.last_change_at, $3, $4, v.canonical_sha256, v.payload` +

@@ -1,0 +1,27 @@
+[Unit]
+Description=Finite owner-approved LOOP night batch, PR only
+After=network-online.target loop-runner-bridge-tunnel.service loop-runner.service
+Wants=network-online.target
+Requires=loop-runner-bridge-tunnel.service
+
+[Service]
+Type=exec
+User=root
+ExecStart=/usr/bin/python3 -I /opt/loop/night_batch.py --manifest /etc/loop-night/manifest.json
+ExecStopPost=/usr/bin/python3 -I /opt/loop/night_guard.py --manifest /etc/loop-night/manifest.json --stop
+Restart=no
+RuntimeMaxSec=12h
+TimeoutStopSec=30
+KillMode=control-group
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=64
+UMask=0077
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=20
+
+[Install]
+WantedBy=multi-user.target

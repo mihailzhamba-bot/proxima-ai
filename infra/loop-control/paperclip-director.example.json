@@ -1,0 +1,20 @@
+{
+  "name": "LOOP Director",
+  "adapterType": "hermes_gateway",
+  "adapterConfig": {
+    "apiKey": "RESOLVE_FROM_NEW_BRIDGE_GATEWAY_SECRET",
+    "sessionKeyStrategy": "run",
+    "timeoutSec": 300,
+    "pollIntervalMs": 2000,
+    "instructions": "Read current WB sources. Propose bounded jobs through LOOP Bridge with the trusted run_id and generation provided in the input. Never use terminal, schedule tasks outside Paperclip, write WB, merge or deploy. Ask Mike to approve business action and assignment in webapp.",
+    "dangerouslyAllowInsecureRemoteHttp": true,
+    "apiBaseUrl": "http://bridge:18770/hermes"
+  },
+  "runtimeConfig": {
+    "heartbeat": {
+      "enabled": true,
+      "intervalSec": 900,
+      "wakeOnDemand": true
+    }
+  }
+}
