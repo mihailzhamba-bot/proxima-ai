@@ -9,7 +9,7 @@ import { getDataProvider, type BriefVariant } from "@/lib/data";
 
 import { DecisionForm } from "@/components/loop/queue";
 import { currentPrincipal } from "@/lib/loop/access";
-import { getQueueService } from "@/lib/loop/service";
+import { getQueueService, QueueError } from "@/lib/loop/service";
 import { redirect } from "next/navigation";
 export const metadata: Metadata = {
   title: "Бриф",
@@ -23,7 +23,12 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
   const params = await searchParams;
   const variant: BriefVariant = params.view === "quiet" ? "quiet" : "daily";
   const provider = getDataProvider();
-  const queue = provider.mode === "postgres" ? await getQueueService().list(await currentPrincipal()) : null;
+  let queue;
+  try { queue = provider.mode === "postgres" ? await getQueueService().list(await currentPrincipal()) : null; }
+  catch (e) {
+    if (e instanceof QueueError && e.status === 401) redirect("/login");
+    return <div className="mx-auto max-w-3xl space-y-4"><h1 className="text-2xl font-semibold">Утренняя сводка</h1><p role="alert">{e instanceof QueueError ? e.message : "Очередь временно недоступна. Попробуйте обновить страницу."}</p></div>;
+  }
   if (queue?.role === "employee") redirect("/inbox");
   const [baseBrief, summary] = await Promise.all([provider.getBrief(variant), provider.getSummary(variant)]);
   // До первого успешного прогона сводки экран не пустой, а с пометкой. Признак

@@ -4,6 +4,7 @@ import { Pool, type PoolClient } from "pg";
 import type { BriefV1 } from "@/lib/contracts/brief";
 import type { DecisionRecordV1 } from "@/lib/contracts/decision-record";
 import { diagnoseSignal } from "./diagnosis";
+import { moscowDayAt } from "./calendar";
 
 export class QueueError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -24,14 +25,14 @@ export type TaskItem = {
   blocker: string | null; evidence: string | null; completed_at: string | null;
   observation: { status: string; reason: string; created_at: string; snapshot: { evaluation_day: string; measurements: { name: string; expected: string; actual: string; unit: string; source_refs: string[] }[] } | null } | null;
 };
-const taskSelect = `SELECT t.task_id, t.assignee_id, u.name AS assignee_name, t.action, t.due_at::text, t.expected_outcome,
- d.payload->'expected'->'metrics' AS expected_metrics, t.horizon_days, t.created_at::text, d.source_brief_run_id IS NULL AS orphaned,
+export const taskSelect = `SELECT t.task_id, t.assignee_id, u.name AS assignee_name, t.action, to_json(t.due_at)#>>'{}' AS due_at, t.expected_outcome,
+ d.payload->'expected'->'metrics' AS expected_metrics, t.horizon_days, to_json(t.created_at)#>>'{}' AS created_at, d.source_brief_run_id IS NULL AS orphaned,
  COALESCE((SELECT e.kind FROM task_events e WHERE e.tenant_id=t.tenant_id AND e.task_id=t.task_id
  ORDER BY (e.kind='cancelled') DESC, (e.kind='completed') DESC, e.created_at DESC LIMIT 1), 'open') AS status,
  (SELECT e.evidence FROM task_events e WHERE e.tenant_id=t.tenant_id AND e.task_id=t.task_id
  AND e.kind='completed') AS evidence,
  (SELECT e.evidence FROM task_events e WHERE e.tenant_id=t.tenant_id AND e.task_id=t.task_id AND e.kind='blocked') AS blocker,
- (SELECT e.created_at::text FROM task_events e WHERE e.tenant_id=t.tenant_id AND e.task_id=t.task_id
+ (SELECT to_json(e.created_at)#>>'{}' FROM task_events e WHERE e.tenant_id=t.tenant_id AND e.task_id=t.task_id
  AND e.kind='completed') AS completed_at,
  (SELECT jsonb_build_object('status', o.status, 'reason', o.reason, 'created_at', o.created_at, 'snapshot', o.snapshot)
  FROM task_observations o WHERE o.tenant_id=t.tenant_id AND o.task_id=t.task_id
@@ -149,8 +150,9 @@ export function createQueueService(pool: QueuePool, clock = () => new Date()) {
       const run = await command(db, p, v.idempotencyKey, "accept", v);
       if (run.replay) return run.result!;
       await lock(db, `${p.tenantId}:signal:${v.signalId}`);
-      const existing = await db.query("SELECT t.task_id, t.run_id FROM loop_tasks t JOIN decision_records d ON d.tenant_id=t.tenant_id AND d.decision_id=t.decision_id WHERE d.tenant_id=$1 AND d.signal_id=$2", [p.tenantId, v.signalId]);
+      const existing = await db.query("SELECT t.task_id, t.run_id, COALESCE((SELECT e.kind FROM task_events e WHERE e.tenant_id=t.tenant_id AND e.task_id=t.task_id ORDER BY (e.kind='cancelled') DESC, (e.kind='completed') DESC, e.created_at DESC LIMIT 1),'open') AS status FROM loop_tasks t JOIN decision_records d ON d.tenant_id=t.tenant_id AND d.decision_id=t.decision_id WHERE d.tenant_id=$1 AND d.signal_id=$2", [p.tenantId, v.signalId]);
       if (existing.rows[0]) {
+        if (existing.rows[0].status === "cancelled") throw new QueueError(409, "Сигнал уже решён, отмена финальна.");
         const result = { taskId: existing.rows[0].task_id as string, runId: existing.rows[0].run_id as string };
         await finish(db, p, run.id, result);
         return result;
@@ -196,8 +198,9 @@ export function createQueueService(pool: QueuePool, clock = () => new Date()) {
       if (!reason) {
         try {
           const row = await freshBrief(db, p);
-          const end = new Date(Date.parse(t.completed_at!) + t.horizon_days * 86_400_000 + 3 * 3_600_000).toISOString().slice(0, 10);
+          const end = moscowDayAt(new Date(Date.parse(t.completed_at!) + t.horizon_days * 86_400_000));
           if (row.brief_day < end) { status = "unknown"; reason = "В сводке ещё нет полного дня после срока наблюдения."; }
+          else if (row.brief_day > end) { status = "unknown"; reason = `Окно наблюдения закончилось днём ${end}, свежая сводка уже позже. Замер по чужому дню не проводится, результат не доказан.`; }
           else {
             const saved = await db.query("SELECT d.signal_snapshot, d.payload FROM decision_records d JOIN loop_tasks t ON d.tenant_id=t.tenant_id AND d.decision_id=t.decision_id WHERE t.tenant_id=$1 AND t.task_id=$2", [p.tenantId, taskId]);
             const original = saved.rows[0].signal_snapshot;

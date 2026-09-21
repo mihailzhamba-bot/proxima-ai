@@ -116,4 +116,12 @@ suite("LOOP PostgreSQL roles and transactions", () => {
     await sql("DELETE FROM collector_runs WHERE run_id=$1",[brief]);
     expect((await queue.list(owner)).tasks.every(t=>t.orphaned)).toBe(true);
   });
+  it("emits ISO task timestamps and rejects re-accepting a cancelled signal", async () => {
+    const listed=(await queue.list(owner)).tasks.find(t=>t.task_id===taskId);
+    expect(listed).toBeDefined();
+    expect(listed!.due_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(Number.isNaN(Date.parse(listed!.due_at))).toBe(false);
+    expect(Number.isNaN(Date.parse(listed!.created_at))).toBe(false);
+    await expect(queue.accept(owner,command({idempotencyKey:randomUUID()}))).rejects.toMatchObject({status:409});
+  });
 });
