@@ -15,12 +15,12 @@ async function privateCsv(name: string, content: string): Promise<string> {
 
 const PASSPORT_CSV = [
   'tenant_id,effective_from,sales_drop_threshold_pct,days_cover_threshold_days,lead_time_days,safety_buffer_days,cogs_status,priority_categories,warehouses,weekend_days',
-  'amirova-test,2026-08-28,20,21,60,15,top_sku,cat-a;cat-b,synthetic_warehouse,sat;sun',
+  'pilot-tenant,2026-08-28,20,21,60,15,top_sku,cat-a;cat-b,synthetic_warehouse,sat;sun',
 ].join('\n');
 
 const SUPPLY_CSV = [
   'supply_id,tenant_id,nm_id,quantity,order_date,expected_arrival_date,status,entered_by,entered_at',
-  'supply:test:001,amirova-test,1234567,500,2026-08-01,2026-10-01,PLAN,synthetic_am,2026-08-01T09:00:00Z',
+  'supply:test:001,pilot-tenant,1234567,500,2026-08-01,2026-10-01,PLAN,synthetic_am,2026-08-01T09:00:00Z',
 ].join('\n');
 
 test('reads strict private client passport and supply plan CSVs', async () => {

@@ -107,8 +107,8 @@ def test_tail_with_live_enables_network_for_that_run_only() -> None:
     assert line.startswith("sudo -n env PROXIMA_REHEARSAL_LIVE=1 docker compose ") or line.startswith(
         "env PROXIMA_REHEARSAL_LIVE=1 docker compose "
     )
-    assert "--tenant amirova-test --date-from 2026-08-27" in line
-    assert "--statistics-token-file /run/secrets/amirova-test_wb_statistics_token" in line
+    assert "--tenant pilot-tenant --date-from 2026-08-27" in line
+    assert "--statistics-token-file /run/secrets/pilot-tenant_wb_statistics_token" in line
     assert "2 read calls" in result.stdout
 
 
@@ -140,8 +140,8 @@ def test_all_live_prints_the_whole_chain_in_runbook_order() -> None:
         first("INSERT INTO tenants"),
         first("npm run backfill"),
         first("npm run collect"),
-        first("proxima_control_plane.norm run --tenant amirova-test"),
-        first("proxima_control_plane.brief run --tenant amirova-test"),
+        first("proxima_control_plane.norm run --tenant pilot-tenant"),
+        first("proxima_control_plane.brief run --tenant pilot-tenant"),
         first("fact_cabinet_daily_current"),
     ]
     assert order == sorted(order), order
@@ -194,8 +194,8 @@ def test_init_prepares_private_dirs_secrets_and_env_without_values() -> None:
     assert "owner 1001:1001" not in "\n".join(
         line for line in text.splitlines() if "proxima_webapp_" not in line
     )
-    assert f"install -m 0600 -o 1010 -g 1010 {TOKEN_SRC} {TEST_ROOT}/secrets/amirova-test_wb_statistics_token" in text
-    assert f"install -m 0600 -o 1010 -g 1010 /dev/null {TEST_ROOT}/secrets/amirova-test_wb_analytics_token" in text
+    assert f"install -m 0600 -o 1010 -g 1010 {TOKEN_SRC} {TEST_ROOT}/secrets/pilot-tenant_wb_statistics_token" in text
+    assert f"install -m 0600 -o 1010 -g 1010 /dev/null {TEST_ROOT}/secrets/pilot-tenant_wb_analytics_token" in text
     assert f"docker exec -i {PROJECT}-postgres-1" in text
     for line in (
         f"COMPOSE_PROJECT_NAME={PROJECT}",
@@ -204,7 +204,7 @@ def test_init_prepares_private_dirs_secrets_and_env_without_values() -> None:
         f"PROXIMA_RAW_DIR={TEST_ROOT}/raw",
         "PROXIMA_REHEARSAL_PG_PORT=5434",
         "WEBAPP_DATA_MODE=postgres",
-        "WEBAPP_TENANT_ID=amirova-test",
+        "WEBAPP_TENANT_ID=pilot-tenant",
     ):
         assert line in text
     assert "openssl" not in text
@@ -242,6 +242,10 @@ def test_root_guards(root: str, message: str) -> None:
     assert message in result.stderr
 
 
+@pytest.mark.skipif(
+    not (ROOT / "docs" / "state" / "API-FACTS.md").exists(),
+    reason="docs/state/API-FACTS.md живёт в ops-репо (D40) - сверка эталонов недоступна",
+)
 def test_check_embeds_the_api_facts_reference_sums() -> None:
     """The expected values in the script are the API-FACTS tables, not a copy that can
     drift silently: W10 from «Эталоны недельных сумм» (week sum, kopecks since 08.09) and
@@ -315,8 +319,8 @@ def test_rendered_config_has_one_loopback_port_and_no_bridge_binding(tmp_path: P
         "postgres_password",
         "proxima_collector_uri",
         "proxima_norm_uri",
-        "amirova-test_wb_statistics_token",
-        "amirova-test_wb_analytics_token",
+        "pilot-tenant_wb_statistics_token",
+        "pilot-tenant_wb_analytics_token",
     ):
         (secrets / name).write_text("placeholder\n", encoding="utf-8")
     env_file = tmp_path / ".env"

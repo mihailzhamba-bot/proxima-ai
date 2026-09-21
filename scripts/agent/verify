@@ -15,7 +15,10 @@ step() {  # step <name> <command...>
 }
 skip() { echo "==> $1: SKIP ($2)"; }
 
-# --- Structural layer (always available) ---
+# --- Structural layer ---
+# Docs-dependent checks run only when the ops composite is attached (docs/ present,
+# see scripts/agent/workspace-links.sh); on a public-only checkout they are skipped.
+if [ -d docs/agent-system ]; then
 step "required files exist" bash -c '
   for f in AGENTS.md CLAUDE.md docs/agent-system/HANDOFF.md docs/agent-system/TASKS.md \
            docs/agent-system/README.md docs/agent-system/RULES.md docs/agent-system/EVALS.md \
@@ -26,10 +29,16 @@ step "required files exist" bash -c '
 step "exec-plans dirs exist" bash -c '
   [ -d docs/exec-plans/active ] || { echo "missing: docs/exec-plans/active"; exit 1; }
   [ -d docs/exec-plans/completed ] || { echo "missing: docs/exec-plans/completed"; exit 1; }'
-step "CLAUDE.md is an adapter importing AGENTS.md" bash -c '
-  grep -q "@AGENTS.md" CLAUDE.md || { echo "CLAUDE.md does not import @AGENTS.md"; exit 1; }'
 step "no placeholder UNKNOWN-as-template left in agent docs" bash -c '
   ! grep -rqE "^<.*>$" docs/agent-system/ || { echo "template placeholder found"; exit 1; }'
+else
+  skip "agent docs structural layer" "docs/ отсутствует (публичное дерево без ops-композита)"
+  skip "CLAUDE.md adapter check" "CLAUDE.md живёт в ops-репо"
+fi
+if [ -f CLAUDE.md ]; then
+step "CLAUDE.md is an adapter importing AGENTS.md" bash -c '
+  grep -q "@AGENTS.md" CLAUDE.md || { echo "CLAUDE.md does not import @AGENTS.md"; exit 1; }'
+fi
 # Guardrail (bit PA-39, PA-41, PMM-12): codex validates project .codex/config.toml on
 # every launch; a bare [mcp_servers.<name>] block whose name is unknown to the global
 # config has no transport and kills the whole config ("invalid transport").

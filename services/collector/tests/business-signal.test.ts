@@ -20,7 +20,7 @@ import type { ClientPassportConfig, ProductConfig, RawArtifactRecord, SignalCand
 import { WbSignalClient, type WbSale } from '../src/business-signal/wb-client.js';
 
 const product: ProductConfig = {
-  tenantId: 'amirova-test',
+  tenantId: 'pilot-tenant',
   nmId: 1001n,
   internalArticle: 'SKU <ONE>',
   cogsRub: new Decimal('300.10'),
@@ -29,7 +29,7 @@ const product: ProductConfig = {
   effectiveFrom: '2026-01-01',
 };
 const warehouse: WarehouseMap = {
-  tenantId: 'amirova-test',
+  tenantId: 'pilot-tenant',
   salesWarehouseName: 'Коледино',
   stockWarehouseName: 'КОЛЕДИНО ',
   canonicalWarehouse: 'Коледино & центр',
@@ -121,12 +121,12 @@ test('validates a complete private signal input bundle without returning secret 
     writeFile(files.finance, jwt(13)),
     writeFile(files.telegram, telegram),
     writeFile(files.founder, JSON.stringify({ chat_id: '-1001234567890' })),
-    writeFile(files.products, 'tenant_id,nm_id,internal_article,cogs_rub,lead_time_days,safety_buffer_days,effective_from\namirova-test,1001,SKU-1,300.10,40,5,2026-08-13\n'),
-    writeFile(files.warehouses, 'tenant_id,sales_warehouse_name,stock_warehouse_name,canonical_warehouse,effective_from\namirova-test,Коледино,Коледино,Коледино,2026-08-13\n'),
+    writeFile(files.products, 'tenant_id,nm_id,internal_article,cogs_rub,lead_time_days,safety_buffer_days,effective_from\npilot-tenant,1001,SKU-1,300.10,40,5,2026-08-13\n'),
+    writeFile(files.warehouses, 'tenant_id,sales_warehouse_name,stock_warehouse_name,canonical_warehouse,effective_from\npilot-tenant,Коледино,Коледино,Коледино,2026-08-13\n'),
   ]);
   await Promise.all(Object.values(files).map((path) => chmod(path, 0o600)));
   const paths = {
-    tenantId: 'amirova-test',
+    tenantId: 'pilot-tenant',
     statisticsTokenFile: files.statistics,
     analyticsTokenFile: files.analytics,
     financeTokenFile: files.finance,
@@ -138,7 +138,7 @@ test('validates a complete private signal input bundle without returning secret 
 
   const result = await validateSignalInputFiles(paths, new Date('2026-08-13T10:00:00Z'));
   assert.deepEqual(result, {
-    tenantId: 'amirova-test',
+    tenantId: 'pilot-tenant',
     products: 1,
     warehouseMappings: 1,
     wbScopes: ['statistics', 'analytics', 'finance'],
@@ -497,7 +497,7 @@ test('blocks an unexpectedly empty statistics sales window instead of reporting 
     return { status: 204, retrievedAt: new Date('2026-08-13T11:00:01Z'), body: Buffer.alloc(0) };
   };
   const result = await runBusinessSignal(repository, {
-    tenantId: 'amirova-test', repositoryRoot: resolve('.'), rawRoot,
+    tenantId: 'pilot-tenant', repositoryRoot: resolve('.'), rawRoot,
     statisticsToken: jwt(5), analyticsToken: jwt(2), financeToken: jwt(13),
     now: new Date('2026-08-13T10:00:00Z'), httpTransport: async (request) => bodies(request),
     sleep: async () => {},
@@ -525,7 +525,7 @@ test('blocks an empty analytics stock report instead of alerting zero stock', as
     return { status: 204, retrievedAt: new Date('2026-08-13T11:00:01Z'), body: Buffer.alloc(0) };
   };
   const result = await runBusinessSignal(repository, {
-    tenantId: 'amirova-test', repositoryRoot: resolve('.'), rawRoot,
+    tenantId: 'pilot-tenant', repositoryRoot: resolve('.'), rawRoot,
     statisticsToken: jwt(5), analyticsToken: jwt(2), financeToken: jwt(13),
     now: new Date('2026-08-13T10:00:00Z'), httpTransport: async (request) => bodies(request),
     sleep: async () => {},
@@ -552,7 +552,7 @@ test('runs one complete mocked vertical slice and sends one top-risk message', a
   };
   const telegramCalls: string[] = [];
   const result = await runBusinessSignal(repository, {
-    tenantId: 'amirova-test', repositoryRoot: resolve('.'), rawRoot,
+    tenantId: 'pilot-tenant', repositoryRoot: resolve('.'), rawRoot,
     statisticsToken: jwt(5), analyticsToken: jwt(2), financeToken: jwt(13),
     now: new Date('2026-08-13T10:00:00Z'), httpTransport: async (request) => bodies(request),
     sleep: async () => {},

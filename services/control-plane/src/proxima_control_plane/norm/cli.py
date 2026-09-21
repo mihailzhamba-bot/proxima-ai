@@ -1,4 +1,4 @@
-"""CLI: python -m proxima_control_plane.norm run --tenant amirova-test [--date YYYY-MM-DD].
+"""CLI: python -m proxima_control_plane.norm run --tenant pilot-tenant [--date YYYY-MM-DD].
 
 Один прогон = одна норма на оцениваемый день: медиана окна 14 календарных дней
 перед ним по заказам без отмен и по выручке (AD-8). Без `--date` оцениваемым днём

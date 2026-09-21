@@ -16,11 +16,11 @@ async function privateCsv(name: string, content: string): Promise<string> {
 test('reads strict private product and warehouse version CSVs', async () => {
   const productPath = await privateCsv('products.csv', [
     'tenant_id,nm_id,internal_article,cogs_rub,lead_time_days,safety_buffer_days,effective_from',
-    'amirova-test,1234567,SKU-TEST,123.45,40,7,2026-08-13',
+    'pilot-tenant,1234567,SKU-TEST,123.45,40,7,2026-08-13',
   ].join('\n'));
   const warehousePath = await privateCsv('warehouses.csv', [
     'tenant_id,sales_warehouse_name,stock_warehouse_name,canonical_warehouse,effective_from',
-    'amirova-test,Коледино,Коледино,Коледино,2026-08-13',
+    'pilot-tenant,Коледино,Коледино,Коледино,2026-08-13',
   ].join('\n'));
 
   const [products, warehouses] = await Promise.all([
@@ -41,7 +41,7 @@ test('rejects group-readable business config before parsing', async () => {
 test('rejects ambiguous product values', async () => {
   const path = await privateCsv('products.csv', [
     'tenant_id,nm_id,internal_article,cogs_rub,lead_time_days,safety_buffer_days,effective_from',
-    'amirova-test,1234567, SKU,12.345,0,-1,2026-08-13',
+    'pilot-tenant,1234567, SKU,12.345,0,-1,2026-08-13',
   ].join('\n'));
   await assert.rejects(readProductConfigCsv(path), { code: 'CONFIG_INVALID' });
 });

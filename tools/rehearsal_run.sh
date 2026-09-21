@@ -29,7 +29,7 @@ readonly SCRIPT_DIR REPO_ROOT
 
 readonly PROJECT="proxima-rehearsal"
 readonly OVERRIDE_FILE="infra/compose.rehearsal.yaml"
-readonly TENANT="amirova-test"
+readonly TENANT="pilot-tenant"
 readonly PG_PORT_DEFAULT="5434"
 readonly WEBAPP_PORT_DEFAULT="3434"
 readonly POSTGRES_USER_VALUE="proxima"

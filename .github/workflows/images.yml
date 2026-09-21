@@ -65,8 +65,8 @@ jobs:
           printf 'postgres://proxima_norm:ci@postgres:5432/proxima\n' | sudo tee /etc/proxima-ai/secrets/proxima_norm_uri >/dev/null
           printf 'postgres://proxima_webapp:ci@postgres:5432/proxima\n' | sudo tee /etc/proxima-ai/secrets/proxima_webapp_uri >/dev/null
           # WB token placeholders (AD-13 names) and the raw artifact dir the collector mounts (AD-6).
-          printf 'ci-placeholder-token\n' | sudo tee /etc/proxima-ai/secrets/amirova-test_wb_statistics_token >/dev/null
-          printf 'ci-placeholder-token\n' | sudo tee /etc/proxima-ai/secrets/amirova-test_wb_analytics_token >/dev/null
+          printf 'ci-placeholder-token\n' | sudo tee /etc/proxima-ai/secrets/pilot-tenant_wb_statistics_token >/dev/null
+          printf 'ci-placeholder-token\n' | sudo tee /etc/proxima-ai/secrets/pilot-tenant_wb_analytics_token >/dev/null
           sudo mkdir -p /srv/proxima-ai/raw && sudo chown 1010:1010 /srv/proxima-ai/raw
           sudo chown -R 1010:1010 /etc/proxima-ai/secrets
           sudo chmod 600 /etc/proxima-ai/secrets/*
@@ -76,7 +76,7 @@ jobs:
         env:
           PROXIMA_SECRETS_DIR: /etc/proxima-ai/secrets
           PROXIMA_RAW_DIR: /srv/proxima-ai/raw
-          WEBAPP_TENANT_ID: amirova-test
+          WEBAPP_TENANT_ID: pilot-tenant
         run: |
           docker compose config >/dev/null
           docker compose --profile jobs config > /tmp/jobs-config.yaml

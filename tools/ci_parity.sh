@@ -112,8 +112,8 @@ prepare_root() {
     if [[ "${DRY_RUN}" == true ]]; then password=hidden; else password="$(openssl rand -hex 20)"; fi
     write_secret "${WORK}/secrets/${role}_password" "${owner}" "${password}"
   done
-  write_secret "${WORK}/secrets/amirova-test_wb_statistics_token" 1010:1010 placeholder
-  write_secret "${WORK}/secrets/amirova-test_wb_analytics_token" 1010:1010 placeholder
+  write_secret "${WORK}/secrets/pilot-tenant_wb_statistics_token" 1010:1010 placeholder
+  write_secret "${WORK}/secrets/pilot-tenant_wb_analytics_token" 1010:1010 placeholder
 }
 
 psql_owner() {

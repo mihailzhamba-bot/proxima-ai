@@ -1,12 +1,32 @@
 import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { link, lstat, mkdir, open, readFile, realpath, unlink } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { canonicalJson } from '../intake/manifest.js';
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const PRIVATE_MASK = 0o077;
+
+// Resolve symlinks for a path that may not exist yet: realpath the nearest
+// existing ancestor and re-append the remainder. macOS tmpdir (/var -> /private/var)
+// otherwise defeats prefix comparisons against realpath'd repository roots.
+async function realpathLenient(target: string): Promise<string> {
+  let current = resolve(target);
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      const real = await realpath(current);
+      return tail.length ? join(real, ...tail.reverse()) : real;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      tail.push(basename(current));
+      const parent = dirname(current);
+      if (parent === current) throw err;
+      current = parent;
+    }
+  }
+}
 
 export type CasArtifactSource = 'official_wb_statistics';
 export type CasArtifactEndpoint = 'statistics.orders' | 'statistics.sales';
@@ -66,7 +86,7 @@ export async function importCasArtifact(input: {
   source: CasArtifactSource;
 }): Promise<ImportedCasManifest> {
   if (!Number.isFinite(input.retrievedAt.getTime())) throw new Error('--retrieved-at must be a valid ISO timestamp');
-  const root = resolve(input.rawRoot);
+  const root = await realpathLenient(resolve(input.rawRoot));
   const repository = await realpath(input.repositoryRoot);
   if (isWithin(repository, root)) throw new Error('CAS root must stay outside Git');
   await privateDirectory(root);

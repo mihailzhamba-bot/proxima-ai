@@ -38,7 +38,7 @@ const ready =
   postgresDsn !== '';
 const skip = ready ? false : 'PROXIMA_TEST_DSN_JANITOR and friends must be set (run via tools/pg_local_roundtrip.sh)';
 
-const tenantId = 'amirova-test';
+const tenantId = 'pilot-tenant';
 
 async function withAdmin<T>(work: (client: Client) => Promise<T>): Promise<T> {
   const client = new Client({ connectionString: postgresDsn });

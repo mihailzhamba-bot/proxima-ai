@@ -1,4 +1,4 @@
-"""CLI: python -m proxima_control_plane.detector evaluate --tenant amirova-test [--date YYYY-MM-DD].
+"""CLI: python -m proxima_control_plane.detector evaluate --tenant pilot-tenant [--date YYYY-MM-DD].
 
 Сухой прогон детектора: читает версии `_current` под ролью norm и печатает
 сигналы JSON в stdout. В реестр прогонов ничего не пишет - боевой путь сигналов
