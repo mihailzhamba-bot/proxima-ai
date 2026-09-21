@@ -1,5 +1,5 @@
 {
-  "bind": "0.0.0.0",
+  "bind": "127.0.0.1",
   "port": 18770,
   "database": "/var/lib/loop/bridge/bridge.sqlite",
   "director_id": "OPERATOR_ASSIGNED_DIRECTOR_ID",
