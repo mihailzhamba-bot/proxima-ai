@@ -29,3 +29,4 @@ Mike говорит «деплой» - и по runbook release-m01 §0-§5 се�
 - [ ] Ручной прогон collect → norm → brief: ledger SUCCEEDED; гейт §4 - W10 сходится, W35 по дням PASS
 - [ ] Токены под именами AD-13, права 1010:1010 0600; значения не печатаются ни в чат, ни в журнал
 - [ ] `systemd-analyze verify` юнитов чистый; канал алерта об упавшем утре назван и вписан в чек-лист таска 04
+- [ ] **D01:** webapp поднят в `WEBAPP_DATA_MODE=postgres` (overlay `infra/webapp.staging.compose.yaml`, секреты `proxima_webapp_*` 1001:1001 из §1.4); ручной контейнер `proxima-webapp-staging` снят до поднятия compose-вебаппа; /brief показывает живые числа, дата сводки = вчера

@@ -62,18 +62,18 @@ sudo sed -i 's|^PROXIMA_RAW_DIR=.*|PROXIMA_RAW_DIR=/srv/proxima-ai/raw|' /srv/pr
 sudo tee -a /srv/proxima-ai/repo/.env >/dev/null <<'EOF'
 COMPOSE_FILE=infra/compose.yaml
 PROXIMA_SECRETS_DIR=/etc/proxima-ai/secrets
-WEBAPP_DATA_MODE=fixtures
+WEBAPP_DATA_MODE=postgres
 WEBAPP_TENANT_ID=amirova-test
 EOF
 sudo grep -n '^PROXIMA_\|^COMPOSE_FILE\|^WEBAPP_' /srv/proxima-ai/repo/.env /srv/proxima-ai/repo/infra/jobs.env
 ```
-Ожидается в `.env`: `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`, `PROXIMA_SPOOL_DIR=…` (старая), `COMPOSE_FILE=infra/compose.yaml`, `PROXIMA_SECRETS_DIR=/etc/proxima-ai/secrets`, `WEBAPP_DATA_MODE=fixtures`, `WEBAPP_TENANT_ID=amirova-test`; tracked `infra/jobs.env` уже задаёт контейнерные `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`, `PROXIMA_SPOOL_DIR=/srv/proxima-ai/raw/wb-async-spool` и `WB_ANALYTICS_TOKEN_FILE=/run/secrets/amirova-test_wb_analytics_token`; его на сервере не дописывать. Копия старого `.env` лежит рядом с дампами - к ней возвращается раздел 7.
+Ожидается в `.env`: `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`, `PROXIMA_SPOOL_DIR=…` (старая), `COMPOSE_FILE=infra/compose.yaml`, `PROXIMA_SECRETS_DIR=/etc/proxima-ai/secrets`, `WEBAPP_DATA_MODE=postgres`, `WEBAPP_TENANT_ID=amirova-test`; tracked `infra/jobs.env` уже задаёт контейнерные `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`, `PROXIMA_SPOOL_DIR=/srv/proxima-ai/raw/wb-async-spool` и `WB_ANALYTICS_TOKEN_FILE=/run/secrets/amirova-test_wb_analytics_token`; его на сервере не дописывать. Копия старого `.env` лежит рядом с дампами - к ней возвращается раздел 7.
 
 Что важно знать про эти строки:
 
 - `COMPOSE_FILE=infra/compose.yaml` - compose из `/srv/proxima-ai/repo` без `-f` иначе не находит файл (`no configuration file provided: not found`, проверено 08.09 из этого каталога), а именно так его зовут `tools/morning_run.sh`, `tools/restore_check.sh`, `tools/funnel_v3_run.sh` и юниты. Compose читает `COMPOSE_FILE` из `.env` текущего каталога (проверено 08.09 на копии `infra/` в scratch-каталоге, compose 2.40.3).
 - `PROXIMA_RAW_DIR=/srv/proxima-ai/raw`, а не старый `/srv/proxima-ai/data/day1-wb-api`: CAS требует каталог `0700` без symlink (`services/collector/src/wb/cas-artifact.ts:32-38`, `raw-store.ts` `ensurePrivateDirectory`), старый каталог - `0750`, а его родитель `/srv/proxima-ai/data` тоже `0750 proxima-admin`, куда uid 1010 не войдёт. `/srv/proxima-ai` - `0755`, поэтому `/srv/proxima-ai/raw` контейнеру доступен. Значение - `infra/local.env.example:24`; каталог создаётся в 1.3.
-- `WEBAPP_DATA_MODE=fixtures` - витрина в 1.14 не переключается (строка статуса на `/brief` - релиз 2.6); переменная нужна, чтобы шагу отката (раздел 7) было что возвращать, и overlay `webapp.staging.compose.yaml` в 2.6 её уже ждал.
+- `WEBAPP_DATA_MODE=postgres`, а не `fixtures` (находка D01 диагностики 21.09, тикет 01 автопилота): бриф требует живых чисел на `/brief` (R03.1 «вижу вчерашний день», R11i «не фикстуры»), и репетиция 08.09 подтвердила postgres-режим рабочим - сводка, аномалии и полоса настоящие; гибридные секции (дайджест, вердикт) остаются фикстурами до Epic 5, вне рамок прогона. Переменную ждёт overlay `webapp.staging.compose.yaml`, который поднимается в разделе 2; шагу отката (раздел 7) есть что возвращать.
 - `infra/jobs.env` - tracked-файл: после правки `git status --short` покажет ` M infra/jobs.env`. Это ожидаемо (комментарий в самом файле: host-side edit без пересборки); раздел 7 объясняет, как вернуть.
 - Побочный эффект: хостовые цели `make probe-wb-api` / `wb-async-report` / `apply-migrations` без `ENV_FILE` читают `.env` через allowlist `SAFE_ENV_KEYS` (`tools/wb_async_report.py:70`) и после добавления `COMPOSE_FILE`/`WEBAPP_*` откажут `unsupported env key`. В релизе они не используются: миграции идут в контейнере с `infra/jobs.env` (раздел 2), где все ключи - из allowlist.
 
@@ -193,6 +193,20 @@ sudo docker compose up -d postgres
 sudo docker ps --format '{{.Names}}\t{{.Status}}' | grep postgres
 ```
 Compose в `fd95fcb` не знал bridge-порта `172.17.0.1:5432`, релизный знает - контейнер пересоздаётся, около десяти секунд база недоступна, это ожидаемо. Ожидается `proxima-ai-postgres-1  Up … (healthy)`.
+
+**Веб-морда: снять ручной контейнер, поднять webapp с overlay.** Ручной контейнер `proxima-webapp-staging` (на 21.09 - образ `bae976c` трёхнедельной давности) держит порт `127.0.0.1:3000` - конфликт зафиксирован в HANDOFF 09.09; при деплое его заменяет compose-вебапп. Снять контейнер до `up`:
+
+```bash
+sudo docker rm -f proxima-webapp-staging
+```
+Ожидается строка `proxima-webapp-staging` - имя снятого контейнера.
+
+```bash
+cd /srv/proxima-ai/repo
+sudo docker compose -f infra/compose.yaml -f infra/webapp.staging.compose.yaml up -d --build webapp
+sudo docker ps --format '{{.Names}}\t{{.Status}}\t{{.Ports}}' | grep webapp
+```
+Ожидается `proxima-ai-webapp-1  Up …  127.0.0.1:3000->3000/tcp`. Overlay - та же пара `-f`, что в разделе 7 и в шапке `infra/webapp.staging.compose.yaml`: `-f` задан явно, потому что overlay не входит в `COMPOSE_FILE` (раздел 1.1), а сервис `webapp` не в профиле `jobs`, поэтому общий `build` его образ не собрал. `WEBAPP_DATA_MODE` и `WEBAPP_TENANT_ID` приходят из `.env` (раздел 1.1); секрет `proxima_webapp_uri` смонтирует overlay, его владелец `1001:1001` (как и `proxima_webapp_password`) установлен provision раздела 1.4.
 
 ## 3. Бэкфилл истории
 
@@ -429,12 +443,12 @@ sudo docker compose --profile jobs run --rm \
 ```
 `delete_run.py` идёт в контейнере `control-plane` (образ несёт `tools/` и `psycopg`; хостовый `python3` 3.12 без `psycopg`, а `sudo -u '#1010'` не читает репозиторий `0750`). URI janitor'а compose пока не монтирует (комментарий TODO Story 1.12/AD-11 в `infra/compose.yaml`) - отсюда `-v` и `-e`; файл `proxima_janitor_uri` создан provision'ом в разделе 1.4 (`1010:1010 0600`, иначе инструмент откажет «unsafe permissions»). Сначала всегда `--dry-run`: он печатает счётчики транзитивного замыкания. Удаление входного прогона снимает и всё, что на нём построено - так и задумано (AD-3). Убедившись в объёме, повторить без `--dry-run`.
 
-Вернуть витрину на фикстуры - **только если в этом релизе она переключалась** (в 1.14 не переключается: `WEBAPP_DATA_MODE=fixtures` с раздела 1.1, overlay не поднимался, `proxima-webapp-staging` на `127.0.0.1:3000` как был). Если переключалась в 2.6:
+Снять веб-морду релиза: в 1.14 она в postgres-режиме (`WEBAPP_DATA_MODE=postgres` с раздела 1.1) и поднята compose с overlay (раздел 2), поэтому при откате контейнер webapp снимается вместе со стеком compose, а overlay заново не поднимается. Возврата на фикстуры здесь нет: фикстуры - режим по умолчанию overlay, переключение витрины - шаг релиза 2.6. `down` идёт до возврата `.env` из копии блоком ниже - интерполяции `secrets:` нужен ещё живой `PROXIMA_SECRETS_DIR` (раздел 1.1):
 ```bash
-sudo sed -i 's/^WEBAPP_DATA_MODE=.*/WEBAPP_DATA_MODE=fixtures/' /srv/proxima-ai/repo/.env
-cd /srv/proxima-ai/repo && sudo docker compose -f infra/compose.yaml -f infra/webapp.staging.compose.yaml up -d webapp
+cd /srv/proxima-ai/repo
+sudo docker compose -f infra/compose.yaml -f infra/webapp.staging.compose.yaml down
 ```
-`sed` находит переменную, потому что раздел 1.1 её добавил; в `.env` от 14.08 её не было, и старая команда меняла пустоту.
+Ожидается остановка и удаление `proxima-ai-webapp-1` и `proxima-ai-postgres-1`; `down` без `-v` - том с данными остаётся, миграции additive-only и не откатываются. Ручной контейнер `proxima-webapp-staging` снят в разделе 2 и не возвращается.
 
 Вернуть код и окружение:
 ```bash
