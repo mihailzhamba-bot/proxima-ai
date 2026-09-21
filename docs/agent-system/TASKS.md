@@ -1,5 +1,9 @@
 # TASKS — PROXIMA AI
 
+## Fix-ран Code Review Crew (tier 1 + 1.5) - 2026-09-20 - done, ждёт merge
+
+`fix/loop-pilot-review-tier1` от `8d23519`: 8 требований из протокола адверсариального ревью PR #140 реализованы, `make verify` PASS (SKIP только `pg-roundtrip`), ревью 0 blockers. Детали и follow-ups - `HANDOFF.md`, протокол и логи - `.autopilot/2026-09-20-loop-tier1-fixes--wip/`. Merge и deploy - за Mike.
+
 ## LOOP server runtime - 2026-09-16
 
 LOOP now runs on dedicated LOOP-control (135.106.211.149), with isolated OpenHands on Claudette and verification on Harper. Project worktrees and state are server-side; the Mac project folders were removed after a verified migration. Simone is outside this deployment.
