@@ -1,0 +1,1063 @@
+hooks: core.hooksPath=.githooks
+npm warn deprecated eslint@9.39.5: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+
+added 660 packages, and audited 663 packages in 24s
+
+195 packages are looking for funding
+  run `npm fund` for details
+
+4 vulnerabilities (1 moderate, 3 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+Resolved 28 packages in 1ms
+Checked 26 packages in 0.46ms
+npm run codegen:contracts
+
+> proxima-ai@0.1.0 codegen:contracts
+> node tools/generate_contract_types.mjs
+
+codegen: acquisition-attempt.schema.json -> services/collector/src/contracts/acquisition-attempt.ts
+codegen: acquisition-attempt.schema.json -> services/webapp/src/lib/contracts/acquisition-attempt.ts
+codegen: brief.schema.json -> services/collector/src/contracts/brief.ts
+codegen: brief.schema.json -> services/webapp/src/lib/contracts/brief.ts
+codegen: cabinet-daily.schema.json -> services/collector/src/contracts/cabinet-daily.ts
+codegen: cabinet-daily.schema.json -> services/webapp/src/lib/contracts/cabinet-daily.ts
+codegen: client-passport.schema.json -> services/collector/src/contracts/client-passport.ts
+codegen: client-passport.schema.json -> services/webapp/src/lib/contracts/client-passport.ts
+codegen: decision-record.schema.json -> services/collector/src/contracts/decision-record.ts
+codegen: decision-record.schema.json -> services/webapp/src/lib/contracts/decision-record.ts
+codegen: diagnosis.schema.json -> services/collector/src/contracts/diagnosis.ts
+codegen: diagnosis.schema.json -> services/webapp/src/lib/contracts/diagnosis.ts
+codegen: domain-release.schema.json -> services/collector/src/contracts/domain-release.ts
+codegen: domain-release.schema.json -> services/webapp/src/lib/contracts/domain-release.ts
+codegen: loop-task.schema.json -> services/collector/src/contracts/loop-task.ts
+codegen: loop-task.schema.json -> services/webapp/src/lib/contracts/loop-task.ts
+codegen: norm.schema.json -> services/collector/src/contracts/norm.ts
+codegen: norm.schema.json -> services/webapp/src/lib/contracts/norm.ts
+codegen: signal.schema.json -> services/collector/src/contracts/signal.ts
+codegen: signal.schema.json -> services/webapp/src/lib/contracts/signal.ts
+codegen: source-artifact.schema.json -> services/collector/src/contracts/source-artifact.ts
+codegen: source-artifact.schema.json -> services/webapp/src/lib/contracts/source-artifact.ts
+codegen: supply-plan.schema.json -> services/collector/src/contracts/supply-plan.ts
+codegen: supply-plan.schema.json -> services/webapp/src/lib/contracts/supply-plan.ts
+codegen-diff: PASS
+npm --workspace @proxima/collector run typecheck
+
+> @proxima/collector@0.1.0 typecheck
+> tsc --noEmit
+
+npm --workspace @proxima/webapp run typecheck
+
+> @proxima/webapp@0.1.0 typecheck
+> tsc --noEmit
+
+npm --workspace @proxima/webapp run lint
+
+> @proxima/webapp@0.1.0 lint
+> eslint .
+
+npm --workspace @proxima/collector test
+
+> @proxima/collector@0.1.0 test
+> tsx --test $(ls tests/*.test.ts | grep -v '\.db\.test\.ts$' | tr '\n' ' ') && npm run build && node --input-type=module --eval "import('@proxima/collector').then((module) => { if (typeof module.redactValue !== 'function' || typeof module.intakeManualWbXlsx !== 'function') process.exit(1) })"
+
+TAP version 13
+# Subtest: backfill args separate artifact and live modes
+ok 1 - backfill args separate artifact and live modes
+  ---
+  duration_ms: 5.929221
+  type: 'test'
+  ...
+# Subtest: cas_import stores immutable bytes and manifest outside Git
+ok 2 - cas_import stores immutable bytes and manifest outside Git
+  ---
+  duration_ms: 31.766087
+  type: 'test'
+  ...
+# Subtest: backfill: artifact replay + pagination waits at least 60 seconds after an 80,000-row sales page
+ok 3 - backfill: artifact replay + pagination waits at least 60 seconds after an 80,000-row sales page
+  ---
+  duration_ms: 299.198345
+  type: 'test'
+  ...
+# Subtest: abortable sleep settles immediately after abort
+ok 4 - abortable sleep settles immediately after abort
+  ---
+  duration_ms: 53.944634
+  type: 'test'
+  ...
+# (node:214945) ExperimentalWarning: The MockTimers API is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: BLOCKED aborts sibling branches: sockets close, requests stop, no rows after run close
+ok 5 - BLOCKED aborts sibling branches: sockets close, requests stop, no rows after run close
+  ---
+  duration_ms: 1631.559159
+  type: 'test'
+  ...
+# Subtest: a paginating branch makes zero calls during 100 minutes after abort
+ok 6 - a paginating branch makes zero calls during 100 minutes after abort
+  ---
+  duration_ms: 44.680472
+  type: 'test'
+  ...
+# Subtest: a successful run is unaffected by the finally abort
+ok 7 - a successful run is unaffected by the finally abort
+  ---
+  duration_ms: 37.560154
+  type: 'test'
+  ...
+# Subtest: a BLOCKED run lets the CLI process exit on its own
+ok 8 - a BLOCKED run lets the CLI process exit on its own
+  ---
+  duration_ms: 621.397286
+  type: 'test'
+  ...
+# Subtest: reads strict private product and warehouse version CSVs
+ok 9 - reads strict private product and warehouse version CSVs
+  ---
+  duration_ms: 20.344433
+  type: 'test'
+  ...
+# Subtest: rejects group-readable business config before parsing
+ok 10 - rejects group-readable business config before parsing
+  ---
+  duration_ms: 3.093717
+  type: 'test'
+  ...
+# Subtest: rejects ambiguous product values
+ok 11 - rejects ambiguous product values
+  ---
+  duration_ms: 2.44988
+  type: 'test'
+  ...
+# Subtest: uses 14 completed Europe/Moscow calendar days
+ok 12 - uses 14 completed Europe/Moscow calendar days
+  ---
+  duration_ms: 2.937778
+  type: 'test'
+  ...
+# Subtest: rejects a READ token that grants required and unrelated WB categories
+ok 13 - rejects a READ token that grants required and unrelated WB categories
+  ---
+  duration_ms: 1.544251
+  type: 'test'
+  ...
+# Subtest: allows an exact-category Analytics RW token only through explicit temporary opt-in
+ok 14 - allows an exact-category Analytics RW token only through explicit temporary opt-in
+  ---
+  duration_ms: 0.673785
+  type: 'test'
+  ...
+# Subtest: validates a complete private signal input bundle without returning secret values
+ok 15 - validates a complete private signal input bundle without returning secret values
+  ---
+  duration_ms: 46.242381
+  type: 'test'
+  ...
+# Subtest: calculates Decimal margin including reverse logistics
+ok 16 - calculates Decimal margin including reverse logistics
+  ---
+  duration_ms: 2.314372
+  type: 'test'
+  ...
+# Subtest: treats ppvzSalesCommission as a line amount when quantity is greater than one
+ok 17 - treats ppvzSalesCommission as a line amount when quantity is greater than one
+  ---
+  duration_ms: 0.387928
+  type: 'test'
+  ...
+# Subtest: aggregates stock sizes, nets returns, and signals strictly below the threshold
+ok 18 - aggregates stock sizes, nets returns, and signals strictly below the threshold
+  ---
+  duration_ms: 1.895212
+  type: 'test'
+  ...
+# Subtest: does not signal when days cover exactly equals the threshold
+ok 19 - does not signal when days cover exactly equals the threshold
+  ---
+  duration_ms: 0.680146
+  type: 'test'
+  ...
+# Subtest: surfaces a stocked SKU without sales history instead of skipping it silently
+ok 20 - surfaces a stocked SKU without sales history instead of skipping it silently
+  ---
+  duration_ms: 1.050138
+  type: 'test'
+  ...
+# Subtest: does not list a zero-stock SKU without history and keeps sold SKUs out of the new list
+ok 21 - does not list a zero-stock SKU without history and keeps sold SKUs out of the new list
+  ---
+  duration_ms: 1.034182
+  type: 'test'
+  ...
+# Subtest: excludes a SKU without finance margin and keeps the run alive for the rest
+ok 22 - excludes a SKU without finance margin and keeps the run alive for the rest
+  ---
+  duration_ms: 0.622504
+  type: 'test'
+  ...
+# Subtest: skips zero net velocity and fails closed on an unknown warehouse
+ok 23 - skips zero net velocity and fails closed on an unknown warehouse
+  ---
+  duration_ms: 0.797558
+  type: 'test'
+  ...
+# Subtest: selects one deterministic maximum-deficit risk
+ok 24 - selects one deterministic maximum-deficit risk
+  ---
+  duration_ms: 0.266027
+  type: 'test'
+  ...
+# Subtest: records exact raw bytes before schema parse
+ok 25 - records exact raw bytes before schema parse
+  ---
+  duration_ms: 31.222222
+  type: 'test'
+  ...
+# Subtest: persists 429 evidence and makes no automatic retry
+ok 26 - persists 429 evidence and makes no automatic retry
+  ---
+  duration_ms: 8.204267
+  type: 'test'
+  ...
+# Subtest: classifies strict S/R sales and blocks unknown prefix after raw persistence
+ok 27 - classifies strict S/R sales and blocks unknown prefix after raw persistence
+  ---
+  duration_ms: 23.482056
+  type: 'test'
+  ...
+# Subtest: escapes Telegram HTML and performs preflight plus exactly one send
+ok 28 - escapes Telegram HTML and performs preflight plus exactly one send
+  ---
+  duration_ms: 1.137861
+  type: 'test'
+  ...
+# Subtest: does not retry a failed Telegram send
+ok 29 - does not retry a failed Telegram send
+  ---
+  duration_ms: 0.317512
+  type: 'test'
+  ...
+# Subtest: discovers exactly one private founder /start without sending and writes mode 0600
+ok 30 - discovers exactly one private founder /start without sending and writes mode 0600
+  ---
+  duration_ms: 5.52356
+  type: 'test'
+  ...
+# Subtest: founder discovery fails closed for webhook or multiple private /start senders
+ok 31 - founder discovery fails closed for webhook or multiple private /start senders
+  ---
+  duration_ms: 0.479694
+  type: 'test'
+  ...
+# Subtest: blocks finance pagination without HTTP 204 terminator
+ok 32 - blocks finance pagination without HTTP 204 terminator
+  ---
+  duration_ms: 13.500714
+  type: 'test'
+  ...
+# Subtest: paces Finance pages for 60 seconds and requests only metric fields
+ok 33 - paces Finance pages for 60 seconds and requests only metric fields
+  ---
+  duration_ms: 15.257223
+  type: 'test'
+  ...
+# Subtest: paces Statistics and Analytics pagination without treating it as a retry
+ok 34 - paces Statistics and Analytics pagination without treating it as a retry
+  ---
+  duration_ms: 24.78374
+  type: 'test'
+  ...
+# Subtest: blocks an unexpectedly empty statistics sales window instead of reporting no risk
+ok 35 - blocks an unexpectedly empty statistics sales window instead of reporting no risk
+  ---
+  duration_ms: 13.784118
+  type: 'test'
+  ...
+# Subtest: blocks an empty analytics stock report instead of alerting zero stock
+ok 36 - blocks an empty analytics stock report instead of alerting zero stock
+  ---
+  duration_ms: 25.568626
+  type: 'test'
+  ...
+# Subtest: runs one complete mocked vertical slice and sends one top-risk message
+ok 37 - runs one complete mocked vertical slice and sends one top-risk message
+  ---
+  duration_ms: 18.695105
+  type: 'test'
+  ...
+# Subtest: cabinet daily formulas: orders, cancellations, S sales, R returns and money
+ok 38 - cabinet daily formulas: orders, cancellations, S sales, R returns and money
+  ---
+  duration_ms: 4.056586
+  type: 'test'
+  ...
+# Subtest: collect date-from default heals gaps and explicit flag wins
+ok 39 - collect date-from default heals gaps and explicit flag wins
+  ---
+  duration_ms: 29.231518
+  type: 'test'
+  ...
+# Subtest: reads strict private client passport and supply plan CSVs
+ok 40 - reads strict private client passport and supply plan CSVs
+  ---
+  duration_ms: 16.114523
+  type: 'test'
+  ...
+# Subtest: rejects group-readable passport config before parsing
+ok 41 - rejects group-readable passport config before parsing
+  ---
+  duration_ms: 3.572496
+  type: 'test'
+  ...
+# Subtest: rejects invalid passport threshold and weekday
+ok 42 - rejects invalid passport threshold and weekday
+  ---
+  duration_ms: 7.428573
+  type: 'test'
+  ...
+# Subtest: rejects invalid supply status and impossible arrival date
+ok 43 - rejects invalid supply status and impossible arrival date
+  ---
+  duration_ms: 4.024322
+  type: 'test'
+  ...
+# Subtest: collect args: date-from is optional; tenant and statistics token file are required
+ok 44 - collect args: date-from is optional; tenant and statistics token file are required
+  ---
+  duration_ms: 3.071936
+  type: 'test'
+  ...
+# Subtest: observations: fixtures map one row to one (key, lastChangeDate) observation
+ok 45 - observations: fixtures map one row to one (key, lastChangeDate) observation
+  ---
+  duration_ms: 36.065321
+  type: 'test'
+  ...
+# Subtest: observations: canonical hash ignores key order, replay within a batch collapses, drift within a batch fails
+ok 46 - observations: canonical hash ignores key order, replay within a batch collapses, drift within a batch fails
+  ---
+  duration_ms: 3.168914
+  type: 'test'
+  ...
+# Subtest: observations: missing key, missing or zoned lastChangeDate and non-object rows are schema drift
+ok 47 - observations: missing key, missing or zoned lastChangeDate and non-object rows are schema drift
+  ---
+  duration_ms: 3.052784
+  type: 'test'
+  ...
+# Subtest: collect: a read-write or multi-category statistics token fails closed before any connection
+ok 48 - collect: a read-write or multi-category statistics token fails closed before any connection
+  ---
+  duration_ms: 15.288488
+  type: 'test'
+  ...
+# Subtest: funnel_csv parser maps the Story 3.0 columns for 3 nmIds x 7 days
+ok 49 - funnel_csv parser maps the Story 3.0 columns for 3 nmIds x 7 days
+  ---
+  duration_ms: 11.061689
+  type: 'test'
+  ...
+# Subtest: funnel_csv parser fails closed on malformed identity, date, counts and money
+ok 50 - funnel_csv parser fails closed on malformed identity, date, counts and money
+  ---
+  duration_ms: 1.370729
+  type: 'test'
+  ...
+# Subtest: funnel_csv CLI accepts one tenant and rejects ambiguous input
+ok 51 - funnel_csv CLI accepts one tenant and rejects ambiguous input
+  ---
+  duration_ms: 0.442016
+  type: 'test'
+  ...
+# Subtest: funnel args: tenant and analytics token file are required; run-day and read-write opt-in are optional
+ok 52 - funnel args: tenant and analytics token file are required; run-day and read-write opt-in are optional
+  ---
+  duration_ms: 3.994042
+  type: 'test'
+  ...
+# Subtest: funnel window is WB [today-6, today], where today is run_day in Moscow
+ok 53 - funnel window is WB [today-6, today], where today is run_day in Moscow
+  ---
+  duration_ms: 0.687379
+  type: 'test'
+  ...
+# Subtest: funnel fixture parses 3 nmIds x 7 days into 21 traceable observations with the scn001 dictionary
+ok 54 - funnel fixture parses 3 nmIds x 7 days into 21 traceable observations with the scn001 dictionary
+  ---
+  duration_ms: 19.490818
+  type: 'test'
+  ...
+# Subtest: funnel parser: run_day is observed, later days are dropped, earlier days WB returned are kept as evidence
+ok 55 - funnel parser: run_day is observed, later days are dropped, earlier days WB returned are kept as evidence
+  ---
+  duration_ms: 3.537323
+  type: 'test'
+  ...
+# Subtest: funnel canonical hash ignores key order and changes with the payload
+ok 56 - funnel canonical hash ignores key order and changes with the payload
+  ---
+  duration_ms: 4.456008
+  type: 'test'
+  ...
+# Subtest: funnel batching is sorted, unique and never exceeds 20 nmIds per request
+ok 57 - funnel batching is sorted, unique and never exceeds 20 nmIds per request
+  ---
+  duration_ms: 1.051177
+  type: 'test'
+  ...
+# Subtest: funnel request body carries the window, at most 20 nmIds and daily aggregation
+ok 58 - funnel request body carries the window, at most 20 nmIds and daily aggregation
+  ---
+  duration_ms: 0.45825
+  type: 'test'
+  ...
+# Subtest: funnel coverage: missing active nmIds are returned for log-and-skip; duplicates and unrequested ids fail
+ok 59 - funnel coverage: missing active nmIds are returned for log-and-skip; duplicates and unrequested ids fail
+  ---
+  duration_ms: 6.140389
+  type: 'test'
+  ...
+# Subtest: funnel parser fails closed on schema drift instead of inventing fields
+ok 60 - funnel parser fails closed on schema drift instead of inventing fields
+  ---
+  duration_ms: 11.698405
+  type: 'test'
+  ...
+# Subtest: funnel endpoint honours X-Ratelimit-Retry on 429 and gives up after three retries
+ok 61 - funnel endpoint honours X-Ratelimit-Retry on 429 and gives up after three retries
+  ---
+  duration_ms: 2.50704
+  type: 'test'
+  ...
+# Subtest: funnel_v3: a read-write or multi-category analytics token fails closed before any connection; read-write is an explicit opt-in
+ok 62 - funnel_v3: a read-write or multi-category analytics token fails closed before any connection; read-write is an explicit opt-in
+  ---
+  duration_ms: 21.114488
+  type: 'test'
+  ...
+# Subtest: keeps the primary auth error and redacts its secondary diagnostic
+ok 63 - keeps the primary auth error and redacts its secondary diagnostic
+  ---
+  duration_ms: 2.251097
+  type: 'test'
+  ...
+# Subtest: redacts nested secret-shaped values
+ok 64 - redacts nested secret-shaped values
+  ---
+  duration_ms: 1.467406
+  type: 'test'
+  ...
+# Subtest: rejects a symlink inside a managed private boundary
+ok 65 - rejects a symlink inside a managed private boundary
+  ---
+  duration_ms: 9.86224
+  type: 'test'
+  ...
+# Subtest: emits a deterministic source-artifact manifest that validates against Draft 2020-12
+ok 66 - emits a deterministic source-artifact manifest that validates against Draft 2020-12
+  ---
+  duration_ms: 107.950091
+  type: 'test'
+  ...
+# Subtest: rejects invalid metadata before a manifest can be created
+ok 67 - rejects invalid metadata before a manifest can be created
+  ---
+  duration_ms: 1.069289
+  type: 'test'
+  ...
+# Subtest: stores exact synthetic bytes before publishing a contract-valid manifest and is idempotent
+ok 68 - stores exact synthetic bytes before publishing a contract-valid manifest and is idempotent
+  ---
+  duration_ms: 185.735281
+  type: 'test'
+  ...
+# Subtest: recovers deterministically after a forced crash at after_temp_durable
+ok 69 - recovers deterministically after a forced crash at after_temp_durable
+  ---
+  duration_ms: 59.484503
+  type: 'test'
+  ...
+# Subtest: recovers deterministically after a forced crash at after_raw_published
+ok 70 - recovers deterministically after a forced crash at after_raw_published
+  ---
+  duration_ms: 61.28455
+  type: 'test'
+  ...
+# Subtest: recovers deterministically after a forced crash at before_manifest_published
+ok 71 - recovers deterministically after a forced crash at before_manifest_published
+  ---
+  duration_ms: 28.409366
+  type: 'test'
+  ...
+# Subtest: recovers deterministically after a forced crash at after_manifest_published
+ok 72 - recovers deterministically after a forced crash at after_manifest_published
+  ---
+  duration_ms: 65.732996
+  type: 'test'
+  ...
+# Subtest: rejects conflicting metadata without modifying immutable raw or manifest bytes
+ok 73 - rejects conflicting metadata without modifying immutable raw or manifest bytes
+  ---
+  duration_ms: 49.337563
+  type: 'test'
+  ...
+# Subtest: rejects invalid metadata before creating any raw object
+ok 74 - rejects invalid metadata before creating any raw object
+  ---
+  duration_ms: 3.586728
+  type: 'test'
+  ...
+# Subtest: fails closed if a published manifest exists without its verified raw object
+ok 75 - fails closed if a published manifest exists without its verified raw object
+  ---
+  duration_ms: 29.231206
+  type: 'test'
+  ...
+# Subtest: rejects repository-local storage, unsafe storage permissions, symlink input and invalid XLSX bytes
+ok 76 - rejects repository-local storage, unsafe storage permissions, symlink input and invalid XLSX bytes
+  ---
+  duration_ms: 9.30904
+  type: 'test'
+  ...
+# Subtest: nm-daily: per-nm sums vs cabinet - every day, all six columns, on the 30.08 fixtures
+ok 77 - nm-daily: per-nm sums vs cabinet - every day, all six columns, on the 30.08 fixtures
+  ---
+  duration_ms: 78.838727
+  type: 'test'
+  ...
+# Subtest: nm-daily: one dictionary version per nmId of orders UNION sales on the fixtures
+ok 78 - nm-daily: one dictionary version per nmId of orders UNION sales on the fixtures
+  ---
+  duration_ms: 43.527428
+  type: 'test'
+  ...
+# Subtest: nm-daily: dictionary winner - greatest lastChangeDate, then order before sale, then greater key
+ok 79 - nm-daily: dictionary winner - greatest lastChangeDate, then order before sale, then greater key
+  ---
+  duration_ms: 1.406176
+  type: 'test'
+  ...
+# Subtest: nm-daily: fail-closed on nmId, WB_SCHEMA_DRIFT on a missing dictionary key, empty string is a literal
+ok 80 - nm-daily: fail-closed on nmId, WB_SCHEMA_DRIFT on a missing dictionary key, empty string is a literal
+  ---
+  duration_ms: 3.545826
+  type: 'test'
+  ...
+# Subtest: nm-daily: observations outside [floor, run_day) shape the dictionary but not the counts
+ok 81 - nm-daily: observations outside [floor, run_day) shape the dictionary but not the counts
+  ---
+  duration_ms: 0.778139
+  type: 'test'
+  ...
+# Subtest: nm-daily: per_nm_sums_vs_cabinet result shape from the check rows
+ok 82 - nm-daily: per_nm_sums_vs_cabinet result shape from the check rows
+  ---
+  duration_ms: 1.703921
+  type: 'test'
+  ...
+# Subtest: validates the synthetic signal and preserves generated SignalV1 shape
+ok 83 - validates the synthetic signal and preserves generated SignalV1 shape
+  ---
+  duration_ms: 128.250216
+  type: 'test'
+  ...
+# Subtest: rejects signal without rub assessment method and with empty source refs
+ok 84 - rejects signal without rub assessment method and with empty source refs
+  ---
+  duration_ms: 103.387639
+  type: 'test'
+  ...
+# Subtest: validates diagnosis and enforces positional source-ref invariant
+ok 85 - validates diagnosis and enforces positional source-ref invariant
+  ---
+  duration_ms: 41.037408
+  type: 'test'
+  ...
+# Subtest: diagnosis-bad-refs fixture on disk violates the positional invariant
+ok 86 - diagnosis-bad-refs fixture on disk violates the positional invariant
+  ---
+  duration_ms: 1.55742
+  type: 'test'
+  ...
+# Subtest: rejects diagnosis with fewer than two alternatives and empty source refs
+ok 87 - rejects diagnosis with fewer than two alternatives and empty source refs
+  ---
+  duration_ms: 60.339989
+  type: 'test'
+  ...
+# Subtest: rejects rub assessment and metric values that are not money strings
+ok 88 - rejects rub assessment and metric values that are not money strings
+  ---
+  duration_ms: 114.632493
+  type: 'test'
+  ...
+# Subtest: validates an open decision record with the generated DecisionRecordV1 shape
+ok 89 - validates an open decision record with the generated DecisionRecordV1 shape
+  ---
+  duration_ms: 33.352953
+  type: 'test'
+  ...
+# Subtest: rejects rejected decision without reason and closed decision without outcome
+ok 90 - rejects rejected decision without reason and closed decision without outcome
+  ---
+  duration_ms: 42.863914
+  type: 'test'
+  ...
+# Subtest: validates the cabinet-daily fact with the generated CabinetDailyV1 shape
+ok 91 - validates the cabinet-daily fact with the generated CabinetDailyV1 shape
+  ---
+  duration_ms: 41.153079
+  type: 'test'
+  ...
+# Subtest: rejects cabinet-daily whose money is not a two-decimal string
+ok 92 - rejects cabinet-daily whose money is not a two-decimal string
+  ---
+  duration_ms: 41.228816
+  type: 'test'
+  ...
+# Subtest: validates the norm with the generated NormV1 shape
+ok 93 - validates the norm with the generated NormV1 shape
+  ---
+  duration_ms: 30.058981
+  type: 'test'
+  ...
+# Subtest: rejects norm that claims ok on an incomplete window
+ok 94 - rejects norm that claims ok on an incomplete window
+  ---
+  duration_ms: 27.027774
+  type: 'test'
+  ...
+# Subtest: validates the brief payload and composes signals by signal v1 $ref
+ok 95 - validates the brief payload and composes signals by signal v1 $ref
+  ---
+  duration_ms: 45.163549
+  type: 'test'
+  ...
+# Subtest: rejects brief with a broken embedded signal and with empty source refs
+ok 96 - rejects brief with a broken embedded signal and with empty source refs
+  ---
+  duration_ms: 41.0566
+  type: 'test'
+  ...
+# {"event":"run-ledger:running","run_id":"5560a18a-0ac2-4bd0-9653-51e9c784672f","tenant_id":"tenant-test","at":"2026-09-21T09:37:33.900Z"}
+# {"event":"run-ledger:running","run_id":"c1c7c7e6-0ebe-4d2b-904e-da74c49cb2d9","tenant_id":"tenant-test","at":"2026-09-21T09:37:33.901Z"}
+# Subtest: run-ledger: empty provenance is stored as NULL
+ok 97 - run-ledger: empty provenance is stored as NULL
+  ---
+  duration_ms: 7.405408
+  type: 'test'
+  ...
+# Subtest: registry holds exactly the four allowed endpoints with their budgets
+ok 98 - registry holds exactly the four allowed endpoints with their budgets
+  ---
+  duration_ms: 18.690015
+  type: 'test'
+  ...
+# Subtest: budget spacing: two sales calls are 60 seconds apart on a virtual clock
+ok 99 - budget spacing: two sales calls are 60 seconds apart on a virtual clock
+  ---
+  duration_ms: 12.73964
+  type: 'test'
+  ...
+# Subtest: budget pacing: eleven orders calls take at least a full minute
+ok 100 - budget pacing: eleven orders calls take at least a full minute
+  ---
+  duration_ms: 11.554877
+  type: 'test'
+  ...
+# Subtest: 429 waits X-Ratelimit-Retry seconds per response
+ok 101 - 429 waits X-Ratelimit-Retry seconds per response
+  ---
+  duration_ms: 5.846198
+  type: 'test'
+  ...
+# Subtest: 429 gives up after 3 retries with WB_RATE_LIMIT_EXHAUSTED
+ok 102 - 429 gives up after 3 retries with WB_RATE_LIMIT_EXHAUSTED
+  ---
+  duration_ms: 2.241079
+  type: 'test'
+  ...
+# Subtest: three retries then success stays within the retry budget
+ok 103 - three retries then success stays within the retry budget
+  ---
+  duration_ms: 2.179845
+  type: 'test'
+  ...
+# Subtest: network call fails closed when WB tokens are not configured
+ok 104 - network call fails closed when WB tokens are not configured
+  ---
+  duration_ms: 0.672464
+  type: 'test'
+  ...
+# Subtest: network path fails closed when live network is not explicitly enabled
+ok 105 - network path fails closed when live network is not explicitly enabled
+  ---
+  duration_ms: 2.507647
+  type: 'test'
+  ...
+# Subtest: FixtureTransport replays anonymized fixtures for every registry endpoint
+ok 106 - FixtureTransport replays anonymized fixtures for every registry endpoint
+  ---
+  duration_ms: 10.13978
+  type: 'test'
+  ...
+# Subtest: FixtureTransport refuses URLs outside the registry
+ok 107 - FixtureTransport refuses URLs outside the registry
+  ---
+  duration_ms: 0.845756
+  type: 'test'
+  ...
+# Subtest: artifact sink stores responses before the status is inspected
+ok 108 - artifact sink stores responses before the status is inspected
+  ---
+  duration_ms: 2.045387
+  type: 'test'
+  ...
+# Subtest: RateBudget enforces the per-endpoint minute windows
+ok 109 - RateBudget enforces the per-endpoint minute windows
+  ---
+  duration_ms: 0.237336
+  type: 'test'
+  ...
+# Subtest: RateBudget keeps concurrent reserves within the window limit
+ok 110 - RateBudget keeps concurrent reserves within the window limit
+  ---
+  duration_ms: 0.517331
+  type: 'test'
+  ...
+# Subtest: WbClient holds the endpoint budget under 20 concurrent requests
+ok 111 - WbClient holds the endpoint budget under 20 concurrent requests
+  ---
+  duration_ms: 0.813291
+  type: 'test'
+  ...
+# Subtest: 429 without a retry header falls back to the endpoint pacing interval
+ok 112 - 429 without a retry header falls back to the endpoint pacing interval
+  ---
+  duration_ms: 16.583967
+  type: 'test'
+  ...
+# Subtest: retryDelayMilliseconds prefers x-ratelimit-retry and tolerates the fallbacks
+ok 113 - retryDelayMilliseconds prefers x-ratelimit-retry and tolerates the fallbacks
+  ---
+  duration_ms: 3.244838
+  type: 'test'
+  ...
+# Subtest: wallClock sleep resolves immediately for non-positive delays
+ok 114 - wallClock sleep resolves immediately for non-positive delays
+  ---
+  duration_ms: 0.297199
+  type: 'test'
+  ...
+# Subtest: POST endpoints carry their body to the transport
+ok 115 - POST endpoints carry their body to the transport
+  ---
+  duration_ms: 5.368876
+  type: 'test'
+  ...
+# Subtest: wb-collect CLI parses token-file flags for a registry endpoint
+ok 116 - wb-collect CLI parses token-file flags for a registry endpoint
+  ---
+  duration_ms: 0.401916
+  type: 'test'
+  ...
+# Subtest: wb-collect CLI rejects unknown options, endpoints and missing token files
+ok 117 - wb-collect CLI rejects unknown options, endpoints and missing token files
+  ---
+  duration_ms: 0.552738
+  type: 'test'
+  ...
+# Subtest: wb-collect CLI collects through an injected transport and fails closed without tokens
+ok 118 - wb-collect CLI collects through an injected transport and fails closed without tokens
+  ---
+  duration_ms: 0.603432
+  type: 'test'
+  ...
+# Subtest: mskDay: dispatch acceptance values (Story 1.1)
+ok 119 - mskDay: dispatch acceptance values (Story 1.1)
+  ---
+  duration_ms: 28.720474
+  type: 'test'
+  ...
+# Subtest: mskDay: midnight boundary in both directions
+ok 120 - mskDay: midnight boundary in both directions
+  ---
+  duration_ms: 3.579931
+  type: 'test'
+  ...
+# Subtest: mskToday/mskDay: a "24" in any part of the formatted `now` must not shift the offset (KF-3)
+ok 121 - mskToday/mskDay: a "24" in any part of the formatted `now` must not shift the offset (KF-3)
+  ---
+  duration_ms: 1.375477
+  type: 'test'
+  ...
+# Subtest: mskDay: midnight rendered as hour 24 folds to the same Moscow day
+ok 122 - mskDay: midnight rendered as hour 24 folds to the same Moscow day
+  ---
+  duration_ms: 1.127145
+  type: 'test'
+  ...
+# Subtest: mskDay: explicit offsets are honoured
+ok 123 - mskDay: explicit offsets are honoured
+  ---
+  duration_ms: 0.720741
+  type: 'test'
+  ...
+# Subtest: mskDay: WB zoneless timestamps are Moscow wall clock, not runtime-zone time
+ok 124 - mskDay: WB zoneless timestamps are Moscow wall clock, not runtime-zone time
+  ---
+  duration_ms: 1.13084
+  type: 'test'
+  ...
+# Subtest: mskDay: date-only input is already a Moscow calendar day
+ok 125 - mskDay: date-only input is already a Moscow calendar day
+  ---
+  duration_ms: 0.216773
+  type: 'test'
+  ...
+# Subtest: mskDay: Date input behaves like an instant
+ok 126 - mskDay: Date input behaves like an instant
+  ---
+  duration_ms: 0.77832
+  type: 'test'
+  ...
+# Subtest: mskDay: rejects invalid input instead of guessing
+ok 127 - mskDay: rejects invalid input instead of guessing
+  ---
+  duration_ms: 1.06741
+  type: 'test'
+  ...
+# Subtest: mskToday is the Moscow day regardless of the runtime zone
+ok 128 - mskToday is the Moscow day regardless of the runtime zone
+  ---
+  duration_ms: 1.62793
+  type: 'test'
+  ...
+# Subtest: mskDay agrees with Intl for the Moscow zone
+ok 129 - mskDay agrees with Intl for the Moscow zone
+  ---
+  duration_ms: 1.473286
+  type: 'test'
+  ...
+# Subtest: mskInstant: zoneless WB text becomes a fixed +03:00 instant, anything else is rejected
+ok 130 - mskInstant: zoneless WB text becomes a fixed +03:00 instant, anything else is rejected
+  ---
+  duration_ms: 0.637147
+  type: 'test'
+  ...
+1..130
+# tests 130
+# suites 0
+# pass 130
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4455.278448
+
+> @proxima/collector@0.1.0 build
+> tsc -p tsconfig.build.json
+
+npm --workspace @proxima/webapp test
+
+> @proxima/webapp@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /tmp/opencode/loop-tier1-fix/services/webapp
+
+
+ Test Files  14 passed | 2 skipped (16)
+      Tests  138 passed | 10 skipped (148)
+   Start at  09:37:38
+   Duration  3.09s (transform 1.22s, setup 0ms, import 4.13s, tests 719ms, environment 3ms)
+
+uv run --python 3.14 --project services/control-plane --extra test pytest services/control-plane/tests tools/tests
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-8.4.2, pluggy-1.6.0
+rootdir: /tmp/opencode/loop-tier1-fix/services/control-plane
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 1292 items
+
+services/control-plane/tests/brief/test_brief_builder.py ............    [  0%]
+services/control-plane/tests/brief/test_brief_db.py sssssss              [  1%]
+services/control-plane/tests/detector/test_detector_core.py ............ [  2%]
+..........                                                               [  3%]
+services/control-plane/tests/detector/test_detector_db.py ssssss         [  3%]
+services/control-plane/tests/detector/test_detector_ranking.py ......    [  4%]
+services/control-plane/tests/detector/test_threshold_config.py ......... [  4%]
+.................                                                        [  6%]
+services/control-plane/tests/diagnosis/test_diagnosis_adapters.py ...... [  6%]
+.                                                                        [  6%]
+services/control-plane/tests/diagnosis/test_diagnosis_audit.py ...       [  6%]
+services/control-plane/tests/diagnosis/test_diagnosis_cli.py .......     [  7%]
+services/control-plane/tests/diagnosis/test_diagnosis_config.py .......  [  7%]
+services/control-plane/tests/diagnosis/test_diagnosis_eval.py .......... [  8%]
+                                                                         [  8%]
+services/control-plane/tests/diagnosis/test_diagnosis_models.py ........ [  9%]
+.                                                                        [  9%]
+services/control-plane/tests/diagnosis/test_diagnosis_prompts.py ....    [  9%]
+services/control-plane/tests/diagnosis/test_diagnosis_service.py ....... [ 10%]
+                                                                         [ 10%]
+services/control-plane/tests/diagnosis/test_diagnosis_validator.py ..... [ 10%]
+..........                                                               [ 11%]
+services/control-plane/tests/e2e/test_scn_008_fixture_adapter.py .       [ 11%]
+services/control-plane/tests/evals/contracts/test_critical_failures.py . [ 11%]
+...........................                                              [ 13%]
+services/control-plane/tests/evals/reference/test_reference_replay.py .. [ 13%]
+.........                                                                [ 14%]
+services/control-plane/tests/evals/test_shadow_comparison.py .....       [ 14%]
+services/control-plane/tests/norm/test_median.py ...........             [ 15%]
+services/control-plane/tests/norm/test_norm_db.py ssss                   [ 16%]
+services/control-plane/tests/test_boundary.py ..                         [ 16%]
+services/control-plane/tests/unit/ai/test_contracts.py ...........       [ 17%]
+services/control-plane/tests/unit/application/test_scenario_engine.py .. [ 17%]
+......................                                                   [ 18%]
+services/control-plane/tests/unit/common/test_msk_day.py ............... [ 20%]
+..........                                                               [ 20%]
+services/control-plane/test_anonymize_fixture.py ................        [ 22%]
+services/control-plane/test_backup_units.py ....                         [ 22%]
+services/control-plane/test_bad_dev_story.py ........................... [ 24%]
+..                                                                       [ 24%]
+services/control-plane/test_ci_parity.py .......                         [ 25%]
+services/control-plane/test_codex_acp_clean.py ..................        [ 26%]
+services/control-plane/test_collector_runner_contract.py ..              [ 26%]
+services/control-plane/test_compose_collector_mounts.py .....            [ 27%]
+services/control-plane/test_delete_run.py ..........                     [ 27%]
+services/control-plane/test_loop_bridge.py ...........................   [ 30%]
+services/control-plane/test_loop_config.py ............                  [ 30%]
+services/control-plane/test_loop_context_readiness_acceptance.py ....... [ 31%]
+...............                                                          [ 32%]
+services/control-plane/test_loop_continuous_acceptance.py ........       [ 33%]
+services/control-plane/test_loop_continuous_admission.py ............... [ 34%]
+..                                                                       [ 34%]
+services/control-plane/test_loop_continuous_base_receiver.py .....       [ 34%]
+services/control-plane/test_loop_continuous_base_refresh.py ............ [ 35%]
+...........                                                              [ 36%]
+services/control-plane/test_loop_continuous_dispatch.py ................ [ 38%]
+...............                                                          [ 39%]
+services/control-plane/test_loop_continuous_existing_work.py ........... [ 40%]
+                                                                         [ 40%]
+services/control-plane/test_loop_continuous_merge_observer.py .......... [ 40%]
+.........                                                                [ 41%]
+services/control-plane/test_loop_continuous_queue.py ................... [ 42%]
+.......                                                                  [ 43%]
+services/control-plane/test_loop_continuous_register.py ........         [ 44%]
+services/control-plane/test_loop_continuous_report.py ........           [ 44%]
+services/control-plane/test_loop_continuous_units.py ...............     [ 45%]
+services/control-plane/test_loop_effect_day_acceptance.py .............. [ 46%]
+.....                                                                    [ 47%]
+services/control-plane/test_loop_eval.py ......                          [ 47%]
+services/control-plane/test_loop_glm_review.py ......................... [ 49%]
+................................                                         [ 52%]
+services/control-plane/test_loop_glm_tariff.py ......................    [ 53%]
+services/control-plane/test_loop_history_gate.py ......                  [ 54%]
+services/control-plane/test_loop_install.py ...................          [ 55%]
+services/control-plane/test_loop_migrations.py .....                     [ 56%]
+services/control-plane/test_loop_model_router.py ....................... [ 58%]
+.............                                                            [ 59%]
+services/control-plane/test_loop_native.py ............................. [ 61%]
+..............................                                           [ 63%]
+services/control-plane/test_loop_night_acceptance.py .........           [ 64%]
+services/control-plane/test_loop_night_batch.py ........................ [ 66%]
+..............................................                           [ 69%]
+services/control-plane/test_loop_night_guard.py .............            [ 70%]
+services/control-plane/test_loop_night_report.py ..............          [ 71%]
+services/control-plane/test_loop_openai_broker.py ...................... [ 73%]
+.                                                                        [ 73%]
+services/control-plane/test_loop_openai_no_tools.py .................... [ 75%]
+.....................                                                    [ 76%]
+services/control-plane/test_loop_producer.py ...........                 [ 77%]
+services/control-plane/test_loop_publication.py ..................       [ 79%]
+services/control-plane/test_loop_push_gate.py ......                     [ 79%]
+services/control-plane/test_loop_runner.py ....................          [ 81%]
+services/control-plane/test_loop_stt.py ....                             [ 81%]
+services/control-plane/test_loop_telegram.py .....                       [ 81%]
+services/control-plane/test_loop_wb_daily_acceptance.py ..............   [ 82%]
+services/control-plane/test_loop_work_program.py ....................... [ 84%]
+........                                                                 [ 85%]
+services/control-plane/test_loop_work_program_status.py ................ [ 86%]
+.........                                                                [ 87%]
+services/control-plane/test_loop_worker_boundary.py ............         [ 88%]
+services/control-plane/test_migrations_no_current_date.py .              [ 88%]
+services/control-plane/test_morning_unit_timeout.py ....                 [ 88%]
+services/control-plane/test_openhands_agent_server_launcher.py ...       [ 88%]
+services/control-plane/test_provision_analyst_role.py ....               [ 89%]
+services/control-plane/test_provision_runtime_roles.py ......            [ 89%]
+services/control-plane/test_proxima_alert.py .......                     [ 90%]
+services/control-plane/test_psql_owner_wrapper.py ....                   [ 90%]
+services/control-plane/test_rehearsal_run.py ........................... [ 92%]
+.                                                                        [ 92%]
+services/control-plane/test_runtime_roles_schema.py sss                  [ 92%]
+services/control-plane/test_verifiers.py ............................... [ 95%]
+...                                                                      [ 95%]
+services/control-plane/test_verify_detector.py ....                      [ 95%]
+services/control-plane/test_verify_live_network.py .........             [ 96%]
+services/control-plane/test_verify_signals_ranking.py ......             [ 96%]
+services/control-plane/test_wb_api_probe.py ...................          [ 98%]
+services/control-plane/test_wb_async_report.py ...................       [ 99%]
+services/control-plane/test_wb_async_report_postgres.py sss              [100%]
+
+====================== 1269 passed, 23 skipped in 59.95s =======================
+uv run --python 3.14 --project services/control-plane --extra test python tools/verify_contracts.py
+negative rejected: fixture=brief-bad-empty-refs.synthetic.json; schema=brief; path=.source_refs
+negative rejected: fixture=brief-bad-signal.synthetic.json; schema=brief; path=.signals[0]
+negative rejected: fixture=brief-bad-threshold.synthetic.json; schema=brief; path=.threshold
+negative rejected: fixture=cabinet-daily-bad-money.synthetic.json; schema=cabinet-daily; path=.revenue_rub
+negative rejected: fixture=decision-record-bad-reason.synthetic.json; schema=decision-record; path=.reason
+negative rejected: fixture=diagnosis-bad-refs.synthetic.json; schema=diagnosis; diagnosis source_refs invariant failed: diagnosis-bad-refs.synthetic.json; path=.source_refs; expected length 3, got 1
+negative rejected: fixture=loop-task-bad-horizon.synthetic.json; schema=loop-task; path=.horizon_days
+negative rejected: fixture=norm-bad-status.synthetic.json; schema=norm; path=.status
+negative rejected: fixture=signal-bad-nomethod.synthetic.json; schema=signal; path=.rub_assessment
+negative rejected: fixture=signal-bad-norefs.synthetic.json; schema=signal; path=.source_refs
+contract verification passed
+uv run --python 3.14 python tools/verify_migrations.py
+migration verification passed
+bash tools/pg_local_roundtrip.sh
+pg-roundtrip: SKIP (no local initdb found; disposable PostgreSQL 16 unavailable)
+uv run --python 3.14 python tools/verify_provenance.py
+provenance verification passed
+npm run architecture:render
+
+> proxima-ai@0.1.0 architecture:render
+> node tools/render_architecture.mjs
+
+rendered 4 Mermaid sources to SVG and PDF
+uv run --python 3.14 python tools/verify_runtime_boundary.py
+runtime boundary verification passed
+uv run --python 3.14 python tools/secret_scan.py --self-test
+secret scanner self-test passed
+uv run --python 3.14 python tools/secret_scan.py
+secret scan passed
+uv run --python 3.14 python tools/verify_vps_contract.py
+VPS contract verification passed
+uv run --python 3.14 python tools/verify_business_signal.py
+business signal contract verification passed
+uv run --python 3.14 python tools/verify_wb_client.py
+wb client contract verification passed
+uv run --python 3.14 --project services/control-plane --extra test python tools/verify_brief.py
+brief: payload valid, orders -21.7%
+uv run --python 3.14 python tools/verify_wb_async_report.py
+wb_async_report: run ledger
+uv run --python 3.14 python tools/verify_funnel.py
+funnel_v3: 21 obs, replay 0, changed payload versions
+uv run --python 3.14 python tools/verify_funnel_csv.py
+funnel_csv: promote + replay after delete
+uv run --python 3.14 python tools/verify_nm_daily.py
+order-counts: per-nm sums vs cabinet
+uv run --python 3.14 --project services/control-plane --extra test python tools/verify_detector.py
+detector: sku deviation, zero-norm insufficient, no signals when not ok
+uv run --python 3.14 --project services/control-plane --extra test python tools/verify_signals_ranking.py
+brief: signals sorted by rub_assessment
+uv run --python 3.14 --project services/control-plane --extra test python tools/verify_threshold.py
+threshold: -31 signals, -29 silent, payload carries source
+uv run --python 3.14 python tools/verify_live_network.py
+live-network: PASS (collector WB_ALLOW_LIVE_NETWORK=1 in infra/compose.yaml; 3 other services, 16 units, 45 test files clean)

@@ -1,5 +1,9 @@
 # HANDOFF — PROXIMA AI
 
+## Fix-ран по находкам Code Review Crew (tier 1 + 1.5) - 2026-09-20
+
+Ветка `fix/loop-pilot-review-tier1` (от `8d23519`), PR без merge - merge и deploy за Mike. Реализованы 8 требований из протокола адверсариального ревью PR #140: guard `/brief` на истёкшей сессии, ISO-таймстемпы задач (JSC/iOS), честный 409 на ре-подтверждение отменённого сигнала, вердикт наблюдения прибит к дню конца горизонта, стоп-клин childless paperclip (upstream-подтверждение + идемпотентный `/stop` + защита от регресса `cancelled`→`cancelling`), 500+traceback+uncertain вместо молчаливого 400 в bridge (диагностика больше не глушится), единая `PAPERCLIP_STATUS_MAP`, bind 127.0.0.1 в example + TLS-требование в OPERATIONS.txt. `make verify` PASS (один SKIP - `pg-roundtrip`, локально нет PG16); лог - `.autopilot/2026-09-20-loop-tier1-fixes--wip/verification.log`; независимый ревьюер: 0 blockers после фикса child-cleanup (ранний возврат `cancelled` только при отсутствии живых children/jobs), 1 warning снят в коде. Follow-ups (tier 2/ниты, не в этой ветке): fail_job ownership, статический bearer `/api/loop/context`, HTTP-таймауты bridge, burn 429-ключа, adopt-no-op, write-only events, рукописные пулы, SSH-словари, контракт `loop-task` без рантайм-потребителя. Примечание: общий чекаут `/root/loop-install/proxima-ai` в момент рана был занят другим агентом (merge-работа PR #89/#98) - работа шла в linked worktree, чужое дерево не тронуто.
+
 ## LOOP server runtime - 2026-09-16
 
 LOOP now runs on dedicated LOOP-control (135.106.211.149), with isolated OpenHands on Claudette and verification on Harper. Project worktrees and state are server-side; the Mac project folders were removed after a verified migration. Simone is outside this deployment.

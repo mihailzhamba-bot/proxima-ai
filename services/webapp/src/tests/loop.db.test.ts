@@ -75,7 +75,9 @@ suite("LOOP PostgreSQL roles and transactions", () => {
     expect(await queue.event(employee,taskId,"completed","fixture evidence",id)).toEqual(first);
     await queue.observe(owner,taskId,randomUUID());
     expect((await queue.list(owner)).tasks[0].observation?.status).toBe("pending");
-    await sql("UPDATE task_events SET created_at=now()-interval '3 days' WHERE tenant_id=$1 AND kind='completed'",[tenant]);
+    // The verdict must measure exactly the horizon end day: shift completed_at so
+    // completed_at + horizon lands inside `day`, the day the fresh brief covers.
+    await sql("UPDATE task_events SET created_at=(($1::date - 1)::timestamptz + interval '00:30') WHERE tenant_id=$2 AND kind='completed'",[day,tenant]);
     await queue.observe(owner,taskId,randomUUID());
     expect((await queue.list(owner)).tasks[0].observation?.reason).toContain("Цель по исходному SKU достигнута");
     const d=await sql("SELECT payload FROM decision_records WHERE tenant_id=$1",[tenant]); expect(d.rows[0].payload.actual).toBeNull();
@@ -115,5 +117,13 @@ suite("LOOP PostgreSQL roles and transactions", () => {
     finally { c.release(); }
     await sql("DELETE FROM collector_runs WHERE run_id=$1",[brief]);
     expect((await queue.list(owner)).tasks.every(t=>t.orphaned)).toBe(true);
+  });
+  it("emits ISO task timestamps and rejects re-accepting a cancelled signal", async () => {
+    const listed=(await queue.list(owner,{filter:"history",limit:100})).tasks.find(t=>t.task_id===taskId);
+    expect(listed).toBeDefined();
+    expect(listed!.due_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(Number.isNaN(Date.parse(listed!.due_at))).toBe(false);
+    expect(Number.isNaN(Date.parse(listed!.created_at))).toBe(false);
+    await expect(queue.accept(owner,command({idempotencyKey:randomUUID()}))).rejects.toMatchObject({status:409});
   });
 });

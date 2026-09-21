@@ -37,6 +37,14 @@ SSH/admin ingress утверждёнными адресами и создаёт 
 127.0.0.1:3100 и 127.0.0.1:18770; PostgreSQL не публикует host port. Между серверами
 используется HTTPS/проверенная приватная сеть. Реальный ingress принимается отдельно.
 
+Сетевой доступ моста
+Bridge по умолчанию слушает только 127.0.0.1 (bind в bridge.config.example.json).
+Не-loopback bind допустим только с TLS-фронтом перед портом 18770: JsonHTTP
+разрешает http лишь для loopback и имён control-сети (bridge, hermes, paperclip),
+а runner с другого сервера ходит через ssh-туннель (permitopen 127.0.0.1:18770).
+Плейнтекст-порт моста, доступный вне сервера с capability-ключами operator/gateway,
+даёт полную компрометацию publication-контура - safe path это loopback по умолчанию.
+
 prepare_credentials.py создаёт только новые локальные capability keys. Файлы mode0600:
 Paperclip работает как UID 1000, Hermes UID 10000, Bridge/Telegram UID 10001. PostgreSQL
 получает секреты с владельцем UID его фактического образа. Каждый сервис монтирует

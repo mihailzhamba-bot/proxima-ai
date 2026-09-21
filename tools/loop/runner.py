@@ -12,6 +12,7 @@ import stat
 import subprocess
 import tempfile
 import time
+import traceback
 import uuid
 import sys
 from pathlib import Path
@@ -408,6 +409,8 @@ def main():
                 if job_id:
                     try: bridge.call("POST",f"/v1/runner/jobs/{job_id}/fail",{})
                     except Exception: pass
+                # A silent serve-loop is invisible to journald: print every failure.
+                traceback.print_exc()
             time.sleep(10)
     if not args.job: parser.error("--job or --serve is required")
     try: print(json.dumps(DeliveryRunner(config,bridge).run(args.job)))

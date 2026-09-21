@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { formatTarget } from "@/lib/loop/format-target";
 import { authenticateContext } from "@/lib/loop/context";
-import { lastFullMoscowDay } from "@/lib/loop/calendar";
+import { lastFullMoscowDay, moscowDayAt } from "@/lib/loop/calendar";
 import { diagnoseSignal } from "@/lib/loop/diagnosis";
-import { observationReadiness, validateAcceptance } from "@/lib/loop/service";
+import { observationReadiness, taskSelect, validateAcceptance } from "@/lib/loop/service";
 import type { SignalV1 } from "@/lib/contracts/signal";
 describe("LOOP deterministic boundaries",()=>{
   it("formats approved targets without floating-point rounding or technical units",()=>{
@@ -18,6 +18,18 @@ describe("LOOP deterministic boundaries",()=>{
   it("changes the full Moscow day exactly at 21:00 UTC",()=>{
     expect(lastFullMoscowDay(new Date("2026-09-13T20:59:59Z"))).toBe("2026-09-12");
     expect(lastFullMoscowDay(new Date("2026-09-13T21:00:00Z"))).toBe("2026-09-13");
+  });
+  it("serialises task timestamps through to_json so JSC parses them",()=>{
+    expect(taskSelect).toContain("to_json(t.due_at)#>>'{}' AS due_at");
+    expect(taskSelect).toContain("to_json(t.created_at)#>>'{}' AS created_at");
+    expect(taskSelect).not.toContain("due_at::text");
+    expect(taskSelect).not.toContain("created_at::text");
+  });
+  it("pins the observation window end to the Moscow day of completed_at plus horizon",()=>{
+    expect(moscowDayAt(new Date("2026-09-13T20:59:59Z"))).toBe("2026-09-13");
+    expect(moscowDayAt(new Date("2026-09-13T21:00:00Z"))).toBe("2026-09-14");
+    const completed=new Date("2026-09-10T12:00:00Z");
+    expect(moscowDayAt(new Date(completed.getTime()+3*86_400_000))).toBe("2026-09-13");
   });
   it("does not invent unknown metrics or call an assessment an LLM diagnosis",()=>{
     const signal={source_refs:["source"],detection_data:{orders_actual:{value:5,is_unknown:false},orders_norm_median:{value:"10.00",is_unknown:false},revenue_actual:{value:"100.00",is_unknown:true},unsupported:{value:999,is_unknown:false}}} as unknown as SignalV1;
