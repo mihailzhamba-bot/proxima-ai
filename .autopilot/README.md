@@ -22,3 +22,4 @@
 |---|---|---|---|
 | 2026-08-25 | `2026-08-25-pa49-warm-precision` | сдан | Редизайн веб-кабинета по канону Warm Precision: тёплые токены обеих тем, Inter+Plex Mono, метрическая полоса 5 карточек с FX-бейджами, редакционный /brief, спроектированные скелетные экраны, стайлгайд, staging на VPS за туннелем |
 | 2026-08-27 | `2026-08-27-release-cutter` | сдан | Шлюз Release Cutter: скилл + read-only критик + /release-gate и /release-task, Scope lock для Autopilot, замена briefmaker в пайплайне, dry-run PMM-7 (DROP: задача уже закрыта в Jira) |
+| 2026-09-21 | `2026-09-21-morning-brief-live--wip` | в работе | — |
