@@ -382,7 +382,9 @@ def test_completed_no_job_retry_is_durable_and_follows_pointer(tmp_path):
         texts = [r[0] for r in db.execute("SELECT text FROM native_notifications")]
     assert any(result["run_id"] in t for t in texts)
     native.stop({**ACTOR, "run_id": parent["run_id"]})
-    assert bridge.get(result["run_id"])["state"] == "cancelling"
+    # Upstream probes answer a terminal status, so the stop is confirmed
+    # instead of parking the retry pointer in an eternal "cancelling".
+    assert bridge.get(result["run_id"])["state"] == "cancelled"
     with pytest.raises(BridgeError, match="approval"):
         native.retry(retry)
     with pytest.raises(BridgeError, match="approval"):

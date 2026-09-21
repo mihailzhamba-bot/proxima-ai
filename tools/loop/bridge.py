@@ -14,6 +14,7 @@ import sqlite3
 import shutil
 import threading
 import time
+import traceback
 import uuid
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -23,6 +24,7 @@ from urllib.parse import urlparse, quote
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 TERMINAL = {"completed", "failed", "error", "cancelled", "canceled", "stopped", "interrupted"}
+PAPERCLIP_STATUS_MAP = {"succeeded": "completed", "scheduled_retry": "interrupted", "timed_out": "failed"}
 JOB_ID = re.compile(r"^[a-z0-9][a-z0-9-]{2,40}$")
 SAFE_ID = re.compile(r"^[A-Za-z0-9:_-]{1,160}$")
 PUBLICATION_PERMIT = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -306,7 +308,7 @@ class Bridge:
         route = "/v1/runs/" if op["kind"] == "hermes" else "/api/heartbeat-runs/"
         response = client.call("GET",route+quote(op["external_id"],safe=""))
         status = response.get("status")
-        if op["kind"] == "paperclip": status = {"succeeded":"completed", "scheduled_retry":"interrupted", "timed_out":"failed"}.get(status,status)
+        if op["kind"] == "paperclip": status = PAPERCLIP_STATUS_MAP.get(status,status)
         if status not in TERMINAL | {"running", "queued"}: raise BridgeError(502,"unknown upstream status")
         with self.tx() as db:
             current = db.execute("SELECT state,generation FROM operations WHERE id=?",(op_id,)).fetchone()
@@ -342,7 +344,20 @@ class Bridge:
                 if ready and op["state"]=="completed" and op["stop_confirmed"]:
                     with self.cancel_request_guard:self.cancel_requests.discard(op_id)
                     return {"run_id":op_id,"status":"completed","reason":"ready_pr_exists"}
-                if op["state"] == "cancelled" and op["stop_confirmed"]: return {"run_id":op_id,"status":"cancelled"}
+                if op["state"] == "cancelled":
+                    # A reconcile-observed cancel (stop_confirmed=0) must not
+                    # regress to 'cancelling' on a repeat /stop — but only when
+                    # there is nothing left to clean up. Live hermes children or
+                    # jobs still need the full stop path below.
+                    orphan = db.execute("""
+                        SELECT 1 FROM operations o WHERE o.kind='hermes' AND o.key=?
+                        UNION ALL SELECT 1 FROM jobs j WHERE j.director_run=?
+                        LIMIT 1
+                    """,(op["external_id"],op_id)).fetchone()
+                    if not orphan:
+                        # op_id intentionally stays in cancel_requests so a late
+                        # publication window of this run stays revoked.
+                        return {"run_id":op_id,"status":"cancelled"}
                 db.execute("UPDATE operations SET state='cancelling',generation=generation+1,updated=? WHERE id=? AND state!='cancelling'",(time.time(),op_id))
                 db.execute("UPDATE jobs SET state='cancelled' WHERE director_run=? AND state!='ready_pr'",(op_id,))
         stop_ok = False
@@ -355,6 +370,8 @@ class Bridge:
                 else:
                     # Board token, no implicit authority for the Director agent token.
                     self.paperclip.call("POST","/api/heartbeat-runs/"+quote(op["external_id"],safe="")+"/cancel",{})
+                    observed=self.paperclip.call("GET","/api/heartbeat-runs/"+quote(op["external_id"],safe=""))
+                    stop_ok=PAPERCLIP_STATUS_MAP.get(observed.get("status"),observed.get("status")) in TERMINAL
             except BridgeError: pass
             if op["kind"] == "paperclip":
                 # Even a failed Paperclip cancellation cannot skip stopping Hermes.
@@ -577,7 +594,7 @@ class Bridge:
             parent_state=parent["state"]
         else:
             observed=self.paperclip.call("GET","/api/heartbeat-runs/"+quote(op["key"],safe=""))
-            parent_state={"succeeded":"completed","scheduled_retry":"interrupted","timed_out":"failed"}.get(observed.get("status"),observed.get("status"))
+            parent_state=PAPERCLIP_STATUS_MAP.get(observed.get("status"),observed.get("status"))
         if parent_state not in {"running","completed"}: raise BridgeError(409,"parent publication fenced",revoked=parent_state in TERMINAL | {"cancelling"})
         if j["generation"]!=j["current_generation"] or j["director_state"] not in {"running","completed"} or j["state"] in {"cancelled","unknown"}: raise BridgeError(409,"publication fenced",revoked=j["generation"]!=j["current_generation"] or j["director_state"] in TERMINAL - {"completed"} or j["director_state"]=="cancelling")
         with self.tx() as db:
@@ -864,7 +881,6 @@ def server(bridge, config):
             from native_control import NativeControl
         native = NativeControl(bridge, config)
     class Handler(BaseHTTPRequestHandler):
-        def log_message(self,*args): pass
         def send_json(self,status,value):
             encoded=json.dumps(value).encode(); self.send_response(status); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(encoded))); self.end_headers(); self.wfile.write(encoded)
         def authenticate(self,role):
@@ -957,7 +973,11 @@ def server(bridge, config):
                 else: raise BridgeError(404,"operation unavailable")
                 self.send_json(200,result)
             except BridgeError as e: self.send_json(e.status,{"error":e.message,"uncertain":e.uncertain})
-            except Exception: self.send_json(400,{"error":"invalid request"})
+            except Exception:
+                # A bridge bug or I/O failure must never masquerade as a client
+                # error: the caller must treat the result as uncertain and reconcile.
+                traceback.print_exc()
+                self.send_json(500,{"error":"internal bridge error; state uncertain; reconcile","uncertain":True})
         do_POST=handle_request
         do_GET=handle_request
     return ThreadingHTTPServer((config.get("bind","127.0.0.1"),config.get("port",18770)),Handler)

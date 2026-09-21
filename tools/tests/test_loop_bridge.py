@@ -261,3 +261,33 @@ def test_standalone_job_without_persisted_parent_reports_null_binding(tmp_path):
     director = run(b, "unbound-remote-parent")
     job(b, director)
     assert b.job("job-1")["parent_run_id"] is None
+
+def test_childless_paperclip_stop_confirms_from_upstream_and_is_idempotent(tmp_path):
+    b,_,p,_=setup(tmp_path)
+    parent=b.create("paperclip","wake-1",{})["run_id"]
+    p.status="cancelled"
+    assert b.cancel(parent)["status"]=="cancelled"
+    assert b.get(parent)["stop_confirmed"]==1
+    calls=len(p.calls)
+    assert b.cancel(parent)["status"]=="cancelled"
+    assert b.get(parent)["state"]=="cancelled"
+    assert len(p.calls)==calls
+    assert b.reconcile(parent)["status"]=="cancelled"
+    assert len(p.calls)==calls
+
+
+def test_internal_bridge_error_is_500_uncertain_not_400(tmp_path):
+    b,_,_,_=setup(tmp_path)
+    credentials={}
+    for role in ["gateway","operator","director","runner"]:
+        path=tmp_path/(role+".key");path.write_text("fixture-"+role);path.chmod(0o600);credentials[role]=str(path)
+    http=server(b,{"port":0,"credential_files":credentials})
+    thread=threading.Thread(target=http.serve_forever,daemon=True);thread.start()
+    url=f"http://127.0.0.1:{http.server_port}"
+    try:
+        director=JsonHTTP(url,"fixture-director",trusted_bridge=True)
+        with pytest.raises(BridgeError) as error:
+            director.call("GET","/v1/context?offset=abc")
+        assert error.value.status==500 and error.value.uncertain is True
+    finally:
+        http.shutdown();http.server_close();thread.join()
