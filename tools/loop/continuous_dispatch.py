@@ -23,8 +23,10 @@ def checked(config):
     if not isinstance(defaults,dict) or set(defaults)!=needed:raise DispatchError("invalid manifest defaults")
     return config
 def attempt_id(item):
+    lease=str(item.get("lease_id") or "")
     value=f'{item["id"]}-a{item["attempts"]}'
-    if len(value)>40:raise DispatchError("attempt job id exceeds Bridge contract")
+    if lease:value+=f'-{lease[:8]}'
+    if len(value)>160:raise DispatchError("attempt job id exceeds Bridge contract")
     return value
 def attempt_root(item,config):
     root=Path(config["state_root"])/item["id"]/f'attempt-{item["attempts"]}'
