@@ -23,7 +23,7 @@ def item():
 def test_render_creates_one_task_manifest_and_attempt_receipt(tmp_path):
     manifest,receipt,root=render(item(),config(tmp_path),1000)
     assert manifest["halt_mode"]=="local" and manifest["pause_on_completion"] is False
-    assert len(manifest["tasks"])==1 and manifest["tasks"][0]["job_id"]=="wb-daily-packaging-a1"
+    assert len(manifest["tasks"])==1 and manifest["tasks"][0]["job_id"]=="wb-daily-packaging-a1-"+"a"*8
     assert receipt["allowed_paths"]==["tools/wb/daily.py"] and receipt["policy_fingerprint"]=="c"*64
     assert receipt["acceptance_profile"]=="wb-daily-packaging"
     assert root.name=="attempt-1"
@@ -43,7 +43,7 @@ def test_dispatcher_projects_completed_batch_to_exact_pr(tmp_path):
     assert result["state"]=="ready_pr"
     updates=[payload for _method,path,payload in calls if path.endswith("/update")]
     assert [u["state"] for u in updates]==["running","ready_pr"]
-    admission=tmp_path/"admission"/"wb-daily-packaging-a1.json"
+    admission=next((tmp_path/"admission").glob("wb-daily-packaging-a1*.json"))
     assert admission.stat().st_mode&0o777==0o600
 
 
@@ -86,7 +86,7 @@ def test_dispatcher_recovers_existing_running_manifest_without_second_claim(tmp_
     manifest,admission,root=render(claimed,settings,1000);root.mkdir(parents=True)
     from tools.loop.night_batch import atomic_json
     atomic_json(root/"manifest.json",manifest)
-    admission_path=Path(settings["admission_root"])/(claimed["id"]+"-a1.json");atomic_json(admission_path,admission)
+    import glob as _g;_m=_g.glob(str(Path(settings["admission_root"])/(claimed["id"]+"-a1*.json")));admission_path=Path(_m[0]) if _m else Path(settings["admission_root"])/(claimed["id"]+"-a1.json");atomic_json(admission_path,admission)
     def call(method,path,payload=None):
         calls.append(path)
         if path=="/v1/queue":return {"current":{"id":claimed["id"],"state":"running"}}
@@ -419,7 +419,7 @@ def test_resumed_same_attempt_uses_fresh_subdirectory_and_keeps_original_artifac
   state=Path(manifest["state_file"]);state.write_text(json.dumps({"status":"completed","tasks":[{"phase":"ready_pr","head_sha":"1"*40,"pr_url":"https://github.com/acme/repo/pull/1"}]}));return SimpleNamespace(returncode=0)
  result=Dispatcher(settings,call,execute,clock=lambda:5000,disk_free=lambda _path:0).run_once()
  assert result=={"state":"ready_pr"} and observed["path"].parent.name=="resume-1"
- assert observed["manifest"]["tasks"][0]["job_id"]=="wb-daily-status-slice-a2" and observed["manifest"]["end_at"]==5000+120+300
+ assert observed["manifest"]["tasks"][0]["job_id"]=="wb-daily-status-slice-a2-aaaaaaaa" and observed["manifest"]["end_at"]==5000+120+300
  assert old_manifest.read_text()=="immutable-manifest" and old_state.read_text()=="immutable-state"
  running=next(payload for path,payload in calls if path.endswith("/update") and payload["state"]=="running")
  assert running["resume_sequence"]==1 and "/v1/queue/claim" not in [path for path,_ in calls]
