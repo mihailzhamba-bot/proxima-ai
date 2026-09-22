@@ -2,20 +2,31 @@
 # Применяется поверх основного стека:
 #   docker compose -f compose.yaml -f webapp.compose.yaml up -d webapp caddy
 # Основной compose.yaml не меняется: boundary-гейт проверяет его построчно.
-# Порты 80/443 открываются в firewall Selectel ТОЛЬКО с подтверждения Mike (деплой-сессия PA-49).
+# Порты 80/443 открываются в firewall Selectel ТОЛЬКО с подтверждения Mike
+# (D42 21.09.2026: домен+Caddy+auth едут с 2.6; vps-contract обновляется тем же
+# релизным тегом, гейт - tools/verify_vps_contract.py).
+#
+# Auth-секреты не интерполируются из .env: BETTER_AUTH_SECRET и
+# WEBAPP_AUTH_DATABASE_URI приходят env_file-ом из secrets-dir
+# (файл webapp_auth.env формата KEY=VALUE, 0600 root, вне Git) - см.
+# runbook release-m03.md §3b. Данные домена - через секрет-файл
+# proxima_webapp_uri (форма staging-overlay, репетиция 08.09).
 
 services:
   webapp:
     build:
       context: ..
       dockerfile: services/webapp/Dockerfile
+    env_file:
+      - /etc/proxima-ai/secrets/webapp_auth.env
     environment:
       WEBAPP_REQUIRE_AUTH: "true"
-      # Секреты приходят из /etc/proxima-ai/secrets/ через env_file на VPS (в Git их нет).
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set in .env on VPS}
+      WEBAPP_DATA_MODE: ${WEBAPP_DATA_MODE:?set in .env on VPS}
+      WEBAPP_TENANT_ID: ${WEBAPP_TENANT_ID:?set in .env on VPS}
+      WEBAPP_DATA_DATABASE_URI_FILE: /run/secrets/proxima_webapp_uri
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?set in .env on VPS}
-      WEBAPP_AUTH_DATABASE_URI: ${WEBAPP_AUTH_DATABASE_URI:?set in .env on VPS}
-      WEBAPP_DATA_DATABASE_URI: ${WEBAPP_DATA_DATABASE_URI:?set in .env on VPS}
+    secrets:
+      - proxima_webapp_uri
     networks:
       - proxima-ai-private
     restart: unless-stopped
@@ -36,6 +47,10 @@ services:
     networks:
       - proxima-ai-private
     restart: unless-stopped
+
+secrets:
+  proxima_webapp_uri:
+    file: ${PROXIMA_SECRETS_DIR:?set PROXIMA_SECRETS_DIR}/proxima_webapp_uri
 
 volumes:
   caddy_data:

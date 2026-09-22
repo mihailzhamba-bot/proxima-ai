@@ -131,9 +131,9 @@ sudo bash /srv/proxima-ai/repo/infra/bootstrap/provision-runtime-roles.sh \
   --host postgres --port 5432 --database proxima \
   --admin-user "$(sudo cat /etc/proxima-ai/secrets/postgres_user)"
 ```
-Ожидается (порядок строк как в скрипте): `provision-runtime-roles: login roles and grants on postgres:5432/proxima`, `… ensuring database proxima_test`, `… secrets owned by 1010:1010; proxima_webapp_password, proxima_webapp_uri owned by 1001:1001 (webapp image uid)`, затем **предупреждение** `WARNING ledger group roles missing, memberships deferred (re-run after migration 011): …` - на этом шаге миграции 011+ ещё не применены, это ожидаемо, - и итоговая `provision-runtime-roles: ok (5 login roles, database proxima_test, URI files under /etc/proxima-ai/secrets; no secret value printed)`. Второй прогон - в разделе 2 после миграций: он выдаёт членства в группах и `GRANT DELETE` janitor'у (без него не работает `delete_run.py` из раздела 7). Скрипт идемпотентен.
+Ожидается (порядок строк как в скрипте): `provision-runtime-roles: login roles and grants on postgres:5432/proxima`, `… ensuring database proxima_test`, `… secrets owned by 1010:1010; proxima_webapp_password, proxima_webapp_uri, proxima_webapp_auth_uri owned by 1001:1001 (webapp image uid)`, затем **предупреждение** `WARNING ledger group roles missing, memberships deferred (re-run after migration 011): …` - на этом шаге миграции 011+ ещё не применены, это ожидаемо, - и итоговая `provision-runtime-roles: ok (6 login roles, database proxima_test, URI files under /etc/proxima-ai/secrets; no secret value printed)`. Шестая роль - `proxima_webapp_auth_writer` (D42: домен+Caddy+auth едут с 2.6, runbook `release-m03.md` §3b): она же создаёт схему `webapp_auth` с четырьмя таблицами better-auth и гранты только внутри этой схемы. Второй прогон - в разделе 2 после миграций: он выдаёт членства в группах и `GRANT DELETE` janitor'у (без него не работает `delete_run.py` из раздела 7). Скрипт идемпотентен.
 
-Побочные эффекты, которые скрипт делает по AD-11/AD-12 и которые надо знать: каталог `/etc/proxima-ai/secrets` становится `1010:1010 0700`, файлы `<роль>_password`/`<роль>_uri` - `1010:1010 0600`, **кроме** `proxima_webapp_password` и `proxima_webapp_uri` - `1001:1001 0600` (uid образа webapp; с файлом `1010:1010` контейнер в `WEBAPP_DATA_MODE=postgres` отвечает «файл WEBAPP_DATA_DATABASE_URI_FILE не читается» - находка репетиции 08.09, решение Mike в тот же день); `REVOKE CONNECT ON DATABASE proxima FROM PUBLIC` - роли без явного гранта (`proxima_dev`) теряют вход в `proxima`; `proxima_diagnostics` вход сохраняет (явный `GRANT CONNECT` в `provision-postgres-diagnostics.sh:77`), `proxima-psql-readonly` продолжает работать.
+Побочные эффекты, которые скрипт делает по AD-11/AD-12 и которые надо знать: каталог `/etc/proxima-ai/secrets` становится `1010:1010 0700`, файлы `<роль>_password`/`<роль>_uri` - `1010:1010 0600`, **кроме** `proxima_webapp_password`, `proxima_webapp_uri` и `proxima_webapp_auth_uri` - `1001:1001 0600` (uid образа webapp; с файлом `1010:1010` контейнер в `WEBAPP_DATA_MODE=postgres` отвечает «файл WEBAPP_DATA_DATABASE_URI_FILE не читается» - находка репетиции 08.09, решение Mike в тот же день); `REVOKE CONNECT ON DATABASE proxima FROM PUBLIC` - роли без явного гранта (`proxima_dev`) теряют вход в `proxima`; `proxima_diagnostics` вход сохраняет (явный `GRANT CONNECT` в `provision-postgres-diagnostics.sh:77`), `proxima-psql-readonly` продолжает работать.
 
 Проверка владельцев после прогона (значения не выводятся):
 ```bash
@@ -177,7 +177,7 @@ sudo bash /srv/proxima-ai/repo/infra/bootstrap/provision-runtime-roles.sh \
   --host postgres --port 5432 --database proxima \
   --admin-user "$(sudo cat /etc/proxima-ai/secrets/postgres_user)"
 ```
-Второй прогон. Ожидается без `WARNING`: `provision-runtime-roles: memberships granted for every ledger group role` и та же итоговая строка `ok (5 login roles, …)`. Это и есть проверка «provision идемпотентен» из AC 1.14: два прогона, второй ничего не ломает.
+Второй прогон. Ожидается без `WARNING`: `provision-runtime-roles: memberships granted for every ledger group role` и та же итоговая строка `ok (6 login roles, …)`. Это и есть проверка «provision идемпотентен» из AC 1.14: два прогона, второй ничего не ломает.
 
 Роль аналитика (Story 6.4) создаёт Mike после `provision-runtime-roles`:
 
@@ -508,7 +508,7 @@ bash tools/rehearsal_run.sh init --root "$ROOT" --statistics-token-src /etc/prox
 ```bash
 bash tools/rehearsal_run.sh up --root "$ROOT"
 ```
-Сборка трёх образов (сеть: `npm ci`, `uv sync`), `up -d --wait postgres`, `apply-migrations` (`already current`), `schema_migrations: 18|18`, два прогона provision с итоговой строкой `ok (5 login roles, database proxima_test, URI files under <root>/secrets; no secret value printed)` и без `WARNING`.
+Сборка трёх образов (сеть: `npm ci`, `uv sync`), `up -d --wait postgres`, `apply-migrations` (`already current`), `schema_migrations: 18|18`, два прогона provision с итоговой строкой `ok (6 login roles, database proxima_test, URI files under <root>/secrets; no secret value printed)` и без `WARNING`.
 
 ```bash
 bash tools/rehearsal_run.sh backfill --root "$ROOT"

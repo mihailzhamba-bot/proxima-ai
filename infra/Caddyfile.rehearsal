@@ -1,0 +1,20 @@
+# Caddy для репетиции публичного контура (runbook release-m03.md §3b,
+# 27-28.09, стенд proxima-rehearsal): тот же реверс-прокси, что в бою, но
+# сертификат - внутренний CA, а не Let's Encrypt: без публичного 80 ACME
+# HTTP-01 не проходит. Публикация - 127.0.0.1:8080/8443 через override
+# compose-проекта, в бой этот файл не попадает.
+
+{$WEBAPP_DOMAIN} {
+	encode zstd gzip
+	tls internal
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	reverse_proxy webapp:3000
+}

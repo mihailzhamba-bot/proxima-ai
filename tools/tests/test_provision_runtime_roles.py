@@ -59,10 +59,31 @@ def test_webapp_secrets_are_owned_by_the_webapp_uid() -> None:
     webapp_targets = chown_targets(text, "WEBAPP_SECRETS_OWNER")
     assert "proxima_webapp_password" in webapp_targets
     assert "proxima_webapp_uri" in webapp_targets
-    # Only the two webapp files move to 1001: no glob that could catch a job secret.
+    assert "proxima_webapp_auth_uri" in webapp_targets
+    # Only the webapp files move to 1001: no glob that could catch a job secret.
     assert "proxima_webapp_*" not in webapp_targets
     for role in JOB_ROLES:
         assert role not in webapp_targets, f"{role} must not be chowned to the webapp uid"
+
+
+def test_auth_contour_role_schema_and_grants() -> None:
+    """Release 2.6 (D42, §3b П-1): better-auth DB side is provisioned here.
+
+    The role and the webapp_auth schema/tables are created idempotently by the
+    same script, outside the M1 migration ledger; the writer role gets nothing
+    outside its schema (AD-12).
+    """
+    text = script_text()
+    assert "proxima_webapp_auth_writer" in text
+    assert "CREATE SCHEMA IF NOT EXISTS webapp_auth;" in text
+    # `user` is a reserved word and stays quoted, exactly like drizzle emits it.
+    for table in ('webapp_auth."user"', "webapp_auth.session", "webapp_auth.account", "webapp_auth.verification"):
+        assert f"CREATE TABLE IF NOT EXISTS {table}" in text
+    assert text.count('REFERENCES webapp_auth."user" (id) ON DELETE CASCADE') == 2
+    assert "GRANT USAGE, CREATE ON SCHEMA webapp_auth TO proxima_webapp_auth_writer" in text
+    assert "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I.%I TO proxima_webapp_auth_writer" in text
+    # The auth URI lands in the main database and is written as a URI file.
+    assert 'write_uri proxima_webapp_auth_writer "${DATABASE}" "${AUTH_PASSWORD}"' in text
 
 
 def test_job_secrets_keep_the_job_uid() -> None:
@@ -77,9 +98,13 @@ def test_job_secrets_keep_the_job_uid() -> None:
 
 def test_ownership_is_reported_without_values_and_documented() -> None:
     text = script_text()
-    assert "proxima_webapp_password, proxima_webapp_uri owned by ${WEBAPP_SECRETS_OWNER}" in text
+    assert (
+        "proxima_webapp_password, proxima_webapp_uri, proxima_webapp_auth_uri "
+        "owned by ${WEBAPP_SECRETS_OWNER}" in text
+    )
     assert "services/webapp/Dockerfile" in text
     assert "D35 addendum" in text
+    assert "D42" in text
     # The `--help` header (usage prints the comment block) carries the rule too.
     header = text.split("set -euo pipefail", 1)[0]
     assert "1001:1001" in header

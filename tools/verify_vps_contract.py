@@ -46,9 +46,21 @@ def verify(root: Path = ROOT) -> None:
 
     network = mapping(contract.get("network"), "network", errors)
     security_group = mapping(network.get("security_group"), "network.security_group", errors)
-    require(security_group.get("inbound_allow") == ["tcp/22"], "security group must allow only TCP/22 inbound", errors)
-    require(security_group.get("application_public_ports") == [], "application public ports must be empty", errors)
-    require(network.get("application_access") == "ssh_tunnel_only", "application access must be SSH tunnel only", errors)
+    # D42 (Mike, 21.09.2026): домен+Caddy+auth едут с релизом 2.6 - 80/443
+    # открываются для Caddy (авто-HTTPS), SSH остаётся единственным админ-входом.
+    # До 2.6 контракт был tcp/22-only ("ssh_tunnel_only"); revert - откат §3b
+    # runbook release-m03.md.
+    require(
+        security_group.get("inbound_allow") == ["tcp/22", "tcp/80", "tcp/443"],
+        "security group must allow TCP/22 (admin) and TCP/80, TCP/443 (Caddy) inbound",
+        errors,
+    )
+    require(
+        security_group.get("application_public_ports") == [80, 443],
+        "application public ports must be exactly 80 and 443 (Caddy)",
+        errors,
+    )
+    require(network.get("application_access") == "caddy_https", "application access must be caddy_https", errors)
 
     access = mapping(contract.get("access"), "access", errors)
     require(access.get("admin_user") == "proxima-admin", "access.admin_user must be proxima-admin", errors)

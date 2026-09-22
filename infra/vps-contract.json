@@ -25,11 +25,16 @@
   "network": {
     "security_group": {
       "inbound_allow": [
-        "tcp/22"
+        "tcp/22",
+        "tcp/80",
+        "tcp/443"
       ],
-      "application_public_ports": []
+      "application_public_ports": [
+        80,
+        443
+      ]
     },
-    "application_access": "ssh_tunnel_only"
+    "application_access": "caddy_https"
   },
   "access": {
     "admin_user": "proxima-admin",

@@ -388,7 +388,7 @@ do_up() {
       --host postgres --port 5432 --database proxima \
       --admin-user "${POSTGRES_USER_VALUE}"
     if [[ "${DRY_RUN}" != true ]]; then
-      grep -q 'provision-runtime-roles: ok (5 login roles' "${ROOT}/logs/provision-${pass}.log" \
+      grep -q 'provision-runtime-roles: ok (6 login roles' "${ROOT}/logs/provision-${pass}.log" \
         || fail "provision run ${pass} did not report ok"
       ! grep -q 'WARNING' "${ROOT}/logs/provision-${pass}.log" \
         || fail "provision run ${pass} printed a WARNING (see ${ROOT}/logs/provision-${pass}.log)"

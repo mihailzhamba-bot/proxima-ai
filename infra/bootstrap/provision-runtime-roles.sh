@@ -17,9 +17,16 @@
 # URI files (Conventions table of the architecture spine):
 #   <secrets-dir>/{proxima_collector,proxima_norm,proxima_webapp,
 #                  proxima_janitor,proxima_sandbox}_uri
+# Auth contour (release 2.6, D42 21.09.2026; runbook release-m03.md §3b П-1):
+#   <secrets-dir>/proxima_webapp_auth_writer_password
+#   <secrets-dir>/proxima_webapp_auth_uri  - URI of the webapp_auth_writer role,
+#     the only writer into the webapp_auth schema (better-auth tables). The
+#     webapp_auth schema and its four tables are created here, idempotently,
+#     outside the M1 migration ledger (webapp contour, services/webapp/README).
 # Ownership (root only): job secrets 1010:1010 0600 (AD-6/AD-11/AD-15, uid of
-# the collector/control-plane images); proxima_webapp_{password,uri} 1001:1001
-# 0600 - the uid of services/webapp/Dockerfile (D35 addendum, Mike 08.09.2026).
+# the collector/control-plane images); proxima_webapp_{password,uri} and
+# proxima_webapp_auth_uri 1001:1001 0600 - the uid of services/webapp/Dockerfile
+# (D35 addendum, Mike 08.09.2026).
 #
 # NOLOGIN group roles come from migration 011 (Story 1.3). Until it exists the
 # LOGIN users are created WITHOUT membership and a warning is printed; a later
@@ -44,7 +51,7 @@ TEST_DATABASE="proxima_test"
 ADMIN_USER="postgres"
 
 usage() {
-  sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 }
 
@@ -140,17 +147,19 @@ NORM_PASSWORD="$(read_or_create_password proxima_norm)"
 WEBAPP_PASSWORD="$(read_or_create_password proxima_webapp)"
 JANITOR_PASSWORD="$(read_or_create_password proxima_janitor)"
 SANDBOX_PASSWORD="$(read_or_create_password proxima_sandbox)"
+AUTH_PASSWORD="$(read_or_create_password proxima_webapp_auth_writer)"
 
 COLLECTOR_VERIFIER="$(scram_verifier "${COLLECTOR_PASSWORD}")"
 NORM_VERIFIER="$(scram_verifier "${NORM_PASSWORD}")"
 WEBAPP_VERIFIER="$(scram_verifier "${WEBAPP_PASSWORD}")"
 JANITOR_VERIFIER="$(scram_verifier "${JANITOR_PASSWORD}")"
 SANDBOX_VERIFIER="$(scram_verifier "${SANDBOX_PASSWORD}")"
+AUTH_VERIFIER="$(scram_verifier "${AUTH_PASSWORD}")"
 # Pattern kept in a variable: bash 3.2 treats a quoted `[[ =~ ]]` right-hand
 # side as a literal string, the variable form behaves the same everywhere.
 SCRAM_RE='^SCRAM-SHA-256\$4096:[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$'
 for verifier in "${COLLECTOR_VERIFIER}" "${NORM_VERIFIER}" "${WEBAPP_VERIFIER}" \
-                "${JANITOR_VERIFIER}" "${SANDBOX_VERIFIER}"; do
+                "${JANITOR_VERIFIER}" "${SANDBOX_VERIFIER}" "${AUTH_VERIFIER}"; do
   [[ "${verifier}" =~ ${SCRAM_RE} ]] || fail "generated SCRAM verifier is malformed"
 done
 
@@ -226,14 +235,78 @@ SELECT format('CREATE ROLE %I', 'proxima_sandbox')
   WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'proxima_sandbox') \gexec
 ALTER ROLE proxima_sandbox LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION BYPASSRLS INHERIT PASSWORD '$(sql_literal "${SANDBOX_VERIFIER}")';
 
+SELECT format('CREATE ROLE %I', 'proxima_webapp_auth_writer')
+  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'proxima_webapp_auth_writer') \gexec
+ALTER ROLE proxima_webapp_auth_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT PASSWORD '$(sql_literal "${AUTH_VERIFIER}")';
+
+-- Auth contour (release 2.6, D42; runbook release-m03.md §3b П-1): the better-auth
+-- tables live in their own schema, outside the M1 migration ledger. Idempotent
+-- CREATE ... IF NOT EXISTS keeps re-runs no-ops; columns mirror
+-- services/webapp/src/lib/db/schema.auth.ts one-to-one.
+CREATE SCHEMA IF NOT EXISTS webapp_auth;
+
+CREATE TABLE IF NOT EXISTS webapp_auth."user" (
+    id text PRIMARY KEY,
+    name text NOT NULL,
+    email text NOT NULL UNIQUE,
+    email_verified boolean NOT NULL DEFAULT false,
+    image text,
+    created_at timestamp with time zone NOT NULL DEFAULT now(),
+    updated_at timestamp with time zone NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS webapp_auth.session (
+    id text PRIMARY KEY,
+    expires_at timestamp with time zone NOT NULL,
+    token text NOT NULL UNIQUE,
+    created_at timestamp with time zone NOT NULL DEFAULT now(),
+    updated_at timestamp with time zone NOT NULL DEFAULT now(),
+    ip_address text,
+    user_agent text,
+    user_id text NOT NULL REFERENCES webapp_auth."user" (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS webapp_auth.account (
+    id text PRIMARY KEY,
+    account_id text NOT NULL,
+    provider_id text NOT NULL,
+    user_id text NOT NULL REFERENCES webapp_auth."user" (id) ON DELETE CASCADE,
+    access_token text,
+    refresh_token text,
+    id_token text,
+    access_token_expires_at timestamp with time zone,
+    refresh_token_expires_at timestamp with time zone,
+    scope text,
+    password text,
+    created_at timestamp with time zone NOT NULL DEFAULT now(),
+    updated_at timestamp with time zone NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS webapp_auth.verification (
+    id text PRIMARY KEY,
+    identifier text NOT NULL,
+    value text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone NOT NULL DEFAULT now(),
+    updated_at timestamp with time zone NOT NULL DEFAULT now()
+);
+
 -- AD-12: only explicit grantees reach the main database. PUBLIC loses CONNECT
 -- everywhere it is not required, and proxima_sandbox is deliberately not
 -- granted CONNECT anywhere except the test copy.
 REVOKE CONNECT ON DATABASE ${DATABASE} FROM PUBLIC;
-GRANT CONNECT ON DATABASE ${DATABASE} TO proxima_collector, proxima_norm, proxima_webapp, proxima_janitor;
+GRANT CONNECT ON DATABASE ${DATABASE} TO proxima_collector, proxima_norm, proxima_webapp, proxima_janitor, proxima_webapp_auth_writer;
 REVOKE CONNECT ON DATABASE postgres, template0, template1 FROM PUBLIC;
 REVOKE CONNECT ON DATABASE postgres, template0, template1 FROM proxima_sandbox;
 GRANT USAGE ON SCHEMA public TO proxima_collector, proxima_norm, proxima_webapp, proxima_janitor;
+
+-- Auth contour: the writer role owns the rows, never the schema. No grant on
+-- the public schema at all: better-auth touches only webapp_auth.*.
+GRANT USAGE, CREATE ON SCHEMA webapp_auth TO proxima_webapp_auth_writer;
+SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I.%I TO proxima_webapp_auth_writer', 'webapp_auth', c.relname)
+  FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE c.relkind = 'r' AND n.nspname = 'webapp_auth'
+  ORDER BY c.relname \gexec
 
 -- AD-11: the janitor only ever deletes runs, so its DELETE grant targets
 -- exactly the tables that carry a run_id. Today that set is empty (migration
@@ -274,6 +347,7 @@ write_uri proxima_norm "${DATABASE}" "${NORM_PASSWORD}"
 write_uri proxima_webapp "${DATABASE}" "${WEBAPP_PASSWORD}"
 write_uri proxima_janitor "${DATABASE}" "${JANITOR_PASSWORD}"
 write_uri proxima_sandbox "${TEST_DATABASE}" "${SANDBOX_PASSWORD}"
+write_uri proxima_webapp_auth_writer "${DATABASE}" "${AUTH_PASSWORD}"
 
 # AD-11: the secrets dir is owned by 1010:1010 (the job container user) on the
 # VPS. Only root can chown, so a non-root caller (the local harness) keeps the
@@ -296,8 +370,9 @@ if [[ "$(id -u)" -eq 0 ]]; then
     "${SECRETS_DIR}"/proxima_norm_* \
     "${SECRETS_DIR}"/proxima_janitor_* "${SECRETS_DIR}"/proxima_sandbox_*
   chown "${WEBAPP_SECRETS_OWNER}" "${SECRETS_DIR}"/proxima_webapp_password \
-    "${SECRETS_DIR}"/proxima_webapp_uri
-  echo "provision-runtime-roles: secrets owned by ${SECRETS_OWNER}; proxima_webapp_password, proxima_webapp_uri owned by ${WEBAPP_SECRETS_OWNER} (webapp image uid)"
+    "${SECRETS_DIR}"/proxima_webapp_uri \
+    "${SECRETS_DIR}"/proxima_webapp_auth_uri
+  echo "provision-runtime-roles: secrets owned by ${SECRETS_OWNER}; proxima_webapp_password, proxima_webapp_uri, proxima_webapp_auth_uri owned by ${WEBAPP_SECRETS_OWNER} (webapp image uid)"
 else
   echo "provision-runtime-roles: WARNING not running as root, secret files left owned by $(id -un); run as root (or chown ${SECRETS_OWNER}, proxima_webapp_* ${WEBAPP_SECRETS_OWNER}) on the VPS" >&2
 fi
@@ -307,4 +382,4 @@ if [[ -n "${MISSING_REPORT}" ]]; then
 else
   echo "provision-runtime-roles: memberships granted for every ledger group role"
 fi
-echo "provision-runtime-roles: ok (5 login roles, database ${TEST_DATABASE}, URI files under ${SECRETS_DIR}; no secret value printed)"
+echo "provision-runtime-roles: ok (6 login roles, database ${TEST_DATABASE}, URI files under ${SECRETS_DIR}; no secret value printed)"
