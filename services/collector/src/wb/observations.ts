@@ -3,9 +3,13 @@
  *
  * One observation = one natural key (`srid` for orders, `saleID` for sales)
  * at one WB `lastChangeDate`. The same PK with the same canonical payload is
- * a replay and is skipped; the same PK with a different payload means WB
- * changed a "closed" record and the run must fail with WB_SCHEMA_DRIFT instead
- * of silently choosing a version. Shared by `collect` and `backfill` jobs.
+ * a replay and is skipped. WB also renames warehouses retroactively without
+ * bumping `lastChangeDate` (case 2026-09-22), so the same PK whose payload
+ * differs only in `warehouseName` is accepted as a benign rename and updates
+ * the stored payload. The same PK with any other payload difference means WB
+ * changed a "closed" record and the run must fail with WB_SCHEMA_DRIFT
+ * instead of silently choosing a version. Shared by `collect` and `backfill`
+ * jobs.
  */
 import type { PoolClient } from 'pg';
 
@@ -116,6 +120,9 @@ function toObservations(rows: readonly unknown[], contentSha256: string, spec: O
  * already be written when a later one drifts, so "no observations of a failed
  * run" is guaranteed by the caller's ROLLBACK, not by this function alone.
  * Table and key column names come from the closed spec table, never from input.
+ * Identical replays stay no-ops (skipped); a warehouse-only rename rewrites
+ * the stored payload in place; any other difference fails the drift check
+ * before the insert.
  */
 export async function insertObservations(
   client: PoolClient,
@@ -133,14 +140,16 @@ export async function insertObservations(
   }
   const { table, keyColumn } = spec;
   const driftSql =
-    `SELECT v.key FROM jsonb_to_recordset($2::jsonb) AS v(key text, last_change_at timestamptz, canonical_sha256 text)` +
+    `SELECT v.key FROM jsonb_to_recordset($2::jsonb) AS v(key text, last_change_at timestamptz, canonical_sha256 text, payload jsonb)` +
     ` JOIN ${table} s ON s.tenant_id = $1 AND s.${keyColumn} = v.key AND s.last_change_at = v.last_change_at` +
-    ` WHERE s.canonical_sha256 <> v.canonical_sha256 LIMIT 5`;
+    ` WHERE (s.payload - 'warehouseName') IS DISTINCT FROM (v.payload - 'warehouseName') LIMIT 5`;
   const insertSql =
     `INSERT INTO ${table} (tenant_id, ${keyColumn}, last_change_at, run_id, content_sha256, canonical_sha256, payload)` +
     ` SELECT $1, v.key, v.last_change_at, $3, $4, v.canonical_sha256, v.payload` +
     ` FROM jsonb_to_recordset($2::jsonb) AS v(key text, last_change_at timestamptz, canonical_sha256 text, payload jsonb)` +
-    ` ON CONFLICT (tenant_id, ${keyColumn}, last_change_at) DO NOTHING`;
+    ` ON CONFLICT (tenant_id, ${keyColumn}, last_change_at) DO UPDATE SET` +
+    ` payload = EXCLUDED.payload, canonical_sha256 = EXCLUDED.canonical_sha256, content_sha256 = EXCLUDED.content_sha256, run_id = EXCLUDED.run_id` +
+    ` WHERE ${table}.payload IS DISTINCT FROM EXCLUDED.payload`;
   let inserted = 0;
   for (let offset = 0; offset < set.rows.length; offset += batchSize) {
     const batch = JSON.stringify(set.rows.slice(offset, offset + batchSize).map((row) => ({
