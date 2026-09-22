@@ -2,6 +2,10 @@
 
 > Snapshot of task state in this repo. Full backlog lives in Jira project PA (zhamba.atlassian.net); this file mirrors only what an agent needs to resume work.
 
+## Snapshot 22.09.2026, 13:06 UTC — PR/merge review
+
+По запросу Mike выполнен аудит 9 открытых PR, последних мёржей #162–164 и D42 `ca8a67e`: `docs/audits/2026-09-22-pr-and-merge-review.md`. **Аудит завершён; merge/release readiness не подтверждена.** Блокеры: public compose/provision/auth, rollback runbook, незавершённая WORKS-TODAY-приёмка, LOOP bind/cancel. Полный локальный verify `ca8a67e` прошёл с pg-roundtrip PASS; CI main `24d585f` восстановлен и зелёный. #145/#147 уже merged. Подробные решения для всех открытых PR и порядок исправлений — в отчёте; внешних записей и деплоя в рамках аудита не было. Основной продуктовый трек остаётся утренней сводкой; аудит не открывает работы по октябрьским функциям.
+
 ## Дневной прогон 08.09.2026 - выполнен (D32)
 
 Epic 4 стартовал: AD-19 (#87), Stories 4.0 (#95), 4.1 (#100 + #102), 4.2 (#104), 4.3 (#106) в `main`; follow-ups 3.1/3.2/3.3 (#90, #97), проба 3.0 (#91), runbook 1.14 (#99), compose-fix блокера релиза (#103), чек-лист готовности (#93), таблица версий (#92), Jira-журнал (#94). Отчёт, инциденты и что держит релизы - `HANDOFF.md`, раздел «День 08.09.2026». Трек сбора данных (D35, с ~10:30 UTC): девять PR #108-#116 в `main`, репетиция цепочки 1.14 на VPS - 4× SUCCEEDED - раздел «Active main task» ниже; 4.4 (разметка Владислава, PMM-126) и Epic 5 заморожены до трёх SUCCEEDED утр; релизы 1.14/2.6 - по D33 (#89, параллельная сессия) с Владиславом и словом «деплой».
@@ -42,7 +46,7 @@ BLOCKED: 3.1 держит ротация токена (OQ-10) и PA-64; 1.14 и 
 - 23-25.09 - три утра SUCCEEDED (CAP-1).
 - 26.09 - чекпоинт 6.1; 27-28.09 - секреты `BETTER_AUTH_*` + прогон Caddy/auth на стенде; 29.09 - деплой 2.6 (витрина postgres, воронка, порт 3000, Caddy+домен+auth, 80/443); 30.09 - гейт M-03 по ledger + живой экран.
 - Кандидат в единицы: раздел домена/Caddy/auth в runbook `release-m03.md` (черновик покрывает только туннельный вариант).
-- 22.09 - аудит harper: `make verify` PASS с pg-roundtrip на `08043bb`, карта машины и бэклог - `docs/state/HOST-harper.md`; ветка `docs/d42-grill-plan` (D42 + аудит) запушена, PR/merge - за Mike.
+- 22.09 - аудит harper: `make verify` PASS с pg-roundtrip на `08043bb`, карта машины и бэклог - `docs/state/HOST-harper.md`; ветка `docs/d42-grill-plan` (D42 + аудит) запушена, PR/merge - за Mike. Вечер: §3b runbook 2.6 + публичный контур исполнены (`ca8a67e`: auth-роль/схема в provision - проверено живым PG16, боевой overlay, vps-контракт `caddy_https`, `Caddyfile.rehearsal`), полный verify PASS; Codex-ревью - не блокер (бриф в `.autopilot/2026-09-22-public-web-contour/`).
 
 ### Дневной прогон 09.09.2026: M1-M5 (D37)
 

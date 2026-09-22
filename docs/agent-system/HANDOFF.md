@@ -4,9 +4,19 @@
 
 > If the current agent disappears right now, what must the next one know? Update after every meaningful stage.
 
+## День 22.09.2026, 13:06 UTC — аудит PR и мёржей по запросу Mike
+
+Актуальный разбор: `docs/audits/2026-09-22-pr-and-merge-review.md`, машинный снимок — соседний `2026-09-22-pr-review-evidence.json`. Проверены 9 открытых PR, последние мёржи #162–164 и ветка D42 `ca8a67e`; независимые read-only ревью публичного контура, runbook/фикса складов/AD-20 и LOOP. Локальный полный `make verify` на `ca8a67e` — exit 0, **pg-roundtrip PASS**, но найдены блокеры public compose/provision/auth и LOOP cancel/bind; воспроизведения и статические доказательства разделены в отчёте. Дефект процедуры отката выявлен статически, rollback не исполнялся. Исправления не выполнялись; merge/review/close в GitHub, Jira и серверные действия не выполнялись.
+
+**Поправка к старым записям ниже:** `origin/main` уже `24d585f`, CI снова зелёный (verify/systemd/images/container migrations); fallback D37 «CI лежит» больше не основание для приёмки. #145/#147 уже merged по API, ancestry головы не определяет статус PR. По журналу #164 релиз 1.14 выполнен на `v2026.09.22-3`; VPS этим аудитом не перепроверялся. Полная WORKS-TODAY-приёмка в журнале оставлена незавершённой.
+
+**Следующее действие:** исправления по P1–P5/R1–R2/L1–L3 из отчёта отдельными проверяемыми изменениями; R3 — отдельная серверная регрессия с evidence. До этого публичный web-контур и массовый merge не готовы. Для #138/#139 нужны evidence аналитика и новые checks; #134 — решение по исключению run_id; D40 — отдельный candidate и подтверждение cutover. Аудит закрыт как разбор, продуктовые блокеры остаются открытыми.
+
 ## День 22.09.2026 - аудит harper: verify PASS, D42 уходит в origin (autopilot-ран host-harper)
 
 **Сделано (утро 22.09):** аудит локальной части на harper. Полный `make verify` на `origin/main` `08043bb` - **PASS с `pg-roundtrip: PASS`** (впервые на этой машине; установлен `postgresql-16`); LOOP-линия `15294f5` - 778 loop-тестов passed, 2 отказа разобраны (boundary - порядок сборки; agent-toolset - дрейф #156, синк после 30.09). Карта машины, рецепт verify и бэклог - `docs/state/HOST-harper.md`; список REMOVE/ARCHIVE (30 ГБ: `loop-verification/20260913` 21G, `loop-runner/work` 8.9G) ждёт потвждения Mike, ничего не удалено. LOOP-очередь в легальном простое (`await_new_admitted_batch_manifest`). Ветка `docs/d42-grill-plan` (D42 + этот ран) запушена в origin - PR/merge за Mike. Шапки `RELEASE-READINESS-1.14.md`/`INVENTORY.md` помечены устаревшими в части CP-12 и дат, тела не тронуты. **Не меняется:** деплой 1.14 - на VPS по слову «деплой», harper его не касается.
+
+**Вечер 22.09 (продолжение рана):** runbook `release-m03.md` дополнен разделом §3b (домен/Caddy/auth) - в нём зафиксированы три разрыва; все три **исполнены кодом** в этой же ветке (`ca8a67e`): П-1 роль `proxima_webapp_auth_writer` + схема `webapp_auth` с четырьмя таблицами better-auth в `provision-runtime-roles.sh` (идемпотентно, вне M1-ледеря; **проверено pg-roundtrip'ом на живом PG16** - `ok (6 login roles)` ×2); П-2 боевой `infra/webapp.compose.yaml` переведён на postgres-режим через секрет-файл, auth-секреты - env_file из secrets-dir, не `.env`; П-3 `infra/vps-contract.json` + гейт - `caddy_https` (tcp/22 + tcp/80,443); `infra/Caddyfile.rehearsal` (`tls internal`) для репетиции 27-28.09. Полный `make verify` на ветке `ca8a67e` - EXIT 0, pg-roundtrip PASS. Гейт-тесты: `test_webapp_public_contour.py`, `test_auth_contour_role_schema_and_grants`. Открытые решения Mike: домен, закрытие sign-up, имена секретов (§3b). Codex-ревью коммита `ca8a67e` - не блокер, бриф в `.autopilot/2026-09-22-public-web-contour/`.
 
 ## День 21.09.2026 - гриль Mike: план «одна функция» до гейта 30.09 (D42)
 
