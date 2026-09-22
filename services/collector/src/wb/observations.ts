@@ -5,11 +5,14 @@
  * at one WB `lastChangeDate`. The same PK with the same canonical payload is
  * a replay and is skipped. WB also renames warehouses retroactively without
  * bumping `lastChangeDate` (case 2026-09-22), so the same PK whose payload
- * differs only in `warehouseName` is accepted as a benign rename and updates
- * the stored payload. The same PK with any other payload difference means WB
- * changed a "closed" record and the run must fail with WB_SCHEMA_DRIFT
- * instead of silently choosing a version. Shared by `collect` and `backfill`
- * jobs.
+ * differs only in `warehouseName` is accepted as a benign rename: it passes
+ * the drift check and then conflicts on the PK and is skipped without
+ * rewriting the stored payload - an overwrite would need an UPDATE grant and
+ * would break the append-only storage model (AD-11/AD-12); fact numbers do
+ * not depend on `warehouseName`. The same PK with any other payload
+ * difference means WB changed a "closed" record and the run must fail with
+ * WB_SCHEMA_DRIFT instead of silently choosing a version. Shared by `collect`
+ * and `backfill` jobs.
  */
 import type { PoolClient } from 'pg';
 
@@ -120,9 +123,9 @@ function toObservations(rows: readonly unknown[], contentSha256: string, spec: O
  * already be written when a later one drifts, so "no observations of a failed
  * run" is guaranteed by the caller's ROLLBACK, not by this function alone.
  * Table and key column names come from the closed spec table, never from input.
- * Identical replays stay no-ops (skipped); a warehouse-only rename rewrites
- * the stored payload in place; any other difference fails the drift check
- * before the insert.
+ * Identical replays and benign warehouse-only renames both conflict on the PK
+ * and stay no-ops (skipped, no payload rewrite); any other difference fails
+ * the drift check before the insert.
  */
 export async function insertObservations(
   client: PoolClient,
@@ -147,9 +150,7 @@ export async function insertObservations(
     `INSERT INTO ${table} (tenant_id, ${keyColumn}, last_change_at, run_id, content_sha256, canonical_sha256, payload)` +
     ` SELECT $1, v.key, v.last_change_at, $3, $4, v.canonical_sha256, v.payload` +
     ` FROM jsonb_to_recordset($2::jsonb) AS v(key text, last_change_at timestamptz, canonical_sha256 text, payload jsonb)` +
-    ` ON CONFLICT (tenant_id, ${keyColumn}, last_change_at) DO UPDATE SET` +
-    ` payload = EXCLUDED.payload, canonical_sha256 = EXCLUDED.canonical_sha256, content_sha256 = EXCLUDED.content_sha256, run_id = EXCLUDED.run_id` +
-    ` WHERE ${table}.payload IS DISTINCT FROM EXCLUDED.payload`;
+     ` ON CONFLICT (tenant_id, ${keyColumn}, last_change_at) DO NOTHING`;
   let inserted = 0;
   for (let offset = 0; offset < set.rows.length; offset += batchSize) {
     const batch = JSON.stringify(set.rows.slice(offset, offset + batchSize).map((row) => ({
