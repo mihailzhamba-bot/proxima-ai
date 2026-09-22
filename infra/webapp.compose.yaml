@@ -2,15 +2,22 @@
 # Применяется поверх основного стека:
 #   docker compose -f compose.yaml -f webapp.compose.yaml up -d webapp caddy
 # Основной compose.yaml не меняется: boundary-гейт проверяет его построчно.
+# Сеть - `private` из base (Codex audit 22.09, P2: имя должно совпадать
+# с key в compose.yaml, иначе `docker compose config` падает).
+#
 # Порты 80/443 открываются в firewall Selectel ТОЛЬКО с подтверждения Mike
-# (D42 21.09.2026: домен+Caddy+auth едут с 2.6; vps-contract обновляется тем же
-# релизным тегом, гейт - tools/verify_vps_contract.py).
+# (D42 21.09.2026: домен+Caddy+auth едут с 2.6; vps-contract обновляется тем
+# же релизным тегом, гейт - tools/verify_vps_contract.py).
 #
 # Auth-секреты не интерполируются из .env: BETTER_AUTH_SECRET и
-# WEBAPP_AUTH_DATABASE_URI приходят env_file-ом из secrets-dir
-# (файл webapp_auth.env формата KEY=VALUE, 0600 root, вне Git) - см.
-# runbook release-m03.md §3b. Данные домена - через секрет-файл
-# proxima_webapp_uri (форма staging-overlay, репетиция 08.09).
+# WEBAPP_AUTH_DATABASE_URI приходят env_file-ом (файл формата KEY=VALUE,
+# 0600 root, вне Git). Путь интерполируется: на бою это secrets-dir
+# (runbook release-m03.md §3b), на репетиции стенда переменная
+# PROXIMA_WEBAPP_AUTH_ENV_FILE указывает на изолированный файл (P6).
+#
+# WEBAPP_ALLOW_SIGNUP - bootstrap-флаг первого пользователя (P5, fail-closed:
+# без явного "=1" в .env регистрация закрыта). Порядок дня релиза: поднять с
+# флагом, создать пользователя, убрать флаг, `up -d --force-recreate webapp`.
 
 services:
   webapp:
@@ -18,17 +25,18 @@ services:
       context: ..
       dockerfile: services/webapp/Dockerfile
     env_file:
-      - /etc/proxima-ai/secrets/webapp_auth.env
+      - ${PROXIMA_WEBAPP_AUTH_ENV_FILE:-/etc/proxima-ai/secrets/webapp_auth.env}
     environment:
       WEBAPP_REQUIRE_AUTH: "true"
       WEBAPP_DATA_MODE: ${WEBAPP_DATA_MODE:?set in .env on VPS}
       WEBAPP_TENANT_ID: ${WEBAPP_TENANT_ID:?set in .env on VPS}
       WEBAPP_DATA_DATABASE_URI_FILE: /run/secrets/proxima_webapp_uri
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?set in .env on VPS}
+      WEBAPP_ALLOW_SIGNUP: ${WEBAPP_ALLOW_SIGNUP:-0}
     secrets:
       - proxima_webapp_uri
     networks:
-      - proxima-ai-private
+      - private
     restart: unless-stopped
 
   caddy:
@@ -45,7 +53,7 @@ services:
     depends_on:
       - webapp
     networks:
-      - proxima-ai-private
+      - private
     restart: unless-stopped
 
 secrets:

@@ -302,12 +302,23 @@ sudo systemctl disable --now proxima-funnel-csv@amirova-test.timer
 
 | Имя/переменная | Что | Владелец/где |
 |---|---|---|
-| `proxima_webapp_auth_uri` | URI роли `webapp_auth_writer` (БД та же, схема `webapp_auth`) | `0600 1001:1001`, secrets dir |
-| `better_auth_secret` (файл `KEY=VALUE` для env_file) | `BETTER_AUTH_SECRET=<openssl rand -base64 32>` | `0600 root:root`, secrets dir; в `.env` не дублировать |
+| `proxima_webapp_auth_writer_uri` | URI роли `webapp_auth_writer` (БД та же, схема `webapp_auth`); имя = `<роль>_uri`, как выдаёт `write_uri` (P1-фикс аудита 22.09) | `0600 1001:1001`, secrets dir |
+| `proxima_webapp_auth_writer_password` | пароль роли (генерит provision) | `0600 1001:1001`, secrets dir |
+| `webapp_auth.env` (`KEY=VALUE`) | `BETTER_AUTH_SECRET=<openssl rand -base64 32>` и `WEBAPP_AUTH_DATABASE_URI=<содержимое proxima_webapp_auth_writer_uri>`; путь бою - `/etc/proxima-ai/secrets/webapp_auth.env`, репетиции - изолированный файл через `PROXIMA_WEBAPP_AUTH_ENV_FILE` | `0600 root:root`, secrets dir; в `.env` не дублировать |
 | `WEBAPP_DOMAIN` | домен Mike (A-запись → 135.106.186.210) | `.env`, не секрет |
 | `BETTER_AUTH_URL` | `https://<домен>`, в точности публичный URL (trusted origins) | `.env`, не секрет |
+| `WEBAPP_ALLOW_SIGNUP` | bootstrap-флаг первого пользователя; отсутствие/`0` = регистрация закрыта (P5, fail-closed) | `.env` только на время bootstrap |
 
-**Репетиция первого входа - 27-28.09, стенд `proxima-rehearsal`, без боя.** Нужен репетиционный Caddyfile - Let's Encrypt без публичного 80 не выдаст сертификат: `infra/Caddyfile.rehearsal` (тот же реверс-прокси, `tls internal`,tracked в теге). Стенд поднимается в четырёх `-f`: `compose.yaml + compose.rehearsal.yaml + webapp.compose.yaml` (staging-overlay НЕ подключается - оба определяют `webapp`, пересечение env), плюс override, публикующий caddy на `127.0.0.1:8080/8443` и монтирующий репетиционный Caddyfile. Прогон: `up -d webapp caddy`, `curl -k https://127.0.0.1:8443/` → редирект на `/login`; первый пользователь формой «первый пользователь» ниже (внутри сети); вход Mike через туннель `-L 18080:127.0.0.1:8443`, браузер с игнорированием сертификата. Критерий репетиции: логин проходит, `/brief` за сессией открывается, секреты читаются владельцем `1001`.
+**Репетиция первого входа - 27-28.09, стенд `proxima-rehearsal`, без боя.** Let's Encrypt без публичного 80 не выдаст сертификат, поэтому на стенде - `infra/Caddyfile.rehearsal` (`tls internal`) и loopback-порты через override `infra/webapp.rehearsal.compose.yaml` (P6 аудита 22.09: файл существует, ничего не дописывается на месте). Изолированный auth env-file репетиции выбирается переменной `PROXIMA_WEBAPP_AUTH_ENV_FILE` - та же интерполяция, что в бою (P6). Сборка стенда (staging-overlay НЕ подключается - он определяет тот же сервис `webapp`, пересечение env):
+
+```bash
+cd /srv/proxima-ai/repo
+docker compose -p proxima-rehearsal --env-file .env.rehearsal \
+  -f infra/compose.yaml -f infra/compose.rehearsal.yaml \
+  -f infra/webapp.compose.yaml -f infra/webapp.rehearsal.compose.yaml up -d webapp caddy
+curl -k -s -o /dev/null -w '%{http_code}\n' -H "Host: ${WEBAPP_DOMAIN}" https://127.0.0.1:8443/brief
+```
+Ожидается `307`/`200` с уходом на `/login` - проверка именно виртуального хоста (P6: голый `curl https://127.0.0.1:8443/` вхост не доказывает). Первый пользователь - на репетиции регистрация открыта override'ом (`WEBAPP_ALLOW_SIGNUP: "1"`), форма шага 6 ниже через `docker exec`. Вход Mike - туннель `-L 18080:127.0.0.1:8443`, браузер с исключением сертификата. Критерий репетиции: sign-up → login → `/brief` за сессией; секреты читаются владельцем `1001`; повторный прогон provision стенда - no-op.
 
 **Порядок 29.09** (после §1-§3; порт 3000: D42 решил - ручной контейнер выводится, вариант А §1):
 
@@ -316,13 +327,13 @@ sudo systemctl disable --now proxima-funnel-csv@amirova-test.timer
 3. Чекаут на тег 2.6 (П-1..П-3 внутри, включая новый `vps-contract.json`); `git log --oneline -1` сверить с журналом.
 4. `sudo docker compose -f infra/compose.yaml -f infra/webapp.staging.compose.yaml stop webapp` - staging-витрина снимается; два webapp-контейнера в проекте недопустимы.
 5. `sudo docker compose -f infra/compose.yaml -f infra/webapp.compose.yaml up -d webapp caddy`. Ожидается: `proxima-ai-webapp-1`, `proxima-ai-caddy-1` - `Up`; caddy слушает `0.0.0.0:80,443`, но снаружи недоступен (ufw ещё закрыт). Логи caddy: ошибка получения сертификата ожидаема и не фатальна до шага 7.
-6. **Первый пользователь - до открытия портов** (sign-up без сессии разрешён better-auth по умолчанию; страница `/login` - только sign-in):
+6. **Первый пользователь - до открытия портов.** Регистрация закрыта по умолчанию (P5: `disableSignUp`, fail-closed; страница `/login` - только sign-in). Bootstrap: добавить в `.env` строку `WEBAPP_ALLOW_SIGNUP=1`, `sudo docker compose -f infra/compose.yaml -f infra/webapp.compose.yaml up -d --force-recreate webapp`, создать пользователя, **сразу** убрать строку и пересоздать контейнер:
 
 ```bash
-sudo docker exec proxima-ai-webapp-1 node -e \
-  "fetch('http://127.0.0.1:3000/api/auth/sign-up/email',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:process.env.E,password:process.env.P,name:'Mike'})}).then(r=>r.status).then(s=>{console.log(s);process.exit(s===200?0:1)})" 
+sudo docker exec -e E='<email Mike>' -e P='<одноразовый пароль>' proxima-ai-webapp-1 node -e \
+  "fetch('http://127.0.0.1:3000/api/auth/sign-up/email',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:process.env.E,password:process.env.P,name:'Mike'})}).then(r=>r.status).then(s=>{console.log(s);process.exit(s===200?0:1)})"
 ```
-Значения `E`/`P` передать через `-e` одноразово и не записывать в журнал; ожидается `200`. Ошибка 403/500 - смотреть `docker logs proxima-ai-webapp-1` (чаще всего: нет схемы `webapp_auth` - П-1, или `BETTER_AUTH_SECRET` не прочитан - П-2).
+Значения `E`/`P` передать одноразово и не записывать в журнал; ожидается `200`. Затем: `sudo sed -i '/^WEBAPP_ALLOW_SIGNUP=/d' /srv/proxima-ai/repo/.env && sudo docker compose -f infra/compose.yaml -f infra/webapp.compose.yaml up -d --force-recreate webapp`; контроль закрытия: повторный sign-up без флага отвечает ошибкой (не `200`). Ошибка на первом шаге - смотреть `docker logs proxima-ai-webapp-1` (чаще всего: нет схемы `webapp_auth` - П-1, или `webapp_auth.env` не прочитан - П-2).
 7. Открыть 80/443: `sudo ufw allow 80/tcp && sudo ufw allow 443/tcp` + правило в панели Selectel - **действие Mike по слову «деплой»**. Caddy получает сертификат Let's Encrypt (лог: `certificate obtained successfully`).
 8. Проверки с машины Mike: `https://<домен>` → редирект на `/login`; вход; `/brief` - тот же экран, что §3 «Что ожидается на экране»; заголовки от Caddy (`curl -sI https://<домен>/brief | grep -iE "strict-transport|x-frame"`); издатель сертификата - Let's Encrypt. Прямой `:3000` снаружи недоступен (публикации нет - только caddy).
 

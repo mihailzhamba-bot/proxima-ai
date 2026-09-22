@@ -19,14 +19,17 @@
 #                  proxima_janitor,proxima_sandbox}_uri
 # Auth contour (release 2.6, D42 21.09.2026; runbook release-m03.md §3b П-1):
 #   <secrets-dir>/proxima_webapp_auth_writer_password
-#   <secrets-dir>/proxima_webapp_auth_uri  - URI of the webapp_auth_writer role,
-#     the only writer into the webapp_auth schema (better-auth tables). The
-#     webapp_auth schema and its four tables are created here, idempotently,
-#     outside the M1 migration ledger (webapp contour, services/webapp/README).
+#   <secrets-dir>/proxima_webapp_auth_writer_uri - URI of the webapp_auth_writer
+#     role, the only writer into the webapp_auth schema (better-auth tables).
+#     The file name follows the write_uri <role> convention (<role>_uri) - the
+#     chown list below must keep matching it byte-for-byte (Codex audit 22.09,
+#     P1). The webapp_auth schema and its four tables are created here,
+#     idempotently, outside the M1 migration ledger (webapp contour,
+#     services/webapp/README).
 # Ownership (root only): job secrets 1010:1010 0600 (AD-6/AD-11/AD-15, uid of
 # the collector/control-plane images); proxima_webapp_{password,uri} and
-# proxima_webapp_auth_uri 1001:1001 0600 - the uid of services/webapp/Dockerfile
-# (D35 addendum, Mike 08.09.2026).
+# proxima_webapp_auth_writer_uri 1001:1001 0600 - the uid of
+# services/webapp/Dockerfile (D35 addendum, Mike 08.09.2026).
 #
 # NOLOGIN group roles come from migration 011 (Story 1.3). Until it exists the
 # LOGIN users are created WITHOUT membership and a warning is printed; a later
@@ -371,8 +374,8 @@ if [[ "$(id -u)" -eq 0 ]]; then
     "${SECRETS_DIR}"/proxima_janitor_* "${SECRETS_DIR}"/proxima_sandbox_*
   chown "${WEBAPP_SECRETS_OWNER}" "${SECRETS_DIR}"/proxima_webapp_password \
     "${SECRETS_DIR}"/proxima_webapp_uri \
-    "${SECRETS_DIR}"/proxima_webapp_auth_uri
-  echo "provision-runtime-roles: secrets owned by ${SECRETS_OWNER}; proxima_webapp_password, proxima_webapp_uri, proxima_webapp_auth_uri owned by ${WEBAPP_SECRETS_OWNER} (webapp image uid)"
+    "${SECRETS_DIR}"/proxima_webapp_auth_writer_uri
+  echo "provision-runtime-roles: secrets owned by ${SECRETS_OWNER}; proxima_webapp_password, proxima_webapp_uri, proxima_webapp_auth_writer_uri owned by ${WEBAPP_SECRETS_OWNER} (webapp image uid)"
 else
   echo "provision-runtime-roles: WARNING not running as root, secret files left owned by $(id -un); run as root (or chown ${SECRETS_OWNER}, proxima_webapp_* ${WEBAPP_SECRETS_OWNER}) on the VPS" >&2
 fi

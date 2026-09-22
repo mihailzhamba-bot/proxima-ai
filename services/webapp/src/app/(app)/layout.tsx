@@ -1,14 +1,18 @@
-import { cookies } from "next/headers";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { getAuth } from "@/lib/auth";
 import { AppSidebar } from "@/components/shell/app-sidebar";
 import { MetricStrip } from "@/components/metrics/metric-strip";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UnreleasedBanner } from "@/components/shell/unreleased-banner";
 
 /*
- * Шелл приложения. Пока auth-контур подключается на деплой-сессии (PA-49 сессия 2):
- * при WEBAPP_REQUIRE_AUTH=true без сессионной cookie уводим на /login.
- * Полная серверная валидация сессии (auth.api.getSession) - вместе с БД-ролью webapp_auth_writer.
+ * Шелл приложения. При WEBAPP_REQUIRE_AUTH=true решение принимает серверная
+ * валидация сессии (auth.api.getSession), а не наличие cookie: произвольное
+ * значение cookie раньше проходило guard (P3), а штатная HTTPS-cookie с
+ * __Secure-префиксом наоборот не находилась (P4) - Codex audit 22.09.2026.
+ * Имя cookie и проверку подписи ведёт better-auth; БД-роль - webapp_auth_writer
+ * (provision-runtime-roles.sh). Без БД guard fail-closed: 500, не пропуск.
  */
 export default async function AppLayout({
   children,
@@ -16,9 +20,8 @@ export default async function AppLayout({
   children: React.ReactNode;
 }>) {
   if (process.env.WEBAPP_REQUIRE_AUTH === "true") {
-    const cookieStore = await cookies();
-    const hasSession = cookieStore.has("better-auth.session_token");
-    if (!hasSession) {
+    const session = await getAuth().api.getSession({ headers: await headers() });
+    if (!session) {
       redirect("/login");
     }
   }

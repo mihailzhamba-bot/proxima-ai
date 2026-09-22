@@ -59,11 +59,29 @@ def test_webapp_secrets_are_owned_by_the_webapp_uid() -> None:
     webapp_targets = chown_targets(text, "WEBAPP_SECRETS_OWNER")
     assert "proxima_webapp_password" in webapp_targets
     assert "proxima_webapp_uri" in webapp_targets
-    assert "proxima_webapp_auth_uri" in webapp_targets
+    assert "proxima_webapp_auth_writer_uri" in webapp_targets
     # Only the webapp files move to 1001: no glob that could catch a job secret.
     assert "proxima_webapp_*" not in webapp_targets
     for role in JOB_ROLES:
         assert role not in webapp_targets, f"{role} must not be chowned to the webapp uid"
+
+
+def test_every_uri_file_written_is_also_chowned() -> None:
+    """Codex audit 22.09, P1: write_uri derives the file name from the role, so
+    the chown list must reference the same `<role>_uri` names byte-for-byte -
+    under root a missing file aborts the whole provision via set -e."""
+    text = script_text()
+    roles = re.findall(r"^write_uri ([a-z_]+) ", text, flags=re.MULTILINE)
+    assert len(roles) >= 6
+    webapp_targets = chown_targets(text, "WEBAPP_SECRETS_OWNER")
+    job_targets = chown_targets(text, "SECRETS_OWNER")
+    for role in roles:
+        if role in ("proxima_webapp", "proxima_webapp_auth_writer"):
+            assert f"{role}_uri" in webapp_targets, f"{role}_uri must be chowned to the webapp uid"
+        else:
+            assert f"{role}_*" in job_targets, f"{role} secrets are no longer chowned 1010:1010"
+    # No stray auth file name left from the pre-audit draft.
+    assert "proxima_webapp_auth_uri" not in text
 
 
 def test_auth_contour_role_schema_and_grants() -> None:
@@ -99,7 +117,7 @@ def test_job_secrets_keep_the_job_uid() -> None:
 def test_ownership_is_reported_without_values_and_documented() -> None:
     text = script_text()
     assert (
-        "proxima_webapp_password, proxima_webapp_uri, proxima_webapp_auth_uri "
+        "proxima_webapp_password, proxima_webapp_uri, proxima_webapp_auth_writer_uri "
         "owned by ${WEBAPP_SECRETS_OWNER}" in text
     )
     assert "services/webapp/Dockerfile" in text

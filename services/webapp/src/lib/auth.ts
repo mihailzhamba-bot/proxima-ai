@@ -20,6 +20,11 @@ function createAuth() {
     }),
     emailAndPassword: {
       enabled: true,
+      // P5 (Codex audit 22.09): регистрация закрыта по умолчанию - fail-closed.
+      // Первая учётная запись создаётся на деплой-сессии при явном
+      // WEBAPP_ALLOW_SIGNUP=1 в окружении контейнера, затем контейнер
+      // пересоздаётся без флага (runbook release-m03.md §3b, шаг 6).
+      disableSignUp: process.env.WEBAPP_ALLOW_SIGNUP !== "1",
     },
   });
 }
