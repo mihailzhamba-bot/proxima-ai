@@ -4,6 +4,10 @@
 
 > If the current agent disappears right now, what must the next one know? Update after every meaningful stage.
 
+## День 22.09.2026 - аудит harper: verify PASS, D42 уходит в origin (autopilot-ран host-harper)
+
+**Сделано (утро 22.09):** аудит локальной части на harper. Полный `make verify` на `origin/main` `08043bb` - **PASS с `pg-roundtrip: PASS`** (впервые на этой машине; установлен `postgresql-16`); LOOP-линия `15294f5` - 778 loop-тестов passed, 2 отказа разобраны (boundary - порядок сборки; agent-toolset - дрейф #156, синк после 30.09). Карта машины, рецепт verify и бэклог - `docs/state/HOST-harper.md`; список REMOVE/ARCHIVE (30 ГБ: `loop-verification/20260913` 21G, `loop-runner/work` 8.9G) ждёт потвждения Mike, ничего не удалено. LOOP-очередь в легальном простое (`await_new_admitted_batch_manifest`). Ветка `docs/d42-grill-plan` (D42 + этот ран) запушена в origin - PR/merge за Mike. Шапки `RELEASE-READINESS-1.14.md`/`INVENTORY.md` помечены устаревшими в части CP-12 и дат, тела не тронуты. **Не меняется:** деплой 1.14 - на VPS по слову «деплой», harper его не касается.
+
 ## День 21.09.2026 - гриль Mike: план «одна функция» до гейта 30.09 (D42)
 
 **Решения Mike (D42, гриль-сессия opencode):** приёмка задачи - глазами на `/brief` в браузере (1.14+2.6 вместе, SQL-проверка недостаточна); **чекпоинт Владислава 26.09** - нет 6.1 в `main` → 2.6 деплим 29.09 без теневого пересчёта, сверка задним числом; домен+Caddy+auth едут с 2.6 (не октябрь); вторая функция после гейта - остатки/OOS («Источники v2»).
