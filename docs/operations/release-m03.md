@@ -286,6 +286,50 @@ sudo systemctl disable --now proxima-funnel-csv@amirova-test.timer
 
 **Mike выполняет одно действие:** `make verify` - `funnel_v3: 21 obs, replay 0, changed payload versions` зелёный (тот же гейт, что в AC Story 3.1: `tools/verify_funnel.py` уже входит в `verify` цепочку `Makefile`).
 
+## 3b. Домен, Caddy, auth (D42: 27-28.09 репетиция на стенде, 29.09 деплой)
+
+> Раздел написан 22.09.2026 против `main` `08043bb` (после D41/D42). Подтверждает три разрыва, каждый закрывается **в репо до дня релиза**, серверных импровизаций нет: П-1 (auth-сторона базы не провиженится), П-2 (боевой overlay не готов к postgres-режиму), П-3 (гейт vps-контракта запрещает 80/443).
+
+**Что добавляет и почему отдельно.** Выше (§1-§3) витрина отдаётся на `127.0.0.1:3000` с `WEBAPP_REQUIRE_AUTH=false`, доступ - только SSH-туннель (ADR-0005; `infra/vps-contract.json`: `application_access: ssh_tunnel_only`). D42 (21.09): домен+Caddy+auth едут с 2.6, приёмка гейта 30.09 - «глазами на `/brief` по домену». 29.09 значит: публичный HTTPS-контур (Caddy, авто-HTTPS Let's Encrypt, 80/443), better-auth email/password (`services/webapp/src/lib/auth.ts`), первое с момента approval изменение vps-контракта.
+
+**П-1. Auth-сторона базы не существует (код-изменение в тег 2.6).** Код ждёт роль `webapp_auth_writer` (`src/lib/db/client.ts:33` - «Соединение записи для Better Auth (роль webapp_auth_writer)») и схему `webapp_auth` с таблицами `user/session/account/verification` (`src/lib/db/schema.auth.ts`). Фактически: в `infra/bootstrap/provision-runtime-roles.sh` роли нет (список - пять, auth не входит); в `db/migrations` схемы нет (webapp-миграции - «собственный контур», README webapp §56, но каталога `services/webapp/drizzle/` тоже нет); better-auth таблицы сам не создаёт. Закрытие в теге 2.6: (а) `services/webapp/drizzle/0001_webapp_auth.sql` - DDL четырёх таблиц по `schema.auth.ts` (поля известны: `user(id,name,email,email_verified,image,created_at,updated_at)`, `session(… token unique, user_id → user ON DELETE CASCADE …)`, `account(… provider_id, password …)`, `verification(…)`; apply - формой §2 runbook 1.14 через `control-plane-admin`); (б) блок в `provision-runtime-roles.sh`: роль `webapp_auth_writer` (LOGIN), `GRANT USAGE, CREATE ON SCHEMA webapp_auth` + CRUD на её таблицы, ничего в data-plane; (в) секрет `proxima_webapp_auth_uri` (владелец `1001:1001`, как `proxima_webapp_uri`, решение 08.09/D35).
+
+**П-2. Боевой overlay не готов к postgres-режиму (код-изменение в тег 2.6).** `infra/webapp.compose.yaml` требует `WEBAPP_DATA_DATABASE_URI` строкой из `.env`, не задаёт `WEBAPP_DATA_MODE`/`WEBAPP_TENANT_ID` (а `resolveDataMode()` fail-closed - без `WEBAPP_DATA_MODE=postgres` контейнер не стартует), и секрет держит интерполяцией из `.env` (`BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set in .env on VPS}`), хотя комментарий того же файла обещает env_file из `/etc/proxima-ai/secrets/`. Правка overlay: `WEBAPP_DATA_DATABASE_URI_FILE: /run/secrets/proxima_webapp_uri` + `secrets:` (как в staging-overlay, там форма рабочая - репетиция 08.09), `WEBAPP_DATA_MODE`/`WEBAPP_TENANT_ID` из `.env`, `BETTER_AUTH_SECRET` и `WEBAPP_AUTH_DATABASE_URI` - через `env_file` с файлом формата `KEY=VALUE` из secrets-dir. Отметить в решении: `WEBAPP_AUTH_DATABASE_URI_FILE` код не читает (`client.ts` знает только плоское имя) - переход на файл для auth-URI требует правки замороженной auth-зоны (октябрь) либо сохраняется строкой в env_file (рекомендуется).
+
+**П-3. Гейт vps-контракта запрещает 80/443 (коммит в тег 2.6, approve = D42).** `tools/verify_vps_contract.py` требует `inbound_allow == ["tcp/22"]`, `application_public_ports == []`, `application_access == "ssh_tunnel_only"` - с открытыми портами `make verify` красный. Правка `infra/vps-contract.json` в релизном теге: `inbound_allow` += `tcp/80`, `tcp/443`; `application_public_ports` = `[80, 443]`; `application_access` = `caddy_https` (значение-предложение). Без этой правки деплой 29.09 невозможен по контракту репо.
+
+**Секреты и `.env`** (в день релиза; имена - предложение, таблицу AD-13 дополняет Mike):
+
+| Имя/переменная | Что | Владелец/где |
+|---|---|---|
+| `proxima_webapp_auth_uri` | URI роли `webapp_auth_writer` (БД та же, схема `webapp_auth`) | `0600 1001:1001`, secrets dir |
+| `better_auth_secret` (файл `KEY=VALUE` для env_file) | `BETTER_AUTH_SECRET=<openssl rand -base64 32>` | `0600 root:root`, secrets dir; в `.env` не дублировать |
+| `WEBAPP_DOMAIN` | домен Mike (A-запись → 135.106.186.210) | `.env`, не секрет |
+| `BETTER_AUTH_URL` | `https://<домен>`, в точности публичный URL (trusted origins) | `.env`, не секрет |
+
+**Репетиция первого входа - 27-28.09, стенд `proxima-rehearsal`, без боя.** Нужен репетиционный Caddyfile - Let's Encrypt без публичного 80 не выдаст сертификат: `infra/Caddyfile.rehearsal` (тот же реверс-прокси, `tls internal`,tracked в теге). Стенд поднимается в четырёх `-f`: `compose.yaml + compose.rehearsal.yaml + webapp.compose.yaml` (staging-overlay НЕ подключается - оба определяют `webapp`, пересечение env), плюс override, публикующий caddy на `127.0.0.1:8080/8443` и монтирующий репетиционный Caddyfile. Прогон: `up -d webapp caddy`, `curl -k https://127.0.0.1:8443/` → редирект на `/login`; первый пользователь формой «первый пользователь» ниже (внутри сети); вход Mike через туннель `-L 18080:127.0.0.1:8443`, браузер с игнорированием сертификата. Критерий репетиции: логин проходит, `/brief` за сессией открывается, секреты читаются владельцем `1001`.
+
+**Порядок 29.09** (после §1-§3; порт 3000: D42 решил - ручной контейнер выводится, вариант А §1):
+
+1. Секреты: `proxima_webapp_auth_uri`, `better_auth_secret` - установить, владельцы проверить формой §0 п. 4. Роль и DDL: повторить `provision-runtime-roles.sh` (обновлённый, из тега), применить `0001_webapp_auth.sql`; проверка: `\dt webapp_auth.*` - четыре таблицы.
+2. `.env`: добавить `WEBAPP_DOMAIN`, `BETTER_AUTH_URL` (форма §1 - копия `.env` перед этим уже своя, `repo.env-before-2.6-caddy`).
+3. Чекаут на тег 2.6 (П-1..П-3 внутри, включая новый `vps-contract.json`); `git log --oneline -1` сверить с журналом.
+4. `sudo docker compose -f infra/compose.yaml -f infra/webapp.staging.compose.yaml stop webapp` - staging-витрина снимается; два webapp-контейнера в проекте недопустимы.
+5. `sudo docker compose -f infra/compose.yaml -f infra/webapp.compose.yaml up -d webapp caddy`. Ожидается: `proxima-ai-webapp-1`, `proxima-ai-caddy-1` - `Up`; caddy слушает `0.0.0.0:80,443`, но снаружи недоступен (ufw ещё закрыт). Логи caddy: ошибка получения сертификата ожидаема и не фатальна до шага 7.
+6. **Первый пользователь - до открытия портов** (sign-up без сессии разрешён better-auth по умолчанию; страница `/login` - только sign-in):
+
+```bash
+sudo docker exec proxima-ai-webapp-1 node -e \
+  "fetch('http://127.0.0.1:3000/api/auth/sign-up/email',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:process.env.E,password:process.env.P,name:'Mike'})}).then(r=>r.status).then(s=>{console.log(s);process.exit(s===200?0:1)})" 
+```
+Значения `E`/`P` передать через `-e` одноразово и не записывать в журнал; ожидается `200`. Ошибка 403/500 - смотреть `docker logs proxima-ai-webapp-1` (чаще всего: нет схемы `webapp_auth` - П-1, или `BETTER_AUTH_SECRET` не прочитан - П-2).
+7. Открыть 80/443: `sudo ufw allow 80/tcp && sudo ufw allow 443/tcp` + правило в панели Selectel - **действие Mike по слову «деплой»**. Caddy получает сертификат Let's Encrypt (лог: `certificate obtained successfully`).
+8. Проверки с машины Mike: `https://<домен>` → редирект на `/login`; вход; `/brief` - тот же экран, что §3 «Что ожидается на экране»; заголовки от Caddy (`curl -sI https://<домен>/brief | grep -iE "strict-transport|x-frame"`); издатель сертификата - Let's Encrypt. Прямой `:3000` снаружи недоступен (публикации нет - только caddy).
+
+**Откат раздела** (мелкий, поверх §5): `ufw delete` + Selectel закрыть; `… stop caddy webapp`; staging-витрина возвращается формой «Глубина 2» §5 (там же возврат ручного контейнера, если нужен); `infra/vps-contract.json` - revert-коммит (гейт снова `tcp/22`-only). Схему `webapp_auth`, роль и секреты не удалять: additive (AD-14), без доступа снаружи безвредны. Домен и A-запись остаются.
+
+**Вопросы Mike до 29.09:** (1) регистрация: после создания первого пользователя sign-up остаётся открытым для всех, кто дошёл до домена (better-auth по умолчанию; точечное закрытие - правка замороженной auth-зоны, сейчас кода-гейта нет) - закрыть в 2.6 или принять до октября; (2) имена секретов из таблицы; (3) домен и дата A-записи; (4) подтверждение правки vps-контракта (`caddy_https`) в релизном теге.
+
 ## 4. Наблюдение семь утр
 
 Окно наблюдения - **23-29.09.2026** по D33 (семь утр после релиза 22.09). AC Story 2.6 называет 24-30.09 (окно после деплоя 23.09) - расхождение зависит от того, какую дату деплоя утвердит Mike; какое окно считать зачётным на 22.09 - `UNKNOWN`, вопрос в конце файла. Зачёт - по `collector_runs`, а не по доставке алерта (CAP-5).
@@ -383,6 +427,10 @@ sudo git -C /srv/proxima-ai/repo log --oneline -1
 | 11 | Версии образов и sha чекаута на 22.09 | день релиза, журнал |
 | 12 | Число активных nmId и счётчики первого прогона `funnel_v3` (пакеты, наблюдения, версии) на бой | день релиза, журнал `2026-09-22-m03.md`, §3a |
 | 13 | Решение по CSV-пути на сентябрь: держать `proxima-funnel-csv@amirova-test.timer` включённым или `disable --now` до октября (D23/FR9) | Mike, §3a |
+| 14 | Домен, дата A-записи → 135.106.186.210, значение `BETTER_AUTH_URL` | Mike, §3b |
+| 15 | Закрытие открытой регистрации sign-up после создания первого пользователя (сейчас кода-гейта нет, auth-зона заморожена до октября) | Mike, §3b |
+| 16 | Имена секретов auth-контура (`proxima_webapp_auth_uri`, `better_auth_secret`) - предложение в §3b | Mike (таблица AD-13), §3b |
+| 17 | Единицы П-1..П-3 §3b в теге 2.6: DDL `webapp_auth` + роль в provision, правка `infra/webapp.compose.yaml`, правка `infra/vps-contract.json` + `infra/Caddyfile.rehearsal` | исполнитель до 29.09, §3b |
 
 ## Открытые вопросы
 
@@ -409,4 +457,7 @@ sudo git -C /srv/proxima-ai/repo log --oneline -1
 - `docs/operations/release-m01.md` - формы доступа, §5 (юниты, drop-in PA-13), §7 (откат);
 - `docs/operations/releases/2026-09-22-m01.md` - что фактически произошло 15.09 и какие отклонения записаны;
 - `docs/state/RELEASE-READINESS-1.14.md` - статусы B1, B5, B6 на день релиза;
-- `db/migrations/` - номер последней миграции релизного тега.
+- `db/migrations/` - номер последней миграции релизного тега;
+- `infra/webapp.compose.yaml`, `infra/Caddyfile`, `infra/Caddyfile.rehearsal`, `infra/vps-contract.json` и `tools/verify_vps_contract.py` - контракт публичного контура и его гейт (§3b);
+- `services/webapp/src/lib/auth.ts`, `src/lib/db/client.ts`, `src/lib/db/schema.auth.ts`, `src/app/login/page.tsx` - auth-конфигурация, форма URI, поля таблиц, поведение `/login` (§3b);
+- `infra/bootstrap/provision-runtime-roles.sh` - состав ролей и владельцев секретов (П-1 §3b).
