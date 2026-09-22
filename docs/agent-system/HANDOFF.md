@@ -4,6 +4,16 @@
 
 > If the current agent disappears right now, what must the next one know? Update after every meaningful stage.
 
+## День 22.09.2026 - деплой 1.14 выполнен (автопилот-ран morning-brief-live, mckenzie)
+
+**Итог (11:33 UTC):** M-01 в бою. Слово «деплой» Mike 22.09 ~09:45 UTC → runbook §0-§6 целиком: схема `18|18`, бэкфилл+collect+norm+brief SUCCEEDED, гейт §4 пройден (W10 649|700860.50 и эталоны по дням), таймер утра 05:30 МСК enabled, алерт доставлен, `/brief` в postgres-режиме с живыми числами. Подробности - `docs/operations/releases/2026-09-22-m01.md`.
+
+**Инцидент + фикс:** первая попытка живого хвоста упала `WB_SCHEMA_DRIFT` - WB ретроактивно переименовал склады в закрытых записях (3 заказа, отличается только `warehouseName`). Решение Mike: точечный фикс - PR #163 (drift-предикат без `warehouseName`, DO NOTHING - append-only AD-11/AD-12 сохранён; первая версия фикса с DO UPDATE легла на красном CI: UPDATE-грант не в модели привилегий роли). Сервер на теге `v2026.09.22-3` (`36b6dbf`), baseline отката `v2026.09.0-baseline`.
+
+**Среда:** деплой исполнялся с mckenzie (SSH к claudette под proxima-admin+sudo); пуш в GitHub - через claudette (`gh` под mihailzhamba-bot), mckenzie кредов к GitHub не имеет. CI жив (минуты Actions восстановлены). Основной провал «починки Telegram» - **api.telegram.org заблокирован провайдером с mckenzie точечно** (github/google/1.1.1.1 ходят); hermes молчит с 20.09; решение Mike - VPN-маршрут (endpoint у Mike, данные к старту этапа).
+
+**Дальше:** приёмка 3 утр 23-25.09 (тикет 04) = разморозка Loop (B1); хвосты Loop-аудита (снимок B3, paperclip=PLANNED, PAT из remote URL, отчёт в `/srv/loop/operations/audit-20260922/`); Telegram via VPN. Follow-up: WORKS-TODAY батарея вручную; D-нумерация DECISIONS.md - сверка с параллельной сессией (ветка d42).
+
 ## День 09.09.2026 - дневной прогон оркестратора (Claude Code, D37)
 
 **Старт (06:15 UTC):** Mike после ночного отчёта - «Так, запускаем задачи дальше в работу»; заморозка D35 снята, в работе все четыре трека. Решение и три ответа Mike записаны в `/DECISIONS.md` D37.
