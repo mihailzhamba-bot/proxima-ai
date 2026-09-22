@@ -164,16 +164,45 @@ test('collect: late change of the same srid is a second observation and _latest 
   }
 });
 
-test('collect: same key and lastChangeDate with another payload is WB_SCHEMA_DRIFT, run FAILED, no observations', { skip }, async () => {
+test('collect: same key and lastChangeDate with only warehouseName changed is a benign rename, skipped without rewrite', { skip }, async () => {
+  const h = await openHarness();
+  try {
+    const base: CollectResult = await h.collect(new FixtureTransport().transport);
+    const rows = await ordersFixture();
+    const target = rows[0] as Record<string, unknown> & { srid: string; warehouseName: string };
+    const renamed = { ...target, warehouseName: `${target.warehouseName}-renamed` };
+    const result = await h.collect(scriptedOrders([renamed, ...rows.slice(1)]).transport);
+    assert.equal(await h.status(result.runId), 'SUCCEEDED');
+    assert.deepEqual(result.orders, { received: ORDERS_FIXTURE, inserted: 0, skipped: ORDERS_FIXTURE }, 'a benign rename skips like a replay');
+    assert.equal(await h.count('stg_wb_orders_obs', result.runId), 0, 'the rename run stores nothing');
+    const stored = await h.db.query<{ warehouse_name: string; run_id: string }>(
+      "SELECT payload->>'warehouseName' AS warehouse_name, run_id FROM stg_wb_orders_obs WHERE tenant_id = $1 AND srid = $2",
+      [tenantId, target.srid],
+    );
+    assert.equal(stored.rowCount, 1);
+    assert.equal(stored.rows[0]?.warehouse_name, target.warehouseName, 'append-only: the old payload snapshot is kept, no rewrite');
+    assert.equal(stored.rows[0]?.run_id, base.runId, 'the observation keeps the run that first observed it');
+    const replay = await h.collect(scriptedOrders([renamed, ...rows.slice(1)]).transport);
+    assert.equal(await h.status(replay.runId), 'SUCCEEDED');
+    assert.deepEqual(replay.orders, { received: ORDERS_FIXTURE, inserted: 0, skipped: ORDERS_FIXTURE }, 'replay of the renamed payload stays a no-op');
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('collect: same key and lastChangeDate with a non-warehouse payload change is WB_SCHEMA_DRIFT, run FAILED, no observations', { skip }, async () => {
   const h = await openHarness();
   try {
     await h.collect(new FixtureTransport().transport);
     const rows = await ordersFixture();
-    const target = rows[0] as Record<string, unknown> & { totalPrice: number };
+    const target = rows[0] as Record<string, unknown> & { srid: string; totalPrice: number };
     const drifted = { ...target, totalPrice: target.totalPrice + 1 };
     await assert.rejects(
       () => h.collect(scriptedOrders([drifted, ...rows.slice(1)]).transport),
-      (error: unknown) => error instanceof WbClientError && error.code === 'WB_SCHEMA_DRIFT',
+      (error: unknown) =>
+        error instanceof WbClientError &&
+        error.code === 'WB_SCHEMA_DRIFT' &&
+        error.message.includes(target.srid),
     );
     const failedRunId = h.lastRunId();
     assert.equal(await h.status(failedRunId), 'FAILED');

@@ -12,11 +12,21 @@
 
 **Следующее действие:** исправления по P1–P5/R1–R2/L1–L3 из отчёта отдельными проверяемыми изменениями; R3 — отдельная серверная регрессия с evidence. До этого публичный web-контур и массовый merge не готовы. Для #138/#139 нужны evidence аналитика и новые checks; #134 — решение по исключению run_id; D40 — отдельный candidate и подтверждение cutover. Аудит закрыт как разбор, продуктовые блокеры остаются открытыми.
 
+## День 22.09.2026 - деплой 1.14 выполнен (автопилот-ран morning-brief-live, mckenzie)
+
+**Итог (11:33 UTC):** M-01 в бою. Слово «деплой» Mike 22.09 ~09:45 UTC → runbook §0-§6 целиком: схема `18|18`, бэкфилл+collect+norm+brief SUCCEEDED, гейт §4 пройден (W10 649|700860.50 и эталоны по дням), таймер утра 05:30 МСК enabled, алерт доставлен, `/brief` в postgres-режиме с живыми числами. Подробности - `docs/operations/releases/2026-09-22-m01.md`.
+
+**Инцидент + фикс:** первая попытка живого хвоста упала `WB_SCHEMA_DRIFT` - WB ретроактивно переименовал склады в закрытых записях (3 заказа, отличается только `warehouseName`). Решение Mike: точечный фикс - PR #163 (drift-предикат без `warehouseName`, DO NOTHING - append-only AD-11/AD-12 сохранён; первая версия фикса с DO UPDATE легла на красном CI: UPDATE-грант не в модели привилегий роли). Сервер на теге `v2026.09.22-3` (`36b6dbf`), baseline отката `v2026.09.0-baseline`.
+
+**Среда:** деплой исполнялся с mckenzie (SSH к claudette под proxima-admin+sudo); пуш в GitHub - через claudette (`gh` под mihailzhamba-bot), mckenzie кредов к GitHub не имеет. CI жив (минуты Actions восстановлены). Основной провал «починки Telegram» - **api.telegram.org заблокирован провайдером с mckenzie точечно** (github/google/1.1.1.1 ходят); hermes молчит с 20.09; решение Mike - VPN-маршрут (endpoint у Mike, данные к старту этапа).
+
+**Дальше:** приёмка 3 утр 23-25.09 (тикет 04) = разморозка Loop (B1); хвосты Loop-аудита (снимок B3, paperclip=PLANNED, PAT из remote URL, отчёт в `/srv/loop/operations/audit-20260922/`); Telegram via VPN. Follow-up: WORKS-TODAY батарея вручную; D-нумерация DECISIONS.md - сверка с параллельной сессией (ветка d42).
+
 ## День 22.09.2026 - аудит harper: verify PASS, D42 уходит в origin (autopilot-ран host-harper)
 
 **Сделано (утро 22.09):** аудит локальной части на harper. Полный `make verify` на `origin/main` `08043bb` - **PASS с `pg-roundtrip: PASS`** (впервые на этой машине; установлен `postgresql-16`); LOOP-линия `15294f5` - 778 loop-тестов passed, 2 отказа разобраны (boundary - порядок сборки; agent-toolset - дрейф #156, синк после 30.09). Карта машины, рецепт verify и бэклог - `docs/state/HOST-harper.md`; список REMOVE/ARCHIVE (30 ГБ: `loop-verification/20260913` 21G, `loop-runner/work` 8.9G) ждёт потвждения Mike, ничего не удалено. LOOP-очередь в легальном простое (`await_new_admitted_batch_manifest`). Ветка `docs/d42-grill-plan` (D42 + этот ран) запушена в origin - PR/merge за Mike. Шапки `RELEASE-READINESS-1.14.md`/`INVENTORY.md` помечены устаревшими в части CP-12 и дат, тела не тронуты. **Не меняется:** деплой 1.14 - на VPS по слову «деплой», harper его не касается.
 
-**Вечер 22.09 (продолжение рана):** runbook `release-m03.md` дополнен разделом §3b (домен/Caddy/auth) - в нём зафиксированы три разрыва; все три **исполнены кодом** в этой же ветке (`ca8a67e`): П-1 роль `proxima_webapp_auth_writer` + схема `webapp_auth` с четырьмя таблицами better-auth в `provision-runtime-roles.sh` (идемпотентно, вне M1-ледеря; **проверено pg-roundtrip'ом на живом PG16** - `ok (6 login roles)` ×2); П-2 боевой `infra/webapp.compose.yaml` переведён на postgres-режим через секрет-файл, auth-секреты - env_file из secrets-dir, не `.env`; П-3 `infra/vps-contract.json` + гейт - `caddy_https` (tcp/22 + tcp/80,443); `infra/Caddyfile.rehearsal` (`tls internal`) для репетиции 27-28.09. Полный `make verify` на ветке `ca8a67e` - EXIT 0, pg-roundtrip PASS. Гейт-тесты: `test_webapp_public_contour.py`, `test_auth_contour_role_schema_and_grants`. Открытые решения Mike: домен, закрытие sign-up, имена секретов (§3b). Codex-ревью коммита `ca8a67e` - не блокер, бриф в `.autopilot/2026-09-22-public-web-contour/`.
+**Вечер 22.09 (продолжение рана):** runbook `release-m03.md` дополнен разделом §3b (домен/Caddy/auth) - в нём зафиксированы три разрыва; все три **исполнены кодом** в этой же ветке (`ca8a67e`): П-1 роль `proxima_webapp_auth_writer` + схема `webapp_auth` с четырьмя таблицами better-auth в `provision-runtime-roles.sh` (идемпотентно, вне M1-ледеря; **проверено pg-roundtrip'ом на живом PG16** - `ok (6 login roles)` ×2); П-2 боевой `infra/webapp.compose.yaml` переведён на postgres-режим через секрет-файл, auth-секреты - env_file из secrets-dir, не `.env`; П-3 `infra/vps-contract.json` + гейт - `caddy_https` (tcp/22 + tcp/80,443); `infra/Caddyfile.rehearsal` (`tls internal`) для репетиции 27-28.09. Полный `make verify` на ветке `ca8a67e` - EXIT 0, pg-roundtrip PASS. Гейт-тесты: `test_webapp_public_contour.py`, `test_auth_contour_role_schema_and_grants`. Открытые решения Mike: домен, закрытие sign-up, имена секретов (§3b). Codex-аудит 13:06 (`docs/audits/2026-09-22-pr-and-merge-review.md`) нашёл в контуре P1-P6 - починка P1-P6 идёт в этой же ветке следующим коммитом; бриф ревью - `.autopilot/2026-09-22-public-web-contour/codex-review-brief.md`.
 
 ## День 21.09.2026 - гриль Mike: план «одна функция» до гейта 30.09 (D42)
 
@@ -29,6 +39,7 @@
 **Кандидат в единицы до 29.09:** раздел домена/Caddy/auth в runbook `release-m03.md` (текущий черновик покрывает только туннельный вариант с auth=false) + репетиция первого входа на стенде.
 
 **Следующее действие:** 22.09 по слову Mike «деплой» - runbook `release-m01.md` §0 с тегом `v2026.09.22-2`, журнал `docs/operations/releases/2026-09-22-m01.md`.
+
 
 ## День 09.09.2026 - дневной прогон оркестратора (Claude Code, D37)
 
